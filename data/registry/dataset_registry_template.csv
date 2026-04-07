@@ -1,0 +1,1 @@
+sample_id,patient_id,case_id,center,year,exam_type,task_role,image_path,mask_path,roi_path,label_tstage,label_source,qc_status,split,data_version,notes

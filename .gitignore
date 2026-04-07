@@ -1,0 +1,12 @@
+*.zip
+
+# Local datasets and large assets
+外部测试集/
+data/raw/
+data/processed/
+data/metadata/
+data/splits/
+
+# Python cache
+__pycache__/
+*.pyc
