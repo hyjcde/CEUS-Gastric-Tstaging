@@ -1,0 +1,9 @@
+﻿sample_id,image_source,mask_source,group_targets,image_width,image_height,original_rect,ui_crop_rect,roi_crop_rect
+2025直接手术__1000937_(1),tmp_sms_smoke_real/prospective_eval/2025直接手术/1000937 (1).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1000937 (1).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","436,246,869,507"
+2025直接手术__1000937_(2),tmp_sms_smoke_real/prospective_eval/2025直接手术/1000937 (2).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1000937 (2).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","457,241,817,524"
+2025直接手术__1000937_(3),tmp_sms_smoke_real/prospective_eval/2025直接手术/1000937 (3).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1000937 (3).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","429,204,979,563"
+2025直接手术__1034135_(1),tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (1).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (1).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","503,394,669,547"
+2025直接手术__1034135_(2),tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (2).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (2).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","471,340,810,590"
+2025直接手术__1034135_(3),tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (3).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (3).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","549,379,778,536"
+2025直接手术__1034135_(4),tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (4).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (4).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","602,465,887,692"
+2025直接手术__1034135_(5),tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (5).dcm,tmp_sms_smoke_real/prospective_eval/2025直接手术/1034135 (5).nii.gz,prospective_2025,1280,960,"0,0,1280,960","128,106,1165,854","549,375,785,531"

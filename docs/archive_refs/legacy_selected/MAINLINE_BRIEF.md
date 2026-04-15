@@ -1,6 +1,12 @@
 # 主线压缩版
 
-这是项目主线的短版入口。完整的两阶段技术主线（分割定位 → 分类分期）请看根目录 [`MAINLINE.md`](../MAINLINE.md)。更完整的边界、证据链和长期口径请看根目录 `STATUS.md`。
+这是历史归档区保留的主线短版，不是当前默认入口。
+
+当前正式主线请优先看：
+
+- `../../mainline/tstaging_current_mainline.md`
+- `../../mainline/research_mainline.md`
+- `../../../README.md`
 
 ## 一句话主线
 

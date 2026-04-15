@@ -1,0 +1,9 @@
+﻿sample_id,image_source,mask_source,group_targets,image_width,image_height,original_rect,ui_crop_rect,roi_crop_rect
+肿瘤医院直接手术__肿瘤原图__01344950-1,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/01344950-1.jpg,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/01344950-1.nii.gz,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","312,156,459,325"
+肿瘤医院直接手术__肿瘤原图__01344950-2,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/01344950-2.jpg,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/01344950-2.nii.gz,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","278,141,539,269"
+肿瘤医院直接手术__肿瘤原图__1500-_(1),tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/1500- (1).dcm,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/1500- (1).nii.gz,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","371,240,452,353"
+肿瘤医院直接手术__肿瘤原图__1500-_(2),tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/1500- (2).dcm,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/1500- (2).nii.gz,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","309,280,396,377"
+肿瘤医院直接手术__肿瘤原图__1502-1,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/1502-1.dcm,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/1502-1.nii,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","270,202,437,361"
+肿瘤医院直接手术__肿瘤原图__1502-2,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/1502-2.dcm,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/1502-2.nii,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","254,277,353,397"
+肿瘤医院直接手术__肿瘤原图__1502-3,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/1502-3.dcm,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/1502-3.nii,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","326,202,486,433"
+肿瘤医院直接手术__肿瘤原图__1503-1,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤原图/1503-1.dcm,tmp_sms_smoke_real/external_eval/肿瘤医院直接手术/肿瘤勾画/1503-1.nii,肿瘤医院直接手术,720,576,"0,0,720,576","50,35,670,530","278,211,473,342"

@@ -1,0 +1,122 @@
+paths:
+  internal_root: dataset/internal
+  prospective_root: dataset/internal/prospective_2025/2025
+  external_root: dataset/external
+  split_output_dir: data/splits/detection/yolo11_lesion_holdout_cropui
+  prepared_dataset_root: data/processed/detection/yolo11_lesion_holdout_cropui_monai
+  experiment_root: experiments/detection
+
+experiment:
+  task_name: detection
+  model_alias: yolo11_lesion_holdout_cropui_monai
+  data_version: dataset_v20260409_holdout_cropui_monai
+  run_id: r001
+  baseline_name: detection_baseline_v1
+
+data:
+  view: crop_ui
+  classes:
+    - lesion
+  label_to_class:
+    lesion: lesion
+  patient_id_regex: "^(.*?)[-_]\\d+$"
+
+split:
+  seed: 666
+  val_fraction: 0.10
+  internal_test_fraction: 0.10
+  min_val_patients_per_year: 20
+  min_internal_test_patients_per_year: 20
+
+preprocessing:
+  monai:
+    enabled: true
+    normalize:
+      lower: 1.0
+      upper: 99.0
+      b_min: 0.0
+      b_max: 1.0
+      clip: true
+      channel_wise: false
+    train_augmentation:
+      copies_per_image: 1
+      rand_gaussian_noise:
+        prob: 0.20
+        mean: 0.0
+        std: 0.03
+      rand_adjust_contrast:
+        prob: 0.30
+        gamma: [0.7, 1.5]
+      rand_gaussian_smooth:
+        prob: 0.15
+        sigma_x: [0.25, 1.0]
+        sigma_y: [0.25, 1.0]
+      rand_shift_intensity:
+        prob: 0.20
+        offsets: 0.05
+        safe: true
+
+train:
+  task: detect
+  model: yolo11n.pt
+  pretrained: true
+  imgsz: 640
+  epochs: 100
+  batch: 16
+  workers: 8
+  device: "0"
+  patience: 30
+  optimizer: auto
+  lr0: null
+  lrf: null
+  weight_decay: null
+  warmup_epochs: null
+  hsv_h: 0.0
+  hsv_s: 0.0
+  hsv_v: 0.0
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  mosaic: 1.0
+  mixup: 0.0
+  copy_paste: 0.0
+  close_mosaic: 10
+  cache: false
+  amp: true
+  cos_lr: false
+  deterministic: true
+  seed: 666
+
+evaluation:
+  imgsz: 640
+  batch: 16
+  device: "0"
+  conf: 0.001
+  iou: 0.6
+  save_json: false
+  plots: true
+
+swanlab:
+  enabled: true
+  strict: false
+  project: gastric_tstaging_detection
+  workspace: null
+  experiment_name: null
+  description: "YOLOv11 lesion detection baseline on crop_ui with MONAI percentile normalization and train-only intensity augmentation."
+  group: detection_baseline_v1
+  tags:
+    - baseline
+    - detection
+    - yolo11
+    - crop_ui
+    - monai
+  logdir: swanlab
+  mode: cloud
+  public: false
+  resume: never
+  parallel: null
+  resume_eval_to_train_run: true

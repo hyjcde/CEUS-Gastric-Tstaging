@@ -6,7 +6,10 @@ data/raw/
 data/processed/
 data/metadata/
 data/splits/
+external/
+.venv*/
 
 # Python cache
 __pycache__/
 *.pyc
+third_party/sms/logs/
