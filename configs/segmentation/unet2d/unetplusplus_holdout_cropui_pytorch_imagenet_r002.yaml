@@ -1,0 +1,46 @@
+paths:
+  dataset_root: data/processed/sms/baseline_2d_unet_holdout_crop_ui
+  experiment_root: experiments/segmentation
+
+experiment:
+  task_name: segmentation
+  model_alias: unetplusplus_pytorch_holdout_cropui_imagenet
+  data_version: dataset_v20260409_holdout_cropui
+  run_id: r002
+
+train:
+  device: cuda:0
+  image_size: 512
+  batch_size: 8
+  num_workers: 8
+  epochs: 40
+  lr: 0.0005
+  weight_decay: 0.0001
+  amp: true
+  seed: 777
+  val_fraction: 0.10
+  early_stopping_patience: 10
+  threshold: 0.5
+  bce_weight: 0.5
+  dice_weight: 0.5
+  positive_class_weight: 2.0
+  save_every_epochs: 5
+  augmentation:
+    hflip_prob: 0.5
+    brightness_jitter: 0.12
+    contrast_jitter: 0.12
+
+model:
+  architecture: unetplusplus
+  in_channels: 1
+  out_channels: 1
+  encoder_name: resnet34
+  encoder_weights: imagenet
+
+evaluation:
+  device: cuda:0
+  batch_size: 8
+  num_workers: 4
+  threshold: 0.5
+  save_probability: false
+  representative_examples_per_bucket: 1
