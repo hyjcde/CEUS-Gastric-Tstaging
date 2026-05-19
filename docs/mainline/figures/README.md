@@ -15,11 +15,17 @@ python scripts/generate_agent_figures_poe_batch.py --skip-existing
 `docs/mainline/figures/results/`
 
 ```bash
-# 从 manuscript / pipeline reports / tmp agent 同步（约 100+ 张）
+# 指标图（scoreboard + eval JSON，与正文 KPI 一致）
+python scripts/generate_mainline_metric_figures.py
+
+# 病例图 + 指标图（内部会调用上一命令）
 python scripts/sync_project_logic_result_figures.py
 
-# 刷新 gastric_tstaging_project_logic_white.html 中的图集 HTML
+# 刷新 HTML 图集片段后嵌入 white.html（或用手动替换 local-results 节）
 python scripts/generate_result_figures_html.py
+
+# 导出 PDF（需 google-chrome；图多时 PDF 较大）
+python scripts/export_project_logic_pdf.py
 ```
 
 清单见 `results/manifest.json`（含每张图的仓库内源路径）。

@@ -35,7 +35,17 @@ def caption_from_name(fname: str) -> str:
     if stem.startswith("case_rf_"):
         return "外部验证 · " + stem.replace("case_rf_", "").replace("_", " ")
     if stem.startswith("metric_"):
-        return "指标 · " + stem.replace("metric_", "").replace("_", " ")
+        labels = {
+            "metric_auc_comparison": "scoreboard 四分类 AUC（外部/前瞻）",
+            "metric_comprehensive_panel": "冻结线四宫格：AUC / val 曲线 / 混淆矩阵",
+            "metric_recall_heatmap": "各主线 per-class Recall 热力图",
+            "metric_per_class_recall_curves": "冻结线逐类 Recall 柱状图",
+            "metric_confusion_dual": "冻结线 外部+前瞻 混淆矩阵",
+            "metric_cm_external": "冻结线 · 外部混淆矩阵",
+            "metric_cm_prospective": "冻结线 · 前瞻混淆矩阵",
+            "metric_directional_rose": "方向性玫瑰图（T2/T3 证据）",
+        }
+        return labels.get(stem, "指标 · " + stem.replace("metric_", "").replace("_", " "))
     if stem.startswith("seg_"):
         return "分割 · " + stem.replace("seg_", "").replace("_", " ")
     return stem.replace("_", " ")

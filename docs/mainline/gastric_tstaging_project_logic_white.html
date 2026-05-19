@@ -619,11 +619,11 @@
         <div class="figure-gallery" style="margin-top:1rem;">
           <figure>
             <img src="figures/results/metric_auc_comparison.png" alt="Local AUC comparison from training runs" />
-            <figcaption>本地 · 四分类 AUC 对比（外部 / 前瞻）</figcaption>
+            <figcaption>指标 · scoreboard 四分类 AUC（与正文 0.7326 / 0.7455 一致）</figcaption>
           </figure>
           <figure>
             <img src="figures/results/metric_comprehensive_panel.png" alt="Comprehensive results panel" />
-            <figcaption>本地 · 综合结果面板</figcaption>
+            <figcaption>指标 · 冻结线四宫格（AUC / val 训练曲线 / 混淆矩阵）</figcaption>
           </figure>
           <figure>
             <img src="figures/fig_results_auc_comparison.png" alt="Poe AUC schematic" />
@@ -701,11 +701,10 @@
       <section id="local-results">
         <h2>本地结果图库（病例示例 + 评估曲线）</h2>
         <p style="font-size:0.92rem;color:var(--muted);">
-          全部图片集中在 <code>docs/mainline/figures/results/</code>（当前 104 张 PNG）。
-          同步：<code>python scripts/sync_project_logic_result_figures.py</code>；
-          刷新本页：<code>python scripts/generate_result_figures_html.py</code> 后重新嵌入图集。
-          来源：manuscript 病例图、<code>pipeline/experiments/reports/</code> 外部验证面板、
-          <code>tmp/agent_predictions/</code> Agent 推理产物。
+          全部图片集中在 <code>docs/mainline/figures/results/</code>（当前 99 张 PNG）。
+          <strong>指标图</strong>由 <code>scripts/generate_mainline_metric_figures.py</code> 从 scoreboard + <code>test_results.json</code> 绘制，与正文 KPI 一致。
+          病例图：<code>python scripts/sync_project_logic_result_figures.py</code>。
+          导出 PDF：<code>python scripts/export_project_logic_pdf.py</code>（已生成同目录 <code>.pdf</code>，约 99 张图时体积较大）。
         </p>
         <h3>Agent 在线推理 · 单例产物（患者 1451370）</h3>
         <div class="figure-gallery">
@@ -1103,24 +1102,24 @@
             <figcaption>指标 · 4class heatmap prospective</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/results/metric_auc_comparison.png" alt="指标 · auc comparison" loading="lazy" />
-            <figcaption>指标 · auc comparison</figcaption>
+            <img src="figures/results/metric_auc_comparison.png" alt="scoreboard 四分类 AUC（外部/前瞻）" loading="lazy" />
+            <figcaption>scoreboard 四分类 AUC（外部/前瞻）</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/metric_cm_external.png" alt="指标 · cm external" loading="lazy" />
-            <figcaption>指标 · cm external</figcaption>
+            <img src="figures/results/metric_cm_external.png" alt="冻结线 · 外部混淆矩阵" loading="lazy" />
+            <figcaption>冻结线 · 外部混淆矩阵</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/metric_cm_prospective.png" alt="指标 · cm prospective" loading="lazy" />
-            <figcaption>指标 · cm prospective</figcaption>
+            <img src="figures/results/metric_cm_prospective.png" alt="冻结线 · 前瞻混淆矩阵" loading="lazy" />
+            <figcaption>冻结线 · 前瞻混淆矩阵</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/results/metric_comprehensive_panel.png" alt="指标 · comprehensive panel" loading="lazy" />
-            <figcaption>指标 · comprehensive panel</figcaption>
+            <img src="figures/results/metric_comprehensive_panel.png" alt="冻结线四宫格：AUC / val 曲线 / 混淆矩阵" loading="lazy" />
+            <figcaption>冻结线四宫格：AUC / val 曲线 / 混淆矩阵</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/metric_confusion_dual.png" alt="指标 · confusion dual" loading="lazy" />
-            <figcaption>指标 · confusion dual</figcaption>
+            <img src="figures/results/metric_confusion_dual.png" alt="冻结线 外部+前瞻 混淆矩阵" loading="lazy" />
+            <figcaption>冻结线 外部+前瞻 混淆矩阵</figcaption>
           </figure>
           <figure>
             <img src="figures/results/metric_confusion_matrix.png" alt="指标 · confusion matrix" loading="lazy" />
@@ -1139,12 +1138,12 @@
             <figcaption>指标 · crosshospital roc</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/metric_directional_rose.png" alt="指标 · directional rose" loading="lazy" />
-            <figcaption>指标 · directional rose</figcaption>
+            <img src="figures/results/metric_directional_rose.png" alt="方向性玫瑰图（T2/T3 证据）" loading="lazy" />
+            <figcaption>方向性玫瑰图（T2/T3 证据）</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/metric_per_class_recall_curves.png" alt="指标 · per class recall curves" loading="lazy" />
-            <figcaption>指标 · per class recall curves</figcaption>
+            <img src="figures/results/metric_per_class_recall_curves.png" alt="冻结线逐类 Recall 柱状图" loading="lazy" />
+            <figcaption>冻结线逐类 Recall 柱状图</figcaption>
           </figure>
         </div>
       </section>

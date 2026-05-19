@@ -13,6 +13,7 @@ import argparse
 import json
 import re
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -99,28 +100,21 @@ def main() -> int:
 
     manifest: list[dict] = []
 
-    # --- metrics ---
-    metric_jobs = [
-        (MANUSCRIPT / "04_classification_heatmap" / "fig1_auc_comparison.png", "metric_auc_comparison.png"),
-        (MANUSCRIPT / "04_classification_heatmap" / "fig5_panel_comprehensive.png", "metric_comprehensive_panel.png"),
-        (MANUSCRIPT / "04_classification_heatmap" / "4class_heatmap_external.png", "metric_4class_heatmap_external.png"),
-        (MANUSCRIPT / "04_classification_heatmap" / "4class_heatmap_prospective.png", "metric_4class_heatmap_prospective.png"),
-        (MANUSCRIPT / "04_classification_heatmap" / "per_class_recall_curves.png", "metric_per_class_recall_curves.png"),
-        (MANUSCRIPT / "fig3_confusion_matrix.png", "metric_confusion_matrix.png"),
-        (MANUSCRIPT / "05_confusion_matrix" / "fig3_confusion_dual_v2.png", "metric_confusion_dual.png"),
-        (MANUSCRIPT / "05_confusion_matrix" / "cm_external.png", "metric_cm_external.png"),
-        (MANUSCRIPT / "05_confusion_matrix" / "cm_prospective.png", "metric_cm_prospective.png"),
-        (MANUSCRIPT / "fig9_cross_domain_roc.png", "metric_cross_domain_roc.png"),
-        (MANUSCRIPT / "08_binary_roc" / "crosshospital_roc.png", "metric_crosshospital_roc.png"),
-        (MANUSCRIPT / "01_convergence" / "convergence_loss_auc.png", "metric_convergence_loss_auc.png"),
-        (MANUSCRIPT / "fig8_directional_rose.png", "metric_directional_rose.png"),
-    ]
-    for src, dest in metric_jobs:
-        if args.dry_run:
-            if src.is_file():
-                manifest.append({"file": dest, "source": str(src.relative_to(PROJECT_ROOT))})
-        else:
-            copy_pair(src, dest, manifest)
+    # --- metrics: generated from scoreboard + eval JSON (not manuscript) ---
+    if not args.dry_run:
+        import subprocess
+
+        gen = PROJECT_ROOT / "scripts" / "generate_mainline_metric_figures.py"
+        if gen.is_file():
+            subprocess.run([sys.executable, str(gen)], check=True, cwd=PROJECT_ROOT)
+        for png in sorted(OUT.glob("metric_*.png")):
+            manifest.append(
+                {
+                    "file": png.name,
+                    "source": "scripts/generate_mainline_metric_figures.py",
+                    "bytes": png.stat().st_size,
+                }
+            )
 
     # --- pipeline full cases (T1–T4+) ---
     copy_dir_samples(MANUSCRIPT / "10_pipeline_cases", "case_pipeline", manifest, limit=12)
