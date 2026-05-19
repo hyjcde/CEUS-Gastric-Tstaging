@@ -522,7 +522,7 @@
       <a href="#arch">系统架构</a>
       <a href="#agent-flow">Agent 流程</a>
       <a href="#results-figures">结果图专区</a>
-      <a href="#local-results">本地结果图</a>
+      <a href="#local-results">本地结果图库</a>
       <a href="#methodology-fig">方法学架构图</a>
       <a href="#figure-gallery">图集 §7.2</a>
       <a href="#rag">Case-RAG</a>
@@ -618,11 +618,11 @@
         </p>
         <div class="figure-gallery" style="margin-top:1rem;">
           <figure>
-            <img src="figures/local/local_auc_comparison.png" alt="Local AUC comparison from training runs" />
+            <img src="figures/results/metric_auc_comparison.png" alt="Local AUC comparison from training runs" />
             <figcaption>本地 · 四分类 AUC 对比（外部 / 前瞻）</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_comprehensive_panel.png" alt="Comprehensive results panel" />
+            <img src="figures/results/metric_comprehensive_panel.png" alt="Comprehensive results panel" />
             <figcaption>本地 · 综合结果面板</figcaption>
           </figure>
           <figure>
@@ -699,143 +699,452 @@
       </section>
 
       <section id="local-results">
-        <h2>本地实验与论文结果图</h2>
+        <h2>本地结果图库（病例示例 + 评估曲线）</h2>
         <p style="font-size:0.92rem;color:var(--muted);">
-          下列为仓库内<strong>真实训练/评估输出</strong>，已从
-          <code>docs copy/export_text_media_20260408/.../manuscript/figures/</code>
-          与 <code>experiments/segmentation/</code> 复制到
-          <code>docs/mainline/figures/local/</code>（共 28 张，便于离线 HTML 浏览）。
+          全部图片集中在 <code>docs/mainline/figures/results/</code>（当前 104 张 PNG）。
+          同步：<code>python scripts/sync_project_logic_result_figures.py</code>；
+          刷新本页：<code>python scripts/generate_result_figures_html.py</code> 后重新嵌入图集。
+          来源：manuscript 病例图、<code>pipeline/experiments/reports/</code> 外部验证面板、
+          <code>tmp/agent_predictions/</code> Agent 推理产物。
         </p>
-
-        <h3>T 分期 · AUC / Recall / 热力图</h3>
+        <h3>Agent 在线推理 · 单例产物（患者 1451370）</h3>
         <div class="figure-gallery">
-          <figure class="span-2">
-            <img src="figures/local/local_comprehensive_panel.png" alt="Comprehensive panel" />
-            <figcaption>综合结果面板 · fig5_panel_comprehensive</figcaption>
-          </figure>
           <figure>
-            <img src="figures/local/local_auc_comparison.png" alt="AUC comparison" />
-            <figcaption>四分类 AUC 对比</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_sfig_auc_comparison.png" alt="Supplementary AUC" />
-            <figcaption>补充图 · 多模型 AUC</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_recall_heatmap.png" alt="Recall heatmap" />
-            <figcaption>各类 Recall 热力图</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_recall_heatmap_v2.png" alt="Recall heatmap v2" />
-            <figcaption>Recall 热力图（分类专集）</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_4class_heatmap_external.png" alt="External 4-class heatmap" />
-            <figcaption>外部验证 · 四分类热力图</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_4class_heatmap_prospective.png" alt="Prospective 4-class heatmap" />
-            <figcaption>前瞻验证 · 四分类热力图</figcaption>
+            <img src="figures/results/case_agent_1451370_classification_probabilities.png" alt="Agent · classification probabilities" loading="lazy" />
+            <figcaption>Agent · classification probabilities</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/local/local_per_class_recall_curves.png" alt="Per-class recall curves" />
-            <figcaption>逐类 Recall 曲线</figcaption>
+            <img src="figures/results/case_agent_1451370_current_image_dino_feature_panel.png" alt="Agent · current image dino feature panel" loading="lazy" />
+            <figcaption>Agent · current image dino feature panel</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_dino_region_similarity_heatmap.png" alt="Agent · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_predicted_mask.png" alt="Agent · predicted mask" loading="lazy" />
+            <figcaption>Agent · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_predicted_overlay.png" alt="Agent · predicted overlay" loading="lazy" />
+            <figcaption>Agent · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_predicted_roi.png" alt="Agent · predicted roi" loading="lazy" />
+            <figcaption>Agent · predicted roi</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1451370_real_dino_multimodal_visual_panel.png" alt="Agent · real dino multimodal visual panel" loading="lazy" />
+            <figcaption>Agent · real dino multimodal visual panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1451370_real_wall_analysis_panel.png" alt="Agent · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent · real wall analysis panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1451370_similar_cases_contact_sheet.png" alt="Agent · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent · similar cases contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_wall_layer_profile.png" alt="Agent · wall layer profile" loading="lazy" />
+            <figcaption>Agent · wall layer profile</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_wall_penetration_risk_heatmap.png" alt="Agent · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent · wall penetration risk heatmap</figcaption>
           </figure>
         </div>
-
-        <h3>混淆矩阵 · ROC</h3>
+        <h3>超声病例 · 全流程管线示意（T1–T4+）</h3>
         <div class="figure-gallery">
           <figure>
-            <img src="figures/local/local_confusion_matrix.png" alt="Confusion matrix" />
-            <figcaption>四分类混淆矩阵（主图）</figcaption>
+            <img src="figures/results/case_pipeline_T1_00_Surgery_2025_Supplement_1500511_10.png" alt="全流程 · T1 00 Surgery 2025 Supplement 1500511 10" loading="lazy" />
+            <figcaption>全流程 · T1 00 Surgery 2025 Supplement 1500511 10</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_confusion_dual.png" alt="Dual confusion" />
-            <figcaption>外部 + 前瞻双混淆矩阵</figcaption>
+            <img src="figures/results/case_pipeline_T1_01_Surgery_2025_Supplement_1279829_22.png" alt="全流程 · T1 01 Surgery 2025 Supplement 1279829 22" loading="lazy" />
+            <figcaption>全流程 · T1 01 Surgery 2025 Supplement 1279829 22</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_cm_external.png" alt="CM external" />
-            <figcaption>外部 · 混淆矩阵</figcaption>
+            <img src="figures/results/case_pipeline_T1_02_Surgery_2025_Supplement_1279829_20.png" alt="全流程 · T1 02 Surgery 2025 Supplement 1279829 20" loading="lazy" />
+            <figcaption>全流程 · T1 02 Surgery 2025 Supplement 1279829 20</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_cm_prospective.png" alt="CM prospective" />
-            <figcaption>前瞻 · 混淆矩阵</figcaption>
+            <img src="figures/results/case_pipeline_T2_00_Surgery_2025_Supplement_1502724_3.png" alt="全流程 · T2 00 Surgery 2025 Supplement 1502724 3" loading="lazy" />
+            <figcaption>全流程 · T2 00 Surgery 2025 Supplement 1502724 3</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_cross_domain_roc.png" alt="Cross-domain ROC" />
-            <figcaption>跨域 ROC</figcaption>
+            <img src="figures/results/case_pipeline_T2_01_Surgery_2025_5M_1490868_4.png" alt="全流程 · T2 01 Surgery 2025 5M 1490868 4" loading="lazy" />
+            <figcaption>全流程 · T2 01 Surgery 2025 5M 1490868 4</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_crosshospital_roc.png" alt="Cross-hospital ROC" />
-            <figcaption>跨院 ROC</figcaption>
+            <img src="figures/results/case_pipeline_T2_02_Surgery_2025_Supplement_1499097_8.png" alt="全流程 · T2 02 Surgery 2025 Supplement 1499097 8" loading="lazy" />
+            <figcaption>全流程 · T2 02 Surgery 2025 Supplement 1499097 8</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_test_main_roc.png" alt="Main test ROC" />
-            <figcaption>主测试集 ROC</figcaption>
+            <img src="figures/results/case_pipeline_T3_00_Surgery_2025_Supplement_1503242_5.png" alt="全流程 · T3 00 Surgery 2025 Supplement 1503242 5" loading="lazy" />
+            <figcaption>全流程 · T3 00 Surgery 2025 Supplement 1503242 5</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_T3_01_Surgery_2025_5M_1491853_1.png" alt="全流程 · T3 01 Surgery 2025 5M 1491853 1" loading="lazy" />
+            <figcaption>全流程 · T3 01 Surgery 2025 5M 1491853 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_T3_02_Surgery_2025_Supplement_1502881_23.png" alt="全流程 · T3 02 Surgery 2025 Supplement 1502881 23" loading="lazy" />
+            <figcaption>全流程 · T3 02 Surgery 2025 Supplement 1502881 23</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_T4_00_Surgery_2025_7M_1510817_3.png" alt="全流程 · T4 00 Surgery 2025 7M 1510817 3" loading="lazy" />
+            <figcaption>全流程 · T4 00 Surgery 2025 7M 1510817 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_T4_01_Surgery_2025_3M_1406527_1.png" alt="全流程 · T4 01 Surgery 2025 3M 1406527 1" loading="lazy" />
+            <figcaption>全流程 · T4 01 Surgery 2025 3M 1406527 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_T4_02_Surgery_2025_5M_1495068_4.png" alt="全流程 · T4 02 Surgery 2025 5M 1495068 4" loading="lazy" />
+            <figcaption>全流程 · T4 02 Surgery 2025 5M 1495068 4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_pipeline_dehua_contact_sheet.png" alt="全流程 · dehua contact sheet" loading="lazy" />
+            <figcaption>全流程 · dehua contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_dehua_overlay_000_dhwa1-1.png" alt="全流程 · dehua overlay 000 dhwa1-1" loading="lazy" />
+            <figcaption>全流程 · dehua overlay 000 dhwa1-1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_dehua_overlay_001_dhwa1-2.png" alt="全流程 · dehua overlay 001 dhwa1-2" loading="lazy" />
+            <figcaption>全流程 · dehua overlay 001 dhwa1-2</figcaption>
           </figure>
         </div>
-
-        <h3>分割 · ROI · 级联</h3>
+        <h3>超声病例 · 胃壁边界与浸润（按 T 分期）</h3>
         <div class="figure-gallery">
-          <figure class="span-2">
-            <img src="figures/local/local_seg_comparison.png" alt="Segmentation comparison" />
-            <figcaption>多中心分割对比（SAM2 / nnU-Net 等）</figcaption>
+          <figure>
+            <img src="figures/results/case_boundary_T1_00_pt3-6.png" alt="胃壁边界 · T1 00 pt3-6" loading="lazy" />
+            <figcaption>胃壁边界 · T1 00 pt3-6</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_sam2_eval.png" alt="SAM2 eval" />
-            <figcaption>SAM2 评估对比</figcaption>
+            <img src="figures/results/case_boundary_T1_01_Surgery_2024_1398148-1.png" alt="胃壁边界 · T1 01 Surgery 2024 1398148-1" loading="lazy" />
+            <figcaption>胃壁边界 · T1 01 Surgery 2024 1398148-1</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_cascade_eval.png" alt="Cascade eval" />
-            <figcaption>级联分割评估</figcaption>
+            <img src="figures/results/case_boundary_T2_00_2018_DS_Crop_1015590-3.png" alt="胃壁边界 · T2 00 2018 DS Crop 1015590-3" loading="lazy" />
+            <figcaption>胃壁边界 · T2 00 2018 DS Crop 1015590-3</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_mask_prompt.png" alt="Mask prompt" />
-            <figcaption>Mask prompt 对比</figcaption>
+            <img src="figures/results/case_boundary_T2_01_pt118-1.png" alt="胃壁边界 · T2 01 pt118-1" loading="lazy" />
+            <figcaption>胃壁边界 · T2 01 pt118-1</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_roi_comparison.png" alt="ROI comparison" />
-            <figcaption>ROI 策略对比</figcaption>
+            <img src="figures/results/case_boundary_T3_00_2018_DS_Crop_1019999-2.png" alt="胃壁边界 · T3 00 2018 DS Crop 1019999-2" loading="lazy" />
+            <figcaption>胃壁边界 · T3 00 2018 DS Crop 1019999-2</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_roi_gt_vs_pred.png" alt="ROI GT vs pred" />
-            <figcaption>GT vs 预测 ROI</figcaption>
+            <img src="figures/results/case_boundary_T3_01_Surgery_2020_2023_0024261-13.png" alt="胃壁边界 · T3 01 Surgery 2020 2023 0024261-13" loading="lazy" />
+            <figcaption>胃壁边界 · T3 01 Surgery 2020 2023 0024261-13</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_dinov3_seg_eval_summary.png" alt="DINOv3 seg eval" />
-            <figcaption>DINOv3 分割 · 评估摘要（20260514）</figcaption>
+            <img src="figures/results/case_boundary_T4_00_2018_DS_Crop_1014985-5.png" alt="胃壁边界 · T4 00 2018 DS Crop 1014985-5" loading="lazy" />
+            <figcaption>胃壁边界 · T4 00 2018 DS Crop 1014985-5</figcaption>
           </figure>
           <figure>
-            <img src="figures/local/local_dinov3_seg_training_curves.png" alt="DINOv3 seg training" />
-            <figcaption>DINOv3 分割 · 训练曲线</figcaption>
+            <img src="figures/results/case_boundary_T4_01_Surgery_2019_1-497-17.png" alt="胃壁边界 · T4 01 Surgery 2019 1-497-17" loading="lazy" />
+            <figcaption>胃壁边界 · T4 01 Surgery 2019 1-497-17</figcaption>
           </figure>
         </div>
-
-        <h3>训练收敛 · 研究总览 · 方向证据</h3>
+        <h3>超声病例 · 四分类 Grad-CAM（正确 / 漏诊 / 误诊）</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T2_Surgery_2025_2M_1465025_4.png" alt="Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1465025 4" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1465025 4</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T2_Surgery_2025_2M_1467633_2.png" alt="Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1467633 2" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1467633 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_correct_Surgery_2025_2M_1466467_1.png" alt="Grad-CAM · T2 correct Surgery 2025 2M 1466467 1" loading="lazy" />
+            <figcaption>Grad-CAM · T2 correct Surgery 2025 2M 1466467 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_correct_Surgery_2025_3M_1476110_3.png" alt="Grad-CAM · T2 correct Surgery 2025 3M 1476110 3" loading="lazy" />
+            <figcaption>Grad-CAM · T2 correct Surgery 2025 3M 1476110 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_correct_Surgery_2025_2M_1458412_3.png" alt="Grad-CAM · T3 correct Surgery 2025 2M 1458412 3" loading="lazy" />
+            <figcaption>Grad-CAM · T3 correct Surgery 2025 2M 1458412 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_correct_Surgery_2025_2M_1459710_4.png" alt="Grad-CAM · T3 correct Surgery 2025 2M 1459710 4" loading="lazy" />
+            <figcaption>Grad-CAM · T3 correct Surgery 2025 2M 1459710 4</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_misclassified_as_T4_Surgery_2025_2M_13609055_1.png" alt="Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 1" loading="lazy" />
+            <figcaption>Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_misclassified_as_T4_Surgery_2025_2M_13609055_4.png" alt="Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 4" loading="lazy" />
+            <figcaption>Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 4</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_correct_Surgery_2025_2M_1273916_10.png" alt="Grad-CAM · T4p correct Surgery 2025 2M 1273916 10" loading="lazy" />
+            <figcaption>Grad-CAM · T4p correct Surgery 2025 2M 1273916 10</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_correct_Surgery_2025_2M_1273916_3.png" alt="Grad-CAM · T4p correct Surgery 2025 2M 1273916 3" loading="lazy" />
+            <figcaption>Grad-CAM · T4p correct Surgery 2025 2M 1273916 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1469901_2.png" alt="Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1469901 2" loading="lazy" />
+            <figcaption>Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1469901 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1475057_14.png" alt="Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1475057 14" loading="lazy" />
+            <figcaption>Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1475057 14</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_gradcam_overview.png" alt="Grad-CAM · overview" loading="lazy" />
+            <figcaption>Grad-CAM · overview</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_pair01_T1_恶性_正确检出.png" alt="Grad-CAM · pair01 T1 恶性 正确检出" loading="lazy" />
+            <figcaption>Grad-CAM · pair01 T1 恶性 正确检出</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_pair02_T1_恶性_正确检出.png" alt="Grad-CAM · pair02 T1 恶性 正确检出" loading="lazy" />
+            <figcaption>Grad-CAM · pair02 T1 恶性 正确检出</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_pair03_T3_恶性_正确检出.png" alt="Grad-CAM · pair03 T3 恶性 正确检出" loading="lazy" />
+            <figcaption>Grad-CAM · pair03 T3 恶性 正确检出</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_pair04_T1_恶性_漏诊_早期.png" alt="Grad-CAM · pair04 T1 恶性 漏诊 早期" loading="lazy" />
+            <figcaption>Grad-CAM · pair04 T1 恶性 漏诊 早期</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_pair05_T1_恶性_漏诊_早期.png" alt="Grad-CAM · pair05 T1 恶性 漏诊 早期" loading="lazy" />
+            <figcaption>Grad-CAM · pair05 T1 恶性 漏诊 早期</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_pair06_良性炎症_正确排除.png" alt="Grad-CAM · pair06 良性炎症 正确排除" loading="lazy" />
+            <figcaption>Grad-CAM · pair06 良性炎症 正确排除</figcaption>
+          </figure>
+        </div>
+        <h3>超声病例 · 外部验证帧级面板（莆田 / 肿瘤 / 多中心）</h3>
         <div class="figure-gallery">
           <figure class="span-2">
-            <img src="figures/local/local_study_overview.png" alt="Study overview" />
-            <figcaption>研究总览示意</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_convergence_loss_auc.png" alt="Convergence" />
-            <figcaption>Loss / AUC 收敛</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_all_models_loss_auc.png" alt="All models convergence" />
-            <figcaption>多模型 Loss-AUC</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_sfig_training_curves.png" alt="Training curves" />
-            <figcaption>补充 · 训练曲线</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/local/local_dinov2_training_curves.png" alt="DINOv2 curves" />
-            <figcaption>DINOv2 训练曲线</figcaption>
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1519_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1519 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1519 T4 pred T4</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/local/local_directional_rose.png" alt="Directional rose" />
-            <figcaption>方向性玫瑰图（T2/T3 边界证据）</figcaption>
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1535_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1535 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1535 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1546_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1546 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1546 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1549_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1549 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1549 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt195_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt195 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt195 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt197_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt197 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt197 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt198_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt198 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt198 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt203_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt203 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt203 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt167_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt167 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt167 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt185_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt185 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt185 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt196_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt196 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt196 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt204_T3_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt204 T3 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt204 T3 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt168_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt168 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt168 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt171_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt171 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt171 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt173_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt173 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt173 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt175_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt175 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt175 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_366138_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 366138 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 366138 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_367743_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 367743 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 367743 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_369695_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 369695 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 369695 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_372308_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 372308 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 372308 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_368837_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 368837 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 368837 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369603_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 369603 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 369603 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369668_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 369668 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 369668 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_370273_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 370273 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 370273 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_366705_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 366705 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 366705 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_367232_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 367232 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 367232 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_369587_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 369587 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 369587 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_370511_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 370511 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 370511 T2 pred T4</figcaption>
+          </figure>
+        </div>
+        <h3>超声病例 · 多模态融合 / VLM 示意</h3>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/results/case_fusion_vlm_comparison.png" alt="case fusion vlm comparison" loading="lazy" />
+            <figcaption>case fusion vlm comparison</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_fusion_vlm_demo.png" alt="case fusion vlm demo" loading="lazy" />
+            <figcaption>case fusion vlm demo</figcaption>
+          </figure>
+        </div>
+        <h3>分割 · ROI · 多中心对比</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/seg_cascade_eval.png" alt="分割 · cascade eval" loading="lazy" />
+            <figcaption>分割 · cascade eval</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_compare_prospective.png" alt="分割 · compare prospective" loading="lazy" />
+            <figcaption>分割 · compare prospective</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_dinov3_evaluation_summary.png" alt="分割 · dinov3 evaluation summary" loading="lazy" />
+            <figcaption>分割 · dinov3 evaluation summary</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_dinov3_training_curves.png" alt="分割 · dinov3 training curves" loading="lazy" />
+            <figcaption>分割 · dinov3 training curves</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_mask_prompt.png" alt="分割 · mask prompt" loading="lazy" />
+            <figcaption>分割 · mask prompt</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/seg_multicenter_comparison.png" alt="分割 · multicenter comparison" loading="lazy" />
+            <figcaption>分割 · multicenter comparison</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_roi_gt_vs_pred.png" alt="分割 · roi gt vs pred" loading="lazy" />
+            <figcaption>分割 · roi gt vs pred</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_eval.png" alt="分割 · sam2 eval" loading="lazy" />
+            <figcaption>分割 · sam2 eval</figcaption>
+          </figure>
+        </div>
+        <h3>汇总指标 · AUC / 混淆矩阵 / ROC / 收敛</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/metric_4class_heatmap_external.png" alt="指标 · 4class heatmap external" loading="lazy" />
+            <figcaption>指标 · 4class heatmap external</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_4class_heatmap_prospective.png" alt="指标 · 4class heatmap prospective" loading="lazy" />
+            <figcaption>指标 · 4class heatmap prospective</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/metric_auc_comparison.png" alt="指标 · auc comparison" loading="lazy" />
+            <figcaption>指标 · auc comparison</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_cm_external.png" alt="指标 · cm external" loading="lazy" />
+            <figcaption>指标 · cm external</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_cm_prospective.png" alt="指标 · cm prospective" loading="lazy" />
+            <figcaption>指标 · cm prospective</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/metric_comprehensive_panel.png" alt="指标 · comprehensive panel" loading="lazy" />
+            <figcaption>指标 · comprehensive panel</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_confusion_dual.png" alt="指标 · confusion dual" loading="lazy" />
+            <figcaption>指标 · confusion dual</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_confusion_matrix.png" alt="指标 · confusion matrix" loading="lazy" />
+            <figcaption>指标 · confusion matrix</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_convergence_loss_auc.png" alt="指标 · convergence loss auc" loading="lazy" />
+            <figcaption>指标 · convergence loss auc</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_cross_domain_roc.png" alt="指标 · cross domain roc" loading="lazy" />
+            <figcaption>指标 · cross domain roc</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_crosshospital_roc.png" alt="指标 · crosshospital roc" loading="lazy" />
+            <figcaption>指标 · crosshospital roc</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_directional_rose.png" alt="指标 · directional rose" loading="lazy" />
+            <figcaption>指标 · directional rose</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_per_class_recall_curves.png" alt="指标 · per class recall curves" loading="lazy" />
+            <figcaption>指标 · per class recall curves</figcaption>
           </figure>
         </div>
       </section>

@@ -1,0 +1,15 @@
+Use case: methodology-infographic
+Asset type: clinical decision flowchart, white background
+Primary request: Flowchart for Case-RAG gate in gastric ultrasound T-staging Agent.
+
+Style: flat vector, white background, purple/blue/amber, landscape 16:9, English labels.
+
+Flow:
+- Input: base T probabilities from ConvNeXt mask4ch
+- Input: FAISS top-k similar cases vote
+- Decision diamond "RAG Gate"
+- Conditions on arrows: mask quality low, entropy high, T2/T3 or T3/T4+ boundary, base-RAG conflict
+- Outputs: rag_weight 0 to 0.35, conflicting_evidence flag, recommended T with uncertainty band
+- Footer: "RAG obeys T staging — does not override benign/malignant"
+
+No logos, no patient photos.

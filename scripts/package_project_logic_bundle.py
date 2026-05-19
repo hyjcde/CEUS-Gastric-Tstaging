@@ -60,13 +60,16 @@ def main() -> int:
         for png in sorted(SOURCE_FIGURES.glob("fig_*.png")):
             shutil.copy2(png, fig_dir / png.name)
             copied_png.append(png.name)
-        local_dir = SOURCE_FIGURES / "local"
-        if local_dir.is_dir():
-            local_out = fig_dir / "local"
-            local_out.mkdir(exist_ok=True)
-            for png in sorted(local_dir.glob("local_*.png")):
-                shutil.copy2(png, local_out / png.name)
-                copied_png.append(f"local/{png.name}")
+        results_dir = SOURCE_FIGURES / "results"
+        if results_dir.is_dir():
+            results_out = fig_dir / "results"
+            results_out.mkdir(exist_ok=True)
+            for png in sorted(results_dir.glob("*.png")):
+                shutil.copy2(png, results_out / png.name)
+                copied_png.append(f"results/{png.name}")
+            manifest = results_dir / "manifest.json"
+            if manifest.is_file():
+                shutil.copy2(manifest, results_out / "manifest.json")
 
     meth_src = MAINLINE / METHODOLOGY_PNG
     if meth_src.is_file():

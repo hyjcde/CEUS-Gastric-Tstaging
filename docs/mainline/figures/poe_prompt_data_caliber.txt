@@ -1,0 +1,16 @@
+Use case: results-infographic
+Asset type: comparison table diagram, white background
+Primary request: Three-column infographic comparing data calibers for gastric T-staging project.
+
+Style: clean medical data viz, white background, 16:9, English headers.
+
+Columns:
+1) manifest physical — 13,515 frames, segmentation ROI
+2) T-staging modeling CSV — 12,851 rows, 2,083 patients, primary endpoint
+3) prospective clinical — 46 patients, 234 frames, frozen validation
+
+Rows: image count, patient count, train policy (Xiehe-only), external 11 centers.
+
+Highlight in amber: "192 external patients still in legacy train — rebuild split"
+
+No hospital logos.

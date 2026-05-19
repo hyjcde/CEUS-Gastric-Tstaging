@@ -1,0 +1,31 @@
+Use case: methodology-infographic
+Asset type: vertical clinical AI pipeline flowchart, white background
+Primary request: A clean top-to-bottom flowchart for gastric ultrasound T-staging Agent tool chain. NOT a single LLM box — show 15 numbered steps in one column with small icons.
+
+Style: flat vector, white background, medical blue/teal, readable English labels, landscape 16:9.
+
+Layout: center column flow, left side "Inputs", right side "Outputs".
+
+Steps in order (numbered badges 1-15):
+1 Case intake
+2 LumenDetectionTool YOLO
+3 SegmentationTool UNet++
+4 WallEvidenceTool lumen SDF
+5 MorphologyTool
+6 ClassificationTool mask4ch clinical22
+7 ClinicalTool
+8 ReportTool
+9 SimilarityTool FAISS
+10 DINO panel
+11 KnowledgeMemory
+12 Evidence fusion v0.3.0
+13 Optional LLM Poe
+14 Report draft
+15 Runtime verification
+
+Left inputs: US frames, ROI, clinical22, report text
+Right outputs: T stage, probabilities, wall heatmap, similar cases, JSON artifacts
+
+Bottom: dashed loop "Clinician review -> memory update"
+
+No photos, no logos, no extra model brands.

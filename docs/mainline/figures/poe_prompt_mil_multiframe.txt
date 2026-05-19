@@ -1,0 +1,12 @@
+Use case: methodology-results
+Asset type: diagram showing multi-frame aggregation
+Primary request: Illustration of patient-level MIL over up to 3 ultrasound frames for T-staging.
+
+Style: scientific figure, white background, 16:9.
+
+Left: 3 US frame thumbnails stacked with frame IDs
+Center: per-frame ConvNeXt outputs (T probabilities)
+Right: mean_probability aggregation arrow to patient-level T3 recommendation
+Bottom note: "max 3 frames in analyze_case frames[]"
+
+English labels. Abstract US texture only. No logos.

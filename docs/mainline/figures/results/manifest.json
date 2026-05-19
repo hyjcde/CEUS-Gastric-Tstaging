@@ -1,0 +1,527 @@
+{
+  "generated_at": "2026-05-19T11:20:49.411805+00:00",
+  "output_dir": "docs/mainline/figures/results",
+  "count": 104,
+  "files": [
+    {
+      "file": "metric_auc_comparison.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/04_classification_heatmap/fig1_auc_comparison.png",
+      "bytes": 282883
+    },
+    {
+      "file": "metric_comprehensive_panel.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/04_classification_heatmap/fig5_panel_comprehensive.png",
+      "bytes": 554128
+    },
+    {
+      "file": "metric_4class_heatmap_external.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/04_classification_heatmap/4class_heatmap_external.png",
+      "bytes": 195100
+    },
+    {
+      "file": "metric_4class_heatmap_prospective.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/04_classification_heatmap/4class_heatmap_prospective.png",
+      "bytes": 198276
+    },
+    {
+      "file": "metric_per_class_recall_curves.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/04_classification_heatmap/per_class_recall_curves.png",
+      "bytes": 801107
+    },
+    {
+      "file": "metric_confusion_matrix.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/fig3_confusion_matrix.png",
+      "bytes": 299443
+    },
+    {
+      "file": "metric_confusion_dual.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/05_confusion_matrix/fig3_confusion_dual_v2.png",
+      "bytes": 299443
+    },
+    {
+      "file": "metric_cm_external.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/05_confusion_matrix/cm_external.png",
+      "bytes": 50874
+    },
+    {
+      "file": "metric_cm_prospective.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/05_confusion_matrix/cm_prospective.png",
+      "bytes": 50892
+    },
+    {
+      "file": "metric_cross_domain_roc.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/fig9_cross_domain_roc.png",
+      "bytes": 56064
+    },
+    {
+      "file": "metric_crosshospital_roc.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/08_binary_roc/crosshospital_roc.png",
+      "bytes": 62605
+    },
+    {
+      "file": "metric_convergence_loss_auc.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/01_convergence/convergence_loss_auc.png",
+      "bytes": 276657
+    },
+    {
+      "file": "metric_directional_rose.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/fig8_directional_rose.png",
+      "bytes": 628096
+    },
+    {
+      "file": "case_pipeline_T1_00_Surgery_2025_Supplement_1500511_10.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T1_00_Surgery_2025_Supplement_1500511 (10).png",
+      "bytes": 1756213
+    },
+    {
+      "file": "case_pipeline_T1_01_Surgery_2025_Supplement_1279829_22.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T1_01_Surgery_2025_Supplement_1279829 (22).png",
+      "bytes": 2142083
+    },
+    {
+      "file": "case_pipeline_T1_02_Surgery_2025_Supplement_1279829_20.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T1_02_Surgery_2025_Supplement_1279829 (20).png",
+      "bytes": 2178996
+    },
+    {
+      "file": "case_pipeline_T2_00_Surgery_2025_Supplement_1502724_3.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T2_00_Surgery_2025_Supplement_1502724 (3).png",
+      "bytes": 1350187
+    },
+    {
+      "file": "case_pipeline_T2_01_Surgery_2025_5M_1490868_4.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T2_01_Surgery_2025_5M_1490868 (4).png",
+      "bytes": 1359731
+    },
+    {
+      "file": "case_pipeline_T2_02_Surgery_2025_Supplement_1499097_8.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T2_02_Surgery_2025_Supplement_1499097 (8).png",
+      "bytes": 1499878
+    },
+    {
+      "file": "case_pipeline_T3_00_Surgery_2025_Supplement_1503242_5.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T3_00_Surgery_2025_Supplement_1503242 (5).png",
+      "bytes": 1427435
+    },
+    {
+      "file": "case_pipeline_T3_01_Surgery_2025_5M_1491853_1.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T3_01_Surgery_2025_5M_1491853 (1).png",
+      "bytes": 1529961
+    },
+    {
+      "file": "case_pipeline_T3_02_Surgery_2025_Supplement_1502881_23.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T3_02_Surgery_2025_Supplement_1502881 (23).png",
+      "bytes": 1589840
+    },
+    {
+      "file": "case_pipeline_T4_00_Surgery_2025_7M_1510817_3.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T4+_00_Surgery_2025_7M_1510817 (3).png",
+      "bytes": 1433226
+    },
+    {
+      "file": "case_pipeline_T4_01_Surgery_2025_3M_1406527_1.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T4+_01_Surgery_2025_3M_1406527 (1).png",
+      "bytes": 1953457
+    },
+    {
+      "file": "case_pipeline_T4_02_Surgery_2025_5M_1495068_4.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/10_pipeline_cases/T4+_02_Surgery_2025_5M_1495068 (4).png",
+      "bytes": 1562831
+    },
+    {
+      "file": "case_boundary_T1_00_pt3-6.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T1_00_pt3-6.png",
+      "bytes": 302608
+    },
+    {
+      "file": "case_boundary_T1_01_Surgery_2024_1398148-1.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T1_01_Surgery_2024_1398148-1.png",
+      "bytes": 1886935
+    },
+    {
+      "file": "case_boundary_T2_00_2018_DS_Crop_1015590-3.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T2_00_2018_DS_Crop_1015590-3.png",
+      "bytes": 1743782
+    },
+    {
+      "file": "case_boundary_T2_01_pt118-1.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T2_01_pt118-1.png",
+      "bytes": 354782
+    },
+    {
+      "file": "case_boundary_T3_00_2018_DS_Crop_1019999-2.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T3_00_2018_DS_Crop_1019999-2.png",
+      "bytes": 1616615
+    },
+    {
+      "file": "case_boundary_T3_01_Surgery_2020_2023_0024261-13.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T3_01_Surgery_2020_2023_0024261-13.png",
+      "bytes": 2205989
+    },
+    {
+      "file": "case_boundary_T4_00_2018_DS_Crop_1014985-5.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T4+_00_2018_DS_Crop_1014985-5.png",
+      "bytes": 1808664
+    },
+    {
+      "file": "case_boundary_T4_01_Surgery_2019_1-497-17.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/07_boundary_morphology/T4+_01_Surgery_2019_1-497-17.png",
+      "bytes": 555018
+    },
+    {
+      "file": "case_gradcam_T1_misclassified_as_T2_Surgery_2025_2M_1465025_4.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T1_misclassified_as_T2/Surgery_2025_2M_1465025 (4).png",
+      "bytes": 579185
+    },
+    {
+      "file": "case_gradcam_T1_misclassified_as_T2_Surgery_2025_2M_1467633_2.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T1_misclassified_as_T2/Surgery_2025_2M_1467633 (2).png",
+      "bytes": 535979
+    },
+    {
+      "file": "case_gradcam_T2_correct_Surgery_2025_2M_1466467_1.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T2_correct/Surgery_2025_2M_1466467 (1).png",
+      "bytes": 568042
+    },
+    {
+      "file": "case_gradcam_T2_correct_Surgery_2025_3M_1476110_3.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T2_correct/Surgery_2025_3M_1476110 (3).png",
+      "bytes": 541742
+    },
+    {
+      "file": "case_gradcam_T3_correct_Surgery_2025_2M_1458412_3.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T3_correct/Surgery_2025_2M_1458412 (3).png",
+      "bytes": 590612
+    },
+    {
+      "file": "case_gradcam_T3_correct_Surgery_2025_2M_1459710_4.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T3_correct/Surgery_2025_2M_1459710 (4).png",
+      "bytes": 448894
+    },
+    {
+      "file": "case_gradcam_T3_misclassified_as_T4_Surgery_2025_2M_13609055_1.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T3_misclassified_as_T4+/Surgery_2025_2M_13609055 (1).png",
+      "bytes": 507193
+    },
+    {
+      "file": "case_gradcam_T3_misclassified_as_T4_Surgery_2025_2M_13609055_4.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T3_misclassified_as_T4+/Surgery_2025_2M_13609055 (4).png",
+      "bytes": 569579
+    },
+    {
+      "file": "case_gradcam_T4p_correct_Surgery_2025_2M_1273916_10.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T4p_correct/Surgery_2025_2M_1273916 (10).png",
+      "bytes": 522205
+    },
+    {
+      "file": "case_gradcam_T4p_correct_Surgery_2025_2M_1273916_3.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T4p_correct/Surgery_2025_2M_1273916 (3).png",
+      "bytes": 556305
+    },
+    {
+      "file": "case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1469901_2.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T4p_misclassified_as_T3/Surgery_2025_3M_1469901 (2).png",
+      "bytes": 490544
+    },
+    {
+      "file": "case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1475057_14.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/T4p_misclassified_as_T3/Surgery_2025_3M_1475057 (14).png",
+      "bytes": 584476
+    },
+    {
+      "file": "case_gradcam_pair01_T1_恶性_正确检出.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/pair01_T1_恶性__正确检出.png",
+      "bytes": 805316
+    },
+    {
+      "file": "case_gradcam_pair02_T1_恶性_正确检出.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/pair02_T1_恶性__正确检出.png",
+      "bytes": 1095028
+    },
+    {
+      "file": "case_gradcam_pair03_T3_恶性_正确检出.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/pair03_T3_恶性__正确检出.png",
+      "bytes": 1138262
+    },
+    {
+      "file": "case_gradcam_pair04_T1_恶性_漏诊_早期.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/pair04_T1_恶性__漏诊（早期）.png",
+      "bytes": 710062
+    },
+    {
+      "file": "case_gradcam_pair05_T1_恶性_漏诊_早期.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/pair05_T1_恶性__漏诊（早期）.png",
+      "bytes": 782966
+    },
+    {
+      "file": "case_gradcam_pair06_良性炎症_正确排除.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/pair06_良性炎症__正确排除.png",
+      "bytes": 884424
+    },
+    {
+      "file": "case_gradcam_overview.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/06_gradcam_4class/00_overview_gradcam.png",
+      "bytes": 1280780
+    },
+    {
+      "file": "case_fusion_vlm_demo.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/14_fusion_vlm/demo_Surgery_2025_7M_1000937 (1).png",
+      "bytes": 814843
+    },
+    {
+      "file": "case_fusion_vlm_comparison.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/14_fusion_vlm/fusion_comparison.png",
+      "bytes": 151004
+    },
+    {
+      "file": "seg_sam2_eval.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/03_segmentation_sam2/sam2_eval_comparison.png",
+      "bytes": 90001
+    },
+    {
+      "file": "seg_cascade_eval.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/03_segmentation_sam2/cascade_eval_comparison.png",
+      "bytes": 101508
+    },
+    {
+      "file": "seg_compare_prospective.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/03_segmentation_sam2/compare_prospective.png",
+      "bytes": 1599847
+    },
+    {
+      "file": "seg_mask_prompt.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/03_segmentation_sam2/mask_prompt_comparison.png",
+      "bytes": 78665
+    },
+    {
+      "file": "seg_roi_gt_vs_pred.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/11_roi_comparison/roi_comparison_gt_vs_predicted.png",
+      "bytes": 75506
+    },
+    {
+      "file": "seg_multicenter_comparison.png",
+      "source": "docs copy/export_text_media_20260408/media_and_large_files/manuscript/figures/fig2_segmentation_comparison.png",
+      "bytes": 1861207
+    },
+    {
+      "file": "seg_dinov3_evaluation_summary.png",
+      "source": "experiments/segmentation/dinov3_vitb16_last2blocks_mlp_refine_boundary005_640_long_20260514_174620/report/evaluation_summary.png",
+      "bytes": 69469
+    },
+    {
+      "file": "seg_dinov3_training_curves.png",
+      "source": "experiments/segmentation/dinov3_vitb16_last2blocks_mlp_refine_boundary005_640_long_20260514_174620/report/training_curves.png",
+      "bytes": 294969
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt195_T1_pred_T1_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/correct_high_conf/pt195_T1_pred_T1_lesion_focus.png",
+      "bytes": 606104
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt197_T1_pred_T1_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/correct_high_conf/pt197_T1_pred_T1_lesion_focus.png",
+      "bytes": 1434290
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt198_T1_pred_T1_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/correct_high_conf/pt198_T1_pred_T1_lesion_focus.png",
+      "bytes": 1827539
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt203_T1_pred_T1_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/correct_high_conf/pt203_T1_pred_T1_lesion_focus.png",
+      "bytes": 1416951
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt167_T4_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/errors_high_conf/pt167_T4+_pred_T3_lesion_focus.png",
+      "bytes": 1671895
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt185_T4_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/errors_high_conf/pt185_T4+_pred_T3_lesion_focus.png",
+      "bytes": 1740686
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt196_T4_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/errors_high_conf/pt196_T4+_pred_T3_lesion_focus.png",
+      "bytes": 1693668
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt204_T3_pred_T1_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/errors_high_conf/pt204_T3_pred_T1_lesion_focus.png",
+      "bytes": 1706299
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt168_T3_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/t2_t3_boundary/pt168_T3_pred_T3_lesion_focus.png",
+      "bytes": 1780527
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt171_T3_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/t2_t3_boundary/pt171_T3_pred_T3_lesion_focus.png",
+      "bytes": 1625012
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt173_T3_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/t2_t3_boundary/pt173_T3_pred_T3_lesion_focus.png",
+      "bytes": 1407048
+    },
+    {
+      "file": "case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt175_T3_pred_T3_lesion_focus.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_putian_2024_lesion_focus_panels/t2_t3_boundary/pt175_T3_pred_T3_lesion_focus.png",
+      "bytes": 1800665
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_366138_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/correct_high_conf/366138_T4+_pred_T4+.png",
+      "bytes": 1151597
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_367743_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/correct_high_conf/367743_T4+_pred_T4+.png",
+      "bytes": 760116
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_369695_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/correct_high_conf/369695_T4+_pred_T4+.png",
+      "bytes": 367084
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_372308_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/correct_high_conf/372308_T4+_pred_T4+.png",
+      "bytes": 713669
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_368837_T2_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/errors_high_conf/368837_T2_pred_T4+.png",
+      "bytes": 385073
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369603_T3_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/errors_high_conf/369603_T3_pred_T4+.png",
+      "bytes": 1012140
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369668_T3_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/errors_high_conf/369668_T3_pred_T4+.png",
+      "bytes": 976601
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_370273_T3_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/errors_high_conf/370273_T3_pred_T4+.png",
+      "bytes": 803643
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_366705_T2_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/t2_t3_boundary/366705_T2_pred_T4+.png",
+      "bytes": 1026355
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_367232_T2_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/t2_t3_boundary/367232_T2_pred_T4+.png",
+      "bytes": 928010
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_369587_T3_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/t2_t3_boundary/369587_T3_pred_T4+.png",
+      "bytes": 653605
+    },
+    {
+      "file": "case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_370511_T2_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_zhongliu_case_panels_v2/t2_t3_boundary/370511_T2_pred_T4+.png",
+      "bytes": 852207
+    },
+    {
+      "file": "case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1519_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_multicenter_case_panels_v2/correct_high_conf/1519_T4+_pred_T4+.png",
+      "bytes": 1081019
+    },
+    {
+      "file": "case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1535_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_multicenter_case_panels_v2/correct_high_conf/1535_T4+_pred_T4+.png",
+      "bytes": 620890
+    },
+    {
+      "file": "case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1546_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_multicenter_case_panels_v2/correct_high_conf/1546_T4+_pred_T4+.png",
+      "bytes": 808624
+    },
+    {
+      "file": "case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1549_T4_pred_T4.png",
+      "source": "pipeline/experiments/reports/framelevel_rf_external_by_source/ext_multicenter_case_panels_v2/correct_high_conf/1549_T4+_pred_T4+.png",
+      "bytes": 744455
+    },
+    {
+      "file": "case_pipeline_dehua_contact_sheet.png",
+      "source": "pipeline/experiments/reports/zip_pipeline_review_gradcam_smoke_20260505/dehua_gradcam_smoke/summary_contact_sheet.png",
+      "bytes": 148945
+    },
+    {
+      "file": "case_pipeline_dehua_overlay_000_dhwa1-1.png",
+      "source": "pipeline/experiments/reports/zip_pipeline_review_gradcam_smoke_20260505/dehua_gradcam_smoke/case_overlays/000_dhwa1-1.png",
+      "bytes": 795850
+    },
+    {
+      "file": "case_pipeline_dehua_overlay_001_dhwa1-2.png",
+      "source": "pipeline/experiments/reports/zip_pipeline_review_gradcam_smoke_20260505/dehua_gradcam_smoke/case_overlays/001_dhwa1-2.png",
+      "bytes": 762366
+    },
+    {
+      "file": "case_agent_1451370_predicted_overlay.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/predicted_overlay.png",
+      "bytes": 3950264
+    },
+    {
+      "file": "case_agent_1451370_predicted_mask.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/predicted_mask.png",
+      "bytes": 10088
+    },
+    {
+      "file": "case_agent_1451370_predicted_roi.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/predicted_roi.png",
+      "bytes": 516964
+    },
+    {
+      "file": "case_agent_1451370_classification_probabilities.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/classification_probabilities.png",
+      "bytes": 20503
+    },
+    {
+      "file": "case_agent_1451370_wall_penetration_risk_heatmap.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/wall_penetration_risk_heatmap.png",
+      "bytes": 3151813
+    },
+    {
+      "file": "case_agent_1451370_wall_layer_profile.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/wall_layer_profile.png",
+      "bytes": 38268
+    },
+    {
+      "file": "case_agent_1451370_real_wall_analysis_panel.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/real_wall_analysis_panel.png",
+      "bytes": 3439386
+    },
+    {
+      "file": "case_agent_1451370_current_image_dino_feature_panel.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/current_image_dino_feature_panel.png",
+      "bytes": 873095
+    },
+    {
+      "file": "case_agent_1451370_dino_region_similarity_heatmap.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/dino_region_similarity_heatmap.png",
+      "bytes": 5277304
+    },
+    {
+      "file": "case_agent_1451370_similar_cases_contact_sheet.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/similar_cases_contact_sheet.png",
+      "bytes": 281560
+    },
+    {
+      "file": "case_agent_1451370_real_dino_multimodal_visual_panel.png",
+      "source": "tmp/agent_predictions/x/1451370_20260519T041253Z/real_dino_multimodal_visual_panel.png",
+      "bytes": 2624755
+    }
+  ]
+}

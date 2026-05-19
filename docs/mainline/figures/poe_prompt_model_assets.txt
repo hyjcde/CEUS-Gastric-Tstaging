@@ -1,0 +1,31 @@
+Use case: methodology-infographic
+Asset type: model asset map for clinical ML system, white background
+Primary request: A grouped model-and-data asset diagram for gastric T-staging research platform (not training cluster architecture).
+
+Style: flat vector, white background, landscape 16:9, four quadrants with clear titles.
+
+Quadrant 1 DATA:
+- Xiehe internal train (7874 rows internal-only manifest)
+- Multi-center external test
+- clinical22 tables
+- predicted lesion masks 4-channel
+
+Quadrant 2 DETECTION SEGMENTATION:
+- YOLO11l Lumen Locator
+- UNet++ ConvNeXt-Base lesion seg PRIMARY
+- DINOv3 seg candidate dashed optional
+
+Quadrant 3 T-STAGING frozen:
+- PRIMARY badge: DualBranch mask4ch clinical22 20260423 prospective AUC 0.7455
+- SECONDARY dashed: region-aware contrastive external only
+- FALLBACK: predROI mask4ch
+
+Quadrant 4 AGENT MEMORY:
+- analyze_case.py
+- FAISS 17-dim case index
+- Session trajectory JSON
+- Next.js Workbench
+
+Arrows from quadrants upward to label "Agent Toolchain"
+
+No invented extra models. English labels only. Clean for journal figure.
