@@ -582,6 +582,21 @@
     }
     .exec-summary p:last-child { margin-bottom: 0; }
     .exec-summary strong { color: var(--text); }
+    .appendix {
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 2px solid var(--border);
+    }
+    .appendix > h2 {
+      font-size: 1.5rem;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+    .appendix section > h2 {
+      font-size: 1.15rem;
+      color: var(--accent);
+      margin: 1.5rem 0 0.75rem;
+    }
   </style>
 </head>
 <body>
@@ -598,10 +613,11 @@
       <a href="#gaps">缺口</a>
       <a href="#arch">系统架构</a>
       <a href="#agent-flow">Agent 流程</a>
-      <a href="#results-figures">结果图专区</a>
-      <a href="#local-results">本地结果图库</a>
       <a href="#methodology-fig">方法学架构图</a>
-      <a href="#figure-gallery">图集 §7.2</a>
+      <hr style="margin:0.75rem 0;border:none;border-top:1px solid var(--border);" />
+      <a href="#appendix-figures" style="color:var(--accent);font-weight:600;">附录 · 结果图库</a>
+      <a href="#results-figures" style="padding-left:1rem;font-size:0.82rem;">↳ Poe 示意图</a>
+      <a href="#local-results" style="padding-left:1rem;font-size:0.82rem;">↳ 病例与指标</a>
       <a href="#rag">Case-RAG</a>
       <a href="#data-stats">主要数据规模</a>
       <a href="#data">数据策略</a>
@@ -691,7 +707,7 @@
           Workbench 可跑通 Agent；患者级 MIL、临床22 对齐、<code>rag_weight</code> 等为 Phase B。
           阶段 A 资产审计已完成（<code>model_asset_audit.md</code>、<code>agent_backend_registry.yaml</code>）；
           阶段 B–C 为 split 重建、对比学习推理接入、门控 Case-RAG 与 M14 后冻结的外部/前瞻主表。
-          下文以 scoreboard 指标图、数据规模（§9）、分类器架构辨析（§4.5）与路线时间表为主；部分 Poe 示意图尚未生成，本页仅嵌入已有 PNG。
+          下文以 scoreboard 指标图、数据规模（§9）、分类器架构辨析（§4.5）与路线时间表为主；大量病例与示意图见文末附录。
         </p>
         <div class="figure-gallery cols-2" style="margin-top:1rem;">
           <figure>
@@ -702,15 +718,1424 @@
             <img src="figures/results/metric_comprehensive_panel.png" alt="Comprehensive results panel" />
             <figcaption>指标 · 冻结线四宫格（AUC / val 训练曲线 / 混淆矩阵）</figcaption>
           </figure>
-          <figure>
-            <img src="figures/fig_results_auc_comparison.png" alt="Poe AUC schematic" />
-            <figcaption>Poe 示意 · 冻结线 KPI（与正文数值一致）</figcaption>
-          </figure>
+        </div>
+        <p class="note" style="margin-top:0.75rem;font-size:0.88rem;">
+          更多方法示意图、病例面板与完整指标图见文末
+          <a href="#appendix-figures">附录 · 结果图库</a>（约 300+ 张，按需浏览）。
+        </p>
+      </section>
+
+
+
+      <!-- §0 Logic -->
+      <section id="logic">
+        <h2><span class="num">§0</span> 逻辑主线</h2>
+        <div class="callout">
+          <strong>当前阶段：</strong>已完成大量单点模型训练（YOLO、分割、ConvNeXt T 分期、DINO、RAG 原型）。
+          <strong>最重要工作</strong>不是再开新 backbone，而是<strong>读懂已有结果 → 选型接入 → 组装可追溯的辅助诊断 Agent → 以 T 分期为主终点做冻结验证</strong>。
+        </div>
+        <div class="pyramid">
+          <div class="layer l4">临床终局 · 术前辅助诊断 Agent（主输出 = T 分期）</div>
+          <div class="arrow">↑</div>
+          <div class="layer l3">证据整合层 · 固定工具链 + 门控 Case-RAG + 医生复核</div>
+          <div class="arrow">↑</div>
+          <div class="layer l2">模型资产层 · YOLO / 分割 / ConvNeXt T / DINO（已训练，待接入）</div>
+          <div class="arrow">↑</div>
+          <div class="layer l1">数据纪律 · 协和单中心 train + 11 家外部冻结验证</div>
         </div>
       </section>
 
-      <section id="results-figures">
-        <h2>结果与方法示意图（Poe · 离线包）</h2>
+      <!-- Priority -->
+      <section id="priority">
+        <h2><span class="num">§1</span> 任务优先级（不可颠倒）</h2>
+        <div class="priority-grid">
+          <div class="prio-card p0">
+            <div class="label">P0</div>
+            <strong>胃癌 T 分期</strong>
+            <span>T1 / T2 / T3 / T4+ · 临床主问题 · 论文主终点 · Agent 主输出</span>
+          </div>
+          <div class="prio-card p1">
+            <div class="label">P1</div>
+            <strong>辅助诊断 Agent</strong>
+            <span>整合分割 / 分类 / 临床 / 报告 / 相似病例 / 指南</span>
+          </div>
+          <div class="prio-card p2">
+            <div class="label">P2</div>
+            <strong>Case-RAG + 门控</strong>
+            <span>T2/T3、T3/T4+ 边界 · 可解释 · 不替代 base T</span>
+          </div>
+          <div class="prio-card p3">
+            <div class="label">P3</div>
+            <strong>良恶性二分类</strong>
+            <span>先做 · 方法试金石 · <em>不是最重要</em></span>
+          </div>
+          <div class="prio-card p4">
+            <div class="label">P4</div>
+            <strong>新 backbone 训练</strong>
+            <span>仅当资产审计证明现有能力不够</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Clinical -->
+      <section id="clinical">
+        <h2><span class="num">§2</span> 临床终局</h2>
+        <div class="two-col">
+          <div class="card">
+            <h3>场景</h3>
+            <table>
+              <tr><th>模态</th><td>经腹胃充盈超声（水充盈），<strong>非 EUS</strong></td></tr>
+              <tr><th>主任务</th><td>术前 T 分期四分类</td></tr>
+              <tr><th>形态</th><td>Agent → 结构化 JSON → 医生工作台</td></tr>
+              <tr><th>定位</th><td>分流与辅助决策；不替代 EUS 的 N/M</td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <h3>为何 T 分期是核心</h3>
+            <ul style="margin-left:1.2rem;color:#475569;font-size:0.9rem;">
+              <li>患者级 pT 标签 + 多帧噪声</li>
+              <li>关键切面不总在每一帧</li>
+              <li>T2/T3、T3/T4+ 是真实瓶颈</li>
+              <li>分割 Dice 高 ≠ 分期正确</li>
+            </ul>
+          </div>
+        </div>
+        <h3>Agent 输出：综合结构化 JSON（非单句结论）</h3>
+        <p>
+          一次「运行 Agent」会依次调用<strong>分割、T 分期分类、形态学、临床风险、报告文本、相似病例、知识库</strong>等工具，
+          并可能调用 <strong>DINO 特征可视化</strong>、<strong>胃壁穿透图</strong>、可选 <strong>LLM 报告润色</strong>。
+          因此返回给前端的是<strong>一整包可追溯证据</strong>，而不只是 <code>recommended_T_stage</code> 一个字段。
+        </p>
+        <p class="note">实现入口：<code>pipeline/agent/product/analyze_case.py</code> → <code>POST /api/agent/analyze</code>（Next.js 转发）。</p>
+
+        <div class="output-layers">
+          <div class="layer-card">
+            <h4>医生可读层（Workbench 主展示）</h4>
+            <ul>
+              <li><code>report</code> — 推荐 T、置信度、支持/不确定理由</li>
+              <li><code>report.dynamic_report_draft</code> — 可复制中文报告草稿</li>
+              <li><code>similar_cases</code> — 相似病例与预览图</li>
+              <li><code>prediction_artifacts.*_url</code> — 分割叠加、T 概率条、DINO、胃壁图</li>
+            </ul>
+          </div>
+          <div class="layer-card">
+            <h4>审计 / 科研层（完整 payload）</h4>
+            <ul>
+              <li><code>tool_evidence</code> — 各工具原始输出</li>
+              <li><code>agent_steps</code> — 逐步推理轨迹（intent / decision / reasoning）</li>
+              <li><code>traces</code> — 工具调用简表</li>
+              <li><code>runtime_verification</code> — 是否真实调用了各模型 API</li>
+              <li><code>trajectory_ref</code> — 落盘 JSON 路径</li>
+            </ul>
+          </div>
+        </div>
+
+        <h4>顶层响应结构（<code>AgentAnalysisResponse</code>）</h4>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>字段</th><th>含义</th><th>主要来源</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>session_id</code> / <code>session_memory</code></td><td>会话与历史分析计数</td><td>SessionMemory</td></tr>
+              <tr><td><code>report</code></td><td><strong>融合后的 T 分期结论 + 证据摘要</strong></td><td>RuleBasedReportBuilder ± LLM</td></tr>
+              <tr><td><code>tool_evidence</code></td><td>五类工具原始结果</td><td>见下表</td></tr>
+              <tr><td><code>similar_cases</code></td><td>top-k 相似病例（FAISS 或 CurrentCaseMemory）</td><td>SimilarityTool</td></tr>
+              <tr><td><code>knowledge_context</code></td><td>项目指南/规则片段</td><td>KnowledgeMemory</td></tr>
+              <tr><td><code>agent_steps</code></td><td>约 10+ 步可审计步骤链</td><td>每步工具调用记录</td></tr>
+              <tr><td><code>prediction_artifacts</code></td><td>预测 mask/ROI/叠加图、概率图、wall/DINO 图 URL</td><td>在线推理 + 脚本可视化</td></tr>
+              <tr><td><code>runtime_verification</code></td><td>分割/分类/记忆/DINO/LLM 是否被调用</td><td>运行时核验</td></tr>
+              <tr><td><code>traces</code></td><td><code>{tool, result}</code> 列表</td><td>调试与复盘</td></tr>
+              <tr><td><code>trajectory_ref</code></td><td>完整结果写入 <code>tmp/agent_trajectories/</code></td><td>可追溯存档</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4><code>tool_evidence</code> 五类工具输出（各含不同字段）</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>键</th><th>工具 / 模型</th><th>典型字段（示例）</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>segmentation</code></td>
+                <td>SegmentationTool（UNet/ConvNeXt）</td>
+                <td><code>available</code>, <code>mask_available</code>, <code>roi_bbox</code>, <code>lesion_area_ratio</code>, <code>roi_source</code></td>
+              </tr>
+              <tr>
+                <td><code>classification</code></td>
+                <td>ClassificationTool · <code>dual_branch</code> 冻结 mask4ch 20260423</td>
+                <td><code>probabilities</code> T1–T4+, <code>top1_stage</code>, <code>experiment_dir</code>；<strong>不含</strong> patch bag / 相似病例 tensor（见 <a href="#classifier-arch">§4.5</a>）</td>
+              </tr>
+              <tr>
+                <td><code>morphology</code></td>
+                <td>MorphologyTool（OpenCV）</td>
+                <td><code>boundary_irregularity</code>, <code>lesion_area_ratio</code>, <code>convexity</code>, <code>valid</code></td>
+              </tr>
+              <tr>
+                <td><code>clinical</code></td>
+                <td>ClinicalTool（规则评分）</td>
+                <td><code>clinical_risk_score</code>, <code>risk_factors</code>, <code>location_calibration</code></td>
+              </tr>
+              <tr>
+                <td><code>report</code></td>
+                <td>ReportTool（文本 cue）</td>
+                <td><code>report_cues</code>, <code>sections_available</code>, <code>uncertainty_flags</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4><code>agent_steps</code> 推理链（当前固定顺序，非黑盒 LLM 自主规划）</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>step_id</th><th>作用</th></tr></thead>
+            <tbody>
+              <tr><td><code>case_intake</code></td><td>病例入参、路径、帧信息</td></tr>
+              <tr><td><code>lesion_localization_segmentation</code></td><td>病灶分割 → mask / ROI</td></tr>
+              <tr><td><code>wall_evidence_visualization</code></td><td>胃壁穿透热图 / 层 profile / 离线脚本图复用</td></tr>
+              <tr><td><code>morphology_evidence</code></td><td>标注 mask 或预测 mask 形态学</td></tr>
+              <tr><td><code>t_stage_classification</code></td><td>T 分期模型推理</td></tr>
+              <tr><td><code>dino_feature_visualization</code></td><td>DINO token 特征图（解释用）</td></tr>
+              <tr><td><code>clinical_context</code></td><td>临床表风险校准</td></tr>
+              <tr><td><code>report_text_cues</code></td><td>术前报告文本线索</td></tr>
+              <tr><td><code>similar_case_retrieval</code></td><td>FAISS / 内存相似病例</td></tr>
+              <tr><td><code>knowledge_context</code></td><td>指南知识检索</td></tr>
+              <tr><td><code>llm_report_synthesis_api</code></td><td>可选 LLM 润色（需 API Key）</td></tr>
+              <tr><td><code>evidence_synthesis</code></td><td>多证据加权 → 最终 <code>report</code></td></tr>
+              <tr><td><code>report_and_memory</code></td><td>动态报告草稿 + memory 候选</td></tr>
+              <tr><td><code>runtime_api_verification</code></td><td>汇总各模型/API 调用证明</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>JSON 示例（点击展开）</h4>
+
+        <details class="output-block" open>
+          <summary>① 临床结论层 <code>report</code>（医生最关心）</summary>
+          <pre class="json">{
+  "schema_version": "0.2.0",
+  "status": "ready",
+  "recommended_t_stage": "T3",
+  "confidence": "medium",
+  "reasoning": "Recommended T3 based on tool evidence, clinical risk, and similar-case distribution.",
+  "supporting_evidence": [
+    "Classifier top-1 T2 (0.36).",
+    "Morphology irregularity 0.52, lesion area ratio 0.11.",
+    "Clinical risk score 0.13.",
+    "Similar cases majority stage T3 from 5 retrieved cases."
+  ],
+  "uncertainty_flags": [
+    "T2/T3 boundary close if top1-top2 margin small",
+    "No structured ultrasound report cues were available."
+  ],
+  "similar_case_summary": {
+    "majority_stage": "T3",
+    "stage_distribution": { "T2": 2, "T3": 3 }
+  },
+  "knowledge_highlights": ["T2/T3 boundary review", "ROI quality checklist"],
+  "tool_status": {
+    "segmentation": "available",
+    "classification": "available",
+    "morphology": "partial",
+    "clinical": "partial",
+    "report": "missing",
+    "memory": "available"
+  },
+  "dynamic_report_draft": {
+    "title": "胃癌超声多模态 Agent 辅助诊断报告草稿",
+    "language": "zh",
+    "sections": [ "病例信息", "影像与分割", "T分期推荐", "相似病例", "不确定性" ],
+    "full_text": "……可复制长文……",
+    "review_required": true
+  },
+  "memory_update_candidates": [ { "record_type": "case_episode", "recommended_t_stage": "T3" } ]
+}</pre>
+        </details>
+
+        <details class="output-block">
+          <summary>② 模型工具原始输出 <code>tool_evidence.classification</code> + <code>segmentation</code></summary>
+          <pre class="json">{
+  "tool_evidence": {
+    "segmentation": {
+      "available": true,
+      "mask_available": true,
+      "roi_bbox": { "x1": 120, "y1": 80, "x2": 480, "y2": 360 },
+      "lesion_area_ratio": 0.09,
+      "roi_source": "predicted_mask"
+    },
+    "classification": {
+      "available": true,
+      "architecture_family": "dual_branch",
+      "inference_inputs": ["global_4ch", "roi", "clinical_or_seg_proxy"],
+      "uses_own_patches": false,
+      "uses_similar_cases_in_forward": false,
+      "experiment_dir": ".../mask4ch_clinical22_full_20260423_092301",
+      "probabilities": { "T1": 0.08, "T2": 0.36, "T3": 0.38, "T4+": 0.18 },
+      "top1_stage": "T2",
+      "top1_prob": 0.36,
+      "uncertainty": 0.72,
+      "runtime_invocation": { "api_kind": "torch_checkpoint", "called": true }
+    },
+    "morphology": { "valid": true, "boundary_irregularity": 0.52, "lesion_area_ratio": 0.11 },
+    "clinical": { "clinical_risk_score": 0.13, "factors_available": true },
+    "report": { "available": false, "report_cues": [] }
+  }
+}</pre>
+        </details>
+
+        <details class="output-block">
+          <summary>③ 可视化产物 <code>prediction_artifacts</code>（前端图像区）</summary>
+          <pre class="json">{
+  "prediction_artifacts": {
+    "predicted_mask_url": "/api/agent/artifacts/.../predicted_mask.png",
+    "predicted_overlay_url": "/api/agent/artifacts/.../predicted_overlay.png",
+    "predicted_roi_url": "/api/agent/artifacts/.../predicted_roi.png",
+    "classification_probabilities_url": "/api/agent/artifacts/.../classification_probabilities.png",
+    "wall_penetration_heatmap_url": "/api/agent/artifacts/.../wall_penetration_risk_heatmap.png",
+    "wall_layer_profile_url": "/api/agent/artifacts/.../wall_layer_profile.png",
+    "real_wall_analysis_panel_url": "/api/agent/artifacts/.../real_wall_analysis_panel.png",
+    "current_image_dino_feature_panel_url": "/api/agent/artifacts/.../current_image_dino_feature_panel.png",
+    "dino_similarity_heatmap_url": "/api/agent/artifacts/.../dino_region_similarity_heatmap.png",
+    "similar_cases_contact_sheet_url": "/api/agent/artifacts/.../similar_cases_contact_sheet.png"
+  }
+}</pre>
+        </details>
+
+        <details class="output-block">
+          <summary>④ 单步推理记录 <code>agent_steps[]</code>（可审计）</summary>
+          <pre class="json">{
+  "agent_steps": [
+    {
+      "order": 6,
+      "step_id": "t_stage_classification",
+      "title": "T 分期分类工具调用",
+      "intent": "Run the deployed T-staging checkpoint on the current frame.",
+      "decision": "call",
+      "tool_name": "ClassificationTool",
+      "status": "completed",
+      "inputs": { "image_path": "...", "mask_source": "segmentation_prediction" },
+      "outputs": { "top1_stage": "T2", "probabilities": { "T1": 0.08, "T2": 0.36, "T3": 0.38, "T4+": 0.18 } },
+      "reasoning": "The classifier provides the primary T-stage prior before similar-case voting.",
+      "visual_refs": { "classification_probabilities_url": "/api/agent/artifacts/.../classification_probabilities.png" }
+    }
+  ]
+}</pre>
+        </details>
+
+        <details class="output-block">
+          <summary>⑤ 相似病例 + 知识库 + 运行时核验</summary>
+          <pre class="json">{
+  "similar_cases": [
+    {
+      "patient_id": "de-identified",
+      "T_stage": "T3",
+      "similarity": 0.82,
+      "preview_image_url": "/api/agent/artifacts/.../similar_case_1_preview.png"
+    }
+  ],
+  "knowledge_context": [
+    { "title": "T2/T3 boundary review", "snippet": "..." }
+  ],
+  "runtime_verification": {
+    "all_core_models_called": true,
+    "llm_api_called": false,
+    "invocations": [
+      { "component": "segmentation", "called": true },
+      { "component": "classification", "called": true },
+      { "component": "similar_case_retrieval", "called": true }
+    ]
+  },
+  "trajectory_ref": { "path": "tmp/agent_trajectories/&lt;session&gt;/&lt;patient&gt;_&lt;ts&gt;.json" }
+}</pre>
+        </details>
+
+        <div class="callout" style="border-color: var(--p0); background: rgba(245,158,11,0.08);">
+          <strong>分类器 ≠ 整包 Agent：</strong>
+          <code>classify</code> 工具当前为 <strong>Global(4ch)+ROI+clinical</strong> 双分支；
+          <strong>本例 direction/arcband patch</strong> 仅在 region-aware <em>训练</em> 中做 SupCon，默认 eval 不进 logits；
+          <strong>相似病例</strong> 在 <code>similar_case_retrieval</code> + 规则融合，不进分类网络 forward。
+          详见 <a href="#classifier-arch" style="color:var(--accent)">§4.5 分类器架构</a> ·
+          <code>tstaging_classifier_architecture_zh.md</code>
+        </div>
+        <div class="callout" style="border-color: var(--accent); background: rgba(61,184,201,0.08);">
+          <strong>目标态（科研计划，尚未完全落地）：</strong>
+          在现有丰富输出之上，再显式增加
+          <code>conflicting_evidence</code>、
+          <code>T_probabilities</code> 与 <code>rag_weight</code> 字段、
+          患者级多帧 MIL 聚合结果、
+          以及 Case-RAG 相似度分解（lesion / wall-band / breakthrough）。
+          当前 <code>report</code> 以规则融合为主，相似病例通过固定权重参与打分，而非独立 RAGGate 模块。
+        </div>
+      </section>
+
+      <!-- Phase -->
+      <section id="phase">
+        <h2><span class="num">§3</span> 阶段判断：模型竞赛 → 系统整合</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart LR
+  subgraph past["已完成 · 大量实验"]
+    A[YOLO 胃腔]
+    B[nnU-Net / DINO 分割]
+    C[ConvNeXt T 分期]
+    D[DINO / RAG 原型]
+  end
+  subgraph now["当前主线"]
+    E[资产审计选型]
+    F[Agent 接入 T backend]
+    G[门控 Case-RAG]
+    H[冻结验证论文]
+  end
+  subgraph later["有条件再做"]
+    I[新 backbone]
+    J[良恶性边缘监督迁移 T]
+  end
+  past --> now
+  now -.-> later
+          </pre>
+        </div>
+      </section>
+
+      <!-- Assets -->
+      <section id="assets">
+        <h2><span class="num">§4</span> 已有模型资产（少训、多选）</h2>
+
+        <h3>A · 感知与定位（Stage 1）</h3>
+        <table>
+          <thead>
+            <tr><th>能力</th><th>代表资产</th><th>Agent 用途</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>胃腔检测</td><td>YOLO11、lumen detector</td><td>胃壁搜索范围、wall-band 坐标</td></tr>
+            <tr><td>病灶分割</td><td>nnU-Net holdout、UNet++</td><td>mask、ROI、crop_roi</td></tr>
+            <tr><td>DINO 分割</td><td>dinov3_*、segdino last2blocks</td><td>候选 mask、区域 token、RAG</td></tr>
+            <tr><td>Wall-band</td><td>region contrastive、box-guided wall</td><td>T2/T3 边界证据</td></tr>
+          </tbody>
+        </table>
+
+        <h3>B · T 分期分类（Stage 2 — 核心）</h3>
+        <p>登记：<code>pipeline/experiments/tables/tstaging_4class_mainline_scoreboard.csv</code></p>
+        <table>
+          <thead>
+            <tr><th>路线</th><th>External AUC</th><th>Prospective AUC</th><th>备注</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Full Image + ROI + Clinical(22D)</td><td><strong>0.7276</strong></td><td>0.6968</td><td>长期 primary baseline</td></tr>
+            <tr><td>Predicted Mask(4ch) + Clinical</td><td>0.7326</td><td><strong>0.7455</strong></td><td>structure promoted</td></tr>
+            <tr><td>Predicted ROI + Mask + Clinical</td><td>0.7438</td><td>0.6683</td><td>部署 realism 参考</td></tr>
+            <tr><td>Breakthrough / region-aware + Clinical</td><td><strong>0.7480</strong></td><td>0.6857</td><td>contrastive_dual · patch 训练 SupCon · 辅助证据</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="classifier-arch">§4.5 · T 分类器架构（当前 vs 目标）</h3>
+        <p class="note">专文：<code>docs/mainline/tstaging_classifier_architecture_zh.md</code> · 注册表：<code>pipeline/agent/config/agent_backend_registry.yaml</code></p>
+
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TB
+  subgraph L3["L3 Agent 融合层"]
+    R[report 规则融合]
+    SC[similar_cases FAISS 17维]
+    R --> OUT[recommended_t_stage]
+    SC --> R
+  end
+  subgraph L2["L2 工具并列调用"]
+    CT[ClassificationTool]
+    ST[SegmentationTool]
+    SIM[SimilarityTool]
+  end
+  subgraph L1["L1 checkpoint"]
+    DB["dual_branch mask4ch 20260423 ★ Agent primary"]
+    CD["contrastive_dual region-aware 20260426"]
+    WE["GastricWallEvidenceNet 待接"]
+  end
+  ST -->|mask 4th ch| CT
+  DB --> CT
+  CD -.->|Phase B 辅助| CT
+  CT -->|base_T_probs| R
+  SIM --> SC
+          </pre>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption>推理时各路线实际吃进网络的输入（非训练宣传口径）</caption>
+            <thead>
+              <tr>
+                <th>路线</th>
+                <th>模型族</th>
+                <th>Global</th>
+                <th>ROI</th>
+                <th>本例 patch</th>
+                <th>相似病例</th>
+                <th>cls 头规模</th>
+                <th>Agent</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>mask4ch 冻结线</strong></td>
+                <td><code>dual_branch</code></td>
+                <td>4ch + mask</td>
+                <td>✓</td>
+                <td class="status-miss">✗</td>
+                <td class="status-miss">✗（融合层）</td>
+                <td>256→4 MLP</td>
+                <td class="status-ok"><strong>primary</strong></td>
+              </tr>
+              <tr>
+                <td>region-aware</td>
+                <td><code>contrastive_dual</code></td>
+                <td>✓</td>
+                <td>✓</td>
+                <td class="status-partial">训练 SupCon；<strong>默认 eval 不进 logits</strong></td>
+                <td class="status-miss">✗</td>
+                <td>256→4</td>
+                <td>external 辅助 · 待适配器</td>
+              </tr>
+              <tr>
+                <td>wall-evidence</td>
+                <td><code>GastricWallEvidenceNet</code></td>
+                <td>✓</td>
+                <td>✓</td>
+                <td class="status-ok">推理可进 wall token</td>
+                <td class="status-miss">✗</td>
+                <td>256→4</td>
+                <td>未接产品</td>
+              </tr>
+              <tr>
+                <td>Case-RAG / SimilarityTool</td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td class="status-ok">top-k 投票 · 固定权重 ~0.35</td>
+                <td>—</td>
+                <td>与 classify <strong>并列</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <strong>设计原则（与「分类头加大」相反）：</strong>
+          参数量主要在 ConvNeXt-Base + Small；<code>ClassificationHead</code> 仅 <code>fused_dim→256→4</code>。
+          优先把 <strong>本例 patch / 胃壁证据</strong> 放进融合层（或接 WallEvidenceNet），
+          相似病例放在 <strong>门控融合</strong>（<code>rag_weight</code>），而非 end-to-end 把邻居特征 concat 进 cls_head。
+        </div>
+
+        <h3>C · DINO 与 RAG · D · Agent 产品</h3>
+        <table>
+          <thead><tr><th>类型</th><th>路径</th></tr></thead>
+          <tbody>
+            <tr><td>DINO 特征</td><td>pipeline/experiments/reports/dinov3_*</td></tr>
+            <tr><td>Case-RAG 训练</td><td>scripts/train_learned_dino_case_rag.py</td></tr>
+            <tr><td>科学基准 M0–M5 / R0–R5</td><td>.../gastric_us_agent_scientific_benchmark/</td></tr>
+            <tr><td>前端 + Agent</td><td>apps/gastric_scan_next · pipeline/agent/product/analyze_case.py</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Gaps -->
+      <section id="gaps">
+        <h2><span class="num">§5</span> 当前缺口（整合层）</h2>
+        <p>下列内容对照<strong>仓库当前实现</strong>（非目标 PPT）。实验侧已有大量 checkpoint；产品侧 Agent 仍处在「能跑通演示」与「论文级 T 主线闭环」之间。</p>
+
+        <div class="table-wrap">
+          <table class="gap-matrix">
+            <caption>缺口总览：现状 → 目标 → 阶段</caption>
+            <thead>
+              <tr>
+                <th>缺口</th>
+                <th>仓库现状</th>
+                <th>目标态</th>
+                <th>阶段</th>
+                <th>关键路径</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>① 资产审计</td>
+                <td class="status-ok">✅ <code>model_asset_audit.md</code> + <code>agent_backend_registry.yaml</code></td>
+                <td>锁定 T / seg / YOLO；架构专文已写</td>
+                <td>A 完成</td>
+                <td><a href="#classifier-arch">§4.5</a> · <code>tstaging_classifier_architecture_zh.md</code></td>
+              </tr>
+              <tr>
+                <td>② T backend</td>
+                <td class="status-partial">已接冻结 mask4ch <strong>20260423</strong>；region-aware 仅登记为 external 辅助；<strong>推理无 patch / 无相似病例进 forward</strong></td>
+                <td>ContrastiveTStagingTool + 可选 patch@inference；临床 22D 对齐</td>
+                <td>B</td>
+                <td><code>classification_tool.py</code> · <code>contrastive_models.py</code></td>
+              </tr>
+              <tr>
+                <td>③ Case 检索</td>
+                <td class="status-miss">FAISS 17 维概率+形态+临床；DINO 仅可视化</td>
+                <td>区域 DINO + T-aware retriever + RAGGate</td>
+                <td>B–C</td>
+                <td><code>feature_extractor.py</code> · <code>train_learned_dino_case_rag.py</code></td>
+              </tr>
+              <tr>
+                <td>④ Split</td>
+                <td class="status-miss">train 含 192 外部患者 / 1,158 行</td>
+                <td>协和-only train + 冻结 external</td>
+                <td>B（阻塞）</td>
+                <td><code>regions/train_clinical.csv</code> · 待建 <code>splits/xiehe_single_center_v1/</code></td>
+              </tr>
+              <tr>
+                <td>⑤ 患者级</td>
+                <td class="status-partial">单次 analyze 多为<strong>单帧</strong>；MIL 在实验报告未入主链</td>
+                <td>多帧 MIL + 关键帧权重写进 Agent</td>
+                <td>B</td>
+                <td><code>evidence_hub.py</code> · <code>patient_mil_*</code> 实验</td>
+              </tr>
+              <tr>
+                <td>⑥ 证据融合</td>
+                <td class="status-partial">规则加权融合；无 rag_weight / conflict 结构化</td>
+                <td>统一 schema + 门控 + 与前端契约一致</td>
+                <td>B</td>
+                <td><code>_build_rule_based_report</code> · <code>AGENT_FRONTEND_REPORT_SCHEMA.json</code></td>
+              </tr>
+              <tr>
+                <td>⑦ 工具链缺口</td>
+                <td class="status-miss">无 LumenDetectionTool；wall 为离线图复用/代理</td>
+                <td>YOLO 胃腔 + wall-band 在线证据</td>
+                <td>B+</td>
+                <td>YOLO baseline · <code>region_contrastive</code> manifest</td>
+              </tr>
+              <tr>
+                <td>⑧ 前端一致</td>
+                <td class="status-partial">Workbench 可跑 Agent；列表仍有 classifier placeholder</td>
+                <td>列表与 analyze 输出同一 T backend</td>
+                <td>B</td>
+                <td><code>AgentWorkbenchPanel.tsx</code> · <code>DiagnosisPanel.tsx</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>缺口详解（按优先级）</h3>
+
+        <div class="gap-card">
+          <h4>① 资产审计与 Agent backend 注册 <span class="prio">P0 · 阶段 A</span> <span class="status-ok">已完成</span></h4>
+          <p><strong>已交付：</strong></p>
+          <ul>
+            <li><code>docs/mainline/model_asset_audit.md</code> · <code>agent_backend_registry.yaml</code></li>
+            <li><code>docs/mainline/tstaging_classifier_architecture_zh.md</code> — 分类器 vs patch vs 相似病例</li>
+            <li>选型：最终 T = <strong>mask4ch 20260423</strong>；region-aware = external 辅助（待适配器）</li>
+          </ul>
+        </div>
+
+        <div class="gap-card">
+          <h4>② T 分期 backend 与架构对齐 <span class="prio">P0 · 阶段 B</span></h4>
+          <p><strong>现状（代码）：</strong></p>
+          <ul>
+            <li><code>ClassificationTool</code> → <code>DualBranchClassifier</code>，默认 <code>mask4ch_clinical22_full_20260423_092301</code></li>
+            <li>推理：<strong>Global(4ch)+ROI+clinical</strong>；不含本例 patch、不含相似病例进 forward（见 <a href="#classifier-arch">§4.5</a>）</li>
+            <li><code>contrastive_dual</code>：patch 训练 SupCon；默认 eval 丢弃 patch</li>
+            <li>相似病例：FAISS 17 维 → 规则融合 ~0.35 权重，非分类网络输入</li>
+            <li>临床 9 维 seg 代理 vs 训练 clinical22 仍有 gap</li>
+          </ul>
+          <p><strong>目标：</strong><code>ContrastiveTStagingTool</code> / WallEvidenceNet；轻量 cls_head；<code>architecture_family</code> 写入 tool_evidence。</p>
+        </div>
+
+        <div class="gap-card">
+          <h4>③ Case 检索与 DINO 表征 <span class="prio">P1 · 阶段 B–C</span></h4>
+          <p><strong>现状：</strong></p>
+          <ul>
+            <li><code>extract_patient_vector</code> 固定 <strong>17 维</strong>：T 概率(4) + 形态(5) + 临床(8) — 见 <code>feature_extractor.py</code></li>
+            <li><code>SimilarityTool</code> → FAISS <code>pipeline/agent/memory/index/case_index.faiss</code>（约 1441 例 metadata）；无 DINO 子空间</li>
+            <li><code>analyze_case</code> 会调 DINO 脚本做<strong>当前帧特征图可视化</strong>（<code>generate_external_source_dino_token_panels.py</code>），但<strong>不参与</strong>检索向量</li>
+            <li>科研侧已有：<code>scripts/train_learned_dino_case_rag.py</code>、benchmark 中 R2/R5；与产品 Agent 未统一</li>
+            <li>目标设计（科研计划）：adapter-DINO 多区域 embedding + boundary hard negative + <code>rag_weight</code> 门控 — <strong>未实现 RAGGate 模块</strong></li>
+          </ul>
+          <p><strong>目标：</strong>检索向量含 wall-band / breakthrough；top-k entropy 驱动是否改 T；与 base T 冲突时写入 <code>conflicting_evidence</code> 而非硬改分期。</p>
+        </div>
+
+        <div class="gap-card">
+          <h4>④ 数据 Split 纪律 <span class="prio">P0 · 阻塞验证</span></h4>
+          <p><strong>现状（建模 CSV）：</strong></p>
+          <ul>
+            <li><code>train_clinical.csv</code>：<strong>8,783 行 / 1,405 患者</strong>，其中约 <strong>192 患者 / 1,158 行</strong> 来自外部 source</li>
+            <li>主要泄漏 source：<code>ext/putian</code>（128 患者）、<code>ext/putian_2024_new</code>（27）、<code>ext/multicenter</code>（37）</li>
+            <li>与顶刊叙事冲突：「协和单中心训练 + 外部冻结验证」— 当前 train 已见过莆田等分布</li>
+            <li>RAG memory / 未来 SSL 若基于现有 train，会进一步污染外部独立性</li>
+          </ul>
+          <p><strong>目标：</strong><code>pipeline/data/splits/xiehe_single_center_v1/</code> + <code>split_audit.md</code>；memory 仅 2018–2022 协和；M14 后禁止用外部调参。</p>
+        </div>
+
+        <div class="gap-card">
+          <h4>⑤ 患者级多帧 MIL <span class="prio">P1 · 阶段 B</span></h4>
+          <p><strong>现状：</strong></p>
+          <ul>
+            <li>数据层：同一 <code>patient_id</code> 常有多帧（建模 CSV 有 1,093 行重复图像视图），病理 pT 为患者级</li>
+            <li><code>analyze_case.py</code>：前端 payload 虽有 <code>frame_count</code>，主路径对<strong>单张</strong> <code>image_path</code> 跑分割+分类+相似病例</li>
+            <li><code>EvidenceHub</code>（<code>evidence_hub.py</code>）：支持多帧质量加权、帧间一致性 — 主要用于 <code>run_agent_eval.py</code> / ReAct 评估，<strong>未作为 analyze_case 主入口</strong></li>
+            <li>实验：<code>patient_mil_image_dino_fusion</code> 报告前瞻泛化差；<code>dinov3_framelevel_scalar_*</code> 有帧级训练+患者聚合 — <strong>未固化进 Agent</strong></li>
+          </ul>
+          <p><strong>目标：</strong>关键帧选择（最深侵犯）+ 患者级 T 概率；与 T 分期训练时的 MIL 策略与 Agent 推理一致。</p>
+        </div>
+
+        <div class="gap-card">
+          <h4>⑥ 证据 Schema 与融合逻辑 <span class="prio">P1 · 阶段 B</span></h4>
+          <p><strong>现状：</strong></p>
+          <ul>
+            <li>产品入口：<code>_build_rule_based_report</code>（<code>analyze_case.py</code>）— 非独立 <code>EvidenceSynthesizer</code> 类；<code>schema_version: 0.2.0</code></li>
+            <li>融合方式：分类概率 + 形态/临床/报告启发式加分 + 相似病例固定权重 <strong>0.35×占比</strong> — <strong>无</strong>可学习的 <code>rag_weight</code></li>
+            <li>输出字段：<code>supporting_evidence</code>、<code>uncertainty_flags</code>；<strong>无</strong>结构化 <code>conflicting_evidence</code>（ReAct/<code>EvidenceHub</code> 路径有）</li>
+            <li>评估契约：<code>docs copy/technical/AGENT_FRONTEND_REPORT_SCHEMA.json</code> 与 analyze 返回 JSON <strong>字段未完全对齐</strong></li>
+            <li>前端 <code>patient.agent_report</code> 仍可能显示「Dual-branch classifier not connected」— 与真实 Agent 结果易混淆</li>
+          </ul>
+          <p><strong>目标：</strong>统一 <code>ToolOutput → EvidenceBundle → PatientTReport</code>；实现科研计划中的 <code>final_T = base×(1-w) + rag×w</code>；冲突/抑制子组可评估。</p>
+        </div>
+
+        <div class="gap-card">
+          <h4>⑦ Stage-1 工具链未闭环 <span class="prio">P2 · 阶段 B+</span></h4>
+          <p><strong>现状：</strong></p>
+          <ul>
+            <li><code>SegmentationTool</code>：ConvNeXt-UNet fulldata / strict fallback — 可用，Dice 与中心相关</li>
+            <li><strong>无</strong>独立 <code>LumenDetectionTool</code>（YOLO 在 <code>experiments/baselines/detection_baseline_v1/</code>，未进 Agent registry）</li>
+            <li>Wall 证据：优先复用离线脚本 PNG（<code>wall_penetration_analysis/per_sample</code>），否则 live proxy 热图 — <strong>不是</strong>在线 wall-band 特征张量</li>
+            <li>region contrastive / breakthrough 特征已在训练 CSV（<code>region_contrastive_full</code>），Agent 未读 region patch 或 boundary head</li>
+          </ul>
+        </div>
+
+        <div class="gap-card">
+          <h4>⑧ 闭环关系（为何先 A 后 B）</h4>
+          <div class="mermaid-wrap">
+            <pre class="mermaid">
+flowchart LR
+  A[① 资产审计\n定 T/seg checkpoint] --> B[④ Split 重建]
+  B --> C[② 接 ClassificationTool]
+  C --> D[⑥ 证据 schema + ⑤ MIL]
+  D --> E[③ DINO RAG + RAGGate]
+  E --> F[⑧ 前端对齐\n冻结验证]
+            </pre>
+          </div>
+          <p class="note">不做 ① 直接改 ②，容易再次接错 checkpoint；不做 ④ 就训 RAG/报外部 AUC，审稿风险高。</p>
+        </div>
+      </section>
+
+      <!-- Architecture -->
+      <section id="arch">
+        <h2><span class="num">§6</span> 三层系统架构</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TB
+  subgraph L1["L1 数据层"]
+    D1[协和 train / 多中心 external]
+    D2[manifest · clinical22 · splits]
+  end
+  subgraph L2["L2 模型资产层 · 少训多选"]
+    S1[YOLO 胃腔]
+    S2[nnU-Net / DINO 分割]
+    S3["ConvNeXt T 分期 ★"]
+    S4[DINO 区域向量]
+  end
+  subgraph L3["L3 辅助诊断 Agent"]
+    T1[工具链 + 证据融合]
+    T2[T-centric Case-RAG]
+    T3[Next.js 工作台]
+  end
+  L1 --> L2 --> L3
+  L3 --> O1["主输出: T 分期 + 证据 + 不确定性"]
+  L3 --> O2["次输出: 质控 / 良恶性提示 / 报告"]
+          </pre>
+        </div>
+      </section>
+
+      <!-- Agent flow -->
+      <section id="agent-flow">
+        <h2><span class="num">§7</span> Agent 端到端流程</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+sequenceDiagram
+  participant Doc as 医生
+  participant UI as Next.js 工作站
+  participant API as /api/agent/analyze
+  participant Py as analyze_case.py
+  participant Tools as 工具链
+  Doc->>UI: 选择病例 · 运行 Agent
+  UI->>API: POST 病例 payload
+  API->>Py: stdin JSON
+  Py->>Tools: 胃腔YOLO→分割→壁层SDF→形态→T分类(mask4ch+clinical22)→临床→报告→相似病例(RAG门控)→知识库
+  Tools-->>Py: 结构化证据
+  Py-->>API: stdout JSON
+  API-->>UI: T 分期 · 支持/冲突 · 相似病例
+  Doc->>UI: 复核 · 确认/修改/驳回
+          </pre>
+        </div>
+
+        <h3>工具链顺序（T 权重最高）</h3>
+        <div class="pipeline">
+          <span class="step">1. YOLO 胃腔</span><span class="arr">→</span>
+          <span class="step">2. 分割 mask/ROI</span><span class="arr">→</span>
+          <span class="step">3. Wall-band</span><span class="arr">→</span>
+          <span class="step">4. DINO 区域（可选）</span><span class="arr">→</span>
+          <span class="step">5. 多帧 MIL</span><span class="arr">→</span>
+          <span class="step star">6. T 分期分类 ★</span><span class="arr">→</span>
+          <span class="step">7. 临床 / 报告</span><span class="arr">→</span>
+          <span class="step star">8. Case-RAG + Gate ★</span><span class="arr">→</span>
+          <span class="step">9. 证据合成</span><span class="arr">→</span>
+          <span class="step">10. Memory / 轨迹</span>
+        </div>
+
+        <h3 id="methodology-fig">§7.1 · 方法学架构图（Poe GPT-Image-2）</h3>
+        <div class="card">
+          <p style="margin:0 0 0.75rem;font-size:0.92rem;">
+            细粒度方法学总图（五泳道：UI → API → analyze_case 15 步 → 证据融合 v0.3.0 → 冻结模型资产）由
+            <code>python scripts/generate_agent_figures_poe_batch.py</code>（Chat API + GPT-Image-2）批量生成。
+            规范见 <a href="gastric_us_agent_methodology_architecture_spec_zh.md" style="color:var(--accent)">methodology_architecture_spec_zh.md</a>。
+          </p>
+          <figure class="fig-standalone">
+            <img
+              src="gastric_us_agent_methodology_architecture_poe.png"
+              alt="Gastric US T-staging Agent methodology architecture"
+            />
+            <figcaption class="note">
+              <code>docs/mainline/gastric_us_agent_methodology_architecture_poe.png</code>
+            </figcaption>
+          </figure>
+        </div>
+
+        <h3 id="figure-gallery">§7.2 · 方法学与结果图集</h3>
+        <p class="note" style="font-size:0.9rem;margin:0 0 1rem;">
+          Poe 方法示意图、Workbench 示意与全部病例/指标图已移至文末
+          <a href="#appendix-figures">附录 · 结果图库</a>，正文仅保留 §7.1 方法学总图。
+        </p>
+
+        <div class="card highlight">
+          <h3>融合公式（T 为中心）</h3>
+          <p style="font-family:monospace;color:var(--accent2);margin:0;">
+            final_T_probs = base_T_probs × (1 − rag_weight) + case_vote_T_probs × rag_weight
+          </p>
+          <p style="margin:0.5rem 0 0;font-size:0.88rem;">
+            base 来自 ConvNeXt T 主线 · rag_weight 由 mask 质量、检索 entropy、T2/T3 边界、base-RAG 冲突决定 · 良恶性不覆盖 T 主结论
+          </p>
+        </div>
+      </section>
+
+      <!-- RAG -->
+      <section id="rag">
+        <h2><span class="num">§8</span> Case-RAG（服从 T，不喧宾夺主）</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart LR
+  Q[当前病例] --> E[多区域 embedding]
+  E --> M[(Memory · 仅协和 train)]
+  M --> K[top-k 相似 T 病例]
+  K --> V[case vote · entropy · 冲突检测]
+  B[base T 模型] --> G{RAG Gate}
+  V --> G
+  G -->|低权重/冲突| OUT[推荐 T + 不确定性]
+  G -->|边界模糊| OUT
+          </pre>
+        </div>
+        <table>
+          <tr><th>检索向量</th><td>lesion · wall-band · breakthrough · intact control · 差分特征</td></tr>
+          <tr><th>Hard negative</th><td>T2↔T3 · T3↔T4+ · 假突破 · 外观相似分期不同</td></tr>
+          <tr><th>门控规则</th><td>mask 差 → 只展示 · entropy 高 → 不改 T · 冲突 → 记冲突证据</td></tr>
+        </table>
+        <figure style="margin:1.25rem 0;text-align:center;">
+          <img src="figures/fig_rag_gate_flow.png" alt="RAG gate flowchart" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
+          <figcaption class="note">Case-RAG 门控示意 · <code>figures/fig_rag_gate_flow.png</code></figcaption>
+        </figure>
+      </section>
+
+      <!-- Data volumes -->
+      <section id="data-stats">
+        <h2><span class="num">§9</span> 主要数据与规模</h2>
+        <p>下列表格来自 <code>dataset/DATASET_GUIDE.md</code>（复核 2026-05-05）。做实验前务必分清 <strong>manifest 物理口径</strong> 与 <strong>T 分期建模 CSV 口径</strong>，二者不可混用。</p>
+
+        <div class="sub-nav">
+          <a href="#data-caliber">多口径总览</a>
+          <a href="#data-manifest">manifest 物理</a>
+          <a href="#data-centers">多中心清单</a>
+          <a href="#data-internal-year">协和按年</a>
+          <a href="#data-split">建模 split</a>
+          <a href="#data-source">按 source</a>
+          <a href="#data-tier">验证分层</a>
+          <a href="#data-aux">辅助任务数据</a>
+          <a href="#data-issues">待迁移问题</a>
+        </div>
+
+        <h3 id="data-caliber">9.1 多口径总览（最易混用）</h3>
+
+        <div class="table-wrap">
+          <table>
+            <caption>不同口径服务不同任务；写论文 Methods 时必须写明用的是哪一种</caption>
+            <thead>
+              <tr>
+                <th>口径</th>
+                <th>数据范围</th>
+                <th class="num">图像/行数</th>
+                <th class="num">去重图像</th>
+                <th class="num">患者数</th>
+                <th>当前用途</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>manifest</code> 正式预处理</td>
+                <td><code>dataset/internal</code> + <code>external</code></td>
+                <td class="num">13,515</td>
+                <td class="num">13,515</td>
+                <td class="num">—</td>
+                <td>分割、ROI、物理统计</td>
+              </tr>
+              <tr>
+                <td><strong>T 分期建模 CSV</strong></td>
+                <td><code>.../regions/*_clinical.csv</code></td>
+                <td class="num total">12,851</td>
+                <td class="num">11,758</td>
+                <td class="num total">2,083</td>
+                <td><strong>T 训练/评估主口径</strong></td>
+              </tr>
+              <tr>
+                <td>新增 zip review</td>
+                <td>外省整理 + 德化 zip</td>
+                <td class="num">552</td>
+                <td class="num">552</td>
+                <td class="num">155 前缀</td>
+                <td>GT-mask review、独立 external</td>
+              </tr>
+              <tr>
+                <td>建模 + zip 未入 split</td>
+                <td>CSV + 57 张未标注</td>
+                <td class="num">12,908</td>
+                <td class="num">11,815</td>
+                <td class="num">~2,102</td>
+                <td>工作量估算</td>
+              </tr>
+              <tr>
+                <td>manifest + zip 物理</td>
+                <td>正式 + 新增图像</td>
+                <td class="num">14,067</td>
+                <td class="num">14,067</td>
+                <td class="num">—</td>
+                <td>磁盘可用标注规模</td>
+              </tr>
+              <tr>
+                <td>良性炎症分割</td>
+                <td><code>nnunet_benign_finetune.csv</code></td>
+                <td class="num">372</td>
+                <td class="num">372</td>
+                <td class="num">318</td>
+                <td>非 T 分期；分割预训练</td>
+              </tr>
+              <tr>
+                <td>胃溃疡视频</td>
+                <td>中核五〇四医院目录</td>
+                <td class="num">1,990 帧</td>
+                <td class="num">1,990</td>
+                <td class="num">76 文件夹</td>
+                <td>良恶性视频；非 T 四分类</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="data-manifest">9.2 正式 manifest 物理样本（<code>dataset/</code>）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>数据块</th>
+                <th class="num">成功样本</th>
+                <th class="num">错误样本</th>
+                <th class="num">匹配成功</th>
+                <th class="num">图像候选</th>
+                <th class="num">标注候选</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>内部 <code>internal/</code></td>
+                <td class="num">10,659</td>
+                <td class="num">6</td>
+                <td class="num">10,665</td>
+                <td class="num">10,726</td>
+                <td class="num">10,714</td>
+              </tr>
+              <tr>
+                <td>外部 <code>external/</code></td>
+                <td class="num">2,856</td>
+                <td class="num">2</td>
+                <td class="num">2,858</td>
+                <td class="num">2,869</td>
+                <td class="num">2,863</td>
+              </tr>
+              <tr>
+                <td class="total">合计</td>
+                <td class="num total">13,515</td>
+                <td class="num">8</td>
+                <td class="num total">13,523</td>
+                <td class="num">13,595</td>
+                <td class="num">13,577</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="data-centers">9.3 多中心清单（标准医院名）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>标准医院</th>
+                <th>目录 / source</th>
+                <th class="num">manifest 帧</th>
+                <th class="num">建模帧</th>
+                <th class="num">临床患者</th>
+                <th>T 分期</th>
+                <th>当前 split 角色</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="tier-badge tier-dev">开发</span>福建协和</td>
+                <td><code>internal/</code> · <code>int/*</code></td>
+                <td class="num">10,659</td>
+                <td class="num">9,681</td>
+                <td class="num">1,883</td>
+                <td>是</td>
+                <td>train / val / test / prospective</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-1">Tier-1</span>莆田学院附属</td>
+                <td><code>ext/putian*</code></td>
+                <td class="num">2,376</td>
+                <td class="num">~1,922</td>
+                <td class="num">344</td>
+                <td>是</td>
+                <td>主外部（部分仍在 train，待迁出）</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-1">Tier-1</span>莆田市第一医院</td>
+                <td><code>莆田市第一医院</code></td>
+                <td class="num">25</td>
+                <td class="num">0</td>
+                <td class="num">8</td>
+                <td>是</td>
+                <td>test_external</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-2">Tier-2</span>福建省肿瘤医院</td>
+                <td><code>ext/zhongliu</code></td>
+                <td class="num">436</td>
+                <td class="num">229</td>
+                <td class="num">135</td>
+                <td>是</td>
+                <td>test_external</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-2">Tier-2</span>三明市第二医院</td>
+                <td><code>三明市第二医院</code></td>
+                <td class="num">19</td>
+                <td class="num">0</td>
+                <td class="num">4</td>
+                <td>是</td>
+                <td>test_external</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-2">Tier-2</span>德化县医院</td>
+                <td><code>ext/newzip/德化</code></td>
+                <td class="num">100</td>
+                <td class="num">88</td>
+                <td class="num">16</td>
+                <td>是</td>
+                <td>test_external_newzip</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-3">Tier-3</span>北京友谊医院</td>
+                <td><code>ext/newzip/北京</code></td>
+                <td class="num">124</td>
+                <td class="num">124</td>
+                <td class="num">22</td>
+                <td>是</td>
+                <td>地域亚组 · newzip</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-2">Tier-2</span>佛山市第一人民医院</td>
+                <td><code>ext/newzip/广东</code></td>
+                <td class="num">112</td>
+                <td class="num">67</td>
+                <td class="num">31</td>
+                <td>部分</td>
+                <td>test_external_newzip</td>
+              </tr>
+              <tr>
+                <td><span class="tier-badge tier-2">Tier-2</span>湖北中西医结合医院</td>
+                <td><code>ext/newzip/湖北</code></td>
+                <td class="num">216</td>
+                <td class="num">216</td>
+                <td class="num">67</td>
+                <td>是</td>
+                <td>test_external_newzip</td>
+              </tr>
+              <tr>
+                <td>中核五〇四（溃疡视频）</td>
+                <td>独立 <code>data/</code> 目录</td>
+                <td class="num">0</td>
+                <td class="num">0</td>
+                <td class="num">0</td>
+                <td>否</td>
+                <td>良恶性视频任务</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="data-internal-year">9.4 协和内部 manifest 按年分布</h3>
+        <div class="two-col">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>年份分组</th><th class="num">正式样本</th><th class="num">占比</th></tr></thead>
+              <tbody>
+                <tr><td>2018</td><td class="num">3,638</td><td class="num">34.13%</td></tr>
+                <tr><td>2019</td><td class="num">2,856</td><td class="num">26.79%</td></tr>
+                <tr><td>2020_2023</td><td class="num">199</td><td class="num">1.87%</td></tr>
+                <tr><td>2024</td><td class="num">1,539</td><td class="num">14.44%</td></tr>
+                <tr><td>2025 前瞻池</td><td class="num">2,427</td><td class="num">22.77%</td></tr>
+                <tr><td class="total">合计</td><td class="num total">10,659</td><td class="num">100%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <p><strong>解读：</strong>2018–2019 为内部主力；<strong>2025 为前瞻池</strong>，不宜与 2018–2024 训练池混用；2020_2023 样本极少，年份分析需单独说明。</p>
+            <p style="margin-top:0.5rem;"><strong>建模 CSV 中协和有 T 标签患者约 <span style="color:var(--accent2)">~1,556</span></strong>（<code>int/*</code> 去重），足够支撑四分类 T 分期主任务。</p>
+          </div>
+        </div>
+
+        <h3 id="data-split">9.5 T 分期建模 CSV — 按 split（帧级行数 + T 分布）</h3>
+        <p class="note">路径：<code>pipeline/data/tstaging_4class_region_contrastive_full/regions/*_clinical.csv</code> · 含 region patch、clinical22、预测 mask</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Split</th>
+                <th class="num">图像行</th>
+                <th class="num">患者</th>
+                <th class="num">T1</th>
+                <th class="num">T2</th>
+                <th class="num">T3</th>
+                <th class="num">T4+</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>train</code></td>
+                <td class="num">8,783</td>
+                <td class="num">1,405</td>
+                <td class="num">1,510</td>
+                <td class="num">1,037</td>
+                <td class="num">3,136</td>
+                <td class="num">3,100</td>
+                <td>含 ~192 例外部患者，待迁出</td>
+              </tr>
+              <tr>
+                <td><code>val</code></td>
+                <td class="num">1,041</td>
+                <td class="num">161</td>
+                <td class="num">206</td>
+                <td class="num">83</td>
+                <td class="num">350</td>
+                <td class="num">402</td>
+                <td>超参 / gate 选择</td>
+              </tr>
+              <tr>
+                <td><code>test_external</code></td>
+                <td class="num">2,298</td>
+                <td class="num">381</td>
+                <td class="num">421</td>
+                <td class="num">184</td>
+                <td class="num">893</td>
+                <td class="num">800</td>
+                <td>多中心外部主集</td>
+              </tr>
+              <tr>
+                <td><code>test_external_newzip</code></td>
+                <td class="num">495</td>
+                <td class="num">136</td>
+                <td class="num">63</td>
+                <td class="num">106</td>
+                <td class="num">157</td>
+                <td class="num">169</td>
+                <td>外省整理 + 德化</td>
+              </tr>
+              <tr>
+                <td><code>test_prospective</code></td>
+                <td class="num">234</td>
+                <td class="num">46</td>
+                <td class="num">39</td>
+                <td class="num">31</td>
+                <td class="num">100</td>
+                <td class="num">64</td>
+                <td>2025 前瞻 · 汇报以此为准</td>
+              </tr>
+              <tr>
+                <td class="total">合计</td>
+                <td class="num total">12,851</td>
+                <td class="num total">2,083</td>
+                <td class="num">2,239</td>
+                <td class="num">1,441</td>
+                <td class="num">4,636</td>
+                <td class="num">4,535</td>
+                <td>CSV 行；去重图像 11,758</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>全库 T 分期帧级分布（合计 12,851 行）</h4>
+        <div class="bar-chart">
+          <div class="bar-row"><span>T1</span><div class="track"><div class="fill t1" style="width:17.4%">17.4%</div></div><span class="num">2,239</span></div>
+          <div class="bar-row"><span>T2</span><div class="track"><div class="fill t2" style="width:11.2%">11.2%</div></div><span class="num">1,441</span></div>
+          <div class="bar-row"><span>T3</span><div class="track"><div class="fill t3" style="width:36.1%">36.1%</div></div><span class="num">4,636</span></div>
+          <div class="bar-row"><span>T4+</span><div class="track"><div class="fill t4" style="width:35.3%">35.3%</div></div><span class="num">4,535</span></div>
+        </div>
+        <p class="note"><strong>T2 仅约 11%</strong> — 是模型与临床的主要难点；Agent 与 Case-RAG 应重点服务 T2/T3、T3/T4+ 边界。</p>
+
+        <h3 id="data-source">9.6 按 source（建模 CSV）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>source</th>
+                <th class="num">图像行</th>
+                <th class="num">患者</th>
+                <th class="num">T1</th>
+                <th class="num">T2</th>
+                <th class="num">T3</th>
+                <th class="num">T4+</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><code>int/2018</code></td><td class="num">3,355</td><td class="num">497</td><td class="num">550</td><td class="num">337</td><td class="num">1,308</td><td class="num">1,160</td></tr>
+              <tr><td><code>int/2019</code></td><td class="num">2,464</td><td class="num">507</td><td class="num">447</td><td class="num">372</td><td class="num">913</td><td class="num">732</td></tr>
+              <tr><td><code>int/2020_2023</code></td><td class="num">164</td><td class="num">16</td><td class="num">7</td><td class="num">13</td><td class="num">80</td><td class="num">64</td></tr>
+              <tr><td><code>int/2024</code></td><td class="num">2,252</td><td class="num">277</td><td class="num">397</td><td class="num">153</td><td class="num">640</td><td class="num">1,062</td></tr>
+              <tr><td><code>int/prospective</code></td><td class="num">1,446</td><td class="num">213</td><td class="num">293</td><td class="num">163</td><td class="num">469</td><td class="num">521</td></tr>
+              <tr><td><code>ext/putian</code> 等莆田系</td><td class="num">2,322</td><td class="num">~338</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+              <tr><td><code>ext/zhongliu</code></td><td class="num">229</td><td class="num">54</td><td class="num">7</td><td class="num">12</td><td class="num">72</td><td class="num">138</td></tr>
+              <tr><td><code>ext/newzip/*</code></td><td class="num">495</td><td class="num">136</td><td class="num">63</td><td class="num">106</td><td class="num">157</td><td class="num">169</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="data-tier">9.7 内外部大类 & 目标时间切分（论文设计）</h3>
+        <div class="two-col">
+          <div class="table-wrap">
+            <table>
+              <caption>当前建模 CSV 内外部大类</caption>
+              <thead>
+                <tr><th>大类</th><th class="num">行</th><th class="num">患者</th><th class="num">T2 帧</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>内部 2018–2024 池</td><td class="num">8,235</td><td class="num">1,297</td><td class="num">875</td></tr>
+                <tr><td>内部 prospective 行</td><td class="num">1,212</td><td class="num">213</td><td class="num">132</td></tr>
+                <tr><td>外部 <code>ext/*</code></td><td class="num">3,170</td><td class="num">573</td><td class="num">403</td></tr>
+                <tr><td>前瞻视图 <code>test_prospective</code></td><td class="num">234</td><td class="num">46</td><td class="num">31</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption>目标 split（协和-only train · 待 Phase 0 落地）</caption>
+              <thead>
+                <tr><th>Split</th><th>时间</th><th class="num">约患者</th><th>用途</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>train</code></td><td>2018–2022</td><td class="num">~1,000+</td><td>训练 · SSL · RAG memory</td></tr>
+                <tr><td><code>val</code></td><td>2023 上半年</td><td class="num">~200–250</td><td>阈值 · gate</td></tr>
+                <tr><td><code>test_internal</code></td><td>2023H2–2024</td><td class="num">~300–350</td><td>时间外部</td></tr>
+                <tr><td><code>test_prospective</code></td><td>2025 连续入组</td><td class="num">46（已有）</td><td>最强时间验证</td></tr>
+                <tr><td>Tier-1 外部</td><td>莆田系</td><td class="num">~219+</td><td>主外部 T 表</td></tr>
+                <tr><td>Tier-2 pooled</td><td>省肿瘤等</td><td class="num">合并</td><td>森林图</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <h3 id="data-aux">9.8 辅助任务数据（非 T 四分类主表）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>任务</th><th>位置</th><th class="num">规模</th><th>标签</th><th>与 Agent 关系</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>良性炎症分割</td>
+                <td><code>nnunet_benign_finetune.csv</code></td>
+                <td class="num">372 图 / 318 患者</td>
+                <td>LabelMe 炎症 ROI</td>
+                <td>分割预训练；非 T 标签</td>
+              </tr>
+              <tr>
+                <td>胃溃疡视频良恶性</td>
+                <td>中核五〇四 <code>data/</code></td>
+                <td class="num">158 视频 · 1,990 帧</td>
+                <td>目录级良/恶</td>
+                <td>P3 方法验证；质控提示</td>
+              </tr>
+              <tr>
+                <td>新增 zip（未全入建模）</td>
+                <td>外省 + 德化</td>
+                <td class="num">552 图 / 57 无 pT</td>
+                <td>部分 .nii.gz GT</td>
+                <td>review · median IoU 0.06–0.15</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="data-issues">9.9 数据纪律与待办</h3>
+        <div class="card highlight">
+          <ul style="margin-left:1.2rem;color:#475569;font-size:0.9rem;">
+            <li><span class="gap-warn">train 含 ~192 例外部患者（1,158 行）</span> — 与「协和-only 训练」冲突，Phase 0 必须迁出。</li>
+            <li>CSV 行数 12,851 &gt; 去重图像 11,758：同一图像可出现在多 split 视图，<strong>患者级评估</strong>须去重。</li>
+            <li>前瞻结果以 <code>test_prospective_clinical.csv</code> 为准（46 患者 / 234 帧）。</li>
+            <li>外部小中心（n&lt;50）不单报 AUC，合并 Tier-2 + bootstrap CI。</li>
+            <li>pT 映射：1→T1，2→T2，3→T3，4/5→T4+。</li>
+          </ul>
+        </div>
+
+        <h3>9.10 建模 CSV 重复行说明</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>统计项</th><th class="num">数量</th></tr></thead>
+            <tbody>
+              <tr><td>CSV 总行数</td><td class="num">12,851</td></tr>
+              <tr><td>去重 <code>image_path</code></td><td class="num">11,758</td></tr>
+              <tr><td>去重 <code>patient_id</code></td><td class="num">2,083</td></tr>
+              <tr><td>重复行（行数 − 去重图）</td><td class="num">1,093</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Data -->
+      <section id="data">
+        <h2><span class="num">§10</span> 数据策略与验证</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TB
+  subgraph dev["开发 · 仅协和"]
+    TR[2018-2022 train]
+    VA[2023H1 val]
+    TI[2023H2-2024 test_internal]
+    TP[2025 prospective]
+  end
+  subgraph ext["外部 · 冻结"]
+    T1[Tier-1 莆田系 · 主外部表]
+    T2[Tier-2 小中心 pooled]
+    T3[Tier-3 北京友谊]
+  end
+  TR --> Models[训练 T · SSL · RAG memory]
+  VA --> Models
+  Models --> TI
+  Models --> TP
+  Models --> T1
+  Models --> T2
+  Models --> T3
+          </pre>
+        </div>
+        <table>
+          <thead><tr><th>验证维度</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>时间外部</td><td>旧数据训练 → 2024/2025 新数据测试</td></tr>
+            <tr><td>空间外部</td><td>未见医院 · Tier-1/2/3</td></tr>
+            <tr><td>机构层级</td><td>三甲 → 县级 · 森林图</td></tr>
+          </tbody>
+        </table>
+        <p><strong>主要终点：</strong>T 分期 accuracy / macro-F1 / T2 recall / T2|T3 AUC ·
+        <strong>次要：</strong>良恶性 AUC（质控）· <strong>Agent：</strong>full vs base T-only · RAG 子组</p>
+        <p class="gap-warn"><strong>M14 纪律：</strong>首次外部评估后模型权重冻结，禁止回头用外部调参再测。</p>
+      </section>
+
+      <!-- Benign -->
+      <section id="benign">
+        <h2><span class="num">§11</span> 良恶性与边缘监督的位置</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TB
+  AG["辅助诊断 Agent\n主输出: T 分期 + 证据链"]
+  T["T 分期主线\nConvNeXt + ROI + wall"]
+  RAG["Case-RAG 门控"]
+  BEN["良恶性 / 质控提示\n次要"]
+  EDGE["边缘 patch 对比学习\n方法验证"]
+  AG --> T
+  AG --> RAG
+  AG --> BEN
+  EDGE -->|有效则迁移| T
+          </pre>
+        </div>
+        <p>良恶性：<strong>先做、不重要</strong> — 验证 shortcut 与域泛化；有效再用于 T2/T3 patch，不作为论文主叙事。</p>
+      </section>
+
+      <!-- Roadmap -->
+      <section id="roadmap">
+        <h2><span class="num">§12</span> 执行路线（三阶段）</h2>
+
+        <div class="timeline">
+          <div class="phase">
+            <h4>阶段 A · 读懂现有结果（2–3 周）</h4>
+            <p>读 scoreboard / baseline_registry · 定 Agent 默认 T checkpoint · 梳理分割/YOLO fallback · 读 scientific_summary 定 RAG 是否进 v1</p>
+            <p>交付：<code>model_asset_audit.md</code> · <code>agent_backend_registry.yaml</code> · <code>tstaging_classifier_architecture_zh.md</code> ✅</p>
+          </div>
+          <div class="phase">
+            <h4>阶段 B · Agent 整合（4–6 周）</h4>
+            <p>协和-only split · ContrastiveTStagingTool / patch@inference · 临床22 对齐 · DINO Case-RAG · RAGGate · Workbench 去 placeholder</p>
+          </div>
+          <div class="phase">
+            <h4>阶段 C · 冻结验证与论文（6–8 周）</h4>
+            <p>科学基准全矩阵 · internal + prospective + Tier-1/2/3 · T 主表 + Agent 消融 + 森林图</p>
+          </div>
+        </div>
+        <h3>明确暂缓</h3>
+        <p>大规模四分类 backbone 竞赛 · 无 T 目标 VLM · 孤立 RAG demo · 外部数据训练后冒充外部验证</p>
+      </section>
+
+      <!-- Docs -->
+      <section id="docs">
+        <h2><span class="num">§13</span> 文档与代码索引</h2>
+        <table>
+          <thead><tr><th>文档</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>gastric_tstaging_project_framework_zh.md</code></td><td>总框架（Markdown 版）</td></tr>
+            <tr><td><code>model_asset_audit.md</code></td><td>模型选型审计表</td></tr>
+            <tr><td><code>tstaging_classifier_architecture_zh.md</code></td><td>T 分类器：双分支 / patch / 相似病例分层</td></tr>
+            <tr><td><code>tstaging_current_mainline.md</code></td><td>当前执行顺序</td></tr>
+            <tr><td><code>gastric_us_agent_scientific_validation_and_case_rag_plan_zh.md</code></td><td>验证与 RAG 细则</td></tr>
+            <tr><td><code>dataset/DATASET_GUIDE.md</code></td><td>数据口径</td></tr>
+          </tbody>
+        </table>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TD
+  HTML[本 HTML 总览]
+  FW[framework_zh.md]
+  EX[current_mainline]
+  SV[scientific_validation]
+  DG[DATASET_GUIDE]
+  HTML --> FW
+  FW --> EX
+  FW --> SV
+  FW --> DG
+          </pre>
+        </div>
+      </section>
+
+      <section id="appendix-figures" class="appendix">
+        <h2>附录 · 结果图库</h2>
+        <p style="font-size:0.92rem;color:var(--muted);margin-bottom:1.5rem;">
+          本附录集中存放 Poe 方法示意图、Agent 病例产物、Grad-CAM、分割对比与 scoreboard 指标图；
+          正文「项目说明」与 §7 仅保留少量总览图。目录：
+          <code>docs/mainline/figures/results/</code>
+        </p>
+      <section>
+        <h2 id="results-figures">A. 结果与方法示意图（Poe · 离线包）</h2>
         <p style="font-size:0.92rem;color:var(--muted);">
           图片由 <code>scripts/generate_agent_figures_poe_batch.py</code> 生成（读取仓库根目录 <code>.env</code> 中的 <code>POE_API_KEY</code>）。
           完整离线包：<code>docs/mainline/project_logic_bundle/</code>（运行 <code>python scripts/package_project_logic_bundle.py --zip</code>）。
@@ -756,8 +2181,8 @@
         </div>
       </section>
 
-      <section id="local-results">
-        <h2>本地结果图库（病例示例 + 评估曲线）</h2>
+      <section>
+        <h2 id="local-results">B. 本地结果图库（病例示例 + 评估曲线）</h2>
         <p style="font-size:0.92rem;color:var(--muted);">
           全部图片集中在 <code>docs/mainline/figures/results/</code>（当前 <strong>348</strong> 张 PNG）。
           <strong>指标图</strong>：<code>python scripts/generate_mainline_metric_figures.py</code>（scoreboard + eval JSON）。
@@ -2246,1449 +3671,6 @@
           </figure>
         </div>
       </section>
-
-      <!-- §0 Logic -->
-      <section id="logic">
-        <h2><span class="num">§0</span> 逻辑主线</h2>
-        <div class="callout">
-          <strong>当前阶段：</strong>已完成大量单点模型训练（YOLO、分割、ConvNeXt T 分期、DINO、RAG 原型）。
-          <strong>最重要工作</strong>不是再开新 backbone，而是<strong>读懂已有结果 → 选型接入 → 组装可追溯的辅助诊断 Agent → 以 T 分期为主终点做冻结验证</strong>。
-        </div>
-        <div class="pyramid">
-          <div class="layer l4">临床终局 · 术前辅助诊断 Agent（主输出 = T 分期）</div>
-          <div class="arrow">↑</div>
-          <div class="layer l3">证据整合层 · 固定工具链 + 门控 Case-RAG + 医生复核</div>
-          <div class="arrow">↑</div>
-          <div class="layer l2">模型资产层 · YOLO / 分割 / ConvNeXt T / DINO（已训练，待接入）</div>
-          <div class="arrow">↑</div>
-          <div class="layer l1">数据纪律 · 协和单中心 train + 11 家外部冻结验证</div>
-        </div>
-      </section>
-
-      <!-- Priority -->
-      <section id="priority">
-        <h2><span class="num">§1</span> 任务优先级（不可颠倒）</h2>
-        <div class="priority-grid">
-          <div class="prio-card p0">
-            <div class="label">P0</div>
-            <strong>胃癌 T 分期</strong>
-            <span>T1 / T2 / T3 / T4+ · 临床主问题 · 论文主终点 · Agent 主输出</span>
-          </div>
-          <div class="prio-card p1">
-            <div class="label">P1</div>
-            <strong>辅助诊断 Agent</strong>
-            <span>整合分割 / 分类 / 临床 / 报告 / 相似病例 / 指南</span>
-          </div>
-          <div class="prio-card p2">
-            <div class="label">P2</div>
-            <strong>Case-RAG + 门控</strong>
-            <span>T2/T3、T3/T4+ 边界 · 可解释 · 不替代 base T</span>
-          </div>
-          <div class="prio-card p3">
-            <div class="label">P3</div>
-            <strong>良恶性二分类</strong>
-            <span>先做 · 方法试金石 · <em>不是最重要</em></span>
-          </div>
-          <div class="prio-card p4">
-            <div class="label">P4</div>
-            <strong>新 backbone 训练</strong>
-            <span>仅当资产审计证明现有能力不够</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Clinical -->
-      <section id="clinical">
-        <h2><span class="num">§2</span> 临床终局</h2>
-        <div class="two-col">
-          <div class="card">
-            <h3>场景</h3>
-            <table>
-              <tr><th>模态</th><td>经腹胃充盈超声（水充盈），<strong>非 EUS</strong></td></tr>
-              <tr><th>主任务</th><td>术前 T 分期四分类</td></tr>
-              <tr><th>形态</th><td>Agent → 结构化 JSON → 医生工作台</td></tr>
-              <tr><th>定位</th><td>分流与辅助决策；不替代 EUS 的 N/M</td></tr>
-            </table>
-          </div>
-          <div class="card">
-            <h3>为何 T 分期是核心</h3>
-            <ul style="margin-left:1.2rem;color:#475569;font-size:0.9rem;">
-              <li>患者级 pT 标签 + 多帧噪声</li>
-              <li>关键切面不总在每一帧</li>
-              <li>T2/T3、T3/T4+ 是真实瓶颈</li>
-              <li>分割 Dice 高 ≠ 分期正确</li>
-            </ul>
-          </div>
-        </div>
-        <h3>Agent 输出：综合结构化 JSON（非单句结论）</h3>
-        <p>
-          一次「运行 Agent」会依次调用<strong>分割、T 分期分类、形态学、临床风险、报告文本、相似病例、知识库</strong>等工具，
-          并可能调用 <strong>DINO 特征可视化</strong>、<strong>胃壁穿透图</strong>、可选 <strong>LLM 报告润色</strong>。
-          因此返回给前端的是<strong>一整包可追溯证据</strong>，而不只是 <code>recommended_T_stage</code> 一个字段。
-        </p>
-        <p class="note">实现入口：<code>pipeline/agent/product/analyze_case.py</code> → <code>POST /api/agent/analyze</code>（Next.js 转发）。</p>
-
-        <div class="output-layers">
-          <div class="layer-card">
-            <h4>医生可读层（Workbench 主展示）</h4>
-            <ul>
-              <li><code>report</code> — 推荐 T、置信度、支持/不确定理由</li>
-              <li><code>report.dynamic_report_draft</code> — 可复制中文报告草稿</li>
-              <li><code>similar_cases</code> — 相似病例与预览图</li>
-              <li><code>prediction_artifacts.*_url</code> — 分割叠加、T 概率条、DINO、胃壁图</li>
-            </ul>
-          </div>
-          <div class="layer-card">
-            <h4>审计 / 科研层（完整 payload）</h4>
-            <ul>
-              <li><code>tool_evidence</code> — 各工具原始输出</li>
-              <li><code>agent_steps</code> — 逐步推理轨迹（intent / decision / reasoning）</li>
-              <li><code>traces</code> — 工具调用简表</li>
-              <li><code>runtime_verification</code> — 是否真实调用了各模型 API</li>
-              <li><code>trajectory_ref</code> — 落盘 JSON 路径</li>
-            </ul>
-          </div>
-        </div>
-
-        <h4>顶层响应结构（<code>AgentAnalysisResponse</code>）</h4>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>字段</th><th>含义</th><th>主要来源</th></tr>
-            </thead>
-            <tbody>
-              <tr><td><code>session_id</code> / <code>session_memory</code></td><td>会话与历史分析计数</td><td>SessionMemory</td></tr>
-              <tr><td><code>report</code></td><td><strong>融合后的 T 分期结论 + 证据摘要</strong></td><td>RuleBasedReportBuilder ± LLM</td></tr>
-              <tr><td><code>tool_evidence</code></td><td>五类工具原始结果</td><td>见下表</td></tr>
-              <tr><td><code>similar_cases</code></td><td>top-k 相似病例（FAISS 或 CurrentCaseMemory）</td><td>SimilarityTool</td></tr>
-              <tr><td><code>knowledge_context</code></td><td>项目指南/规则片段</td><td>KnowledgeMemory</td></tr>
-              <tr><td><code>agent_steps</code></td><td>约 10+ 步可审计步骤链</td><td>每步工具调用记录</td></tr>
-              <tr><td><code>prediction_artifacts</code></td><td>预测 mask/ROI/叠加图、概率图、wall/DINO 图 URL</td><td>在线推理 + 脚本可视化</td></tr>
-              <tr><td><code>runtime_verification</code></td><td>分割/分类/记忆/DINO/LLM 是否被调用</td><td>运行时核验</td></tr>
-              <tr><td><code>traces</code></td><td><code>{tool, result}</code> 列表</td><td>调试与复盘</td></tr>
-              <tr><td><code>trajectory_ref</code></td><td>完整结果写入 <code>tmp/agent_trajectories/</code></td><td>可追溯存档</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h4><code>tool_evidence</code> 五类工具输出（各含不同字段）</h4>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>键</th><th>工具 / 模型</th><th>典型字段（示例）</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><code>segmentation</code></td>
-                <td>SegmentationTool（UNet/ConvNeXt）</td>
-                <td><code>available</code>, <code>mask_available</code>, <code>roi_bbox</code>, <code>lesion_area_ratio</code>, <code>roi_source</code></td>
-              </tr>
-              <tr>
-                <td><code>classification</code></td>
-                <td>ClassificationTool · <code>dual_branch</code> 冻结 mask4ch 20260423</td>
-                <td><code>probabilities</code> T1–T4+, <code>top1_stage</code>, <code>experiment_dir</code>；<strong>不含</strong> patch bag / 相似病例 tensor（见 <a href="#classifier-arch">§4.5</a>）</td>
-              </tr>
-              <tr>
-                <td><code>morphology</code></td>
-                <td>MorphologyTool（OpenCV）</td>
-                <td><code>boundary_irregularity</code>, <code>lesion_area_ratio</code>, <code>convexity</code>, <code>valid</code></td>
-              </tr>
-              <tr>
-                <td><code>clinical</code></td>
-                <td>ClinicalTool（规则评分）</td>
-                <td><code>clinical_risk_score</code>, <code>risk_factors</code>, <code>location_calibration</code></td>
-              </tr>
-              <tr>
-                <td><code>report</code></td>
-                <td>ReportTool（文本 cue）</td>
-                <td><code>report_cues</code>, <code>sections_available</code>, <code>uncertainty_flags</code></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h4><code>agent_steps</code> 推理链（当前固定顺序，非黑盒 LLM 自主规划）</h4>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>step_id</th><th>作用</th></tr></thead>
-            <tbody>
-              <tr><td><code>case_intake</code></td><td>病例入参、路径、帧信息</td></tr>
-              <tr><td><code>lesion_localization_segmentation</code></td><td>病灶分割 → mask / ROI</td></tr>
-              <tr><td><code>wall_evidence_visualization</code></td><td>胃壁穿透热图 / 层 profile / 离线脚本图复用</td></tr>
-              <tr><td><code>morphology_evidence</code></td><td>标注 mask 或预测 mask 形态学</td></tr>
-              <tr><td><code>t_stage_classification</code></td><td>T 分期模型推理</td></tr>
-              <tr><td><code>dino_feature_visualization</code></td><td>DINO token 特征图（解释用）</td></tr>
-              <tr><td><code>clinical_context</code></td><td>临床表风险校准</td></tr>
-              <tr><td><code>report_text_cues</code></td><td>术前报告文本线索</td></tr>
-              <tr><td><code>similar_case_retrieval</code></td><td>FAISS / 内存相似病例</td></tr>
-              <tr><td><code>knowledge_context</code></td><td>指南知识检索</td></tr>
-              <tr><td><code>llm_report_synthesis_api</code></td><td>可选 LLM 润色（需 API Key）</td></tr>
-              <tr><td><code>evidence_synthesis</code></td><td>多证据加权 → 最终 <code>report</code></td></tr>
-              <tr><td><code>report_and_memory</code></td><td>动态报告草稿 + memory 候选</td></tr>
-              <tr><td><code>runtime_api_verification</code></td><td>汇总各模型/API 调用证明</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h4>JSON 示例（点击展开）</h4>
-
-        <details class="output-block" open>
-          <summary>① 临床结论层 <code>report</code>（医生最关心）</summary>
-          <pre class="json">{
-  "schema_version": "0.2.0",
-  "status": "ready",
-  "recommended_t_stage": "T3",
-  "confidence": "medium",
-  "reasoning": "Recommended T3 based on tool evidence, clinical risk, and similar-case distribution.",
-  "supporting_evidence": [
-    "Classifier top-1 T2 (0.36).",
-    "Morphology irregularity 0.52, lesion area ratio 0.11.",
-    "Clinical risk score 0.13.",
-    "Similar cases majority stage T3 from 5 retrieved cases."
-  ],
-  "uncertainty_flags": [
-    "T2/T3 boundary close if top1-top2 margin small",
-    "No structured ultrasound report cues were available."
-  ],
-  "similar_case_summary": {
-    "majority_stage": "T3",
-    "stage_distribution": { "T2": 2, "T3": 3 }
-  },
-  "knowledge_highlights": ["T2/T3 boundary review", "ROI quality checklist"],
-  "tool_status": {
-    "segmentation": "available",
-    "classification": "available",
-    "morphology": "partial",
-    "clinical": "partial",
-    "report": "missing",
-    "memory": "available"
-  },
-  "dynamic_report_draft": {
-    "title": "胃癌超声多模态 Agent 辅助诊断报告草稿",
-    "language": "zh",
-    "sections": [ "病例信息", "影像与分割", "T分期推荐", "相似病例", "不确定性" ],
-    "full_text": "……可复制长文……",
-    "review_required": true
-  },
-  "memory_update_candidates": [ { "record_type": "case_episode", "recommended_t_stage": "T3" } ]
-}</pre>
-        </details>
-
-        <details class="output-block">
-          <summary>② 模型工具原始输出 <code>tool_evidence.classification</code> + <code>segmentation</code></summary>
-          <pre class="json">{
-  "tool_evidence": {
-    "segmentation": {
-      "available": true,
-      "mask_available": true,
-      "roi_bbox": { "x1": 120, "y1": 80, "x2": 480, "y2": 360 },
-      "lesion_area_ratio": 0.09,
-      "roi_source": "predicted_mask"
-    },
-    "classification": {
-      "available": true,
-      "architecture_family": "dual_branch",
-      "inference_inputs": ["global_4ch", "roi", "clinical_or_seg_proxy"],
-      "uses_own_patches": false,
-      "uses_similar_cases_in_forward": false,
-      "experiment_dir": ".../mask4ch_clinical22_full_20260423_092301",
-      "probabilities": { "T1": 0.08, "T2": 0.36, "T3": 0.38, "T4+": 0.18 },
-      "top1_stage": "T2",
-      "top1_prob": 0.36,
-      "uncertainty": 0.72,
-      "runtime_invocation": { "api_kind": "torch_checkpoint", "called": true }
-    },
-    "morphology": { "valid": true, "boundary_irregularity": 0.52, "lesion_area_ratio": 0.11 },
-    "clinical": { "clinical_risk_score": 0.13, "factors_available": true },
-    "report": { "available": false, "report_cues": [] }
-  }
-}</pre>
-        </details>
-
-        <details class="output-block">
-          <summary>③ 可视化产物 <code>prediction_artifacts</code>（前端图像区）</summary>
-          <pre class="json">{
-  "prediction_artifacts": {
-    "predicted_mask_url": "/api/agent/artifacts/.../predicted_mask.png",
-    "predicted_overlay_url": "/api/agent/artifacts/.../predicted_overlay.png",
-    "predicted_roi_url": "/api/agent/artifacts/.../predicted_roi.png",
-    "classification_probabilities_url": "/api/agent/artifacts/.../classification_probabilities.png",
-    "wall_penetration_heatmap_url": "/api/agent/artifacts/.../wall_penetration_risk_heatmap.png",
-    "wall_layer_profile_url": "/api/agent/artifacts/.../wall_layer_profile.png",
-    "real_wall_analysis_panel_url": "/api/agent/artifacts/.../real_wall_analysis_panel.png",
-    "current_image_dino_feature_panel_url": "/api/agent/artifacts/.../current_image_dino_feature_panel.png",
-    "dino_similarity_heatmap_url": "/api/agent/artifacts/.../dino_region_similarity_heatmap.png",
-    "similar_cases_contact_sheet_url": "/api/agent/artifacts/.../similar_cases_contact_sheet.png"
-  }
-}</pre>
-        </details>
-
-        <details class="output-block">
-          <summary>④ 单步推理记录 <code>agent_steps[]</code>（可审计）</summary>
-          <pre class="json">{
-  "agent_steps": [
-    {
-      "order": 6,
-      "step_id": "t_stage_classification",
-      "title": "T 分期分类工具调用",
-      "intent": "Run the deployed T-staging checkpoint on the current frame.",
-      "decision": "call",
-      "tool_name": "ClassificationTool",
-      "status": "completed",
-      "inputs": { "image_path": "...", "mask_source": "segmentation_prediction" },
-      "outputs": { "top1_stage": "T2", "probabilities": { "T1": 0.08, "T2": 0.36, "T3": 0.38, "T4+": 0.18 } },
-      "reasoning": "The classifier provides the primary T-stage prior before similar-case voting.",
-      "visual_refs": { "classification_probabilities_url": "/api/agent/artifacts/.../classification_probabilities.png" }
-    }
-  ]
-}</pre>
-        </details>
-
-        <details class="output-block">
-          <summary>⑤ 相似病例 + 知识库 + 运行时核验</summary>
-          <pre class="json">{
-  "similar_cases": [
-    {
-      "patient_id": "de-identified",
-      "T_stage": "T3",
-      "similarity": 0.82,
-      "preview_image_url": "/api/agent/artifacts/.../similar_case_1_preview.png"
-    }
-  ],
-  "knowledge_context": [
-    { "title": "T2/T3 boundary review", "snippet": "..." }
-  ],
-  "runtime_verification": {
-    "all_core_models_called": true,
-    "llm_api_called": false,
-    "invocations": [
-      { "component": "segmentation", "called": true },
-      { "component": "classification", "called": true },
-      { "component": "similar_case_retrieval", "called": true }
-    ]
-  },
-  "trajectory_ref": { "path": "tmp/agent_trajectories/&lt;session&gt;/&lt;patient&gt;_&lt;ts&gt;.json" }
-}</pre>
-        </details>
-
-        <div class="callout" style="border-color: var(--p0); background: rgba(245,158,11,0.08);">
-          <strong>分类器 ≠ 整包 Agent：</strong>
-          <code>classify</code> 工具当前为 <strong>Global(4ch)+ROI+clinical</strong> 双分支；
-          <strong>本例 direction/arcband patch</strong> 仅在 region-aware <em>训练</em> 中做 SupCon，默认 eval 不进 logits；
-          <strong>相似病例</strong> 在 <code>similar_case_retrieval</code> + 规则融合，不进分类网络 forward。
-          详见 <a href="#classifier-arch" style="color:var(--accent)">§4.5 分类器架构</a> ·
-          <code>tstaging_classifier_architecture_zh.md</code>
-        </div>
-        <div class="callout" style="border-color: var(--accent); background: rgba(61,184,201,0.08);">
-          <strong>目标态（科研计划，尚未完全落地）：</strong>
-          在现有丰富输出之上，再显式增加
-          <code>conflicting_evidence</code>、
-          <code>T_probabilities</code> 与 <code>rag_weight</code> 字段、
-          患者级多帧 MIL 聚合结果、
-          以及 Case-RAG 相似度分解（lesion / wall-band / breakthrough）。
-          当前 <code>report</code> 以规则融合为主，相似病例通过固定权重参与打分，而非独立 RAGGate 模块。
-        </div>
-      </section>
-
-      <!-- Phase -->
-      <section id="phase">
-        <h2><span class="num">§3</span> 阶段判断：模型竞赛 → 系统整合</h2>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart LR
-  subgraph past["已完成 · 大量实验"]
-    A[YOLO 胃腔]
-    B[nnU-Net / DINO 分割]
-    C[ConvNeXt T 分期]
-    D[DINO / RAG 原型]
-  end
-  subgraph now["当前主线"]
-    E[资产审计选型]
-    F[Agent 接入 T backend]
-    G[门控 Case-RAG]
-    H[冻结验证论文]
-  end
-  subgraph later["有条件再做"]
-    I[新 backbone]
-    J[良恶性边缘监督迁移 T]
-  end
-  past --> now
-  now -.-> later
-          </pre>
-        </div>
-      </section>
-
-      <!-- Assets -->
-      <section id="assets">
-        <h2><span class="num">§4</span> 已有模型资产（少训、多选）</h2>
-
-        <h3>A · 感知与定位（Stage 1）</h3>
-        <table>
-          <thead>
-            <tr><th>能力</th><th>代表资产</th><th>Agent 用途</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>胃腔检测</td><td>YOLO11、lumen detector</td><td>胃壁搜索范围、wall-band 坐标</td></tr>
-            <tr><td>病灶分割</td><td>nnU-Net holdout、UNet++</td><td>mask、ROI、crop_roi</td></tr>
-            <tr><td>DINO 分割</td><td>dinov3_*、segdino last2blocks</td><td>候选 mask、区域 token、RAG</td></tr>
-            <tr><td>Wall-band</td><td>region contrastive、box-guided wall</td><td>T2/T3 边界证据</td></tr>
-          </tbody>
-        </table>
-
-        <h3>B · T 分期分类（Stage 2 — 核心）</h3>
-        <p>登记：<code>pipeline/experiments/tables/tstaging_4class_mainline_scoreboard.csv</code></p>
-        <table>
-          <thead>
-            <tr><th>路线</th><th>External AUC</th><th>Prospective AUC</th><th>备注</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Full Image + ROI + Clinical(22D)</td><td><strong>0.7276</strong></td><td>0.6968</td><td>长期 primary baseline</td></tr>
-            <tr><td>Predicted Mask(4ch) + Clinical</td><td>0.7326</td><td><strong>0.7455</strong></td><td>structure promoted</td></tr>
-            <tr><td>Predicted ROI + Mask + Clinical</td><td>0.7438</td><td>0.6683</td><td>部署 realism 参考</td></tr>
-            <tr><td>Breakthrough / region-aware + Clinical</td><td><strong>0.7480</strong></td><td>0.6857</td><td>contrastive_dual · patch 训练 SupCon · 辅助证据</td></tr>
-          </tbody>
-        </table>
-
-        <h3 id="classifier-arch">§4.5 · T 分类器架构（当前 vs 目标）</h3>
-        <p class="note">专文：<code>docs/mainline/tstaging_classifier_architecture_zh.md</code> · 注册表：<code>pipeline/agent/config/agent_backend_registry.yaml</code></p>
-
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart TB
-  subgraph L3["L3 Agent 融合层"]
-    R[report 规则融合]
-    SC[similar_cases FAISS 17维]
-    R --> OUT[recommended_t_stage]
-    SC --> R
-  end
-  subgraph L2["L2 工具并列调用"]
-    CT[ClassificationTool]
-    ST[SegmentationTool]
-    SIM[SimilarityTool]
-  end
-  subgraph L1["L1 checkpoint"]
-    DB["dual_branch mask4ch 20260423 ★ Agent primary"]
-    CD["contrastive_dual region-aware 20260426"]
-    WE["GastricWallEvidenceNet 待接"]
-  end
-  ST -->|mask 4th ch| CT
-  DB --> CT
-  CD -.->|Phase B 辅助| CT
-  CT -->|base_T_probs| R
-  SIM --> SC
-          </pre>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <caption>推理时各路线实际吃进网络的输入（非训练宣传口径）</caption>
-            <thead>
-              <tr>
-                <th>路线</th>
-                <th>模型族</th>
-                <th>Global</th>
-                <th>ROI</th>
-                <th>本例 patch</th>
-                <th>相似病例</th>
-                <th>cls 头规模</th>
-                <th>Agent</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>mask4ch 冻结线</strong></td>
-                <td><code>dual_branch</code></td>
-                <td>4ch + mask</td>
-                <td>✓</td>
-                <td class="status-miss">✗</td>
-                <td class="status-miss">✗（融合层）</td>
-                <td>256→4 MLP</td>
-                <td class="status-ok"><strong>primary</strong></td>
-              </tr>
-              <tr>
-                <td>region-aware</td>
-                <td><code>contrastive_dual</code></td>
-                <td>✓</td>
-                <td>✓</td>
-                <td class="status-partial">训练 SupCon；<strong>默认 eval 不进 logits</strong></td>
-                <td class="status-miss">✗</td>
-                <td>256→4</td>
-                <td>external 辅助 · 待适配器</td>
-              </tr>
-              <tr>
-                <td>wall-evidence</td>
-                <td><code>GastricWallEvidenceNet</code></td>
-                <td>✓</td>
-                <td>✓</td>
-                <td class="status-ok">推理可进 wall token</td>
-                <td class="status-miss">✗</td>
-                <td>256→4</td>
-                <td>未接产品</td>
-              </tr>
-              <tr>
-                <td>Case-RAG / SimilarityTool</td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td class="status-ok">top-k 投票 · 固定权重 ~0.35</td>
-                <td>—</td>
-                <td>与 classify <strong>并列</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="callout">
-          <strong>设计原则（与「分类头加大」相反）：</strong>
-          参数量主要在 ConvNeXt-Base + Small；<code>ClassificationHead</code> 仅 <code>fused_dim→256→4</code>。
-          优先把 <strong>本例 patch / 胃壁证据</strong> 放进融合层（或接 WallEvidenceNet），
-          相似病例放在 <strong>门控融合</strong>（<code>rag_weight</code>），而非 end-to-end 把邻居特征 concat 进 cls_head。
-        </div>
-
-        <h3>C · DINO 与 RAG · D · Agent 产品</h3>
-        <table>
-          <thead><tr><th>类型</th><th>路径</th></tr></thead>
-          <tbody>
-            <tr><td>DINO 特征</td><td>pipeline/experiments/reports/dinov3_*</td></tr>
-            <tr><td>Case-RAG 训练</td><td>scripts/train_learned_dino_case_rag.py</td></tr>
-            <tr><td>科学基准 M0–M5 / R0–R5</td><td>.../gastric_us_agent_scientific_benchmark/</td></tr>
-            <tr><td>前端 + Agent</td><td>apps/gastric_scan_next · pipeline/agent/product/analyze_case.py</td></tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- Gaps -->
-      <section id="gaps">
-        <h2><span class="num">§5</span> 当前缺口（整合层）</h2>
-        <p>下列内容对照<strong>仓库当前实现</strong>（非目标 PPT）。实验侧已有大量 checkpoint；产品侧 Agent 仍处在「能跑通演示」与「论文级 T 主线闭环」之间。</p>
-
-        <div class="table-wrap">
-          <table class="gap-matrix">
-            <caption>缺口总览：现状 → 目标 → 阶段</caption>
-            <thead>
-              <tr>
-                <th>缺口</th>
-                <th>仓库现状</th>
-                <th>目标态</th>
-                <th>阶段</th>
-                <th>关键路径</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>① 资产审计</td>
-                <td class="status-ok">✅ <code>model_asset_audit.md</code> + <code>agent_backend_registry.yaml</code></td>
-                <td>锁定 T / seg / YOLO；架构专文已写</td>
-                <td>A 完成</td>
-                <td><a href="#classifier-arch">§4.5</a> · <code>tstaging_classifier_architecture_zh.md</code></td>
-              </tr>
-              <tr>
-                <td>② T backend</td>
-                <td class="status-partial">已接冻结 mask4ch <strong>20260423</strong>；region-aware 仅登记为 external 辅助；<strong>推理无 patch / 无相似病例进 forward</strong></td>
-                <td>ContrastiveTStagingTool + 可选 patch@inference；临床 22D 对齐</td>
-                <td>B</td>
-                <td><code>classification_tool.py</code> · <code>contrastive_models.py</code></td>
-              </tr>
-              <tr>
-                <td>③ Case 检索</td>
-                <td class="status-miss">FAISS 17 维概率+形态+临床；DINO 仅可视化</td>
-                <td>区域 DINO + T-aware retriever + RAGGate</td>
-                <td>B–C</td>
-                <td><code>feature_extractor.py</code> · <code>train_learned_dino_case_rag.py</code></td>
-              </tr>
-              <tr>
-                <td>④ Split</td>
-                <td class="status-miss">train 含 192 外部患者 / 1,158 行</td>
-                <td>协和-only train + 冻结 external</td>
-                <td>B（阻塞）</td>
-                <td><code>regions/train_clinical.csv</code> · 待建 <code>splits/xiehe_single_center_v1/</code></td>
-              </tr>
-              <tr>
-                <td>⑤ 患者级</td>
-                <td class="status-partial">单次 analyze 多为<strong>单帧</strong>；MIL 在实验报告未入主链</td>
-                <td>多帧 MIL + 关键帧权重写进 Agent</td>
-                <td>B</td>
-                <td><code>evidence_hub.py</code> · <code>patient_mil_*</code> 实验</td>
-              </tr>
-              <tr>
-                <td>⑥ 证据融合</td>
-                <td class="status-partial">规则加权融合；无 rag_weight / conflict 结构化</td>
-                <td>统一 schema + 门控 + 与前端契约一致</td>
-                <td>B</td>
-                <td><code>_build_rule_based_report</code> · <code>AGENT_FRONTEND_REPORT_SCHEMA.json</code></td>
-              </tr>
-              <tr>
-                <td>⑦ 工具链缺口</td>
-                <td class="status-miss">无 LumenDetectionTool；wall 为离线图复用/代理</td>
-                <td>YOLO 胃腔 + wall-band 在线证据</td>
-                <td>B+</td>
-                <td>YOLO baseline · <code>region_contrastive</code> manifest</td>
-              </tr>
-              <tr>
-                <td>⑧ 前端一致</td>
-                <td class="status-partial">Workbench 可跑 Agent；列表仍有 classifier placeholder</td>
-                <td>列表与 analyze 输出同一 T backend</td>
-                <td>B</td>
-                <td><code>AgentWorkbenchPanel.tsx</code> · <code>DiagnosisPanel.tsx</code></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>缺口详解（按优先级）</h3>
-
-        <div class="gap-card">
-          <h4>① 资产审计与 Agent backend 注册 <span class="prio">P0 · 阶段 A</span> <span class="status-ok">已完成</span></h4>
-          <p><strong>已交付：</strong></p>
-          <ul>
-            <li><code>docs/mainline/model_asset_audit.md</code> · <code>agent_backend_registry.yaml</code></li>
-            <li><code>docs/mainline/tstaging_classifier_architecture_zh.md</code> — 分类器 vs patch vs 相似病例</li>
-            <li>选型：最终 T = <strong>mask4ch 20260423</strong>；region-aware = external 辅助（待适配器）</li>
-          </ul>
-        </div>
-
-        <div class="gap-card">
-          <h4>② T 分期 backend 与架构对齐 <span class="prio">P0 · 阶段 B</span></h4>
-          <p><strong>现状（代码）：</strong></p>
-          <ul>
-            <li><code>ClassificationTool</code> → <code>DualBranchClassifier</code>，默认 <code>mask4ch_clinical22_full_20260423_092301</code></li>
-            <li>推理：<strong>Global(4ch)+ROI+clinical</strong>；不含本例 patch、不含相似病例进 forward（见 <a href="#classifier-arch">§4.5</a>）</li>
-            <li><code>contrastive_dual</code>：patch 训练 SupCon；默认 eval 丢弃 patch</li>
-            <li>相似病例：FAISS 17 维 → 规则融合 ~0.35 权重，非分类网络输入</li>
-            <li>临床 9 维 seg 代理 vs 训练 clinical22 仍有 gap</li>
-          </ul>
-          <p><strong>目标：</strong><code>ContrastiveTStagingTool</code> / WallEvidenceNet；轻量 cls_head；<code>architecture_family</code> 写入 tool_evidence。</p>
-        </div>
-
-        <div class="gap-card">
-          <h4>③ Case 检索与 DINO 表征 <span class="prio">P1 · 阶段 B–C</span></h4>
-          <p><strong>现状：</strong></p>
-          <ul>
-            <li><code>extract_patient_vector</code> 固定 <strong>17 维</strong>：T 概率(4) + 形态(5) + 临床(8) — 见 <code>feature_extractor.py</code></li>
-            <li><code>SimilarityTool</code> → FAISS <code>pipeline/agent/memory/index/case_index.faiss</code>（约 1441 例 metadata）；无 DINO 子空间</li>
-            <li><code>analyze_case</code> 会调 DINO 脚本做<strong>当前帧特征图可视化</strong>（<code>generate_external_source_dino_token_panels.py</code>），但<strong>不参与</strong>检索向量</li>
-            <li>科研侧已有：<code>scripts/train_learned_dino_case_rag.py</code>、benchmark 中 R2/R5；与产品 Agent 未统一</li>
-            <li>目标设计（科研计划）：adapter-DINO 多区域 embedding + boundary hard negative + <code>rag_weight</code> 门控 — <strong>未实现 RAGGate 模块</strong></li>
-          </ul>
-          <p><strong>目标：</strong>检索向量含 wall-band / breakthrough；top-k entropy 驱动是否改 T；与 base T 冲突时写入 <code>conflicting_evidence</code> 而非硬改分期。</p>
-        </div>
-
-        <div class="gap-card">
-          <h4>④ 数据 Split 纪律 <span class="prio">P0 · 阻塞验证</span></h4>
-          <p><strong>现状（建模 CSV）：</strong></p>
-          <ul>
-            <li><code>train_clinical.csv</code>：<strong>8,783 行 / 1,405 患者</strong>，其中约 <strong>192 患者 / 1,158 行</strong> 来自外部 source</li>
-            <li>主要泄漏 source：<code>ext/putian</code>（128 患者）、<code>ext/putian_2024_new</code>（27）、<code>ext/multicenter</code>（37）</li>
-            <li>与顶刊叙事冲突：「协和单中心训练 + 外部冻结验证」— 当前 train 已见过莆田等分布</li>
-            <li>RAG memory / 未来 SSL 若基于现有 train，会进一步污染外部独立性</li>
-          </ul>
-          <p><strong>目标：</strong><code>pipeline/data/splits/xiehe_single_center_v1/</code> + <code>split_audit.md</code>；memory 仅 2018–2022 协和；M14 后禁止用外部调参。</p>
-        </div>
-
-        <div class="gap-card">
-          <h4>⑤ 患者级多帧 MIL <span class="prio">P1 · 阶段 B</span></h4>
-          <p><strong>现状：</strong></p>
-          <ul>
-            <li>数据层：同一 <code>patient_id</code> 常有多帧（建模 CSV 有 1,093 行重复图像视图），病理 pT 为患者级</li>
-            <li><code>analyze_case.py</code>：前端 payload 虽有 <code>frame_count</code>，主路径对<strong>单张</strong> <code>image_path</code> 跑分割+分类+相似病例</li>
-            <li><code>EvidenceHub</code>（<code>evidence_hub.py</code>）：支持多帧质量加权、帧间一致性 — 主要用于 <code>run_agent_eval.py</code> / ReAct 评估，<strong>未作为 analyze_case 主入口</strong></li>
-            <li>实验：<code>patient_mil_image_dino_fusion</code> 报告前瞻泛化差；<code>dinov3_framelevel_scalar_*</code> 有帧级训练+患者聚合 — <strong>未固化进 Agent</strong></li>
-          </ul>
-          <p><strong>目标：</strong>关键帧选择（最深侵犯）+ 患者级 T 概率；与 T 分期训练时的 MIL 策略与 Agent 推理一致。</p>
-        </div>
-
-        <div class="gap-card">
-          <h4>⑥ 证据 Schema 与融合逻辑 <span class="prio">P1 · 阶段 B</span></h4>
-          <p><strong>现状：</strong></p>
-          <ul>
-            <li>产品入口：<code>_build_rule_based_report</code>（<code>analyze_case.py</code>）— 非独立 <code>EvidenceSynthesizer</code> 类；<code>schema_version: 0.2.0</code></li>
-            <li>融合方式：分类概率 + 形态/临床/报告启发式加分 + 相似病例固定权重 <strong>0.35×占比</strong> — <strong>无</strong>可学习的 <code>rag_weight</code></li>
-            <li>输出字段：<code>supporting_evidence</code>、<code>uncertainty_flags</code>；<strong>无</strong>结构化 <code>conflicting_evidence</code>（ReAct/<code>EvidenceHub</code> 路径有）</li>
-            <li>评估契约：<code>docs copy/technical/AGENT_FRONTEND_REPORT_SCHEMA.json</code> 与 analyze 返回 JSON <strong>字段未完全对齐</strong></li>
-            <li>前端 <code>patient.agent_report</code> 仍可能显示「Dual-branch classifier not connected」— 与真实 Agent 结果易混淆</li>
-          </ul>
-          <p><strong>目标：</strong>统一 <code>ToolOutput → EvidenceBundle → PatientTReport</code>；实现科研计划中的 <code>final_T = base×(1-w) + rag×w</code>；冲突/抑制子组可评估。</p>
-        </div>
-
-        <div class="gap-card">
-          <h4>⑦ Stage-1 工具链未闭环 <span class="prio">P2 · 阶段 B+</span></h4>
-          <p><strong>现状：</strong></p>
-          <ul>
-            <li><code>SegmentationTool</code>：ConvNeXt-UNet fulldata / strict fallback — 可用，Dice 与中心相关</li>
-            <li><strong>无</strong>独立 <code>LumenDetectionTool</code>（YOLO 在 <code>experiments/baselines/detection_baseline_v1/</code>，未进 Agent registry）</li>
-            <li>Wall 证据：优先复用离线脚本 PNG（<code>wall_penetration_analysis/per_sample</code>），否则 live proxy 热图 — <strong>不是</strong>在线 wall-band 特征张量</li>
-            <li>region contrastive / breakthrough 特征已在训练 CSV（<code>region_contrastive_full</code>），Agent 未读 region patch 或 boundary head</li>
-          </ul>
-        </div>
-
-        <div class="gap-card">
-          <h4>⑧ 闭环关系（为何先 A 后 B）</h4>
-          <div class="mermaid-wrap">
-            <pre class="mermaid">
-flowchart LR
-  A[① 资产审计\n定 T/seg checkpoint] --> B[④ Split 重建]
-  B --> C[② 接 ClassificationTool]
-  C --> D[⑥ 证据 schema + ⑤ MIL]
-  D --> E[③ DINO RAG + RAGGate]
-  E --> F[⑧ 前端对齐\n冻结验证]
-            </pre>
-          </div>
-          <p class="note">不做 ① 直接改 ②，容易再次接错 checkpoint；不做 ④ 就训 RAG/报外部 AUC，审稿风险高。</p>
-        </div>
-      </section>
-
-      <!-- Architecture -->
-      <section id="arch">
-        <h2><span class="num">§6</span> 三层系统架构</h2>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart TB
-  subgraph L1["L1 数据层"]
-    D1[协和 train / 多中心 external]
-    D2[manifest · clinical22 · splits]
-  end
-  subgraph L2["L2 模型资产层 · 少训多选"]
-    S1[YOLO 胃腔]
-    S2[nnU-Net / DINO 分割]
-    S3["ConvNeXt T 分期 ★"]
-    S4[DINO 区域向量]
-  end
-  subgraph L3["L3 辅助诊断 Agent"]
-    T1[工具链 + 证据融合]
-    T2[T-centric Case-RAG]
-    T3[Next.js 工作台]
-  end
-  L1 --> L2 --> L3
-  L3 --> O1["主输出: T 分期 + 证据 + 不确定性"]
-  L3 --> O2["次输出: 质控 / 良恶性提示 / 报告"]
-          </pre>
-        </div>
-      </section>
-
-      <!-- Agent flow -->
-      <section id="agent-flow">
-        <h2><span class="num">§7</span> Agent 端到端流程</h2>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-sequenceDiagram
-  participant Doc as 医生
-  participant UI as Next.js 工作站
-  participant API as /api/agent/analyze
-  participant Py as analyze_case.py
-  participant Tools as 工具链
-  Doc->>UI: 选择病例 · 运行 Agent
-  UI->>API: POST 病例 payload
-  API->>Py: stdin JSON
-  Py->>Tools: 胃腔YOLO→分割→壁层SDF→形态→T分类(mask4ch+clinical22)→临床→报告→相似病例(RAG门控)→知识库
-  Tools-->>Py: 结构化证据
-  Py-->>API: stdout JSON
-  API-->>UI: T 分期 · 支持/冲突 · 相似病例
-  Doc->>UI: 复核 · 确认/修改/驳回
-          </pre>
-        </div>
-
-        <h3>工具链顺序（T 权重最高）</h3>
-        <div class="pipeline">
-          <span class="step">1. YOLO 胃腔</span><span class="arr">→</span>
-          <span class="step">2. 分割 mask/ROI</span><span class="arr">→</span>
-          <span class="step">3. Wall-band</span><span class="arr">→</span>
-          <span class="step">4. DINO 区域（可选）</span><span class="arr">→</span>
-          <span class="step">5. 多帧 MIL</span><span class="arr">→</span>
-          <span class="step star">6. T 分期分类 ★</span><span class="arr">→</span>
-          <span class="step">7. 临床 / 报告</span><span class="arr">→</span>
-          <span class="step star">8. Case-RAG + Gate ★</span><span class="arr">→</span>
-          <span class="step">9. 证据合成</span><span class="arr">→</span>
-          <span class="step">10. Memory / 轨迹</span>
-        </div>
-
-        <h3 id="methodology-fig">§7.1 · 方法学架构图（Poe GPT-Image-2）</h3>
-        <div class="card">
-          <p style="margin:0 0 0.75rem;font-size:0.92rem;">
-            细粒度方法学总图（五泳道：UI → API → analyze_case 15 步 → 证据融合 v0.3.0 → 冻结模型资产）由
-            <code>python scripts/generate_agent_figures_poe_batch.py</code>（Chat API + GPT-Image-2）批量生成。
-            规范见 <a href="gastric_us_agent_methodology_architecture_spec_zh.md" style="color:var(--accent)">methodology_architecture_spec_zh.md</a>。
-          </p>
-          <figure class="fig-standalone">
-            <img
-              src="gastric_us_agent_methodology_architecture_poe.png"
-              alt="Gastric US T-staging Agent methodology architecture"
-            />
-            <figcaption class="note">
-              <code>docs/mainline/gastric_us_agent_methodology_architecture_poe.png</code>
-            </figcaption>
-          </figure>
-        </div>
-
-        <h3 id="figure-gallery">§7.2 · 方法学与结果图集（Poe 批量）</h3>
-        <div class="card">
-          <p style="margin:0 0 0.75rem;font-size:0.92rem;">
-            下列 PNG 位于 <code>docs/mainline/figures/</code>。
-          </p>
-          <div class="figure-gallery">
-            <figure class="span-2">
-              <img src="figures/fig_agent_methodology_detailed.png" alt="Methodology detailed architecture" />
-              <figcaption>方法学总图 · 五泳道</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_agent_architecture_overview.png" alt="Architecture overview" />
-              <figcaption>四层总览</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_agent_toolchain_flow.png" alt="15-step toolchain" />
-              <figcaption>analyze_case 15 步工具链</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_agent_evidence_fusion.png" alt="Evidence fusion v0.3.0" />
-              <figcaption>证据融合 schema v0.3.0</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_agent_model_assets.png" alt="Model and data assets" />
-              <figcaption>数据与冻结模型资产</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_results_auc_comparison.png" alt="AUC results comparison" />
-              <figcaption>结果 · T 分期 AUC（外部/前瞻）</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_agent_workbench_ui.png" alt="Agent Workbench UI mockup" />
-              <figcaption>Workbench 产品示意</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_wall_lumen_evidence.png" alt="Lumen and wall evidence panels" />
-              <figcaption>结果 · Lumen + Wall 工具输出</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_rag_gate_flow.png" alt="RAG gate" />
-              <figcaption>Case-RAG 门控</figcaption>
-            </figure>
-
-
-
-
-
-          </div>
-        </div>
-
-        <div class="card highlight">
-          <h3>融合公式（T 为中心）</h3>
-          <p style="font-family:monospace;color:var(--accent2);margin:0;">
-            final_T_probs = base_T_probs × (1 − rag_weight) + case_vote_T_probs × rag_weight
-          </p>
-          <p style="margin:0.5rem 0 0;font-size:0.88rem;">
-            base 来自 ConvNeXt T 主线 · rag_weight 由 mask 质量、检索 entropy、T2/T3 边界、base-RAG 冲突决定 · 良恶性不覆盖 T 主结论
-          </p>
-        </div>
-      </section>
-
-      <!-- RAG -->
-      <section id="rag">
-        <h2><span class="num">§8</span> Case-RAG（服从 T，不喧宾夺主）</h2>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart LR
-  Q[当前病例] --> E[多区域 embedding]
-  E --> M[(Memory · 仅协和 train)]
-  M --> K[top-k 相似 T 病例]
-  K --> V[case vote · entropy · 冲突检测]
-  B[base T 模型] --> G{RAG Gate}
-  V --> G
-  G -->|低权重/冲突| OUT[推荐 T + 不确定性]
-  G -->|边界模糊| OUT
-          </pre>
-        </div>
-        <table>
-          <tr><th>检索向量</th><td>lesion · wall-band · breakthrough · intact control · 差分特征</td></tr>
-          <tr><th>Hard negative</th><td>T2↔T3 · T3↔T4+ · 假突破 · 外观相似分期不同</td></tr>
-          <tr><th>门控规则</th><td>mask 差 → 只展示 · entropy 高 → 不改 T · 冲突 → 记冲突证据</td></tr>
-        </table>
-        <figure style="margin:1.25rem 0;text-align:center;">
-          <img src="figures/fig_rag_gate_flow.png" alt="RAG gate flowchart" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
-          <figcaption class="note">Case-RAG 门控示意 · <code>figures/fig_rag_gate_flow.png</code></figcaption>
-        </figure>
-      </section>
-
-      <!-- Data volumes -->
-      <section id="data-stats">
-        <h2><span class="num">§9</span> 主要数据与规模</h2>
-        <p>下列表格来自 <code>dataset/DATASET_GUIDE.md</code>（复核 2026-05-05）。做实验前务必分清 <strong>manifest 物理口径</strong> 与 <strong>T 分期建模 CSV 口径</strong>，二者不可混用。</p>
-
-        <div class="sub-nav">
-          <a href="#data-caliber">多口径总览</a>
-          <a href="#data-manifest">manifest 物理</a>
-          <a href="#data-centers">多中心清单</a>
-          <a href="#data-internal-year">协和按年</a>
-          <a href="#data-split">建模 split</a>
-          <a href="#data-source">按 source</a>
-          <a href="#data-tier">验证分层</a>
-          <a href="#data-aux">辅助任务数据</a>
-          <a href="#data-issues">待迁移问题</a>
-        </div>
-
-        <h3 id="data-caliber">9.1 多口径总览（最易混用）</h3>
-
-        <div class="table-wrap">
-          <table>
-            <caption>不同口径服务不同任务；写论文 Methods 时必须写明用的是哪一种</caption>
-            <thead>
-              <tr>
-                <th>口径</th>
-                <th>数据范围</th>
-                <th class="num">图像/行数</th>
-                <th class="num">去重图像</th>
-                <th class="num">患者数</th>
-                <th>当前用途</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>manifest</code> 正式预处理</td>
-                <td><code>dataset/internal</code> + <code>external</code></td>
-                <td class="num">13,515</td>
-                <td class="num">13,515</td>
-                <td class="num">—</td>
-                <td>分割、ROI、物理统计</td>
-              </tr>
-              <tr>
-                <td><strong>T 分期建模 CSV</strong></td>
-                <td><code>.../regions/*_clinical.csv</code></td>
-                <td class="num total">12,851</td>
-                <td class="num">11,758</td>
-                <td class="num total">2,083</td>
-                <td><strong>T 训练/评估主口径</strong></td>
-              </tr>
-              <tr>
-                <td>新增 zip review</td>
-                <td>外省整理 + 德化 zip</td>
-                <td class="num">552</td>
-                <td class="num">552</td>
-                <td class="num">155 前缀</td>
-                <td>GT-mask review、独立 external</td>
-              </tr>
-              <tr>
-                <td>建模 + zip 未入 split</td>
-                <td>CSV + 57 张未标注</td>
-                <td class="num">12,908</td>
-                <td class="num">11,815</td>
-                <td class="num">~2,102</td>
-                <td>工作量估算</td>
-              </tr>
-              <tr>
-                <td>manifest + zip 物理</td>
-                <td>正式 + 新增图像</td>
-                <td class="num">14,067</td>
-                <td class="num">14,067</td>
-                <td class="num">—</td>
-                <td>磁盘可用标注规模</td>
-              </tr>
-              <tr>
-                <td>良性炎症分割</td>
-                <td><code>nnunet_benign_finetune.csv</code></td>
-                <td class="num">372</td>
-                <td class="num">372</td>
-                <td class="num">318</td>
-                <td>非 T 分期；分割预训练</td>
-              </tr>
-              <tr>
-                <td>胃溃疡视频</td>
-                <td>中核五〇四医院目录</td>
-                <td class="num">1,990 帧</td>
-                <td class="num">1,990</td>
-                <td class="num">76 文件夹</td>
-                <td>良恶性视频；非 T 四分类</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 id="data-manifest">9.2 正式 manifest 物理样本（<code>dataset/</code>）</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>数据块</th>
-                <th class="num">成功样本</th>
-                <th class="num">错误样本</th>
-                <th class="num">匹配成功</th>
-                <th class="num">图像候选</th>
-                <th class="num">标注候选</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>内部 <code>internal/</code></td>
-                <td class="num">10,659</td>
-                <td class="num">6</td>
-                <td class="num">10,665</td>
-                <td class="num">10,726</td>
-                <td class="num">10,714</td>
-              </tr>
-              <tr>
-                <td>外部 <code>external/</code></td>
-                <td class="num">2,856</td>
-                <td class="num">2</td>
-                <td class="num">2,858</td>
-                <td class="num">2,869</td>
-                <td class="num">2,863</td>
-              </tr>
-              <tr>
-                <td class="total">合计</td>
-                <td class="num total">13,515</td>
-                <td class="num">8</td>
-                <td class="num total">13,523</td>
-                <td class="num">13,595</td>
-                <td class="num">13,577</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 id="data-centers">9.3 多中心清单（标准医院名）</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>标准医院</th>
-                <th>目录 / source</th>
-                <th class="num">manifest 帧</th>
-                <th class="num">建模帧</th>
-                <th class="num">临床患者</th>
-                <th>T 分期</th>
-                <th>当前 split 角色</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><span class="tier-badge tier-dev">开发</span>福建协和</td>
-                <td><code>internal/</code> · <code>int/*</code></td>
-                <td class="num">10,659</td>
-                <td class="num">9,681</td>
-                <td class="num">1,883</td>
-                <td>是</td>
-                <td>train / val / test / prospective</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-1">Tier-1</span>莆田学院附属</td>
-                <td><code>ext/putian*</code></td>
-                <td class="num">2,376</td>
-                <td class="num">~1,922</td>
-                <td class="num">344</td>
-                <td>是</td>
-                <td>主外部（部分仍在 train，待迁出）</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-1">Tier-1</span>莆田市第一医院</td>
-                <td><code>莆田市第一医院</code></td>
-                <td class="num">25</td>
-                <td class="num">0</td>
-                <td class="num">8</td>
-                <td>是</td>
-                <td>test_external</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-2">Tier-2</span>福建省肿瘤医院</td>
-                <td><code>ext/zhongliu</code></td>
-                <td class="num">436</td>
-                <td class="num">229</td>
-                <td class="num">135</td>
-                <td>是</td>
-                <td>test_external</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-2">Tier-2</span>三明市第二医院</td>
-                <td><code>三明市第二医院</code></td>
-                <td class="num">19</td>
-                <td class="num">0</td>
-                <td class="num">4</td>
-                <td>是</td>
-                <td>test_external</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-2">Tier-2</span>德化县医院</td>
-                <td><code>ext/newzip/德化</code></td>
-                <td class="num">100</td>
-                <td class="num">88</td>
-                <td class="num">16</td>
-                <td>是</td>
-                <td>test_external_newzip</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-3">Tier-3</span>北京友谊医院</td>
-                <td><code>ext/newzip/北京</code></td>
-                <td class="num">124</td>
-                <td class="num">124</td>
-                <td class="num">22</td>
-                <td>是</td>
-                <td>地域亚组 · newzip</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-2">Tier-2</span>佛山市第一人民医院</td>
-                <td><code>ext/newzip/广东</code></td>
-                <td class="num">112</td>
-                <td class="num">67</td>
-                <td class="num">31</td>
-                <td>部分</td>
-                <td>test_external_newzip</td>
-              </tr>
-              <tr>
-                <td><span class="tier-badge tier-2">Tier-2</span>湖北中西医结合医院</td>
-                <td><code>ext/newzip/湖北</code></td>
-                <td class="num">216</td>
-                <td class="num">216</td>
-                <td class="num">67</td>
-                <td>是</td>
-                <td>test_external_newzip</td>
-              </tr>
-              <tr>
-                <td>中核五〇四（溃疡视频）</td>
-                <td>独立 <code>data/</code> 目录</td>
-                <td class="num">0</td>
-                <td class="num">0</td>
-                <td class="num">0</td>
-                <td>否</td>
-                <td>良恶性视频任务</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 id="data-internal-year">9.4 协和内部 manifest 按年分布</h3>
-        <div class="two-col">
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>年份分组</th><th class="num">正式样本</th><th class="num">占比</th></tr></thead>
-              <tbody>
-                <tr><td>2018</td><td class="num">3,638</td><td class="num">34.13%</td></tr>
-                <tr><td>2019</td><td class="num">2,856</td><td class="num">26.79%</td></tr>
-                <tr><td>2020_2023</td><td class="num">199</td><td class="num">1.87%</td></tr>
-                <tr><td>2024</td><td class="num">1,539</td><td class="num">14.44%</td></tr>
-                <tr><td>2025 前瞻池</td><td class="num">2,427</td><td class="num">22.77%</td></tr>
-                <tr><td class="total">合计</td><td class="num total">10,659</td><td class="num">100%</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="card">
-            <p><strong>解读：</strong>2018–2019 为内部主力；<strong>2025 为前瞻池</strong>，不宜与 2018–2024 训练池混用；2020_2023 样本极少，年份分析需单独说明。</p>
-            <p style="margin-top:0.5rem;"><strong>建模 CSV 中协和有 T 标签患者约 <span style="color:var(--accent2)">~1,556</span></strong>（<code>int/*</code> 去重），足够支撑四分类 T 分期主任务。</p>
-          </div>
-        </div>
-
-        <h3 id="data-split">9.5 T 分期建模 CSV — 按 split（帧级行数 + T 分布）</h3>
-        <p class="note">路径：<code>pipeline/data/tstaging_4class_region_contrastive_full/regions/*_clinical.csv</code> · 含 region patch、clinical22、预测 mask</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Split</th>
-                <th class="num">图像行</th>
-                <th class="num">患者</th>
-                <th class="num">T1</th>
-                <th class="num">T2</th>
-                <th class="num">T3</th>
-                <th class="num">T4+</th>
-                <th>说明</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>train</code></td>
-                <td class="num">8,783</td>
-                <td class="num">1,405</td>
-                <td class="num">1,510</td>
-                <td class="num">1,037</td>
-                <td class="num">3,136</td>
-                <td class="num">3,100</td>
-                <td>含 ~192 例外部患者，待迁出</td>
-              </tr>
-              <tr>
-                <td><code>val</code></td>
-                <td class="num">1,041</td>
-                <td class="num">161</td>
-                <td class="num">206</td>
-                <td class="num">83</td>
-                <td class="num">350</td>
-                <td class="num">402</td>
-                <td>超参 / gate 选择</td>
-              </tr>
-              <tr>
-                <td><code>test_external</code></td>
-                <td class="num">2,298</td>
-                <td class="num">381</td>
-                <td class="num">421</td>
-                <td class="num">184</td>
-                <td class="num">893</td>
-                <td class="num">800</td>
-                <td>多中心外部主集</td>
-              </tr>
-              <tr>
-                <td><code>test_external_newzip</code></td>
-                <td class="num">495</td>
-                <td class="num">136</td>
-                <td class="num">63</td>
-                <td class="num">106</td>
-                <td class="num">157</td>
-                <td class="num">169</td>
-                <td>外省整理 + 德化</td>
-              </tr>
-              <tr>
-                <td><code>test_prospective</code></td>
-                <td class="num">234</td>
-                <td class="num">46</td>
-                <td class="num">39</td>
-                <td class="num">31</td>
-                <td class="num">100</td>
-                <td class="num">64</td>
-                <td>2025 前瞻 · 汇报以此为准</td>
-              </tr>
-              <tr>
-                <td class="total">合计</td>
-                <td class="num total">12,851</td>
-                <td class="num total">2,083</td>
-                <td class="num">2,239</td>
-                <td class="num">1,441</td>
-                <td class="num">4,636</td>
-                <td class="num">4,535</td>
-                <td>CSV 行；去重图像 11,758</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h4>全库 T 分期帧级分布（合计 12,851 行）</h4>
-        <div class="bar-chart">
-          <div class="bar-row"><span>T1</span><div class="track"><div class="fill t1" style="width:17.4%">17.4%</div></div><span class="num">2,239</span></div>
-          <div class="bar-row"><span>T2</span><div class="track"><div class="fill t2" style="width:11.2%">11.2%</div></div><span class="num">1,441</span></div>
-          <div class="bar-row"><span>T3</span><div class="track"><div class="fill t3" style="width:36.1%">36.1%</div></div><span class="num">4,636</span></div>
-          <div class="bar-row"><span>T4+</span><div class="track"><div class="fill t4" style="width:35.3%">35.3%</div></div><span class="num">4,535</span></div>
-        </div>
-        <p class="note"><strong>T2 仅约 11%</strong> — 是模型与临床的主要难点；Agent 与 Case-RAG 应重点服务 T2/T3、T3/T4+ 边界。</p>
-
-        <h3 id="data-source">9.6 按 source（建模 CSV）</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>source</th>
-                <th class="num">图像行</th>
-                <th class="num">患者</th>
-                <th class="num">T1</th>
-                <th class="num">T2</th>
-                <th class="num">T3</th>
-                <th class="num">T4+</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td><code>int/2018</code></td><td class="num">3,355</td><td class="num">497</td><td class="num">550</td><td class="num">337</td><td class="num">1,308</td><td class="num">1,160</td></tr>
-              <tr><td><code>int/2019</code></td><td class="num">2,464</td><td class="num">507</td><td class="num">447</td><td class="num">372</td><td class="num">913</td><td class="num">732</td></tr>
-              <tr><td><code>int/2020_2023</code></td><td class="num">164</td><td class="num">16</td><td class="num">7</td><td class="num">13</td><td class="num">80</td><td class="num">64</td></tr>
-              <tr><td><code>int/2024</code></td><td class="num">2,252</td><td class="num">277</td><td class="num">397</td><td class="num">153</td><td class="num">640</td><td class="num">1,062</td></tr>
-              <tr><td><code>int/prospective</code></td><td class="num">1,446</td><td class="num">213</td><td class="num">293</td><td class="num">163</td><td class="num">469</td><td class="num">521</td></tr>
-              <tr><td><code>ext/putian</code> 等莆田系</td><td class="num">2,322</td><td class="num">~338</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
-              <tr><td><code>ext/zhongliu</code></td><td class="num">229</td><td class="num">54</td><td class="num">7</td><td class="num">12</td><td class="num">72</td><td class="num">138</td></tr>
-              <tr><td><code>ext/newzip/*</code></td><td class="num">495</td><td class="num">136</td><td class="num">63</td><td class="num">106</td><td class="num">157</td><td class="num">169</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 id="data-tier">9.7 内外部大类 & 目标时间切分（论文设计）</h3>
-        <div class="two-col">
-          <div class="table-wrap">
-            <table>
-              <caption>当前建模 CSV 内外部大类</caption>
-              <thead>
-                <tr><th>大类</th><th class="num">行</th><th class="num">患者</th><th class="num">T2 帧</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>内部 2018–2024 池</td><td class="num">8,235</td><td class="num">1,297</td><td class="num">875</td></tr>
-                <tr><td>内部 prospective 行</td><td class="num">1,212</td><td class="num">213</td><td class="num">132</td></tr>
-                <tr><td>外部 <code>ext/*</code></td><td class="num">3,170</td><td class="num">573</td><td class="num">403</td></tr>
-                <tr><td>前瞻视图 <code>test_prospective</code></td><td class="num">234</td><td class="num">46</td><td class="num">31</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <caption>目标 split（协和-only train · 待 Phase 0 落地）</caption>
-              <thead>
-                <tr><th>Split</th><th>时间</th><th class="num">约患者</th><th>用途</th></tr>
-              </thead>
-              <tbody>
-                <tr><td><code>train</code></td><td>2018–2022</td><td class="num">~1,000+</td><td>训练 · SSL · RAG memory</td></tr>
-                <tr><td><code>val</code></td><td>2023 上半年</td><td class="num">~200–250</td><td>阈值 · gate</td></tr>
-                <tr><td><code>test_internal</code></td><td>2023H2–2024</td><td class="num">~300–350</td><td>时间外部</td></tr>
-                <tr><td><code>test_prospective</code></td><td>2025 连续入组</td><td class="num">46（已有）</td><td>最强时间验证</td></tr>
-                <tr><td>Tier-1 外部</td><td>莆田系</td><td class="num">~219+</td><td>主外部 T 表</td></tr>
-                <tr><td>Tier-2 pooled</td><td>省肿瘤等</td><td class="num">合并</td><td>森林图</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <h3 id="data-aux">9.8 辅助任务数据（非 T 四分类主表）</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>任务</th><th>位置</th><th class="num">规模</th><th>标签</th><th>与 Agent 关系</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>良性炎症分割</td>
-                <td><code>nnunet_benign_finetune.csv</code></td>
-                <td class="num">372 图 / 318 患者</td>
-                <td>LabelMe 炎症 ROI</td>
-                <td>分割预训练；非 T 标签</td>
-              </tr>
-              <tr>
-                <td>胃溃疡视频良恶性</td>
-                <td>中核五〇四 <code>data/</code></td>
-                <td class="num">158 视频 · 1,990 帧</td>
-                <td>目录级良/恶</td>
-                <td>P3 方法验证；质控提示</td>
-              </tr>
-              <tr>
-                <td>新增 zip（未全入建模）</td>
-                <td>外省 + 德化</td>
-                <td class="num">552 图 / 57 无 pT</td>
-                <td>部分 .nii.gz GT</td>
-                <td>review · median IoU 0.06–0.15</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 id="data-issues">9.9 数据纪律与待办</h3>
-        <div class="card highlight">
-          <ul style="margin-left:1.2rem;color:#475569;font-size:0.9rem;">
-            <li><span class="gap-warn">train 含 ~192 例外部患者（1,158 行）</span> — 与「协和-only 训练」冲突，Phase 0 必须迁出。</li>
-            <li>CSV 行数 12,851 &gt; 去重图像 11,758：同一图像可出现在多 split 视图，<strong>患者级评估</strong>须去重。</li>
-            <li>前瞻结果以 <code>test_prospective_clinical.csv</code> 为准（46 患者 / 234 帧）。</li>
-            <li>外部小中心（n&lt;50）不单报 AUC，合并 Tier-2 + bootstrap CI。</li>
-            <li>pT 映射：1→T1，2→T2，3→T3，4/5→T4+。</li>
-          </ul>
-        </div>
-
-        <h3>9.10 建模 CSV 重复行说明</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>统计项</th><th class="num">数量</th></tr></thead>
-            <tbody>
-              <tr><td>CSV 总行数</td><td class="num">12,851</td></tr>
-              <tr><td>去重 <code>image_path</code></td><td class="num">11,758</td></tr>
-              <tr><td>去重 <code>patient_id</code></td><td class="num">2,083</td></tr>
-              <tr><td>重复行（行数 − 去重图）</td><td class="num">1,093</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Data -->
-      <section id="data">
-        <h2><span class="num">§10</span> 数据策略与验证</h2>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart TB
-  subgraph dev["开发 · 仅协和"]
-    TR[2018-2022 train]
-    VA[2023H1 val]
-    TI[2023H2-2024 test_internal]
-    TP[2025 prospective]
-  end
-  subgraph ext["外部 · 冻结"]
-    T1[Tier-1 莆田系 · 主外部表]
-    T2[Tier-2 小中心 pooled]
-    T3[Tier-3 北京友谊]
-  end
-  TR --> Models[训练 T · SSL · RAG memory]
-  VA --> Models
-  Models --> TI
-  Models --> TP
-  Models --> T1
-  Models --> T2
-  Models --> T3
-          </pre>
-        </div>
-        <table>
-          <thead><tr><th>验证维度</th><th>含义</th></tr></thead>
-          <tbody>
-            <tr><td>时间外部</td><td>旧数据训练 → 2024/2025 新数据测试</td></tr>
-            <tr><td>空间外部</td><td>未见医院 · Tier-1/2/3</td></tr>
-            <tr><td>机构层级</td><td>三甲 → 县级 · 森林图</td></tr>
-          </tbody>
-        </table>
-        <p><strong>主要终点：</strong>T 分期 accuracy / macro-F1 / T2 recall / T2|T3 AUC ·
-        <strong>次要：</strong>良恶性 AUC（质控）· <strong>Agent：</strong>full vs base T-only · RAG 子组</p>
-        <p class="gap-warn"><strong>M14 纪律：</strong>首次外部评估后模型权重冻结，禁止回头用外部调参再测。</p>
-      </section>
-
-      <!-- Benign -->
-      <section id="benign">
-        <h2><span class="num">§11</span> 良恶性与边缘监督的位置</h2>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart TB
-  AG["辅助诊断 Agent\n主输出: T 分期 + 证据链"]
-  T["T 分期主线\nConvNeXt + ROI + wall"]
-  RAG["Case-RAG 门控"]
-  BEN["良恶性 / 质控提示\n次要"]
-  EDGE["边缘 patch 对比学习\n方法验证"]
-  AG --> T
-  AG --> RAG
-  AG --> BEN
-  EDGE -->|有效则迁移| T
-          </pre>
-        </div>
-        <p>良恶性：<strong>先做、不重要</strong> — 验证 shortcut 与域泛化；有效再用于 T2/T3 patch，不作为论文主叙事。</p>
-      </section>
-
-      <!-- Roadmap -->
-      <section id="roadmap">
-        <h2><span class="num">§12</span> 执行路线（三阶段）</h2>
-
-        <div class="timeline">
-          <div class="phase">
-            <h4>阶段 A · 读懂现有结果（2–3 周）</h4>
-            <p>读 scoreboard / baseline_registry · 定 Agent 默认 T checkpoint · 梳理分割/YOLO fallback · 读 scientific_summary 定 RAG 是否进 v1</p>
-            <p>交付：<code>model_asset_audit.md</code> · <code>agent_backend_registry.yaml</code> · <code>tstaging_classifier_architecture_zh.md</code> ✅</p>
-          </div>
-          <div class="phase">
-            <h4>阶段 B · Agent 整合（4–6 周）</h4>
-            <p>协和-only split · ContrastiveTStagingTool / patch@inference · 临床22 对齐 · DINO Case-RAG · RAGGate · Workbench 去 placeholder</p>
-          </div>
-          <div class="phase">
-            <h4>阶段 C · 冻结验证与论文（6–8 周）</h4>
-            <p>科学基准全矩阵 · internal + prospective + Tier-1/2/3 · T 主表 + Agent 消融 + 森林图</p>
-          </div>
-        </div>
-        <h3>明确暂缓</h3>
-        <p>大规模四分类 backbone 竞赛 · 无 T 目标 VLM · 孤立 RAG demo · 外部数据训练后冒充外部验证</p>
-      </section>
-
-      <!-- Docs -->
-      <section id="docs">
-        <h2><span class="num">§13</span> 文档与代码索引</h2>
-        <table>
-          <thead><tr><th>文档</th><th>用途</th></tr></thead>
-          <tbody>
-            <tr><td><code>gastric_tstaging_project_framework_zh.md</code></td><td>总框架（Markdown 版）</td></tr>
-            <tr><td><code>model_asset_audit.md</code></td><td>模型选型审计表</td></tr>
-            <tr><td><code>tstaging_classifier_architecture_zh.md</code></td><td>T 分类器：双分支 / patch / 相似病例分层</td></tr>
-            <tr><td><code>tstaging_current_mainline.md</code></td><td>当前执行顺序</td></tr>
-            <tr><td><code>gastric_us_agent_scientific_validation_and_case_rag_plan_zh.md</code></td><td>验证与 RAG 细则</td></tr>
-            <tr><td><code>dataset/DATASET_GUIDE.md</code></td><td>数据口径</td></tr>
-          </tbody>
-        </table>
-        <div class="mermaid-wrap">
-          <pre class="mermaid">
-flowchart TD
-  HTML[本 HTML 总览]
-  FW[framework_zh.md]
-  EX[current_mainline]
-  SV[scientific_validation]
-  DG[DATASET_GUIDE]
-  HTML --> FW
-  FW --> EX
-  FW --> SV
-  FW --> DG
-          </pre>
-        </div>
       </section>
 
       <footer>
