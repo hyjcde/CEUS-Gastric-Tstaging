@@ -139,6 +139,34 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 1px rgba(61, 184, 201, 0.15);
     }
+    .figure-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+    .figure-gallery figure {
+      margin: 0;
+      text-align: center;
+    }
+    .figure-gallery img {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .figure-gallery figcaption {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      line-height: 1.4;
+    }
+    .figure-gallery figure.span-2 {
+      grid-column: span 2;
+    }
+    @media (max-width: 720px) {
+      .figure-gallery figure.span-2 { grid-column: span 1; }
+    }
     .pyramid {
       display: flex;
       flex-direction: column;
@@ -493,7 +521,10 @@
       <a href="#gaps">缺口</a>
       <a href="#arch">系统架构</a>
       <a href="#agent-flow">Agent 流程</a>
+      <a href="#results-figures">结果图专区</a>
+      <a href="#local-results">本地结果图</a>
       <a href="#methodology-fig">方法学架构图</a>
+      <a href="#figure-gallery">图集 §7.2</a>
       <a href="#rag">Case-RAG</a>
       <a href="#data-stats">主要数据规模</a>
       <a href="#data">数据策略</a>
@@ -585,6 +616,228 @@
           阶段 B–C 为 split 重建、对比学习推理接入、门控 Case-RAG 与 M14 后冻结的外部/前瞻主表。
           下文展开 KPI、数据规模（§9）、分类器架构辨析（§4.5）、Agent JSON 输出示例与缺口路线图。
         </p>
+        <div class="figure-gallery" style="margin-top:1rem;">
+          <figure>
+            <img src="figures/local/local_auc_comparison.png" alt="Local AUC comparison from training runs" />
+            <figcaption>本地 · 四分类 AUC 对比（外部 / 前瞻）</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_comprehensive_panel.png" alt="Comprehensive results panel" />
+            <figcaption>本地 · 综合结果面板</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_results_auc_comparison.png" alt="Poe AUC schematic" />
+            <figcaption>Poe 示意 · 冻结线 KPI（与正文数值一致）</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="results-figures">
+        <h2>结果与方法示意图（Poe · 离线包）</h2>
+        <p style="font-size:0.92rem;color:var(--muted);">
+          图片由 <code>scripts/generate_agent_figures_poe_batch.py</code> 生成（读取仓库根目录 <code>.env</code> 中的 <code>POE_API_KEY</code>）。
+          完整离线包：<code>docs/mainline/project_logic_bundle/</code>（运行 <code>python scripts/package_project_logic_bundle.py --zip</code>）。
+        </p>
+        <h3>方法学示意</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/fig_agent_architecture_overview.png" alt="Architecture overview" />
+            <figcaption>四层总览</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_agent_toolchain_flow.png" alt="Toolchain" />
+            <figcaption>15 步工具链</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_agent_evidence_fusion.png" alt="Evidence fusion" />
+            <figcaption>证据融合 v0.3.0</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_agent_model_assets.png" alt="Model assets" />
+            <figcaption>模型与数据资产</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_rag_gate_flow.png" alt="RAG gate" />
+            <figcaption>Case-RAG 门控</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_mil_multiframe.png" alt="MIL multiframe" />
+            <figcaption>多帧 MIL 聚合</figcaption>
+          </figure>
+        </div>
+        <h3>结果与产品示意</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/fig_results_auc_comparison.png" alt="AUC comparison" />
+            <figcaption>T 分期 AUC（外部/前瞻）</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_prospective_cohort.png" alt="Prospective cohort" />
+            <figcaption>前瞻队列 KPI</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_agent_workbench_ui.png" alt="Workbench" />
+            <figcaption>Workbench UI</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_wall_lumen_evidence.png" alt="Lumen wall" />
+            <figcaption>Lumen + Wall 工具输出</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_agent_json_report.png" alt="Agent JSON" />
+            <figcaption>Agent JSON 报告结构</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_data_caliber_comparison.png" alt="Data calibers" />
+            <figcaption>数据多口径对照</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/fig_roadmap_phases.png" alt="Roadmap" />
+            <figcaption>三阶段路线</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="local-results">
+        <h2>本地实验与论文结果图</h2>
+        <p style="font-size:0.92rem;color:var(--muted);">
+          下列为仓库内<strong>真实训练/评估输出</strong>，已从
+          <code>docs copy/export_text_media_20260408/.../manuscript/figures/</code>
+          与 <code>experiments/segmentation/</code> 复制到
+          <code>docs/mainline/figures/local/</code>（共 28 张，便于离线 HTML 浏览）。
+        </p>
+
+        <h3>T 分期 · AUC / Recall / 热力图</h3>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/local/local_comprehensive_panel.png" alt="Comprehensive panel" />
+            <figcaption>综合结果面板 · fig5_panel_comprehensive</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_auc_comparison.png" alt="AUC comparison" />
+            <figcaption>四分类 AUC 对比</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_sfig_auc_comparison.png" alt="Supplementary AUC" />
+            <figcaption>补充图 · 多模型 AUC</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_recall_heatmap.png" alt="Recall heatmap" />
+            <figcaption>各类 Recall 热力图</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_recall_heatmap_v2.png" alt="Recall heatmap v2" />
+            <figcaption>Recall 热力图（分类专集）</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_4class_heatmap_external.png" alt="External 4-class heatmap" />
+            <figcaption>外部验证 · 四分类热力图</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_4class_heatmap_prospective.png" alt="Prospective 4-class heatmap" />
+            <figcaption>前瞻验证 · 四分类热力图</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/local/local_per_class_recall_curves.png" alt="Per-class recall curves" />
+            <figcaption>逐类 Recall 曲线</figcaption>
+          </figure>
+        </div>
+
+        <h3>混淆矩阵 · ROC</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/local/local_confusion_matrix.png" alt="Confusion matrix" />
+            <figcaption>四分类混淆矩阵（主图）</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_confusion_dual.png" alt="Dual confusion" />
+            <figcaption>外部 + 前瞻双混淆矩阵</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_cm_external.png" alt="CM external" />
+            <figcaption>外部 · 混淆矩阵</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_cm_prospective.png" alt="CM prospective" />
+            <figcaption>前瞻 · 混淆矩阵</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_cross_domain_roc.png" alt="Cross-domain ROC" />
+            <figcaption>跨域 ROC</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_crosshospital_roc.png" alt="Cross-hospital ROC" />
+            <figcaption>跨院 ROC</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_test_main_roc.png" alt="Main test ROC" />
+            <figcaption>主测试集 ROC</figcaption>
+          </figure>
+        </div>
+
+        <h3>分割 · ROI · 级联</h3>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/local/local_seg_comparison.png" alt="Segmentation comparison" />
+            <figcaption>多中心分割对比（SAM2 / nnU-Net 等）</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_sam2_eval.png" alt="SAM2 eval" />
+            <figcaption>SAM2 评估对比</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_cascade_eval.png" alt="Cascade eval" />
+            <figcaption>级联分割评估</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_mask_prompt.png" alt="Mask prompt" />
+            <figcaption>Mask prompt 对比</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_roi_comparison.png" alt="ROI comparison" />
+            <figcaption>ROI 策略对比</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_roi_gt_vs_pred.png" alt="ROI GT vs pred" />
+            <figcaption>GT vs 预测 ROI</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_dinov3_seg_eval_summary.png" alt="DINOv3 seg eval" />
+            <figcaption>DINOv3 分割 · 评估摘要（20260514）</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_dinov3_seg_training_curves.png" alt="DINOv3 seg training" />
+            <figcaption>DINOv3 分割 · 训练曲线</figcaption>
+          </figure>
+        </div>
+
+        <h3>训练收敛 · 研究总览 · 方向证据</h3>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/local/local_study_overview.png" alt="Study overview" />
+            <figcaption>研究总览示意</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_convergence_loss_auc.png" alt="Convergence" />
+            <figcaption>Loss / AUC 收敛</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_all_models_loss_auc.png" alt="All models convergence" />
+            <figcaption>多模型 Loss-AUC</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_sfig_training_curves.png" alt="Training curves" />
+            <figcaption>补充 · 训练曲线</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/local/local_dinov2_training_curves.png" alt="DINOv2 curves" />
+            <figcaption>DINOv2 训练曲线</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/local/local_directional_rose.png" alt="Directional rose" />
+            <figcaption>方向性玫瑰图（T2/T3 边界证据）</figcaption>
+          </figure>
+        </div>
       </section>
 
       <!-- §0 Logic -->
@@ -1344,7 +1597,7 @@ sequenceDiagram
         <div class="card">
           <p style="margin:0 0 0.75rem;font-size:0.92rem;">
             细粒度方法学总图（五泳道：UI → API → analyze_case 15 步 → 证据融合 v0.3.0 → 冻结模型资产）由
-            <code>scripts/generate_agent_architecture_image_poe.py --variant detailed</code> 生成。
+            <code>python scripts/generate_agent_figures_poe_batch.py</code>（Chat API + GPT-Image-2）批量生成。
             规范见 <a href="gastric_us_agent_methodology_architecture_spec_zh.md" style="color:var(--accent)">methodology_architecture_spec_zh.md</a>。
           </p>
           <figure style="margin:0;text-align:center;">
@@ -1352,16 +1605,76 @@ sequenceDiagram
               src="gastric_us_agent_methodology_architecture_poe.png"
               alt="Gastric US T-staging Agent methodology architecture"
               style="max-width:100%;border:1px solid var(--border);border-radius:8px;background:#fff;"
-              onerror="this.style.display='none';this.nextElementSibling.style.display='block';"
             />
-            <p class="note" style="display:none;margin-top:0.75rem;">
-              图尚未生成：请设置 <code>POE_API_KEY</code> 后运行
-              <code>python scripts/generate_agent_architecture_image_poe.py --variant detailed --model GPT-Image-2</code>
-            </p>
             <figcaption class="note" style="margin-top:0.5rem;">
               <code>docs/mainline/gastric_us_agent_methodology_architecture_poe.png</code>
             </figcaption>
           </figure>
+        </div>
+
+        <h3 id="figure-gallery">§7.2 · 方法学与结果图集（Poe 批量）</h3>
+        <div class="card">
+          <p style="margin:0 0 0.75rem;font-size:0.92rem;">
+            下列 PNG 位于 <code>docs/mainline/figures/</code>。
+          </p>
+          <div class="figure-gallery">
+            <figure class="span-2">
+              <img src="figures/fig_agent_methodology_detailed.png" alt="Methodology detailed architecture" />
+              <figcaption>方法学总图 · 五泳道</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_agent_architecture_overview.png" alt="Architecture overview" />
+              <figcaption>四层总览</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_agent_toolchain_flow.png" alt="15-step toolchain" />
+              <figcaption>analyze_case 15 步工具链</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_agent_evidence_fusion.png" alt="Evidence fusion v0.3.0" />
+              <figcaption>证据融合 schema v0.3.0</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_agent_model_assets.png" alt="Model and data assets" />
+              <figcaption>数据与冻结模型资产</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_results_auc_comparison.png" alt="AUC results comparison" />
+              <figcaption>结果 · T 分期 AUC（外部/前瞻）</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_agent_workbench_ui.png" alt="Agent Workbench UI mockup" />
+              <figcaption>Workbench 产品示意</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_wall_lumen_evidence.png" alt="Lumen and wall evidence panels" />
+              <figcaption>结果 · Lumen + Wall 工具输出</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_rag_gate_flow.png" alt="RAG gate" />
+              <figcaption>Case-RAG 门控</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_mil_multiframe.png" alt="MIL" />
+              <figcaption>多帧 MIL</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_data_caliber_comparison.png" alt="Data caliber" />
+              <figcaption>数据口径</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_agent_json_report.png" alt="JSON report" />
+              <figcaption>JSON 报告</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_prospective_cohort.png" alt="Prospective" />
+              <figcaption>前瞻队列</figcaption>
+            </figure>
+            <figure>
+              <img src="figures/fig_roadmap_phases.png" alt="Roadmap" />
+              <figcaption>执行路线</figcaption>
+            </figure>
+          </div>
         </div>
 
         <div class="card highlight">
@@ -1396,6 +1709,10 @@ flowchart LR
           <tr><th>Hard negative</th><td>T2↔T3 · T3↔T4+ · 假突破 · 外观相似分期不同</td></tr>
           <tr><th>门控规则</th><td>mask 差 → 只展示 · entropy 高 → 不改 T · 冲突 → 记冲突证据</td></tr>
         </table>
+        <figure style="margin:1.25rem 0;text-align:center;">
+          <img src="figures/fig_rag_gate_flow.png" alt="RAG gate flowchart" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
+          <figcaption class="note">Case-RAG 门控示意 · <code>figures/fig_rag_gate_flow.png</code></figcaption>
+        </figure>
       </section>
 
       <!-- Data volumes -->
@@ -1416,6 +1733,10 @@ flowchart LR
         </div>
 
         <h3 id="data-caliber">9.1 多口径总览（最易混用）</h3>
+        <figure style="margin:0 0 1rem;text-align:center;">
+          <img src="figures/fig_data_caliber_comparison.png" alt="Data caliber comparison" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
+          <figcaption class="note">数据口径对照图 · <code>figures/fig_data_caliber_comparison.png</code></figcaption>
+        </figure>
         <div class="table-wrap">
           <table>
             <caption>不同口径服务不同任务；写论文 Methods 时必须写明用的是哪一种</caption>
@@ -1932,6 +2253,10 @@ flowchart TB
       <!-- Roadmap -->
       <section id="roadmap">
         <h2><span class="num">§12</span> 执行路线（三阶段）</h2>
+        <figure style="margin:0 0 1.25rem;text-align:center;">
+          <img src="figures/fig_roadmap_phases.png" alt="Project roadmap phases" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
+          <figcaption class="note">三阶段路线示意 · <code>figures/fig_roadmap_phases.png</code></figcaption>
+        </figure>
         <div class="timeline">
           <div class="phase">
             <h4>阶段 A · 读懂现有结果（2–3 周）</h4>
