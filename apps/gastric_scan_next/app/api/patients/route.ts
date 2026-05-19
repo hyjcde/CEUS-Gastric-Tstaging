@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { DatasetType, CohortYear, TreatmentType, getClinicalDataPath, getDatasetPaths } from '@/lib/config';
+import { DatasetType, CohortYear, TreatmentType, getClinicalDataPath, getDatasetPaths, parseCohortYear, parseDatasetType } from '@/lib/config';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
 
 interface PatientAsset {
@@ -32,6 +32,7 @@ interface CurrentDatasetAssets {
   imageFilename: string;
   annotationFilename?: string;
   overlayFilename?: string;
+  cropUiFilename?: string;
   roiFilename?: string;
 }
 
@@ -215,26 +216,28 @@ function buildAgentReport(info: PatientInfo, annotationAvailable: boolean, overl
 
 function extractPatientId(filename: string): string {
   const base = filename.replace(/\.[^.]+$/i, '');
-  const zMatch = base.match(/(Z\d{7,})/i);
+  const zMatch = base.match(/(Z\d{5,})/i);
   if (zMatch) {
     return zMatch[1].toUpperCase();
   }
 
-  const numericMatches = base.match(/\d{6,}/g);
-  if (!numericMatches?.length) {
-    return base;
+  // 2018/2019/2020_2023/2024: ...__patientId-frameIndex
+  const frameMatch = base.match(/_(\d+)-(\d+)$/);
+  if (frameMatch) {
+    return frameMatch[1];
   }
-  return numericMatches[numericMatches.length - 1];
+
+  const numericMatches = base.match(/\d{6,}/g);
+  if (numericMatches?.length) {
+    return numericMatches[numericMatches.length - 1];
+  }
+  return base;
 }
 
 function buildCurrentDatasetLabel(cohortYear: CohortYear, treatmentType: TreatmentType): string {
-  if (cohortYear === '2025') {
-    return treatmentType === 'nac' ? 'internal-2025-nac' : 'internal-2025-surgery';
-  }
-  if (cohortYear === '2024') {
-    return treatmentType === 'nac' ? 'internal-2024-nac' : 'internal-2024-surgery';
-  }
-  return 'legacy-gist';
+  if (cohortYear === 'gist') return 'legacy-gist';
+  const treatmentSuffix = treatmentType === 'nac' ? 'nac' : 'surgery';
+  return `internal-${cohortYear}-${treatmentSuffix}`;
 }
 
 function readJpgFiles(dir: string): string[] {
@@ -269,13 +272,15 @@ function getClinicalEntryForPatient(
 }
 
 function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatmentType: TreatmentType, dataset: DatasetType): Patient[] {
-  if (treatmentType === 'nac') {
+  const clinicalDataPath = getClinicalDataPath(cohortYear, treatmentType);
+  if (treatmentType === 'nac' && !fs.existsSync(clinicalDataPath)) {
     return [];
   }
 
   const originalPaths = getDatasetPaths('original', cohortYear, treatmentType);
   const croppedPaths = getDatasetPaths('cropped', cohortYear, treatmentType);
-  const imageFiles = readJpgFiles(originalPaths.images);
+  const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
+  const imageFiles = readJpgFiles(displayPaths.images);
   const clinicalData = readClinicalDataMap(cohortYear, treatmentType);
 
   const grouped = new Map<string, CurrentDatasetAssets[]>();
@@ -290,7 +295,8 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
       imageFilename,
       annotationFilename: fs.existsSync(path.join(originalPaths.annotations, annotationFilename)) ? annotationFilename : undefined,
       overlayFilename: fs.existsSync(path.join(originalPaths.overlays, overlayFilename)) ? overlayFilename : undefined,
-      roiFilename: fs.existsSync(path.join(croppedPaths.roi, roiFilename)) ? roiFilename : undefined,
+      cropUiFilename: fs.existsSync(path.join(croppedPaths.images, imageFilename)) ? imageFilename : undefined,
+      roiFilename: fs.existsSync(path.join(croppedPaths.roi, imageFilename)) ? imageFilename : undefined,
     };
 
     const patientAssets = grouped.get(patientId) ?? [];
@@ -311,8 +317,8 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
       const hasAnnotation = Boolean(asset.annotationFilename);
       const hasOverlay = Boolean(asset.overlayFilename);
       const hasRoi = Boolean(asset.roiFilename);
-      const imageFilename = dataset === 'cropped' && asset.roiFilename ? asset.roiFilename : asset.imageFilename;
-      const primaryImageType = dataset === 'cropped' && asset.roiFilename ? 'roi' : 'images';
+      if (dataset === 'cropped' && !asset.cropUiFilename) continue;
+      const imageFilename = dataset === 'cropped' ? asset.cropUiFilename! : asset.imageFilename;
 
       const info: PatientInfo = {
         patient_id: patientId,
@@ -337,7 +343,7 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
         phase: cohortYear,
         source_label: sourceLabel,
         frame_count: sortedAssets.length,
-        image_url: `/api/images/${dataset}/${primaryImageType}/${encodeURIComponent(imageFilename)}?cohort=${cohortYear}&treatment=${treatmentType}`,
+        image_url: `/api/images/${dataset}/images/${encodeURIComponent(imageFilename)}?cohort=${cohortYear}&treatment=${treatmentType}`,
         overlay_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         overlay_transparent_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         roi_url: hasRoi ? `/api/images/cropped/roi/${encodeURIComponent(asset.roiFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
@@ -450,8 +456,8 @@ export async function GET(request: NextRequest) {
     const datasetParam = searchParams.get('dataset');
     const cohortYearParam = searchParams.get('cohort') || '2025';
     const treatmentTypeParam = searchParams.get('treatment') || 'surgery';
-    const dataset: DatasetType = datasetParam === 'cropped' ? 'cropped' : 'original';
-    const cohortYear: CohortYear = cohortYearParam === 'gist' ? 'gist' : (cohortYearParam === '2024' ? '2024' : '2025');
+    const dataset = parseDatasetType(datasetParam);
+    const cohortYear = parseCohortYear(cohortYearParam);
     const treatmentType: TreatmentType = treatmentTypeParam === 'nac' ? 'nac' : 'surgery';
 
     if (cohortYear === 'gist') {

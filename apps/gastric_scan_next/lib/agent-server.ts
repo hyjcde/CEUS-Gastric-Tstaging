@@ -56,8 +56,8 @@ function listPatientImageFiles(
   treatmentType: TreatmentType,
   dataset: DatasetType,
 ): string[] {
-  const originalPaths = getDatasetPaths('original', cohortYear, treatmentType);
-  const imageDir = originalPaths.images;
+  const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
+  const imageDir = displayPaths.images;
   if (!imageDir || !fs.existsSync(imageDir)) {
     return [];
   }
@@ -81,12 +81,12 @@ export function resolvePatientFramePaths(
   const filenames = listPatientImageFiles(patient, cohortYear, treatmentType, dataset).slice(0, maxFrames);
 
   return filenames.map((imageFilename) => {
-    const roiFilename = imageFilename.replace(/\.(jpg|jpeg)$/i, '_roi.jpg');
+    const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
     const annotationFilename = imageFilename.replace(/\.(jpg|jpeg)$/i, '.json');
     const overlayFilename = imageFilename.replace(/\.(jpg|jpeg)$/i, '_overlay.jpg');
     return {
-      image_path: resolveExistingFile(originalPaths.images, imageFilename),
-      roi_path: resolveExistingFile(croppedPaths.roi, roiFilename),
+      image_path: resolveExistingFile(displayPaths.images, imageFilename),
+      roi_path: resolveExistingFile(croppedPaths.roi, imageFilename),
       annotation_path: resolveExistingFile(originalPaths.annotations, annotationFilename),
       overlay_path: resolveExistingFile(originalPaths.overlays, overlayFilename),
     };
@@ -107,9 +107,8 @@ export function resolvePatientAgentPaths(
   const annotationFilename = decodeFilenameFromUrl(patient.json_url);
   const overlayFilename = decodeFilenameFromUrl(patient.overlay_url);
 
-  const imagePath = dataset === 'cropped' && roiFilename
-    ? resolveExistingFile(croppedPaths.roi, roiFilename)
-    : resolveExistingFile(originalPaths.images, imageFilename);
+  const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
+  const imagePath = resolveExistingFile(displayPaths.images, imageFilename);
 
   return {
     projectRoot: PROJECT_ROOT,

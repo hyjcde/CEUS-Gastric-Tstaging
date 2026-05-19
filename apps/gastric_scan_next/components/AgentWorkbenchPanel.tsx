@@ -87,6 +87,7 @@ function normalizeStage(stage: string): string {
 
 function getStepIcon(stepId: string) {
   if (stepId.includes('intake')) return Brain;
+  if (stepId.includes('lumen')) return ScanSearch;
   if (stepId.includes('segmentation') || stepId.includes('localization')) return Layers3;
   if (stepId.includes('wall')) return Activity;
   if (stepId.includes('runtime') || stepId.includes('llm_report')) return ShieldCheck;
@@ -110,7 +111,10 @@ function getStepOutputSummary(step: AgentStep): string {
   if (outputs.roi_source) return `roi=${outputs.roi_source}`;
   if (outputs.lesion_area_ratio !== undefined) return `area=${outputs.lesion_area_ratio}`;
   if (outputs.clinical_risk_score !== undefined) return `risk=${outputs.clinical_risk_score}`;
-  if (outputs.retrieved_count !== undefined) return `${outputs.retrieved_count} retrieved`;
+  if (outputs.retrieved_count !== undefined) {
+    const majority = outputs.majority_stage ? ` majority=${outputs.majority_stage}` : '';
+    return `${outputs.retrieved_count} retrieved${majority}`;
+  }
   if (outputs.memory_candidate_count !== undefined) return `${outputs.memory_candidate_count} memory candidates`;
   if (outputs.available !== undefined) return `available=${outputs.available}`;
   return step.status;
@@ -130,17 +134,73 @@ function visualRefPick(refs: Record<string, unknown>, keys: string[]): string | 
   return undefined;
 }
 
+type ImageZoomPayload = { src: string; title: string; subtitle?: string };
+
+const ImageZoomContext = React.createContext<((payload: ImageZoomPayload) => void) | undefined>(undefined);
+
+function ImageLightboxModal({
+  payload,
+  onClose,
+  language,
+}: {
+  payload: ImageZoomPayload;
+  onClose: () => void;
+  language: 'zh' | 'en';
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[300000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="fixed top-[72px] right-4 z-[300001] flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-neutral-900/95 text-gray-100 shadow-2xl hover:border-red-400/60 hover:bg-red-500/20"
+        aria-label={language === 'zh' ? '关闭' : 'Close'}
+      >
+        <X size={22} />
+      </button>
+      <div
+        className="relative flex max-h-[calc(100vh-6rem)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/15 bg-[#0a0a0a] shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="border-b border-white/10 px-4 py-3">
+          <div className="text-sm font-bold text-white">{payload.title}</div>
+          {payload.subtitle && <div className="mt-1 text-xs text-slate-400">{payload.subtitle}</div>}
+        </div>
+        <div className="relative min-h-[50vh] flex-1 bg-black">
+          <Image src={payload.src} alt={payload.title} fill sizes="100vw" className="object-contain p-2" unoptimized />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VisualFrame({
   title,
   subtitle,
   src,
   children,
+  zoomable = true,
 }: {
   title: string;
   subtitle?: string;
   src?: string;
   children?: React.ReactNode;
+  zoomable?: boolean;
 }) {
+  const openZoom = React.useContext(ImageZoomContext);
+
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2">
@@ -148,12 +208,29 @@ function VisualFrame({
           <div className="text-xs font-bold text-slate-100">{title}</div>
           {subtitle && <div className="mt-0.5 text-[10px] text-slate-500">{subtitle}</div>}
         </div>
+        {src && zoomable && openZoom && (
+          <span className="shrink-0 text-[10px] text-cyan-400/80">{/* hint rendered on image */}</span>
+        )}
       </div>
       {src ? (
-        <div className="relative h-44 bg-black">
+        <button
+          type="button"
+          className="relative block h-44 w-full cursor-zoom-in bg-black text-left"
+          onClick={() => {
+            if (zoomable && openZoom) {
+              openZoom({ src, title, subtitle });
+            }
+          }}
+          aria-label={`${title} enlarge`}
+        >
           <Image src={src} alt={title} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-contain" unoptimized />
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.08)_1px,transparent_1px)] bg-[size:24px_24px]" />
-        </div>
+          {zoomable && openZoom && (
+            <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/70 px-2 py-0.5 text-[10px] text-cyan-200">
+              点击放大
+            </span>
+          )}
+        </button>
       ) : (
         <div className="flex h-44 items-center justify-center bg-black text-xs text-slate-600">
           No image output
@@ -178,6 +255,11 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
   const [runtimeVerification, setRuntimeVerification] = useState<RuntimeVerification | null>(null);
   const [copiedDraft, setCopiedDraft] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [imageLightbox, setImageLightbox] = useState<ImageZoomPayload | null>(null);
+
+  const openImageLightbox = React.useCallback((payload: ImageZoomPayload) => {
+    setImageLightbox(payload);
+  }, []);
 
   useEffect(() => {
     setError(null);
@@ -366,7 +448,11 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
         key: 'memory',
         title: language === 'zh' ? '相似病例 memory' : 'Similar-case memory',
         icon: Database,
-        tool: { available: result.similar_cases.length > 0, backend_id: 'FAISS / current_case_memory', trust_label: 'caution' },
+        tool: {
+          available: result.similar_cases.length > 0,
+          backend_id: 'FAISS / current_case_memory',
+          trust_label: result.tool_evidence.classification?.trust_label ?? 'caution',
+        },
         metrics: [
           { key: 'retrieved_cases', value: result.similar_cases.length },
           { key: 'majority_stage', value: result.report.similar_case_summary?.majority_stage },
@@ -393,13 +479,16 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
     const hasRoi = Boolean(patient?.roi_url);
     const hasReport = Boolean(patient?.report && Object.values(patient.report).some(Boolean));
     const hasClinical = Boolean(patient?.clinical);
+    const imageLabel = dataset === 'cropped'
+      ? (language === 'zh' ? 'CROP UI 图' : 'CROP UI image')
+      : (language === 'zh' ? '原图' : 'original image');
     const steps = [
       {
         key: 'intake',
         title: language === 'zh' ? '病例接入与资料盘点' : 'Case intake',
         detail: language === 'zh'
-          ? `读取 ${patientId}，检查原图、ROI、标注、临床表和报告文本。`
-          : `Reading ${patientId} and checking image, ROI, annotation, clinical table, and reports.`,
+          ? `读取 ${patientId}，检查 ${imageLabel}、ROI、标注、临床表和报告文本。`
+          : `Reading ${patientId} and checking ${imageLabel}, ROI, annotation, clinical table, and reports.`,
         icon: Brain,
         output: hasClinical ? (language === 'zh' ? '临床资料可用' : 'Clinical data available') : (language === 'zh' ? '临床资料不足' : 'Clinical data limited'),
       },
@@ -407,8 +496,8 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
         key: 'localize',
         title: language === 'zh' ? '定位模型判断病灶候选区' : 'Localization model selects lesion region',
         detail: language === 'zh'
-          ? '先根据原图和既有 ROI 判断是否需要模型重新定位；如果 ROI 不足，则使用分割预测框补位。'
-          : 'Use image and existing ROI first; if ROI is weak, fall back to model-predicted localization.',
+          ? `先根据 ${imageLabel} 和既有 ROI 判断是否需要模型重新定位；如果 ROI 不足，则使用分割预测框补位。`
+          : `Use ${imageLabel} and existing ROI first; if ROI is weak, fall back to model-predicted localization.`,
         icon: Layers3,
         output: result ? `roi=${formatUnknown(result.tool_evidence.segmentation?.roi_source)}` : (hasRoi ? 'ROI ready' : 'ROI pending'),
       },
@@ -585,6 +674,52 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
       );
     }
 
+    if (stepId.includes('lumen')) {
+      const bbox = outputs.lumen_bbox && typeof outputs.lumen_bbox === 'object'
+        ? outputs.lumen_bbox as Record<string, unknown>
+        : null;
+      return (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <VisualFrame
+            title={language === 'zh' ? '胃腔 YOLO 检测框' : 'Lumen YOLO detection box'}
+            subtitle={
+              outputs.lumen_detected
+                ? (language === 'zh'
+                  ? `置信度 ${formatUnknown(outputs.lumen_confidence)} · 面积比 ${formatUnknown(outputs.lumen_area_ratio)}`
+                  : `conf ${formatUnknown(outputs.lumen_confidence)} · area ${formatUnknown(outputs.lumen_area_ratio)}`)
+                : (language === 'zh' ? '未检测到胃腔，仍显示当前帧' : 'no lumen box; showing current frame')
+            }
+            src={
+              typeof refs.lumen_detection_overlay_url === 'string'
+                ? refs.lumen_detection_overlay_url
+                : patient.image_url
+            }
+          />
+          <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
+            <div className="text-sm font-black text-cyan-100">{language === 'zh' ? '检测输出' : 'Detection outputs'}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+              {[
+                ['lumen_detected', outputs.lumen_detected],
+                ['lumen_confidence', outputs.lumen_confidence],
+                ['lumen_area_ratio', outputs.lumen_area_ratio],
+                ['available', outputs.available],
+              ].map(([key, value]) => (
+                <div key={String(key)} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                  <div className="text-slate-500">{String(key)}</div>
+                  <div className="mt-1 font-mono text-cyan-100">{formatUnknown(value)}</div>
+                </div>
+              ))}
+            </div>
+            {bbox && (
+              <div className="mt-4 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs font-mono text-slate-200">
+                bbox: x1={formatUnknown(bbox.x1)} y1={formatUnknown(bbox.y1)} x2={formatUnknown(bbox.x2)} y2={formatUnknown(bbox.y2)}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     if (stepId.includes('segmentation') || stepId.includes('localization')) {
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
@@ -607,16 +742,14 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
 
     if (stepId.includes('wall_evidence') || stepId.includes('wall_analysis')) {
       const panelMode = formatUnknown(outputs.wall_panel_mode);
-      const panelSource = formatUnknown(outputs.real_wall_analysis_panel_source);
+      const liveSubtitle = language === 'zh'
+        ? `当前选中帧实时生成 · ${panelMode}`
+        : `live on selected frame · ${panelMode}`;
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <VisualFrame
             title={language === 'zh' ? '真实胃壁分析面板' : 'Real wall analysis panel'}
-            subtitle={
-              language === 'zh'
-                ? `来源: ${panelMode} · ${panelSource}`
-                : `source: ${panelMode} · ${panelSource}`
-            }
+            subtitle={liveSubtitle}
             src={
               visualRefPick(refs, [
                 'real_wall_analysis_panel_url',
@@ -647,8 +780,8 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
             title={language === 'zh' ? '真实胃壁分析面板' : 'Real wall analysis panel'}
             subtitle={
               language === 'zh'
-                ? '优先磁盘已有 `*_analysis.png`，否则自动生成合成面板'
-                : 'prefer on-disk `_analysis.png`, else stacked proxy panel'
+                ? '基于当前选中图 + 预测 mask 实时生成'
+                : 'live from selected image + predicted mask'
             }
             src={
               visualRefPick(refs, [
@@ -678,7 +811,18 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-4">
-            <VisualFrame title={language === 'zh' ? '真实 DINO 多模态证据面板' : 'Real DINO multimodal evidence panel'} subtitle={language === 'zh' ? '来自 scripts/generate_clean_agent_case_visual_panels.py' : 'from scripts/generate_clean_agent_case_visual_panels.py'} src={typeof refs.real_dino_multimodal_panel_url === 'string' ? refs.real_dino_multimodal_panel_url : undefined} />
+            <VisualFrame
+              title={language === 'zh' ? '真实 DINO 多模态证据面板' : 'Real DINO multimodal evidence panel'}
+              subtitle={
+                language === 'zh'
+                  ? '优先磁盘缓存；若无则 analyze_case 按需调用 generate_clean_agent_case_visual_panels 布局实时生成（较慢）'
+                  : 'prefer cached PNG; else on-demand generation via analyze_case (slower)'
+              }
+              src={visualRefPick(refs, [
+                'real_dino_multimodal_panel_url',
+                'current_image_dino_feature_panel_url',
+              ])}
+            />
             <VisualFrame title={language === 'zh' ? '分类概率图' : 'Classification probability plot'} subtitle="model-generated probability plot" src={typeof refs.classification_probabilities_url === 'string' ? refs.classification_probabilities_url : undefined} />
           </div>
           <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/5 p-4">
@@ -711,23 +855,48 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
     }
 
     if (stepId.includes('dino')) {
+      const dinoGrid = formatUnknown(outputs.dino_token_grid);
+      const dinoNote = formatUnknown(outputs.dino_note);
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <VisualFrame
             title={language === 'zh' ? '当前图像真实 DINO 特征面板' : 'Current-image real DINO feature panel'}
-            subtitle={language === 'zh' ? '来自 generate_external_source_dino_token_panels.py 的实际推理' : 'actual inference from generate_external_source_dino_token_panels.py'}
+            subtitle={
+              language === 'zh'
+                ? `真 DINOv3 · 全图 resize ${formatUnknown(outputs.dino_input_size ?? 512)} · token ${dinoGrid}`
+                : `real DINOv3 · full-frame resize ${formatUnknown(outputs.dino_input_size ?? 512)} · token ${dinoGrid}`
+            }
             src={typeof refs.current_image_dino_feature_panel_url === 'string' ? refs.current_image_dino_feature_panel_url : undefined}
           />
-          <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
-            <div className="text-sm font-black text-cyan-100">{language === 'zh' ? 'DINO 调用信息' : 'DINO call details'}</div>
-            <div className="mt-4 space-y-3 text-xs">
-              {['current_image_dino_model', 'current_image_dino_feature_panel_url', 'current_image_dino_error'].map((key) => (
-                <div key={key} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
-                  <div className="text-slate-500">{key}</div>
-                  <div className="mt-1 break-words font-mono text-cyan-100">{formatUnknown(outputs[key])}</div>
-                </div>
-              ))}
+          <div className="space-y-4">
+            <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
+              <div className="text-sm font-black text-cyan-100">{language === 'zh' ? 'DINO 推理说明' : 'DINO inference notes'}</div>
+              <div className="mt-3 space-y-2 text-xs leading-relaxed text-slate-300">
+                <p>{language === 'zh' ? '✓ 真实特征：本地 DINOv3 checkpoint 前向，不是梯度 proxy。' : '✓ Real features: local DINOv3 forward, not gradient proxy.'}</p>
+                <p>{language === 'zh' ? '✓ 全图模式：整帧 resize 512×512 一次前向，不是 ROI patch 裁剪。' : '✓ Full frame: resize 512×512 single forward, not ROI patch crop.'}</p>
+                <p>{language === 'zh' ? '✓ 区域池化：预测 mask 下采样到 token 网格算 affinity。' : '✓ Pooling: predicted mask on token grid for affinity maps.'}</p>
+                <p className="text-amber-200/90">{language === 'zh' ? '⚠ 相似病例 saliency 图仍是 Sobel proxy。' : '⚠ Similar-case saliency is still Sobel proxy.'}</p>
+              </div>
             </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="text-sm font-black text-white">{language === 'zh' ? 'DINO 调用信息' : 'DINO call details'}</div>
+              <div className="mt-4 space-y-3 text-xs">
+                {['current_image_dino_model', 'dino_inference_mode', 'dino_input_size', 'dino_token_grid', 'dino_region_pooling', 'current_image_dino_error'].map((key) => (
+                  <div key={key} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                    <div className="text-slate-500">{key}</div>
+                    <div className="mt-1 break-words font-mono text-cyan-100">{formatUnknown(outputs[key])}</div>
+                  </div>
+                ))}
+              </div>
+              {dinoNote !== 'N/A' && <p className="mt-3 text-[11px] leading-relaxed text-slate-400">{dinoNote}</p>}
+            </div>
+            {typeof refs.real_dino_multimodal_panel_url === 'string' && (
+              <VisualFrame
+                title={language === 'zh' ? 'DINO 多模态合成面板' : 'DINO multimodal composite'}
+                subtitle={language === 'zh' ? '同一次 DINO 推理 + 分类概率' : 'same DINO forward + classification probs'}
+                src={refs.real_dino_multimodal_panel_url}
+              />
+            )}
           </div>
         </div>
       );
@@ -765,84 +934,149 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
       );
     }
 
-    if (stepId.includes('retrieval')) {
-      const total = Object.values(stageDistribution).reduce((sum: number, value) => sum + Number(value || 0), 0) || 1;
+    if (stepId.includes('knowledge')) {
+      const snippets = result?.knowledge_context?.length
+        ? result.knowledge_context
+        : (Array.isArray(outputs.knowledge_snippets) ? outputs.knowledge_snippets as Array<{ source?: string; title?: string; content?: string }> : []);
+      const highlights = result?.report.knowledge_highlights ?? [];
       return (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
-            <div className="text-sm font-black text-cyan-100">{language === 'zh' ? '相似病例 T 分期投票' : 'Similar-case T-stage vote'}</div>
-            <div className="mt-4">
-              <VisualFrame
-                title={language === 'zh' ? 'DINO 区域相似度热力图' : 'DINO region similarity heatmap'}
-                subtitle={language === 'zh' ? '基于当前 ROI / mask 的区域相似性提示' : 'Region similarity cue from current ROI / mask'}
-                src={typeof refs.dino_similarity_heatmap_url === 'string' ? refs.dino_similarity_heatmap_url : undefined}
-              />
-            </div>
-            <div className="mt-5 space-y-4">
-              {['T1', 'T2', 'T3', 'T4+'].map((stage) => {
-                const raw = Number(stageDistribution[stage] || stageDistribution[stage.replace('+', '')] || 0);
-                const percent = Math.round((raw / total) * 100);
-                return (
-                  <div key={`dist-${stage}`}>
-                    <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="font-mono text-slate-200">{stage}</span>
-                      <span className="font-mono text-cyan-100">{raw} / {percent}%</span>
-                    </div>
-                    <div className="h-4 overflow-hidden rounded-full bg-slate-900">
-                      <div className="h-full rounded-full bg-linear-to-r from-cyan-300 via-emerald-300 to-lime-200" style={{ width: `${percent}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_0.8fr]">
+          <div className="rounded-xl border border-violet-300/20 bg-violet-300/5 p-4">
+            <div className="text-sm font-black text-violet-100">{language === 'zh' ? '指南/知识检索' : 'Guideline knowledge retrieval'}</div>
+            <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto custom-scrollbar">
+              {snippets.length ? snippets.map((item, idx) => (
+                <div key={`knowledge-${idx}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs">
+                  <div className="font-bold text-violet-100">{item.title || `Snippet ${idx + 1}`}</div>
+                  <div className="mt-1 text-[10px] text-slate-500">{item.source}</div>
+                  <div className="mt-2 line-clamp-4 leading-relaxed text-slate-400">{item.content}</div>
+                </div>
+              )) : (
+                <div className="rounded-lg border border-dashed border-white/10 p-4 text-xs text-slate-500">
+                  {language === 'zh' ? '当前未检索到指南片段。' : 'No guideline snippets retrieved.'}
+                </div>
+              )}
             </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-sm font-black text-white">{language === 'zh' ? '检索到的历史相似病例' : 'Retrieved historical similar cases'}</div>
-            <div className="mt-4">
-              <VisualFrame
-                title={language === 'zh' ? '真实 DINO / 多模态病例面板' : 'Real DINO / multimodal case panel'}
-                subtitle={language === 'zh' ? '优先复用现有 Agent 可视化脚本输出' : 'reused from existing agent visualization script'}
-                src={typeof refs.real_dino_multimodal_panel_url === 'string' ? refs.real_dino_multimodal_panel_url : (typeof refs.similar_cases_contact_sheet_url === 'string' ? refs.similar_cases_contact_sheet_url : undefined)}
-              />
+            <div className="text-sm font-black text-white">{language === 'zh' ? '知识要点摘要' : 'Knowledge highlights'}</div>
+            <div className="mt-4 space-y-2">
+              {highlights.length ? highlights.map((item, idx) => (
+                <div key={`highlight-${idx}`} className="rounded-lg border border-violet-300/20 bg-violet-300/5 px-3 py-2 text-xs text-violet-100">{item}</div>
+              )) : (
+                <div className="text-xs text-slate-500">{language === 'zh' ? '暂无高亮摘要。' : 'No highlights available.'}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (stepId.includes('retrieval') || stepId.includes('similar_case')) {
+      const voteWeights = outputs.similarity_vote_weights && typeof outputs.similarity_vote_weights === 'object' && !Array.isArray(outputs.similarity_vote_weights)
+        ? outputs.similarity_vote_weights as Record<string, unknown>
+        : {};
+      const majorityStage = formatUnknown(outputs.majority_stage ?? result?.report.similar_case_summary?.majority_stage);
+      const total = Object.values(stageDistribution).reduce((sum: number, value) => sum + Number(value || 0), 0) || 1;
+      const voteStages = ['T1', 'T2', 'T3', 'T4+'] as const;
+
+      return (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="space-y-4">
+            <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm font-black text-cyan-100">{language === 'zh' ? '相似病例 T 分期投票' : 'Similar-case T-stage vote'}</div>
+                <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs font-mono text-cyan-100">
+                  {language === 'zh' ? '多数票' : 'majority'}: {majorityStage}
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {voteStages.map((stage) => {
+                  const countRaw = Number(stageDistribution[stage] || stageDistribution[stage.replace('+', '')] || 0);
+                  const countPercent = Math.round((countRaw / total) * 100);
+                  const weightRaw = Number(voteWeights[stage] || 0);
+                  const weightPercent = Math.round(weightRaw * 100);
+                  return (
+                    <div key={`dist-${stage}`}>
+                      <div className="mb-1 flex items-center justify-between text-xs">
+                        <span className="font-mono text-slate-200">{stage}</span>
+                        <span className="font-mono text-cyan-100">
+                          {countRaw} {language === 'zh' ? '票' : 'votes'} · {countPercent}%
+                          {weightPercent > 0 ? ` · sim ${weightPercent}%` : ''}
+                        </span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-slate-900">
+                        <div
+                          className="h-full rounded-full bg-linear-to-r from-cyan-400 via-emerald-300 to-lime-200"
+                          style={{ width: `${Math.max(countPercent, weightPercent, countRaw > 0 ? 8 : 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <VisualFrame
+              title={language === 'zh' ? '当前帧区域显著性（非 DINO）' : 'Current-frame saliency (not DINO)'}
+              subtitle={language === 'zh' ? 'Sobel 梯度 + mask 加权 proxy，仅作检索辅助' : 'Sobel + mask weighted proxy for retrieval cue only'}
+              src={typeof refs.dino_similarity_heatmap_url === 'string' ? refs.dino_similarity_heatmap_url : undefined}
+            />
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-black text-white">{language === 'zh' ? '检索到的历史相似病例' : 'Retrieved similar cases'}</div>
+              <span className="text-[11px] font-mono text-slate-400">
+                {formatUnknown(outputs.similar_cases_with_preview_count ?? 0)} / {similarCases.length} preview
+              </span>
             </div>
             <div className="mt-4">
               <VisualFrame
                 title={language === 'zh' ? '相似病例 contact sheet' : 'Similar-case contact sheet'}
                 subtitle={
                   language === 'zh'
-                    ? `已挂载预览图 ${formatUnknown(outputs.similar_cases_with_preview_count ?? 0)} / ${similarCases.length}`
-                    : `previews attached ${formatUnknown(outputs.similar_cases_with_preview_count ?? 0)} / ${similarCases.length}`
+                    ? `Top-${similarCases.length} 预览 · 按相似度排序`
+                    : `Top-${similarCases.length} previews · ranked by similarity`
                 }
                 src={
                   visualRefPick(refs, [
                     'similar_cases_contact_sheet_url',
-                    'real_dino_multimodal_panel_url',
+                    'dino_similarity_heatmap_url',
                   ])
                 }
               />
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {similarCases.slice(0, 6).map((item, idx) => {
                 const previewUrl = typeof item.preview_image_url === 'string' ? item.preview_image_url : undefined;
+                const stage = formatUnknown(item.T_stage);
+                const sim = numericPercent(item.similarity);
                 return (
                   <div key={`similar-step-${idx}`} className="overflow-hidden rounded-xl border border-white/10 bg-black/25">
-                  {previewUrl ? (
-                    <div className="relative h-28 bg-black">
-                      <Image src={previewUrl} alt={`similar-${idx}`} fill sizes="200px" className="object-contain" unoptimized />
-                    </div>
-                  ) : (
-                    <div className="flex h-28 items-center justify-center bg-black text-[10px] text-slate-600">
-                      {language === 'zh' ? '无预览图' : 'no preview'}
-                    </div>
-                  )}
-                  <div className="px-3 py-2 text-xs">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-slate-100">{formatUnknown(item.patient_id ?? `case-${idx + 1}`)}</span>
-                    <span className="rounded-full bg-cyan-300/10 px-2 py-0.5 font-mono text-cyan-100">{numericPercent(item.similarity)}%</span>
+                    {previewUrl ? (
+                      <button
+                        type="button"
+                        className="relative block h-32 w-full cursor-zoom-in bg-black"
+                        onClick={() => openImageLightbox({
+                          src: previewUrl,
+                          title: `${language === 'zh' ? '相似病例' : 'Similar case'} #${formatUnknown('rank' in item ? item.rank : idx + 1)}`,
+                          subtitle: `${formatUnknown(item.patient_id)} · ${stage} · sim ${sim}%`,
+                        })}
+                      >
+                        <Image src={previewUrl} alt={`similar-${idx}`} fill sizes="240px" className="object-contain" unoptimized />
+                        <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-cyan-200">放大</span>
+                      </button>
+                    ) : (
+                      <div className="flex h-32 items-center justify-center bg-black text-[10px] text-slate-600">
+                        {language === 'zh' ? '无预览图' : 'no preview'}
+                      </div>
+                    )}
+                    <div className="px-3 py-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-slate-100">#{formatUnknown('rank' in item ? item.rank : idx + 1)} {formatUnknown(item.patient_id ?? `case-${idx + 1}`)}</span>
+                        <span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-0.5 font-mono text-cyan-100">{sim}%</span>
                       </div>
                       <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
-                        <span>{formatUnknown(item.data_source)}</span>
-                        <span>{formatUnknown(item.T_stage)}</span>
+                        <span className="truncate">{formatUnknown(item.data_source)}</span>
+                        <span className="font-mono text-emerald-200">{stage}</span>
                       </div>
                     </div>
                   </div>
@@ -934,7 +1168,7 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
                 ])
               }
             />
-            <VisualFrame title={language === 'zh' ? '真实 DINO 多模态图' : 'Real DINO multimodal figure'} subtitle={language === 'zh' ? '来自现有 DINO 可视化脚本' : 'from existing DINO visualization script'} src={typeof refs.real_dino_multimodal_panel_url === 'string' ? refs.real_dino_multimodal_panel_url : (typeof refs.dino_similarity_heatmap_url === 'string' ? refs.dino_similarity_heatmap_url : undefined)} />
+            <VisualFrame title={language === 'zh' ? '真实 DINO 多模态图' : 'Real DINO multimodal figure'} subtitle={language === 'zh' ? '来自 DINO 可视化脚本（按需生成）' : 'from DINO visualization script (on-demand)'} src={visualRefPick(refs, ['real_dino_multimodal_panel_url', 'current_image_dino_feature_panel_url', 'dino_similarity_heatmap_url'])} />
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="text-sm font-black text-white">{language === 'zh' ? '证据权重与冲突提示' : 'Evidence weights and conflict flags'}</div>
@@ -988,7 +1222,7 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
       <VisualFrame
         title={language === 'zh' ? '当前步骤输出图' : 'Current step output'}
         subtitle={currentBackendStep.step_id}
-        src={getStepVisualRef(currentBackendStep, ['classification_probabilities_url', 'predicted_overlay_url', 'predicted_roi_url', 'predicted_mask_url']) || patient.image_url}
+        src={getStepVisualRef(currentBackendStep, ['lumen_detection_overlay_url', 'classification_probabilities_url', 'predicted_overlay_url', 'predicted_roi_url', 'predicted_mask_url']) || patient.image_url}
       />
     );
   };
@@ -998,7 +1232,9 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-[100]">
+    <ImageZoomContext.Provider value={openImageLightbox}>
+      <>
+      <div className="pointer-events-none absolute inset-0 z-[100]">
       {workbenchOpen && (loading || result || liveSteps.length > 0 || error) && (
       <div className="pointer-events-auto fixed inset-0 z-[120] overflow-y-auto border border-cyan-500/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_36%),linear-gradient(135deg,rgba(0,0,0,0.98),rgba(8,13,24,0.98))] p-5 shadow-2xl shadow-black/70 backdrop-blur-xl md:p-6 custom-scrollbar">
         <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(59,130,246,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.12)_1px,transparent_1px)] [background-size:18px_18px]" />
@@ -1014,8 +1250,8 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
               </div>
               <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
                 {language === 'zh'
-                  ? '自动串联分割、T 分期分类、临床风险、报告文本、相似病例与 memory，生成可复核的动态报告。'
-                  : 'Run segmentation, classification, clinical risk, reports, similar cases, and memory in one reviewable workflow.'}
+                  ? '自动串联胃腔检测、分割、壁层证据、T 分期分类、临床/报告线索、相似病例、知识检索与 memory，生成可复核的动态报告。'
+                  : 'Run lumen detection, segmentation, wall evidence, staging, clinical/report cues, similar cases, knowledge retrieval, and memory in one reviewable workflow.'}
               </div>
             </div>
             <div className="flex shrink-0 items-start gap-3">
@@ -1037,18 +1273,26 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-300">
+          <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 md:grid-cols-4">
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
               <div className="text-slate-500">{language === 'zh' ? '病例' : 'Case'}</div>
               <div className="mt-1 truncate font-mono text-slate-100">{patient.patient_id}</div>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-              <div className="text-slate-500">{language === 'zh' ? '输入' : 'Inputs'}</div>
+              <div className="text-slate-500">{language === 'zh' ? '输入模态' : 'Inputs'}</div>
               <div className="mt-1 font-mono text-slate-100">{patient.roi_url ? 'Image + ROI' : 'Image only'}</div>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-              <div className="text-slate-500">{language === 'zh' ? '调用链' : 'Tools'}</div>
-              <div className="mt-1 font-mono text-slate-100">{result ? `${result.traces?.length ?? 0} traces` : '6 tools'}</div>
+              <div className="text-slate-500">{language === 'zh' ? '帧聚合' : 'Frames'}</div>
+              <div className="mt-1 font-mono text-slate-100">
+                {result?.frame_evidence
+                  ? `${result.frame_evidence.aggregated_frame_count ?? result.frame_evidence.frame_count} (${result.frame_evidence.aggregation ?? 'single'})`
+                  : `${patient.frame_count ?? 1}`}
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+              <div className="text-slate-500">{language === 'zh' ? '工具链' : 'Tools'}</div>
+              <div className="mt-1 font-mono text-slate-100">{result ? `${result.traces?.length ?? 0} traces` : '8+ tools'}</div>
             </div>
           </div>
 
@@ -1210,16 +1454,129 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
                   )}
 
                   {result && (
-                    <div className="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-black text-emerald-50">{language === 'zh' ? '综合推荐结果' : 'Integrated recommendation'}</div>
-                          <div className="mt-1 text-xs leading-relaxed text-emerald-100/75">{result.report.reasoning}</div>
+                    <div className="mt-3 space-y-3">
+                      <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-black text-emerald-50">{language === 'zh' ? '综合推荐结果' : 'Integrated recommendation'}</div>
+                            <div className="mt-1 text-xs leading-relaxed text-emerald-100/75">{result.report.reasoning}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {result.report.dynamic_report_draft && (
+                              <button
+                                type="button"
+                                onClick={() => void copyDraft()}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/30 bg-emerald-300/10 px-3 py-1.5 text-[11px] font-bold text-emerald-100 transition hover:bg-emerald-300/20"
+                              >
+                                <Clipboard size={12} />
+                                {copiedDraft
+                                  ? (language === 'zh' ? '已复制' : 'Copied')
+                                  : (language === 'zh' ? '复制报告草稿' : 'Copy draft')}
+                              </button>
+                            )}
+                            <div className={`rounded-xl border px-4 py-2 text-right ${confidenceTone(result.report.confidence)}`}>
+                              <div className="text-3xl font-black">{result.report.recommended_t_stage}</div>
+                              <div className="text-[10px] uppercase">{result.report.confidence}</div>
+                            </div>
+                          </div>
                         </div>
-                        <div className={`rounded-xl border px-4 py-2 text-right ${confidenceTone(result.report.confidence)}`}>
-                          <div className="text-3xl font-black">{result.report.recommended_t_stage}</div>
-                          <div className="text-[10px] uppercase">{result.report.confidence}</div>
+                        {copyError && <div className="mt-2 text-[10px] text-red-300">{copyError}</div>}
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-black text-white">{language === 'zh' ? '多模态证据面板' : 'Multimodal evidence panel'}</div>
+                          {result.report.rag_gate && (
+                            <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] text-amber-100">
+                              RAG {Math.round((result.report.rag_gate.rag_weight ?? 0) * 100)}% · {result.report.rag_gate.rag_gate_reason}
+                            </span>
+                          )}
                         </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                          {toolCards.map((card) => {
+                            const Icon = card.icon;
+                            const status = toolAvailability(card.tool);
+                            const trust = card.tool?.trust_label;
+                            return (
+                              <div key={card.key} className="rounded-lg border border-white/10 bg-black/25 p-2.5">
+                                <div className="flex items-center justify-between gap-1">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-200">
+                                    <Icon size={11} />
+                                    {card.title}
+                                  </div>
+                                  <span className={`rounded px-1 py-0.5 text-[8px] uppercase ${statusClass(status)}`}>{status}</span>
+                                </div>
+                                {trust && (
+                                  <span className={`mt-1 inline-block rounded border px-1 py-0.5 text-[8px] ${getTrustClass(trust)}`}>{String(trust)}</span>
+                                )}
+                                <div className="mt-1.5 space-y-0.5">
+                                  {card.metrics.slice(0, 2).map((m) => (
+                                    <div key={m.key} className="flex justify-between gap-1 text-[9px]">
+                                      <span className="text-slate-500">{m.key}</span>
+                                      <span className="truncate font-mono text-slate-300">{formatUnknown(m.value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                          <div>
+                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{language === 'zh' ? '支持证据' : 'Supporting'}</div>
+                            <div className="space-y-1">
+                              {(result.report.supporting_evidence ?? []).slice(0, 3).map((item, idx) => (
+                                <div key={`wb-support-${idx}`} className="rounded bg-emerald-300/10 px-2 py-1 text-[10px] text-emerald-100">{item}</div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400">{language === 'zh' ? '冲突证据' : 'Conflicting'}</div>
+                            <div className="space-y-1">
+                              {(result.report.conflicting_evidence ?? []).slice(0, 3).map((item, idx) => (
+                                <div key={`wb-conflict-${idx}`} className="rounded bg-red-300/10 px-2 py-1 text-[10px] text-red-100">{item}</div>
+                              ))}
+                              {!result.report.conflicting_evidence?.length && (
+                                <div className="text-[10px] text-slate-600">{language === 'zh' ? '无显著冲突' : 'No major conflicts'}</div>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">{language === 'zh' ? '不确定性' : 'Uncertainty'}</div>
+                            <div className="space-y-1">
+                              {(result.report.uncertainty_flags ?? []).slice(0, 3).map((item, idx) => (
+                                <div key={`wb-uncertain-${idx}`} className="rounded bg-amber-300/10 px-2 py-1 text-[10px] text-amber-100">{item}</div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        {(result.report.memory_update_candidates?.length ?? 0) > 0 && (
+                          <div className="mt-3 rounded-lg border border-violet-300/20 bg-violet-300/5 p-3">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-violet-300">
+                              {language === 'zh' ? 'Memory 候选' : 'Memory candidates'} ({result.report.memory_update_candidates?.length})
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {result.report.memory_update_candidates?.slice(0, 2).map((candidate, idx) => (
+                                <div key={`memory-${idx}`} className="rounded bg-black/25 px-2 py-1 font-mono text-[9px] text-violet-100 line-clamp-2">
+                                  {formatUnknown(candidate.kind ?? candidate.type ?? candidate)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {result.knowledge_context?.length > 0 && (
+                          <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-3">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">{language === 'zh' ? '知识检索' : 'Knowledge context'}</div>
+                            <div className="mt-2 space-y-1">
+                              {result.knowledge_context.slice(0, 2).map((item, idx) => (
+                                <div key={`kb-${idx}`} className="text-[10px] text-cyan-100">
+                                  <span className="font-bold">{item.title}</span>
+                                  <span className="text-slate-500"> · {item.source}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1231,7 +1588,7 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
       </div>
       )}
 
-      <div className="pointer-events-auto absolute left-1/2 top-4 z-40 w-[min(430px,calc(100%-2rem))] -translate-x-1/2">
+      <div className="pointer-events-auto absolute bottom-[5.75rem] left-1/2 z-30 w-[min(380px,calc(100%-2rem))] -translate-x-1/2">
         <button
           type="button"
           onClick={handleLauncherClick}
@@ -1260,7 +1617,7 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
               <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-800/80">
                 {loading
                   ? `${liveSteps.length} ${language === 'zh' ? '步已返回' : 'steps returned'}`
-                  : (language === 'zh' ? '分割、分类、相似病例、报告逐步显示' : 'Segmentation, staging, memory, report stream in')}
+                  : (language === 'zh' ? '分割、腔检测、壁层、分类、相似病例逐步显示' : 'Lumen, wall, staging, memory stream in')}
               </span>
             </span>
             <ArrowRight size={20} className="shrink-0 transition group-hover:translate-x-1" />
@@ -2192,5 +2549,14 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
         </div>
       )}
     </div>
+    {imageLightbox && (
+      <ImageLightboxModal
+        payload={imageLightbox}
+        onClose={() => setImageLightbox(null)}
+        language={language}
+      />
+    )}
+      </>
+    </ImageZoomContext.Provider>
   );
 }
