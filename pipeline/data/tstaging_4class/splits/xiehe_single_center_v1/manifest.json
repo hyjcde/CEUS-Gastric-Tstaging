@@ -1,0 +1,31 @@
+{
+  "inputs": {
+    "train": {
+      "rows": 9138,
+      "patients": 1441
+    },
+    "val": {
+      "rows": 1117,
+      "patients": 167
+    }
+  },
+  "outputs": {
+    "train": {
+      "path": "pipeline/data/tstaging_4class/splits/xiehe_single_center_v1/train_internal_only.csv",
+      "rows": 7874,
+      "patients": 1234,
+      "removed_rows": 1264
+    },
+    "val": {
+      "path": "pipeline/data/tstaging_4class/splits/xiehe_single_center_v1/val_internal_only.csv",
+      "rows": 904,
+      "patients": 140,
+      "removed_rows": 213
+    },
+    "external_holdout": {
+      "path": "pipeline/data/tstaging_4class/splits/xiehe_single_center_v1/train_external_holdout_from_legacy_train.csv",
+      "rows": 1264,
+      "patients": 207
+    }
+  }
+}

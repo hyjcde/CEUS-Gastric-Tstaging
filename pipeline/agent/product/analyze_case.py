@@ -30,7 +30,10 @@ from agent.tools.lumen_detection_tool import LumenDetectionTool
 from agent.tools.segmentation_tool import SegmentationTool
 from agent.tools.similarity_tool import SimilarityTool
 from agent.tools.wall_evidence_tool import WallEvidenceTool
-from agent.tools.clinical_vector import clinical_vector_for_classifier
+from agent.tools.clinical_vector import (
+    clinical_vector_for_classifier,
+    normalize_frontend_clinical,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("agent.product.analyze_case")
@@ -1644,14 +1647,85 @@ def _write_trajectory(
     }
 
 
+def _resolve_analysis_frames(payload: Dict[str, Any]) -> List[Dict[str, Optional[str]]]:
+    max_frames = int(payload.get("max_frames", 3) or 3)
+    frames_in = payload.get("frames")
+    if isinstance(frames_in, list) and frames_in:
+        plan: List[Dict[str, Optional[str]]] = []
+        for item in frames_in[:max_frames]:
+            if not isinstance(item, dict):
+                continue
+            img = item.get("image_path")
+            if img and Path(str(img)).exists():
+                plan.append({
+                    "image_path": str(img),
+                    "roi_path": item.get("roi_path"),
+                    "annotation_path": item.get("annotation_path"),
+                })
+        if plan:
+            return plan
+
+    image_path = payload.get("image_path")
+    if image_path and Path(str(image_path)).exists():
+        return [{
+            "image_path": str(image_path),
+            "roi_path": payload.get("roi_path"),
+            "annotation_path": payload.get("annotation_path"),
+        }]
+    return []
+
+
+def _aggregate_classifications(classifications: List[Dict[str, Any]]) -> Dict[str, Any]:
+    available = [item for item in classifications if item.get("available")]
+    if not available:
+        return classifications[0] if classifications else {"available": False, "error": "No frame classifications"}
+    if len(available) == 1:
+        merged = dict(available[0])
+        merged["frame_aggregation"] = "single_frame"
+        merged["aggregated_frame_count"] = 1
+        return merged
+
+    prob_sum = {stage: 0.0 for stage in STAGES}
+    for item in available:
+        probs = item.get("probabilities") or {}
+        for stage in STAGES:
+            prob_sum[stage] += float(probs.get(stage, 0.0))
+    count = float(len(available))
+    averaged = {stage: round(prob_sum[stage] / count, 4) for stage in STAGES}
+    ordered = sorted(averaged.items(), key=lambda pair: pair[1], reverse=True)
+    top1_stage, top1_prob = ordered[0]
+    top2_stage, top2_prob = ordered[1] if len(ordered) > 1 else (top1_stage, 0.0)
+
+    merged = dict(available[0])
+    merged.update({
+        "available": True,
+        "probabilities": averaged,
+        "top1_stage": top1_stage,
+        "top1_prob": top1_prob,
+        "top2_stage": top2_stage,
+        "top2_prob": top2_prob,
+        "uncertainty": round(1.0 - float(top1_prob - top2_prob), 4),
+        "frame_aggregation": "mean_probability",
+        "aggregated_frame_count": len(available),
+    })
+    return merged
+
+
 def main() -> None:
     payload = _load_payload()
 
-    image_path = payload.get("image_path")
-    roi_path = payload.get("roi_path")
-    annotation_path = payload.get("annotation_path")
-    clinical_payload = payload.get("clinical") or {}
+    frame_plan = _resolve_analysis_frames(payload)
+    if not frame_plan:
+        raise ValueError("No readable image_path in payload (image_path or frames[])")
+
+    primary = frame_plan[0]
+    image_path = primary["image_path"]
+    roi_path = primary.get("roi_path") or payload.get("roi_path")
+    annotation_path = primary.get("annotation_path") or payload.get("annotation_path")
+    clinical_payload_raw = payload.get("clinical") or {}
+    clinical_payload = normalize_frontend_clinical(clinical_payload_raw)
     report_payload = payload.get("report_text") or {}
+    payload["frame_count"] = len(frame_plan)
 
     lumen_detection_tool = LumenDetectionTool()
     wall_evidence_tool = WallEvidenceTool()
@@ -1686,7 +1760,8 @@ def main() -> None:
             "image_path_available": bool(image_path),
             "roi_path_available": bool(roi_path),
             "annotation_path_available": bool(annotation_path),
-            "clinical_available": bool(clinical_payload),
+            "clinical_available": bool(clinical_payload_raw),
+            "analysis_frame_count": len(frame_plan),
             "report_text_available": _has_report_payload(report_payload),
         },
         outputs={
@@ -1925,6 +2000,7 @@ def main() -> None:
         if clinical_bundle:
             clinical_features = clinical_bundle
 
+    frame_classifications: List[Dict[str, Any]] = []
     classification = classification_tool.execute(
         image_path=image_path,
         mask_array=predicted_mask,
@@ -1933,6 +2009,25 @@ def main() -> None:
         clinical_features=clinical_features,
         patient_id=str(payload.get("patient_id", "")) or None,
     ) if image_path else {"available": False, "error": "Missing image_path"}
+    frame_classifications.append(classification)
+
+    for extra in frame_plan[1:]:
+        extra_image = extra["image_path"]
+        seg_extra = segmentation_tool.execute(image_path=extra_image)
+        mask_extra = segmentation_tool.get_cached_mask(extra_image)
+        cls_extra = classification_tool.execute(
+            image_path=extra_image,
+            mask_array=mask_extra,
+            roi_path=extra.get("roi_path"),
+            roi_bbox=seg_extra.get("roi_bbox") if isinstance(seg_extra, dict) else None,
+            clinical_features=clinical_features,
+            patient_id=str(payload.get("patient_id", "")) or None,
+        )
+        frame_classifications.append(cls_extra)
+        traces.append({"tool": "classify_extra_frame", "result": cls_extra})
+
+    if len(frame_classifications) > 1:
+        classification = _aggregate_classifications(frame_classifications)
     traces.append({"tool": "classify", "result": classification})
     prediction_artifacts.update(
         _save_prediction_artifacts(
@@ -2025,7 +2120,7 @@ def main() -> None:
         },
     )
 
-    clinical_kwargs = _build_clinical_kwargs(clinical_payload)
+    clinical_kwargs = _build_clinical_kwargs(clinical_payload_raw)
     clinical = clinical_tool.execute(**clinical_kwargs)
     traces.append({"tool": "clinical_risk", "result": clinical})
     _append_agent_step(
@@ -2033,7 +2128,7 @@ def main() -> None:
         step_id="clinical_context",
         title="临床风险工具调用",
         intent="Cross-check image model output against clinical risk and location bias.",
-        decision="call" if clinical_payload else "call_with_missing_fields",
+        decision="call" if clinical_payload_raw else "call_with_missing_fields",
         tool_name="ClinicalTool",
         status="completed" if clinical.get("factors_available") else "partial",
         inputs=clinical_kwargs,
@@ -2143,7 +2238,7 @@ def main() -> None:
     knowledge_memory = KnowledgeMemory.build()
     knowledge_query = " ".join([
         str(payload.get("data_source", "")),
-        str(clinical_payload.get("location", "")),
+        str(clinical_payload_raw.get("location", "")),
         str(payload.get("patient_id", "")),
         str(segmentation.get("roi_source", "")),
     ])
@@ -2235,7 +2330,7 @@ def main() -> None:
     )
     report["dynamic_report_draft"] = _build_dynamic_report_draft(
         payload=payload,
-        clinical_payload=clinical_payload,
+        clinical_payload=clinical_payload_raw,
         report=report,
         segmentation=segmentation,
         classification=classification,
@@ -2326,6 +2421,12 @@ def main() -> None:
             "updated_at": session.updated_at,
             "patient_ids": session.patient_ids,
             "analysis_count": len(session.analyses),
+        },
+        "frame_evidence": {
+            "frame_count": len(frame_plan),
+            "primary_image_path": image_path,
+            "aggregation": classification.get("frame_aggregation", "single_frame"),
+            "aggregated_frame_count": classification.get("aggregated_frame_count", 1),
         },
         "tool_evidence": {
             "lumen_detection": lumen_detection,

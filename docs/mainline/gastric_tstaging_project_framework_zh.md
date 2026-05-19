@@ -147,11 +147,11 @@ T 分期在超声上本质是 **患者级、多帧、胃壁层次** 问题：
 | ① | **资产审计** | ✅ [`model_asset_audit.md`](model_asset_audit.md) + [`agent_backend_registry.yaml`](../pipeline/agent/config/agent_backend_registry.yaml) | 锁定 Agent 用哪条 T / seg / YOLO | A（文档完成） |
 | ② | **T backend** | `ClassificationTool` 默认 → **冻结 mask4ch 20260423**（prospective **0.7455**）；region-aware（ext **0.748**）登记为辅助，待 contrastive 适配器 | 主表同源 + 外部证据 secondary | B |
 | ③ | **Case 检索** | FAISS **17 维**（概率+形态+临床）；DINO 仅可视化 | 区域 DINO + T-aware RAG + `rag_weight` | B–C |
-| ④ | **Split** | train 含 **192 外部患者 / 1,158 行**（莆田等） | 协和-only train + 冻结 external | B（阻塞） |
-| ⑤ | **患者级 MIL** | `analyze_case` 主路径**单帧**；`EvidenceHub` 仅评估用 | 多帧关键帧 → 患者级 T | B |
-| ⑥ | **证据融合** | `_build_rule_based_report` 规则加权；无 `conflicting_evidence` / RAGGate | 统一 schema + 门控融合 | B |
-| ⑦ | **工具链** | 无 YOLO 胃腔 Tool；wall 为离线图/代理 | 在线 lumen + wall-band | B+ |
-| ⑧ | **前端** | Workbench 可跑 Agent；列表仍有 classifier placeholder | 与 analyze 同一 backend | B |
+| ④ | **Split** | ✅ manifest：`pipeline/data/tstaging_4class/splits/xiehe_single_center_v1/`（`build_xiehe_only_agent_splits.py`） | 训练脚本默认读 internal-only CSV | B（manifest 完成，训练切换待做） |
+| ⑤ | **患者级 MIL** | ✅ `analyze_case` 支持 `frames[]`（≤3 帧概率平均） | 全队列 MIL + 关键帧策略 | B（基础版已接） |
+| ⑥ | **证据融合** | ✅ `conflicting_evidence` + `rag_gate`（schema 0.3.0） | Contrastive 次级证据进融合 | B（规则门控已接） |
+| ⑦ | **工具链** | ✅ `LumenDetectionTool` + `WallEvidenceTool`（live SDF） | region-aware / wall-net 推理适配 | B+（主路径已接） |
+| ⑧ | **前端** | ✅ Workbench 展示 lumen/wall/RAG/冲突；列表 `classification: pending` | 与 analyze 同一 backend 回写列表 | B（Workbench 已对齐 JSON） |
 
 **选型已定（见 `model_asset_audit.md`）**：Agent **最终 T** = 冻结 **mask4ch 20260423**；**region-aware 20260426** 仅作 external 辅助证据（权重 0 直至 `ContrastiveTStagingTool`）；无医生 ROI 时 fallback **predroi+mask4ch 20260424**。
 

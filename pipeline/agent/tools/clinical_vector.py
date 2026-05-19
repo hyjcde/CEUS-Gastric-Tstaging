@@ -37,6 +37,75 @@ CATEGORICAL_FIELDS = (
 )
 ALL_FIELDS = CONTINUOUS_FIELDS + CATEGORICAL_FIELDS
 
+_LOCATION_NAME_TO_CODE = {
+    "cardia": 0,
+    "贲门": 0,
+    "upper": 1,
+    "fundus": 1,
+    "胃底": 1,
+    "body": 2,
+    "胃体": 2,
+    "antrum": 3,
+    "pylorus": 3,
+    "幽门": 3,
+    "窦": 3,
+}
+
+
+def normalize_frontend_clinical(clinical: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Map Next.js ``mapClinicalToAgentInput`` payload to training field names."""
+    if not clinical:
+        return {}
+
+    out: Dict[str, Any] = {}
+    if clinical.get("age") is not None:
+        out["age"] = clinical.get("age")
+
+    sex = clinical.get("sex")
+    if isinstance(sex, str):
+        sex_lc = sex.strip().lower()
+        if sex_lc in {"男", "male", "m", "1"}:
+            out["sex"] = 1
+        elif sex_lc in {"女", "female", "f", "0"}:
+            out["sex"] = 0
+    elif sex is not None:
+        out["sex"] = sex
+
+    location = clinical.get("location") or clinical.get("tumor_location")
+    if isinstance(location, int):
+        out["tumor_location"] = location
+    elif isinstance(location, str) and location.strip():
+        loc_lc = location.strip().lower()
+        for key, code in _LOCATION_NAME_TO_CODE.items():
+            if key in loc_lc:
+                out["tumor_location"] = code
+                break
+
+    tumor_size = clinical.get("tumorSize") or clinical.get("tumor_size") or {}
+    if isinstance(tumor_size, dict):
+        if tumor_size.get("length") is not None:
+            out["tumor_length_cm"] = tumor_size.get("length")
+        if tumor_size.get("thickness") is not None:
+            out["tumor_thickness_cm"] = tumor_size.get("thickness")
+
+    biomarkers = clinical.get("biomarkers") or {}
+    if isinstance(biomarkers, dict):
+        if biomarkers.get("cea") is not None:
+            out["CEA_value"] = biomarkers.get("cea")
+        if biomarkers.get("cea_positive") is not None:
+            out["CEA_status"] = int(bool(biomarkers.get("cea_positive")))
+        if biomarkers.get("ca199") is not None:
+            out["CA199_value"] = biomarkers.get("ca199")
+        if biomarkers.get("ca199_positive") is not None:
+            out["CA199_status"] = int(bool(biomarkers.get("ca199_positive")))
+
+    if clinical.get("differentiation") not in (None, ""):
+        out["differentiation"] = clinical.get("differentiation")
+    if clinical.get("lauren") not in (None, ""):
+        out["lauren_type"] = clinical.get("lauren")
+
+    return out
+
 
 def _load_norm_stats() -> Dict[str, Dict[str, float]]:
     if NORM_STATS_PATH.exists():
@@ -217,10 +286,9 @@ def resolve_clinical22_vector(
     if row:
         return vector_from_feature_dict(row, clinical_cols), "csv_lookup"
 
-    if payload_clinical and any(
-        v is not None and v != "" for v in payload_clinical.values()
-    ):
-        encoded = encode_clinical_payload(payload_clinical)
+    normalized = normalize_frontend_clinical(payload_clinical)
+    if normalized:
+        encoded = encode_clinical_payload(normalized)
         return vector_from_feature_dict(encoded, clinical_cols), "payload_encoded"
 
     zeros = {col: 0.0 for col in clinical_cols}
