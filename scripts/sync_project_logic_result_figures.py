@@ -28,10 +28,22 @@ MANUSCRIPT = (
     / "figures"
 )
 PIPELINE_REPORTS = PROJECT_ROOT / "pipeline" / "experiments" / "reports"
-AGENT_CASE_DIRS = [
+AGENT_PRIORITY_DIRS = [
     PROJECT_ROOT / "tmp" / "agent_predictions" / "x" / "1451370_20260519T041253Z",
-    PROJECT_ROOT / "tmp" / "agent_predictions" / "agent_batch_smoke" / "1166650_20260519T100101Z",
+    PROJECT_ROOT / "tmp" / "agent_predictions" / "cursor-real-prediction-verify" / "1451370_20260518T075556Z",
 ]
+AGENT_BATCH_ROOT = PROJECT_ROOT / "tmp" / "agent_predictions" / "agent_batch_smoke"
+AGENT_ARTIFACT_FILES = [
+    "predicted_overlay.png",
+    "predicted_mask.png",
+    "predicted_roi.png",
+    "classification_probabilities.png",
+    "wall_penetration_risk_heatmap.png",
+    "real_wall_analysis_panel.png",
+    "similar_cases_contact_sheet.png",
+    "dino_region_similarity_heatmap.png",
+]
+MAX_FILE_MB = 4.0
 SEG_REPORT = (
     PROJECT_ROOT
     / "experiments"
@@ -75,17 +87,98 @@ def copy_dir_samples(
     manifest: list[dict],
     limit: int = 99,
     pattern: str = "*.png",
+    max_mb: float | None = None,
 ) -> int:
     if not src_dir.is_dir():
         return 0
     n = 0
-    for p in sorted(src_dir.glob(pattern))[:limit]:
+    for p in sorted(src_dir.glob(pattern)):
+        if n >= limit:
+            break
         if not p.is_file():
+            continue
+        if max_mb is not None and p.stat().st_size > max_mb * 1024 * 1024:
             continue
         dest_name = f"{prefix}_{slug(p.stem)}.png"
         copy_pair(p, dest_name, manifest)
         n += 1
     return n
+
+
+def sync_agent_cases(manifest: list[dict], max_patients: int = 6) -> None:
+    seen_patients: set[str] = set()
+    dirs: list[Path] = []
+    for d in AGENT_PRIORITY_DIRS:
+        if d.is_dir() and (d / "predicted_overlay.png").is_file():
+            dirs.append(d)
+    if AGENT_BATCH_ROOT.is_dir():
+        batch = [
+            d
+            for d in AGENT_BATCH_ROOT.iterdir()
+            if d.is_dir() and (d / "predicted_overlay.png").is_file()
+        ]
+        batch.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        dirs.extend(batch)
+    for agent_dir in dirs:
+        patient = agent_dir.name.split("_")[0]
+        if patient in seen_patients:
+            continue
+        seen_patients.add(patient)
+        if len(seen_patients) > max_patients:
+            break
+        for fname in AGENT_ARTIFACT_FILES:
+            stem = fname.replace(".png", "")
+            copy_pair(agent_dir / fname, f"case_agent_{patient}_{stem}.png", manifest)
+
+
+def sync_gradcam_all(manifest: list[dict]) -> None:
+    gradcam_root = MANUSCRIPT / "06_gradcam_4class"
+    if not gradcam_root.is_dir():
+        return
+    for p in sorted(gradcam_root.glob("*.png")):
+        copy_pair(p, f"case_gradcam_{slug(p.stem)}.png", manifest)
+    for sub in sorted(gradcam_root.iterdir()):
+        if not sub.is_dir():
+            continue
+        copy_dir_samples(sub, f"case_gradcam_{slug(sub.name)}", manifest, limit=4, max_mb=MAX_FILE_MB)
+
+
+def sync_rf_panels(manifest: list[dict]) -> None:
+    rf_base = PIPELINE_REPORTS / "framelevel_rf_external_by_source"
+    if not rf_base.is_dir():
+        return
+    for root in sorted(rf_base.iterdir()):
+        if not root.is_dir() or "panel" not in root.name.lower():
+            continue
+        tag = slug(root.name)
+        for sub in sorted(root.iterdir()):
+            if sub.is_dir():
+                copy_dir_samples(
+                    sub,
+                    f"case_rf_{tag}_{slug(sub.name)}",
+                    manifest,
+                    limit=6,
+                    max_mb=MAX_FILE_MB,
+                )
+            elif sub.suffix.lower() == ".png":
+                copy_pair(sub, f"case_rf_{tag}_{slug(sub.stem)}.png", manifest)
+
+
+def sync_report_panels(manifest: list[dict]) -> None:
+    panel_dirs = [
+        (PIPELINE_REPORTS / "tstaging4_regionaware_true_gradcam_single_20260504" / "panels", "case_regionaware_pros", 10),
+        (
+            PIPELINE_REPORTS / "tstaging4_regionaware_true_gradcam_single_external_20260504" / "panels",
+            "case_regionaware_ext",
+            10,
+        ),
+        (PIPELINE_REPORTS / "tstaging4_error_wall_review_20260426_gradcam" / "panels", "case_error_wall", 12),
+        (PIPELINE_REPORTS / "tstaging4_regionaware_error_step_review_20260504" / "panels", "case_regionaware_err", 10),
+        (PIPELINE_REPORTS / "gastric_us_multimodal_agent" / "case_visual_panels_v1", "case_multimodal_agent", 8),
+        (PIPELINE_REPORTS / "dinov3_unetpp_case_panel", "case_dinov3_unetpp", 12),
+    ]
+    for src_dir, prefix, limit in panel_dirs:
+        copy_dir_samples(src_dir, prefix, manifest, limit=limit, max_mb=MAX_FILE_MB)
 
 
 def main() -> int:
@@ -119,32 +212,46 @@ def main() -> int:
     # --- pipeline full cases (T1–T4+) ---
     copy_dir_samples(MANUSCRIPT / "10_pipeline_cases", "case_pipeline", manifest, limit=12)
 
-    # --- boundary morphology: 2 per T stage prefix ---
+    # --- boundary morphology: up to 4 per T stage ---
     boundary_dir = MANUSCRIPT / "07_boundary_morphology"
     if boundary_dir.is_dir():
         for stage in ("T1_", "T2_", "T3_", "T4"):
-            matches = sorted(boundary_dir.glob(f"{stage}*.png"))[:2]
-            for p in matches:
+            for p in sorted(boundary_dir.glob(f"{stage}*.png"))[:4]:
                 copy_pair(p, f"case_boundary_{slug(p.stem)}.png", manifest)
 
-    # --- gradcam 4-class: correct + error samples ---
-    gradcam_root = MANUSCRIPT / "06_gradcam_4class"
-    for sub in (
-        "T1_misclassified_as_T2",
-        "T2_correct",
-        "T3_correct",
-        "T3_misclassified_as_T4+",
-        "T4p_correct",
-        "T4p_misclassified_as_T3",
+    sync_gradcam_all(manifest)
+
+    # --- T2 专项分析 ---
+    copy_dir_samples(MANUSCRIPT / "13_t2_analysis", "case_t2analysis", manifest, limit=8, max_mb=MAX_FILE_MB)
+
+    # --- 研究总览图（manuscript 主图，非旧指标曲线） ---
+    for src_name, dest in (
+        ("fig1_study_overview.png", "study_overview.png"),
+        ("fig7_morphology_boxplots.png", "study_morphology_boxplots.png"),
+        ("fig8b_directional_t2t3.png", "study_directional_t2t3.png"),
+        ("fig8_directional_rose.png", "study_directional_rose.png"),
+        ("sfig3_t2_misclassification.png", "study_t2_misclassification.png"),
+        ("sfig4_boundary_sensitivity.png", "study_boundary_sensitivity.png"),
     ):
-        d = gradcam_root / sub
-        if d.is_dir():
-            for p in sorted(d.glob("*.png"))[:2]:
-                copy_pair(p, f"case_gradcam_{slug(sub)}_{slug(p.stem)}.png", manifest)
-    for p in sorted(gradcam_root.glob("pair*.png"))[:6]:
-        copy_pair(p, f"case_gradcam_{slug(p.stem)}.png", manifest)
-    overview = gradcam_root / "00_overview_gradcam.png"
-    copy_pair(overview, "case_gradcam_overview.png", manifest)
+        copy_pair(MANUSCRIPT / src_name, dest, manifest)
+
+    # --- 医生复核 / 质控示意（控制单图体积） ---
+    copy_dir_samples(
+        MANUSCRIPT / "09_doctor_review",
+        "case_review",
+        manifest,
+        limit=14,
+        max_mb=MAX_FILE_MB,
+    )
+
+    # --- 外部中心 overlay 页（跳过 >4MB 的 internal 大图） ---
+    copy_dir_samples(
+        MANUSCRIPT / "12_overlay_montage",
+        "case_overlay",
+        manifest,
+        limit=6,
+        max_mb=MAX_FILE_MB,
+    )
 
     # --- fusion VLM demo ---
     copy_pair(
@@ -158,44 +265,48 @@ def main() -> int:
         manifest,
     )
 
-    # --- segmentation ---
+    # --- segmentation SAM2 + nnU-Net ---
     seg_jobs = [
         (MANUSCRIPT / "03_segmentation_sam2" / "sam2_eval_comparison.png", "seg_sam2_eval.png"),
         (MANUSCRIPT / "03_segmentation_sam2" / "cascade_eval_comparison.png", "seg_cascade_eval.png"),
         (MANUSCRIPT / "03_segmentation_sam2" / "compare_prospective.png", "seg_compare_prospective.png"),
+        (MANUSCRIPT / "03_segmentation_sam2" / "compare_multicenter.png", "seg_compare_multicenter.png"),
+        (MANUSCRIPT / "03_segmentation_sam2" / "compare_int_2024.png", "seg_compare_int_2024.png"),
         (MANUSCRIPT / "03_segmentation_sam2" / "mask_prompt_comparison.png", "seg_mask_prompt.png"),
+        (MANUSCRIPT / "03_segmentation_sam2" / "training_curves.png", "seg_sam2_training_curves.png"),
         (MANUSCRIPT / "11_roi_comparison" / "roi_comparison_gt_vs_predicted.png", "seg_roi_gt_vs_pred.png"),
         (MANUSCRIPT / "fig2_segmentation_comparison.png", "seg_multicenter_comparison.png"),
+        (MANUSCRIPT / "02_segmentation_nnunet" / "nnunet_main_comparison.png", "seg_nnunet_main.png"),
+        (MANUSCRIPT / "02_segmentation_nnunet" / "summary_all_datasets.png", "seg_nnunet_summary.png"),
     ]
     for src, dest in seg_jobs:
         if not args.dry_run:
             copy_pair(src, dest, manifest)
         elif src.is_file():
             manifest.append({"file": dest, "source": str(src.relative_to(PROJECT_ROOT))})
+    copy_dir_samples(
+        MANUSCRIPT / "02_segmentation_nnunet",
+        "seg_nnunet_compare",
+        manifest,
+        limit=6,
+        pattern="compare_*.png",
+        max_mb=MAX_FILE_MB,
+    )
+    copy_dir_samples(
+        MANUSCRIPT / "03_segmentation_sam2",
+        "seg_sam2_compare",
+        manifest,
+        limit=8,
+        pattern="compare_*.png",
+        max_mb=MAX_FILE_MB,
+    )
 
     if SEG_REPORT.is_dir():
         for name in ("evaluation_summary.png", "training_curves.png"):
             copy_pair(SEG_REPORT / name, f"seg_dinov3_{name.replace('.png', '')}.png", manifest)
 
-    # --- pipeline RF case panels (lesion focus, external) ---
-    rf_roots = [
-        PIPELINE_REPORTS
-        / "framelevel_rf_external_by_source"
-        / "ext_putian_2024_lesion_focus_panels",
-        PIPELINE_REPORTS
-        / "framelevel_rf_external_by_source"
-        / "ext_zhongliu_case_panels_v2",
-        PIPELINE_REPORTS
-        / "framelevel_rf_external_by_source"
-        / "ext_multicenter_case_panels_v2",
-    ]
-    for root in rf_roots:
-        if not root.is_dir():
-            continue
-        tag = slug(root.name)
-        for sub in ("correct_high_conf", "errors_high_conf", "t2_t3_boundary"):
-            d = root / sub
-            copy_dir_samples(d, f"case_rf_{tag}_{sub}", manifest, limit=4)
+    sync_rf_panels(manifest)
+    sync_report_panels(manifest)
 
     # --- dehua gradcam smoke overlays ---
     dehua = (
@@ -204,29 +315,10 @@ def main() -> int:
         / "dehua_gradcam_smoke"
     )
     copy_pair(dehua / "summary_contact_sheet.png", "case_pipeline_dehua_contact_sheet.png", manifest)
-    copy_dir_samples(dehua / "case_overlays", "case_pipeline_dehua_overlay", manifest, limit=4)
+    copy_dir_samples(dehua / "case_overlays", "case_pipeline_dehua_overlay", manifest, limit=8, max_mb=MAX_FILE_MB)
+    copy_dir_samples(dehua / "gt_roi_crops", "case_pipeline_dehua_gt_roi", manifest, limit=4, max_mb=MAX_FILE_MB)
 
-    # --- agent single-case artifacts ---
-    agent_dir = next((d for d in AGENT_CASE_DIRS if d.is_dir()), None)
-    if agent_dir:
-        patient = agent_dir.name.split("_")[0]
-        agent_files = [
-            "predicted_overlay.png",
-            "predicted_mask.png",
-            "predicted_roi.png",
-            "classification_probabilities.png",
-            "wall_penetration_risk_heatmap.png",
-            "wall_layer_profile.png",
-            "real_wall_analysis_panel.png",
-            "current_image_dino_feature_panel.png",
-            "dino_region_similarity_heatmap.png",
-            "similar_cases_contact_sheet.png",
-            "real_dino_multimodal_visual_panel.png",
-        ]
-        for fname in agent_files:
-            src = agent_dir / fname
-            stem = fname.replace(".png", "")
-            copy_pair(src, f"case_agent_{patient}_{stem}.png", manifest)
+    sync_agent_cases(manifest, max_patients=6)
 
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

@@ -701,56 +701,884 @@
       <section id="local-results">
         <h2>本地结果图库（病例示例 + 评估曲线）</h2>
         <p style="font-size:0.92rem;color:var(--muted);">
-          全部图片集中在 <code>docs/mainline/figures/results/</code>（当前 99 张 PNG）。
-          <strong>指标图</strong>由 <code>scripts/generate_mainline_metric_figures.py</code> 从 scoreboard + <code>test_results.json</code> 绘制，与正文 KPI 一致。
-          病例图：<code>python scripts/sync_project_logic_result_figures.py</code>。
-          导出 PDF：<code>python scripts/export_project_logic_pdf.py</code>（已生成同目录 <code>.pdf</code>，约 99 张图时体积较大）。
+          全部图片集中在 <code>docs/mainline/figures/results/</code>（当前 <strong>348</strong> 张 PNG）。
+          <strong>指标图</strong>：<code>python scripts/generate_mainline_metric_figures.py</code>（scoreboard + eval JSON）。
+          <strong>病例/分割图</strong>：<code>python scripts/sync_project_logic_result_figures.py</code>，再
+          <code>python scripts/generate_result_figures_html.py</code> 并嵌入本页。
+          PDF：<code>python scripts/export_project_logic_pdf.py</code>（图多时体积大，建议按需导出）。
         </p>
-        <h3>Agent 在线推理 · 单例产物（患者 1451370）</h3>
+        <h3>Agent 在线推理 · 多患者产物（overlay / mask / wall / RAG）</h3>
         <div class="figure-gallery">
           <figure>
-            <img src="figures/results/case_agent_1451370_classification_probabilities.png" alt="Agent · classification probabilities" loading="lazy" />
-            <figcaption>Agent · classification probabilities</figcaption>
+            <img src="figures/results/case_agent_1166650_classification_probabilities.png" alt="Agent 患者1166650 · classification probabilities" loading="lazy" />
+            <figcaption>Agent 患者1166650 · classification probabilities</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1166650_dino_region_similarity_heatmap.png" alt="Agent 患者1166650 · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent 患者1166650 · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1166650_predicted_mask.png" alt="Agent 患者1166650 · predicted mask" loading="lazy" />
+            <figcaption>Agent 患者1166650 · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1166650_predicted_overlay.png" alt="Agent 患者1166650 · predicted overlay" loading="lazy" />
+            <figcaption>Agent 患者1166650 · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1166650_predicted_roi.png" alt="Agent 患者1166650 · predicted roi" loading="lazy" />
+            <figcaption>Agent 患者1166650 · predicted roi</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/results/case_agent_1451370_current_image_dino_feature_panel.png" alt="Agent · current image dino feature panel" loading="lazy" />
-            <figcaption>Agent · current image dino feature panel</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/case_agent_1451370_dino_region_similarity_heatmap.png" alt="Agent · dino region similarity heatmap" loading="lazy" />
-            <figcaption>Agent · dino region similarity heatmap</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/case_agent_1451370_predicted_mask.png" alt="Agent · predicted mask" loading="lazy" />
-            <figcaption>Agent · predicted mask</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/case_agent_1451370_predicted_overlay.png" alt="Agent · predicted overlay" loading="lazy" />
-            <figcaption>Agent · predicted overlay</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/case_agent_1451370_predicted_roi.png" alt="Agent · predicted roi" loading="lazy" />
-            <figcaption>Agent · predicted roi</figcaption>
+            <img src="figures/results/case_agent_1166650_real_wall_analysis_panel.png" alt="Agent 患者1166650 · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent 患者1166650 · real wall analysis panel</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/results/case_agent_1451370_real_dino_multimodal_visual_panel.png" alt="Agent · real dino multimodal visual panel" loading="lazy" />
-            <figcaption>Agent · real dino multimodal visual panel</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_agent_1451370_real_wall_analysis_panel.png" alt="Agent · real wall analysis panel" loading="lazy" />
-            <figcaption>Agent · real wall analysis panel</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_agent_1451370_similar_cases_contact_sheet.png" alt="Agent · similar cases contact sheet" loading="lazy" />
-            <figcaption>Agent · similar cases contact sheet</figcaption>
+            <img src="figures/results/case_agent_1166650_similar_cases_contact_sheet.png" alt="Agent 患者1166650 · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent 患者1166650 · similar cases contact sheet</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/case_agent_1451370_wall_layer_profile.png" alt="Agent · wall layer profile" loading="lazy" />
-            <figcaption>Agent · wall layer profile</figcaption>
+            <img src="figures/results/case_agent_1166650_wall_penetration_risk_heatmap.png" alt="Agent 患者1166650 · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent 患者1166650 · wall penetration risk heatmap</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/case_agent_1451370_wall_penetration_risk_heatmap.png" alt="Agent · wall penetration risk heatmap" loading="lazy" />
-            <figcaption>Agent · wall penetration risk heatmap</figcaption>
+            <img src="figures/results/case_agent_1279829_classification_probabilities.png" alt="Agent 患者1279829 · classification probabilities" loading="lazy" />
+            <figcaption>Agent 患者1279829 · classification probabilities</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1279829_dino_region_similarity_heatmap.png" alt="Agent 患者1279829 · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent 患者1279829 · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1279829_predicted_mask.png" alt="Agent 患者1279829 · predicted mask" loading="lazy" />
+            <figcaption>Agent 患者1279829 · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1279829_predicted_overlay.png" alt="Agent 患者1279829 · predicted overlay" loading="lazy" />
+            <figcaption>Agent 患者1279829 · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1279829_predicted_roi.png" alt="Agent 患者1279829 · predicted roi" loading="lazy" />
+            <figcaption>Agent 患者1279829 · predicted roi</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1279829_real_wall_analysis_panel.png" alt="Agent 患者1279829 · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent 患者1279829 · real wall analysis panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1279829_similar_cases_contact_sheet.png" alt="Agent 患者1279829 · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent 患者1279829 · similar cases contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1279829_wall_penetration_risk_heatmap.png" alt="Agent 患者1279829 · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent 患者1279829 · wall penetration risk heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_classification_probabilities.png" alt="Agent 患者1451370 · classification probabilities" loading="lazy" />
+            <figcaption>Agent 患者1451370 · classification probabilities</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_dino_region_similarity_heatmap.png" alt="Agent 患者1451370 · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent 患者1451370 · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_predicted_mask.png" alt="Agent 患者1451370 · predicted mask" loading="lazy" />
+            <figcaption>Agent 患者1451370 · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_predicted_overlay.png" alt="Agent 患者1451370 · predicted overlay" loading="lazy" />
+            <figcaption>Agent 患者1451370 · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_predicted_roi.png" alt="Agent 患者1451370 · predicted roi" loading="lazy" />
+            <figcaption>Agent 患者1451370 · predicted roi</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1451370_real_wall_analysis_panel.png" alt="Agent 患者1451370 · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent 患者1451370 · real wall analysis panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1451370_similar_cases_contact_sheet.png" alt="Agent 患者1451370 · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent 患者1451370 · similar cases contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1451370_wall_penetration_risk_heatmap.png" alt="Agent 患者1451370 · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent 患者1451370 · wall penetration risk heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1454555_classification_probabilities.png" alt="Agent 患者1454555 · classification probabilities" loading="lazy" />
+            <figcaption>Agent 患者1454555 · classification probabilities</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1454555_dino_region_similarity_heatmap.png" alt="Agent 患者1454555 · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent 患者1454555 · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1454555_predicted_mask.png" alt="Agent 患者1454555 · predicted mask" loading="lazy" />
+            <figcaption>Agent 患者1454555 · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1454555_predicted_overlay.png" alt="Agent 患者1454555 · predicted overlay" loading="lazy" />
+            <figcaption>Agent 患者1454555 · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1454555_predicted_roi.png" alt="Agent 患者1454555 · predicted roi" loading="lazy" />
+            <figcaption>Agent 患者1454555 · predicted roi</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1454555_real_wall_analysis_panel.png" alt="Agent 患者1454555 · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent 患者1454555 · real wall analysis panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1454555_similar_cases_contact_sheet.png" alt="Agent 患者1454555 · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent 患者1454555 · similar cases contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1454555_wall_penetration_risk_heatmap.png" alt="Agent 患者1454555 · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent 患者1454555 · wall penetration risk heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1463504_classification_probabilities.png" alt="Agent 患者1463504 · classification probabilities" loading="lazy" />
+            <figcaption>Agent 患者1463504 · classification probabilities</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1463504_dino_region_similarity_heatmap.png" alt="Agent 患者1463504 · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent 患者1463504 · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1463504_predicted_mask.png" alt="Agent 患者1463504 · predicted mask" loading="lazy" />
+            <figcaption>Agent 患者1463504 · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1463504_predicted_overlay.png" alt="Agent 患者1463504 · predicted overlay" loading="lazy" />
+            <figcaption>Agent 患者1463504 · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1463504_predicted_roi.png" alt="Agent 患者1463504 · predicted roi" loading="lazy" />
+            <figcaption>Agent 患者1463504 · predicted roi</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1463504_real_wall_analysis_panel.png" alt="Agent 患者1463504 · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent 患者1463504 · real wall analysis panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1463504_similar_cases_contact_sheet.png" alt="Agent 患者1463504 · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent 患者1463504 · similar cases contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1463504_wall_penetration_risk_heatmap.png" alt="Agent 患者1463504 · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent 患者1463504 · wall penetration risk heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1464354_classification_probabilities.png" alt="Agent 患者1464354 · classification probabilities" loading="lazy" />
+            <figcaption>Agent 患者1464354 · classification probabilities</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1464354_dino_region_similarity_heatmap.png" alt="Agent 患者1464354 · dino region similarity heatmap" loading="lazy" />
+            <figcaption>Agent 患者1464354 · dino region similarity heatmap</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1464354_predicted_mask.png" alt="Agent 患者1464354 · predicted mask" loading="lazy" />
+            <figcaption>Agent 患者1464354 · predicted mask</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1464354_predicted_overlay.png" alt="Agent 患者1464354 · predicted overlay" loading="lazy" />
+            <figcaption>Agent 患者1464354 · predicted overlay</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1464354_predicted_roi.png" alt="Agent 患者1464354 · predicted roi" loading="lazy" />
+            <figcaption>Agent 患者1464354 · predicted roi</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1464354_real_wall_analysis_panel.png" alt="Agent 患者1464354 · real wall analysis panel" loading="lazy" />
+            <figcaption>Agent 患者1464354 · real wall analysis panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_agent_1464354_similar_cases_contact_sheet.png" alt="Agent 患者1464354 · similar cases contact sheet" loading="lazy" />
+            <figcaption>Agent 患者1464354 · similar cases contact sheet</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_agent_1464354_wall_penetration_risk_heatmap.png" alt="Agent 患者1464354 · wall penetration risk heatmap" loading="lazy" />
+            <figcaption>Agent 患者1464354 · wall penetration risk heatmap</figcaption>
+          </figure>
+        </div>
+        <h3>Agent 多模态病例面板（pipeline reports）</h3>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/results/case_multimodal_agent_newzip_external_newzip_ext_newzip_外省整理_11207481_visual_panel.png" alt="case multimodal agent newzip external newzip ext newzip 外省整理 11207481 visual panel" loading="lazy" />
+            <figcaption>case multimodal agent newzip external newzip ext newzip 外省整理 11207481 visual panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_multimodal_agent_newzip_external_newzip_ext_newzip_外省整理_11209432_visual_panel.png" alt="case multimodal agent newzip external newzip ext newzip 外省整理 11209432 visual panel" loading="lazy" />
+            <figcaption>case multimodal agent newzip external newzip ext newzip 外省整理 11209432 visual panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_multimodal_agent_newzip_external_newzip_ext_newzip_外省整理_1234674_visual_panel.png" alt="case multimodal agent newzip external newzip ext newzip 外省整理 1234674 visual panel" loading="lazy" />
+            <figcaption>case multimodal agent newzip external newzip ext newzip 外省整理 1234674 visual panel</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_multimodal_agent_test_internal_xh_2025_1451370_visual_panel.png" alt="case multimodal agent test internal xh 2025 1451370 visual panel" loading="lazy" />
+            <figcaption>case multimodal agent test internal xh 2025 1451370 visual panel</figcaption>
+          </figure>
+        </div>
+        <h3>Region-aware / 对比学习 · Grad-CAM 病例</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_regionaware_err_000_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 000 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 000 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_001_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 001 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 001 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_002_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 002 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 002 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_003_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 003 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 003 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_004_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 004 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 004 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_005_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 005 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 005 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_006_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 006 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 006 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_007_test_external_T3_to_T4plus_369603.png" alt="case regionaware err 007 test external T3 to T4plus 369603" loading="lazy" />
+            <figcaption>case regionaware err 007 test external T3 to T4plus 369603</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_008_test_external_T2_to_T4plus_368837.png" alt="case regionaware err 008 test external T2 to T4plus 368837" loading="lazy" />
+            <figcaption>case regionaware err 008 test external T2 to T4plus 368837</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_009_test_external_T3_to_T4plus_370228.png" alt="case regionaware err 009 test external T3 to T4plus 370228" loading="lazy" />
+            <figcaption>case regionaware err 009 test external T3 to T4plus 370228</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_ext_000_test_external_T2_to_T4_pt220.png" alt="case regionaware ext 000 test external T2 to T4 pt220" loading="lazy" />
+            <figcaption>case regionaware ext 000 test external T2 to T4 pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_pros_000_test_prospective_T3_to_T4_1451370.png" alt="case regionaware pros 000 test prospective T3 to T4 1451370" loading="lazy" />
+            <figcaption>case regionaware pros 000 test prospective T3 to T4 1451370</figcaption>
+          </figure>
+        </div>
+        <h3>误诊 / 胃壁证据 · 错误分析面板</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_error_wall_000_test_external_T2_to_T4_pt220.png" alt="case error wall 000 test external T2 to T4 pt220" loading="lazy" />
+            <figcaption>case error wall 000 test external T2 to T4 pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_001_test_external_T2_to_T4_pt220.png" alt="case error wall 001 test external T2 to T4 pt220" loading="lazy" />
+            <figcaption>case error wall 001 test external T2 to T4 pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_002_test_external_T3_to_T4_369603.png" alt="case error wall 002 test external T3 to T4 369603" loading="lazy" />
+            <figcaption>case error wall 002 test external T3 to T4 369603</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_003_test_external_T3_to_T4_370228.png" alt="case error wall 003 test external T3 to T4 370228" loading="lazy" />
+            <figcaption>case error wall 003 test external T3 to T4 370228</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_004_test_external_T3_to_T2_pt199.png" alt="case error wall 004 test external T3 to T2 pt199" loading="lazy" />
+            <figcaption>case error wall 004 test external T3 to T2 pt199</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_005_test_external_T1_to_T2_800939.png" alt="case error wall 005 test external T1 to T2 800939" loading="lazy" />
+            <figcaption>case error wall 005 test external T1 to T2 800939</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_006_test_external_T3_to_T2_pt214.png" alt="case error wall 006 test external T3 to T2 pt214" loading="lazy" />
+            <figcaption>case error wall 006 test external T3 to T2 pt214</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_007_test_external_T1_to_T2_1022707.png" alt="case error wall 007 test external T1 to T2 1022707" loading="lazy" />
+            <figcaption>case error wall 007 test external T1 to T2 1022707</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_008_test_external_T2_to_T1_1501861.png" alt="case error wall 008 test external T2 to T1 1501861" loading="lazy" />
+            <figcaption>case error wall 008 test external T2 to T1 1501861</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_009_test_prospective_T3_to_T4_1451370.png" alt="case error wall 009 test prospective T3 to T4 1451370" loading="lazy" />
+            <figcaption>case error wall 009 test prospective T3 to T4 1451370</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_010_test_external_T4_to_T2_700.png" alt="case error wall 010 test external T4 to T2 700" loading="lazy" />
+            <figcaption>case error wall 010 test external T4 to T2 700</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_error_wall_011_test_prospective_T2_to_T1_1501861.png" alt="case error wall 011 test prospective T2 to T1 1501861" loading="lazy" />
+            <figcaption>case error wall 011 test prospective T2 to T1 1501861</figcaption>
+          </figure>
+        </div>
+        <h3>Region-aware · 错误步审查</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_regionaware_err_000_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 000 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 000 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_001_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 001 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 001 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_002_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 002 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 002 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_003_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 003 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 003 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_004_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 004 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 004 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_005_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 005 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 005 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_006_test_external_T2_to_T4plus_pt220.png" alt="case regionaware err 006 test external T2 to T4plus pt220" loading="lazy" />
+            <figcaption>case regionaware err 006 test external T2 to T4plus pt220</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_007_test_external_T3_to_T4plus_369603.png" alt="case regionaware err 007 test external T3 to T4plus 369603" loading="lazy" />
+            <figcaption>case regionaware err 007 test external T3 to T4plus 369603</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_008_test_external_T2_to_T4plus_368837.png" alt="case regionaware err 008 test external T2 to T4plus 368837" loading="lazy" />
+            <figcaption>case regionaware err 008 test external T2 to T4plus 368837</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_regionaware_err_009_test_external_T3_to_T4plus_370228.png" alt="case regionaware err 009 test external T3 to T4plus 370228" loading="lazy" />
+            <figcaption>case regionaware err 009 test external T3 to T4plus 370228</figcaption>
+          </figure>
+        </div>
+        <h3>外部验证 · 帧级分类面板（莆田 / 肿瘤 / 多中心等）</h3>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1519_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1519 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1519 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1535_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1535 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1535 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1546_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1546 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1546 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1549_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1549 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1549 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_correct_high_conf_pt195_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels correct high conf pt195 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels correct high conf pt195 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_correct_high_conf_pt197_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels correct high conf pt197 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels correct high conf pt197 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_correct_high_conf_pt198_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels correct high conf pt198 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels correct high conf pt198 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_correct_high_conf_pt203_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels correct high conf pt203 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels correct high conf pt203 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_errors_high_conf_pt167_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels errors high conf pt167 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels errors high conf pt167 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_errors_high_conf_pt185_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels errors high conf pt185 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels errors high conf pt185 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_errors_high_conf_pt196_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels errors high conf pt196 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels errors high conf pt196 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_errors_high_conf_pt204_T3_pred_T1.png" alt="外部验证 · ext putian 2024 case panels errors high conf pt204 T3 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels errors high conf pt204 T3 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_errors_high_conf_pt219_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels errors high conf pt219 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels errors high conf pt219 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_errors_high_conf_pt220_T2_pred_T1.png" alt="外部验证 · ext putian 2024 case panels errors high conf pt220 T2 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels errors high conf pt220 T2 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_t2_t3_boundary_pt168_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels t2 t3 boundary pt168 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels t2 t3 boundary pt168 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_t2_t3_boundary_pt171_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels t2 t3 boundary pt171 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels t2 t3 boundary pt171 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_t2_t3_boundary_pt173_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels t2 t3 boundary pt173 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels t2 t3 boundary pt173 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_t2_t3_boundary_pt175_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels t2 t3 boundary pt175 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels t2 t3 boundary pt175 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_t2_t3_boundary_pt187_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels t2 t3 boundary pt187 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels t2 t3 boundary pt187 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_t2_t3_boundary_pt213_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels t2 t3 boundary pt213 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels t2 t3 boundary pt213 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_correct_high_conf_pt195_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels v2 correct high conf pt195 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 correct high conf pt195 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_correct_high_conf_pt197_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels v2 correct high conf pt197 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 correct high conf pt197 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_correct_high_conf_pt198_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels v2 correct high conf pt198 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 correct high conf pt198 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_correct_high_conf_pt203_T1_pred_T1.png" alt="外部验证 · ext putian 2024 case panels v2 correct high conf pt203 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 correct high conf pt203 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_errors_high_conf_pt167_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 errors high conf pt167 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 errors high conf pt167 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_errors_high_conf_pt185_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 errors high conf pt185 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 errors high conf pt185 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_errors_high_conf_pt196_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 errors high conf pt196 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 errors high conf pt196 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_errors_high_conf_pt204_T3_pred_T1.png" alt="外部验证 · ext putian 2024 case panels v2 errors high conf pt204 T3 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 errors high conf pt204 T3 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_errors_high_conf_pt219_T4_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 errors high conf pt219 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 errors high conf pt219 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_errors_high_conf_pt220_T2_pred_T1.png" alt="外部验证 · ext putian 2024 case panels v2 errors high conf pt220 T2 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 errors high conf pt220 T2 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_t2_t3_boundary_pt168_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt168 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt168 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_t2_t3_boundary_pt171_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt171 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt171 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_t2_t3_boundary_pt173_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt173 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt173 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_t2_t3_boundary_pt175_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt175 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt175 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_t2_t3_boundary_pt187_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt187 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt187 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_case_panels_v2_t2_t3_boundary_pt213_T3_pred_T3.png" alt="外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt213 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 case panels v2 t2 t3 boundary pt213 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_correct_high_conf_pt195_T1_pred_T1_dino.png" alt="外部验证 · ext putian 2024 dino token panels correct high conf pt195 T1 pred T1 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels correct high conf pt195 T1 pred T1 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_correct_high_conf_pt197_T1_pred_T1_dino.png" alt="外部验证 · ext putian 2024 dino token panels correct high conf pt197 T1 pred T1 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels correct high conf pt197 T1 pred T1 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_correct_high_conf_pt198_T1_pred_T1_dino.png" alt="外部验证 · ext putian 2024 dino token panels correct high conf pt198 T1 pred T1 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels correct high conf pt198 T1 pred T1 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_correct_high_conf_pt203_T1_pred_T1_dino.png" alt="外部验证 · ext putian 2024 dino token panels correct high conf pt203 T1 pred T1 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels correct high conf pt203 T1 pred T1 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_errors_high_conf_pt167_T4_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels errors high conf pt167 T4 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels errors high conf pt167 T4 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_errors_high_conf_pt185_T4_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels errors high conf pt185 T4 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels errors high conf pt185 T4 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_errors_high_conf_pt196_T4_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels errors high conf pt196 T4 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels errors high conf pt196 T4 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_errors_high_conf_pt204_T3_pred_T1_dino.png" alt="外部验证 · ext putian 2024 dino token panels errors high conf pt204 T3 pred T1 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels errors high conf pt204 T3 pred T1 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_errors_high_conf_pt219_T4_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels errors high conf pt219 T4 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels errors high conf pt219 T4 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_errors_high_conf_pt220_T2_pred_T1_dino.png" alt="外部验证 · ext putian 2024 dino token panels errors high conf pt220 T2 pred T1 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels errors high conf pt220 T2 pred T1 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_t2_t3_boundary_pt168_T3_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt168 T3 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt168 T3 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_t2_t3_boundary_pt171_T3_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt171 T3 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt171 T3 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_t2_t3_boundary_pt173_T3_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt173 T3 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt173 T3 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_t2_t3_boundary_pt175_T3_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt175 T3 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt175 T3 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_t2_t3_boundary_pt187_T3_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt187 T3 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt187 T3 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_dino_token_panels_t2_t3_boundary_pt213_T3_pred_T3_dino.png" alt="外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt213 T3 pred T3 dino" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 dino token panels t2 t3 boundary pt213 T3 pred T3 dino</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt195_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt195 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt195 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt197_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt197 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt197 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt198_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt198 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt198 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt203_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt203 T1 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt203 T1 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt167_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt167 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt167 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt185_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt185 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt185 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt196_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt196 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt196 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt204_T3_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt204 T3 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt204 T3 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt219_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt219 T4 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt219 T4 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt220_T2_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt220 T2 pred T1 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt220 T2 pred T1 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt168_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt168 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt168 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt171_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt171 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt171 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt173_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt173 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt173 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt175_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt175 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt175 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt187_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt187 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt187 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt213_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt213 T3 pred T3 lesion focus" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt213 T3 pred T3 lesion focus</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_correct_high_conf_pt233_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 correct high conf pt233 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 correct high conf pt233 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_correct_high_conf_pt246_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 correct high conf pt246 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 correct high conf pt246 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_correct_high_conf_pt255_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 correct high conf pt255 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 correct high conf pt255 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_correct_high_conf_pt258_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 correct high conf pt258 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 correct high conf pt258 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_errors_high_conf_pt225_T4_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 errors high conf pt225 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 errors high conf pt225 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_errors_high_conf_pt245_T4_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 errors high conf pt245 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 errors high conf pt245 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_errors_high_conf_pt257_T3_pred_T4.png" alt="外部验证 · ext putian 2024 new case panels v2 errors high conf pt257 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 errors high conf pt257 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_t2_t3_boundary_pt233_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt233 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt233 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_t2_t3_boundary_pt246_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt246 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt246 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_t2_t3_boundary_pt255_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt255 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt255 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_t2_t3_boundary_pt257_T3_pred_T4.png" alt="外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt257 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt257 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2024_new_case_panels_v2_t2_t3_boundary_pt258_T3_pred_T3.png" alt="外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt258 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2024 new case panels v2 t2 t3 boundary pt258 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_correct_high_conf_pt282_T1_pred_T1.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt282 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt282 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_correct_high_conf_pt329_T1_pred_T1.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt329 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt329 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_correct_high_conf_pt330_T1_pred_T1.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt330 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt330 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_correct_high_conf_pt339_T4_pred_T4.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt339 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 correct high conf pt339 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_errors_high_conf_pt260_T4_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt260 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt260 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_errors_high_conf_pt283_T3_pred_T4.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt283 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt283 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_errors_high_conf_pt284_T3_pred_T4.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt284 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt284 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_errors_high_conf_pt285_T3_pred_T1.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt285 T3 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt285 T3 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_errors_high_conf_pt292_T1_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt292 T1 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt292 T1 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_errors_high_conf_pt293_T2_pred_T1.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt293 T2 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 errors high conf pt293 T2 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_t2_t3_boundary_pt268_T3_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt268 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt268 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_t2_t3_boundary_pt269_T3_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt269 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt269 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_t2_t3_boundary_pt290_T3_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt290 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt290 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_t2_t3_boundary_pt297_T3_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt297 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt297 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_t2_t3_boundary_pt323_T3_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt323 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt323 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_2025_07_09_case_panels_v2_t2_t3_boundary_pt324_T3_pred_T3.png" alt="外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt324 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian 2025 07 09 case panels v2 t2 t3 boundary pt324 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_correct_high_conf_pt160_T1_pred_T1.png" alt="外部验证 · ext putian case panels v2 correct high conf pt160 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 correct high conf pt160 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_correct_high_conf_pt21_T1_pred_T1.png" alt="外部验证 · ext putian case panels v2 correct high conf pt21 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 correct high conf pt21 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_correct_high_conf_pt78_T1_pred_T1.png" alt="外部验证 · ext putian case panels v2 correct high conf pt78 T1 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 correct high conf pt78 T1 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_correct_high_conf_pt99_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 correct high conf pt99 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 correct high conf pt99 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_errors_high_conf_pt127_T4_pred_T3.png" alt="外部验证 · ext putian case panels v2 errors high conf pt127 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 errors high conf pt127 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_errors_high_conf_pt136_T4_pred_T3.png" alt="外部验证 · ext putian case panels v2 errors high conf pt136 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 errors high conf pt136 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_errors_high_conf_pt37_T1_pred_T2.png" alt="外部验证 · ext putian case panels v2 errors high conf pt37 T1 pred T2" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 errors high conf pt37 T1 pred T2</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_errors_high_conf_pt44_T3_pred_T2.png" alt="外部验证 · ext putian case panels v2 errors high conf pt44 T3 pred T2" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 errors high conf pt44 T3 pred T2</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_errors_high_conf_pt52_T4_pred_T3.png" alt="外部验证 · ext putian case panels v2 errors high conf pt52 T4 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 errors high conf pt52 T4 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_errors_high_conf_pt76_T3_pred_T1.png" alt="外部验证 · ext putian case panels v2 errors high conf pt76 T3 pred T1" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 errors high conf pt76 T3 pred T1</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_t2_t3_boundary_pt105_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 t2 t3 boundary pt105 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 t2 t3 boundary pt105 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_t2_t3_boundary_pt107_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 t2 t3 boundary pt107 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 t2 t3 boundary pt107 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_t2_t3_boundary_pt120_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 t2 t3 boundary pt120 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 t2 t3 boundary pt120 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_t2_t3_boundary_pt83_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 t2 t3 boundary pt83 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 t2 t3 boundary pt83 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_t2_t3_boundary_pt87_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 t2 t3 boundary pt87 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 t2 t3 boundary pt87 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_putian_case_panels_v2_t2_t3_boundary_pt99_T3_pred_T3.png" alt="外部验证 · ext putian case panels v2 t2 t3 boundary pt99 T3 pred T3" loading="lazy" />
+            <figcaption>外部验证 · ext putian case panels v2 t2 t3 boundary pt99 T3 pred T3</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_366138_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 366138 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 366138 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_367743_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 367743 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 367743 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_369695_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 369695 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 369695 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_372308_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 372308 T4 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 372308 T4 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_368837_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 368837 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 368837 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369603_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 369603 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 369603 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369668_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 369668 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 369668 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_370273_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 370273 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 370273 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_371511_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 371511 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 371511 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_372770_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 372770 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 372770 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_366705_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 366705 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 366705 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_367232_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 367232 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 367232 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_369587_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 369587 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 369587 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_370511_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 370511 T2 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 370511 T2 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_372711_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 372711 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 372711 T3 pred T4</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_378868_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 378868 T3 pred T4" loading="lazy" />
+            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 378868 T3 pred T4</figcaption>
           </figure>
         </div>
         <h3>超声病例 · 全流程管线示意（T1–T4+）</h3>
@@ -808,6 +1636,14 @@
             <figcaption>全流程 · dehua contact sheet</figcaption>
           </figure>
           <figure>
+            <img src="figures/results/case_pipeline_dehua_gt_roi_dhwa1-1.png" alt="全流程 · dehua gt roi dhwa1-1" loading="lazy" />
+            <figcaption>全流程 · dehua gt roi dhwa1-1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_pipeline_dehua_gt_roi_dhwa1-2.png" alt="全流程 · dehua gt roi dhwa1-2" loading="lazy" />
+            <figcaption>全流程 · dehua gt roi dhwa1-2</figcaption>
+          </figure>
+          <figure>
             <img src="figures/results/case_pipeline_dehua_overlay_000_dhwa1-1.png" alt="全流程 · dehua overlay 000 dhwa1-1" loading="lazy" />
             <figcaption>全流程 · dehua overlay 000 dhwa1-1</figcaption>
           </figure>
@@ -827,12 +1663,28 @@
             <figcaption>胃壁边界 · T1 01 Surgery 2024 1398148-1</figcaption>
           </figure>
           <figure>
+            <img src="figures/results/case_boundary_T1_02_Surgery_2019_1-718-13.png" alt="胃壁边界 · T1 02 Surgery 2019 1-718-13" loading="lazy" />
+            <figcaption>胃壁边界 · T1 02 Surgery 2019 1-718-13</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_boundary_T1_03_2018_DS_Crop_1029178-10.png" alt="胃壁边界 · T1 03 2018 DS Crop 1029178-10" loading="lazy" />
+            <figcaption>胃壁边界 · T1 03 2018 DS Crop 1029178-10</figcaption>
+          </figure>
+          <figure>
             <img src="figures/results/case_boundary_T2_00_2018_DS_Crop_1015590-3.png" alt="胃壁边界 · T2 00 2018 DS Crop 1015590-3" loading="lazy" />
             <figcaption>胃壁边界 · T2 00 2018 DS Crop 1015590-3</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_boundary_T2_01_pt118-1.png" alt="胃壁边界 · T2 01 pt118-1" loading="lazy" />
             <figcaption>胃壁边界 · T2 01 pt118-1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_boundary_T2_02_pt229-3.png" alt="胃壁边界 · T2 02 pt229-3" loading="lazy" />
+            <figcaption>胃壁边界 · T2 02 pt229-3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_boundary_T2_03_2018_DS_Crop_1015590-4.png" alt="胃壁边界 · T2 03 2018 DS Crop 1015590-4" loading="lazy" />
+            <figcaption>胃壁边界 · T2 03 2018 DS Crop 1015590-4</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_boundary_T3_00_2018_DS_Crop_1019999-2.png" alt="胃壁边界 · T3 00 2018 DS Crop 1019999-2" loading="lazy" />
@@ -843,6 +1695,14 @@
             <figcaption>胃壁边界 · T3 01 Surgery 2020 2023 0024261-13</figcaption>
           </figure>
           <figure>
+            <img src="figures/results/case_boundary_T3_02_Surgery_2025_7M_1517025_2.png" alt="胃壁边界 · T3 02 Surgery 2025 7M 1517025 2" loading="lazy" />
+            <figcaption>胃壁边界 · T3 02 Surgery 2025 7M 1517025 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_boundary_T3_03_2018_DS_Crop_1000158-6.png" alt="胃壁边界 · T3 03 2018 DS Crop 1000158-6" loading="lazy" />
+            <figcaption>胃壁边界 · T3 03 2018 DS Crop 1000158-6</figcaption>
+          </figure>
+          <figure>
             <img src="figures/results/case_boundary_T4_00_2018_DS_Crop_1014985-5.png" alt="胃壁边界 · T4 00 2018 DS Crop 1014985-5" loading="lazy" />
             <figcaption>胃壁边界 · T4 00 2018 DS Crop 1014985-5</figcaption>
           </figure>
@@ -850,9 +1710,29 @@
             <img src="figures/results/case_boundary_T4_01_Surgery_2019_1-497-17.png" alt="胃壁边界 · T4 01 Surgery 2019 1-497-17" loading="lazy" />
             <figcaption>胃壁边界 · T4 01 Surgery 2019 1-497-17</figcaption>
           </figure>
+          <figure>
+            <img src="figures/results/case_boundary_T4_02_Surgery_2019_1-739-5.png" alt="胃壁边界 · T4 02 Surgery 2019 1-739-5" loading="lazy" />
+            <figcaption>胃壁边界 · T4 02 Surgery 2019 1-739-5</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_boundary_T4_03_pt137-37.png" alt="胃壁边界 · T4 03 pt137-37" loading="lazy" />
+            <figcaption>胃壁边界 · T4 03 pt137-37</figcaption>
+          </figure>
         </div>
         <h3>超声病例 · 四分类 Grad-CAM（正确 / 漏诊 / 误诊）</h3>
         <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_gradcam_00_iou_scatter_analysis.png" alt="Grad-CAM · 00 iou scatter analysis" loading="lazy" />
+            <figcaption>Grad-CAM · 00 iou scatter analysis</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_gradcam_00_overview_gradcam.png" alt="Grad-CAM · 00 overview gradcam" loading="lazy" />
+            <figcaption>Grad-CAM · 00 overview gradcam</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_01_attention_analysis.png" alt="Grad-CAM · 01 attention analysis" loading="lazy" />
+            <figcaption>Grad-CAM · 01 attention analysis</figcaption>
+          </figure>
           <figure>
             <img src="figures/results/case_gradcam_T1_misclassified_as_T2_Surgery_2025_2M_1465025_4.png" alt="Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1465025 4" loading="lazy" />
             <figcaption>Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1465025 4</figcaption>
@@ -860,6 +1740,34 @@
           <figure>
             <img src="figures/results/case_gradcam_T1_misclassified_as_T2_Surgery_2025_2M_1467633_2.png" alt="Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1467633 2" loading="lazy" />
             <figcaption>Grad-CAM · T1 misclassified as T2 Surgery 2025 2M 1467633 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T2_Surgery_2025_3M_892135_5.png" alt="Grad-CAM · T1 misclassified as T2 Surgery 2025 3M 892135 5" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T2 Surgery 2025 3M 892135 5</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T3_Surgery_2025_2M_1467633_3.png" alt="Grad-CAM · T1 misclassified as T3 Surgery 2025 2M 1467633 3" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T3 Surgery 2025 2M 1467633 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T3_Surgery_2025_4M_1478093_8.png" alt="Grad-CAM · T1 misclassified as T3 Surgery 2025 4M 1478093 8" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T3 Surgery 2025 4M 1478093 8</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T3_Surgery_2025_5M_1493222_4.png" alt="Grad-CAM · T1 misclassified as T3 Surgery 2025 5M 1493222 4" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T3 Surgery 2025 5M 1493222 4</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T4_Surgery_2025_4M_1480686_6.png" alt="Grad-CAM · T1 misclassified as T4 Surgery 2025 4M 1480686 6" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T4 Surgery 2025 4M 1480686 6</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T4_Surgery_2025_4M_1483646_7.png" alt="Grad-CAM · T1 misclassified as T4 Surgery 2025 4M 1483646 7" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T4 Surgery 2025 4M 1483646 7</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T1_misclassified_as_T4_Surgery_2025_6M_1497593_10.png" alt="Grad-CAM · T1 misclassified as T4 Surgery 2025 6M 1497593 10" loading="lazy" />
+            <figcaption>Grad-CAM · T1 misclassified as T4 Surgery 2025 6M 1497593 10</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_gradcam_T2_correct_Surgery_2025_2M_1466467_1.png" alt="Grad-CAM · T2 correct Surgery 2025 2M 1466467 1" loading="lazy" />
@@ -870,12 +1778,56 @@
             <figcaption>Grad-CAM · T2 correct Surgery 2025 3M 1476110 3</figcaption>
           </figure>
           <figure>
+            <img src="figures/results/case_gradcam_T2_correct_Surgery_2025_5M_1466069_3.png" alt="Grad-CAM · T2 correct Surgery 2025 5M 1466069 3" loading="lazy" />
+            <figcaption>Grad-CAM · T2 correct Surgery 2025 5M 1466069 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_misclassified_as_T3_Surgery_2025_3M_1466069_7.png" alt="Grad-CAM · T2 misclassified as T3 Surgery 2025 3M 1466069 7" loading="lazy" />
+            <figcaption>Grad-CAM · T2 misclassified as T3 Surgery 2025 3M 1466069 7</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_misclassified_as_T3_Surgery_2025_4M_1480333_1.png" alt="Grad-CAM · T2 misclassified as T3 Surgery 2025 4M 1480333 1" loading="lazy" />
+            <figcaption>Grad-CAM · T2 misclassified as T3 Surgery 2025 4M 1480333 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_misclassified_as_T3_Surgery_2025_4M_1480333_5.png" alt="Grad-CAM · T2 misclassified as T3 Surgery 2025 4M 1480333 5" loading="lazy" />
+            <figcaption>Grad-CAM · T2 misclassified as T3 Surgery 2025 4M 1480333 5</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_misclassified_as_T4_Surgery_2025_3M_1472654_5.png" alt="Grad-CAM · T2 misclassified as T4 Surgery 2025 3M 1472654 5" loading="lazy" />
+            <figcaption>Grad-CAM · T2 misclassified as T4 Surgery 2025 3M 1472654 5</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_misclassified_as_T4_Surgery_2025_3M_1477217_3.png" alt="Grad-CAM · T2 misclassified as T4 Surgery 2025 3M 1477217 3" loading="lazy" />
+            <figcaption>Grad-CAM · T2 misclassified as T4 Surgery 2025 3M 1477217 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T2_misclassified_as_T4_Surgery_2025_4M_1480333_2.png" alt="Grad-CAM · T2 misclassified as T4 Surgery 2025 4M 1480333 2" loading="lazy" />
+            <figcaption>Grad-CAM · T2 misclassified as T4 Surgery 2025 4M 1480333 2</figcaption>
+          </figure>
+          <figure>
             <img src="figures/results/case_gradcam_T3_correct_Surgery_2025_2M_1458412_3.png" alt="Grad-CAM · T3 correct Surgery 2025 2M 1458412 3" loading="lazy" />
             <figcaption>Grad-CAM · T3 correct Surgery 2025 2M 1458412 3</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_gradcam_T3_correct_Surgery_2025_2M_1459710_4.png" alt="Grad-CAM · T3 correct Surgery 2025 2M 1459710 4" loading="lazy" />
             <figcaption>Grad-CAM · T3 correct Surgery 2025 2M 1459710 4</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_correct_Surgery_2025_2M_1459726_2.png" alt="Grad-CAM · T3 correct Surgery 2025 2M 1459726 2" loading="lazy" />
+            <figcaption>Grad-CAM · T3 correct Surgery 2025 2M 1459726 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_misclassified_as_T2_Surgery_2025_2M_1459726_1.png" alt="Grad-CAM · T3 misclassified as T2 Surgery 2025 2M 1459726 1" loading="lazy" />
+            <figcaption>Grad-CAM · T3 misclassified as T2 Surgery 2025 2M 1459726 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_misclassified_as_T2_Surgery_2025_3M_1469105_2.png" alt="Grad-CAM · T3 misclassified as T2 Surgery 2025 3M 1469105 2" loading="lazy" />
+            <figcaption>Grad-CAM · T3 misclassified as T2 Surgery 2025 3M 1469105 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T3_misclassified_as_T2_Surgery_2025_3M_1470119_4.png" alt="Grad-CAM · T3 misclassified as T2 Surgery 2025 3M 1470119 4" loading="lazy" />
+            <figcaption>Grad-CAM · T3 misclassified as T2 Surgery 2025 3M 1470119 4</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_gradcam_T3_misclassified_as_T4_Surgery_2025_2M_13609055_1.png" alt="Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 1" loading="lazy" />
@@ -886,12 +1838,32 @@
             <figcaption>Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 4</figcaption>
           </figure>
           <figure>
+            <img src="figures/results/case_gradcam_T3_misclassified_as_T4_Surgery_2025_2M_13609055_6.png" alt="Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 6" loading="lazy" />
+            <figcaption>Grad-CAM · T3 misclassified as T4 Surgery 2025 2M 13609055 6</figcaption>
+          </figure>
+          <figure>
             <img src="figures/results/case_gradcam_T4p_correct_Surgery_2025_2M_1273916_10.png" alt="Grad-CAM · T4p correct Surgery 2025 2M 1273916 10" loading="lazy" />
             <figcaption>Grad-CAM · T4p correct Surgery 2025 2M 1273916 10</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_gradcam_T4p_correct_Surgery_2025_2M_1273916_3.png" alt="Grad-CAM · T4p correct Surgery 2025 2M 1273916 3" loading="lazy" />
             <figcaption>Grad-CAM · T4p correct Surgery 2025 2M 1273916 3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_correct_Surgery_2025_2M_13608948_1.png" alt="Grad-CAM · T4p correct Surgery 2025 2M 13608948 1" loading="lazy" />
+            <figcaption>Grad-CAM · T4p correct Surgery 2025 2M 13608948 1</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_misclassified_as_T2_Surgery_2025_3M_1475057_6.png" alt="Grad-CAM · T4p misclassified as T2 Surgery 2025 3M 1475057 6" loading="lazy" />
+            <figcaption>Grad-CAM · T4p misclassified as T2 Surgery 2025 3M 1475057 6</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_misclassified_as_T2_Surgery_2025_4M_1487565_2.png" alt="Grad-CAM · T4p misclassified as T2 Surgery 2025 4M 1487565 2" loading="lazy" />
+            <figcaption>Grad-CAM · T4p misclassified as T2 Surgery 2025 4M 1487565 2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_misclassified_as_T2_Surgery_2025_7M_1245708_6.png" alt="Grad-CAM · T4p misclassified as T2 Surgery 2025 7M 1245708 6" loading="lazy" />
+            <figcaption>Grad-CAM · T4p misclassified as T2 Surgery 2025 7M 1245708 6</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1469901_2.png" alt="Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1469901 2" loading="lazy" />
@@ -901,9 +1873,9 @@
             <img src="figures/results/case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1475057_14.png" alt="Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1475057 14" loading="lazy" />
             <figcaption>Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1475057 14</figcaption>
           </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_gradcam_overview.png" alt="Grad-CAM · overview" loading="lazy" />
-            <figcaption>Grad-CAM · overview</figcaption>
+          <figure>
+            <img src="figures/results/case_gradcam_T4p_misclassified_as_T3_Surgery_2025_3M_1476603_1.png" alt="Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1476603 1" loading="lazy" />
+            <figcaption>Grad-CAM · T4p misclassified as T3 Surgery 2025 3M 1476603 1</figcaption>
           </figure>
           <figure>
             <img src="figures/results/case_gradcam_pair01_T1_恶性_正确检出.png" alt="Grad-CAM · pair01 T1 恶性 正确检出" loading="lazy" />
@@ -929,123 +1901,47 @@
             <img src="figures/results/case_gradcam_pair06_良性炎症_正确排除.png" alt="Grad-CAM · pair06 良性炎症 正确排除" loading="lazy" />
             <figcaption>Grad-CAM · pair06 良性炎症 正确排除</figcaption>
           </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_sample_0_Benign_pred_Benign.png" alt="Grad-CAM · sample 0 Benign pred Benign" loading="lazy" />
+            <figcaption>Grad-CAM · sample 0 Benign pred Benign</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_sample_1_Benign_pred_Benign.png" alt="Grad-CAM · sample 1 Benign pred Benign" loading="lazy" />
+            <figcaption>Grad-CAM · sample 1 Benign pred Benign</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_sample_2_Malignant_pred_Malignant.png" alt="Grad-CAM · sample 2 Malignant pred Malignant" loading="lazy" />
+            <figcaption>Grad-CAM · sample 2 Malignant pred Malignant</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_gradcam_sample_3_Malignant_pred_Malignant.png" alt="Grad-CAM · sample 3 Malignant pred Malignant" loading="lazy" />
+            <figcaption>Grad-CAM · sample 3 Malignant pred Malignant</figcaption>
+          </figure>
         </div>
-        <h3>超声病例 · 外部验证帧级面板（莆田 / 肿瘤 / 多中心）</h3>
+        <h3>T2 专项 · 边界与误诊分析</h3>
         <div class="figure-gallery">
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1519_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1519 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1519 T4 pred T4</figcaption>
+          <figure>
+            <img src="figures/results/case_t2analysis_t2_misclassification_analysis.png" alt="case t2analysis t2 misclassification analysis" loading="lazy" />
+            <figcaption>case t2analysis t2 misclassification analysis</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_t2analysis_t2_misclassification_docs.png" alt="case t2analysis t2 misclassification docs" loading="lazy" />
+            <figcaption>case t2analysis t2 misclassification docs</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1535_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1535 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1535 T4 pred T4</figcaption>
+            <img src="figures/results/case_t2analysis_t2_roi_visual_comparison.png" alt="case t2analysis t2 roi visual comparison" loading="lazy" />
+            <figcaption>case t2analysis t2 roi visual comparison</figcaption>
           </figure>
           <figure class="span-2">
-            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1546_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1546 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1546 T4 pred T4</figcaption>
+            <img src="figures/results/case_t2analysis_t2_visual_comparison.png" alt="case t2analysis t2 visual comparison" loading="lazy" />
+            <figcaption>case t2analysis t2 visual comparison</figcaption>
           </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_multicenter_case_panels_v2_correct_high_conf_1549_T4_pred_T4.png" alt="外部验证 · ext multicenter case panels v2 correct high conf 1549 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext multicenter case panels v2 correct high conf 1549 T4 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt195_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt195 T1 pred T1 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt195 T1 pred T1 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt197_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt197 T1 pred T1 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt197 T1 pred T1 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt198_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt198 T1 pred T1 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt198 T1 pred T1 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_correct_high_conf_pt203_T1_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels correct high conf pt203 T1 pred T1 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels correct high conf pt203 T1 pred T1 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt167_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt167 T4 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt167 T4 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt185_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt185 T4 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt185 T4 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt196_T4_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt196 T4 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt196 T4 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_errors_high_conf_pt204_T3_pred_T1_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels errors high conf pt204 T3 pred T1 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels errors high conf pt204 T3 pred T1 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt168_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt168 T3 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt168 T3 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt171_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt171 T3 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt171 T3 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt173_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt173 T3 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt173 T3 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_putian_2024_lesion_focus_panels_t2_t3_boundary_pt175_T3_pred_T3_lesion_focus.png" alt="外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt175 T3 pred T3 lesion focus" loading="lazy" />
-            <figcaption>外部验证 · ext putian 2024 lesion focus panels t2 t3 boundary pt175 T3 pred T3 lesion focus</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_366138_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 366138 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 366138 T4 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_367743_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 367743 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 367743 T4 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_369695_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 369695 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 369695 T4 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_correct_high_conf_372308_T4_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 correct high conf 372308 T4 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 correct high conf 372308 T4 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_368837_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 368837 T2 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 368837 T2 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369603_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 369603 T3 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 369603 T3 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_369668_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 369668 T3 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 369668 T3 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_errors_high_conf_370273_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 errors high conf 370273 T3 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 errors high conf 370273 T3 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_366705_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 366705 T2 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 366705 T2 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_367232_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 367232 T2 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 367232 T2 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_369587_T3_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 369587 T3 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 369587 T3 pred T4</figcaption>
-          </figure>
-          <figure class="span-2">
-            <img src="figures/results/case_rf_ext_zhongliu_case_panels_v2_t2_t3_boundary_370511_T2_pred_T4.png" alt="外部验证 · ext zhongliu case panels v2 t2 t3 boundary 370511 T2 pred T4" loading="lazy" />
-            <figcaption>外部验证 · ext zhongliu case panels v2 t2 t3 boundary 370511 T2 pred T4</figcaption>
+          <figure>
+            <img src="figures/results/case_t2analysis_t2_visual_docs.png" alt="case t2analysis t2 visual docs" loading="lazy" />
+            <figcaption>case t2analysis t2 visual docs</figcaption>
           </figure>
         </div>
-        <h3>超声病例 · 多模态融合 / VLM 示意</h3>
+        <h3>多模态融合 / VLM 示意</h3>
         <div class="figure-gallery">
           <figure class="span-2">
             <img src="figures/results/case_fusion_vlm_comparison.png" alt="case fusion vlm comparison" loading="lazy" />
@@ -1056,11 +1952,112 @@
             <figcaption>case fusion vlm demo</figcaption>
           </figure>
         </div>
-        <h3>分割 · ROI · 多中心对比</h3>
+        <h3>医生复核 · 标注与 Grad-CAM 质控</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_review_00_model_description.png" alt="case review 00 model description" loading="lazy" />
+            <figcaption>case review 00 model description</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_review_00_overview_20cases.png" alt="case review 00 overview 20cases" loading="lazy" />
+            <figcaption>case review 00 overview 20cases</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_review_00_overview_6pairs.png" alt="case review 00 overview 6pairs" loading="lazy" />
+            <figcaption>case review 00 overview 6pairs</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/case_review_00_strict_vs_true_roi_comparison.png" alt="case review 00 strict vs true roi comparison" loading="lazy" />
+            <figcaption>case review 00 strict vs true roi comparison</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_01_attention_analysis.png" alt="case review 01 attention analysis" loading="lazy" />
+            <figcaption>case review 01 attention analysis</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_D_misclassified.png" alt="case review D misclassified" loading="lazy" />
+            <figcaption>case review D misclassified</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_K_2023_problem_samples.png" alt="case review K 2023 problem samples" loading="lazy" />
+            <figcaption>case review K 2023 problem samples</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_L_transpose_diagnosis.png" alt="case review L transpose diagnosis" loading="lazy" />
+            <figcaption>case review L transpose diagnosis</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_N_before_after_fix.png" alt="case review N before after fix" loading="lazy" />
+            <figcaption>case review N before after fix</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_Q_2018_annotation_diagnosis.png" alt="case review Q 2018 annotation diagnosis" loading="lazy" />
+            <figcaption>case review Q 2018 annotation diagnosis</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_R_2018_fixed_problem_samples.png" alt="case review R 2018 fixed problem samples" loading="lazy" />
+            <figcaption>case review R 2018 fixed problem samples</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_U_677789_debug.png" alt="case review U 677789 debug" loading="lazy" />
+            <figcaption>case review U 677789 debug</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_V_fixed_verification_v2.png" alt="case review V fixed verification v2" loading="lazy" />
+            <figcaption>case review V fixed verification v2</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/case_review_W_inflammation_fixed_v2.png" alt="case review W inflammation fixed v2" loading="lazy" />
+            <figcaption>case review W inflammation fixed v2</figcaption>
+          </figure>
+        </div>
+        <h3>多中心 Overlay 蒙太奇（外部）</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/case_overlay_nnunet_dataset001_overlay_grid_20260322_110001.png" alt="case overlay nnunet dataset001 overlay grid 20260322 110001" loading="lazy" />
+            <figcaption>case overlay nnunet dataset001 overlay grid 20260322 110001</figcaption>
+          </figure>
+        </div>
+        <h3>研究总览 · 方向性与形态学统计图</h3>
+        <div class="figure-gallery">
+          <figure>
+            <img src="figures/results/study_boundary_sensitivity.png" alt="study boundary sensitivity" loading="lazy" />
+            <figcaption>study boundary sensitivity</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/study_directional_rose.png" alt="study directional rose" loading="lazy" />
+            <figcaption>study directional rose</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/study_directional_t2t3.png" alt="study directional t2t3" loading="lazy" />
+            <figcaption>study directional t2t3</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/study_morphology_boxplots.png" alt="study morphology boxplots" loading="lazy" />
+            <figcaption>study morphology boxplots</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/study_overview.png" alt="study overview" loading="lazy" />
+            <figcaption>study overview</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/study_t2_misclassification.png" alt="study t2 misclassification" loading="lazy" />
+            <figcaption>study t2 misclassification</figcaption>
+          </figure>
+        </div>
+        <h3>分割 · ROI · nnU-Net / SAM2 多中心对比</h3>
         <div class="figure-gallery">
           <figure>
             <img src="figures/results/seg_cascade_eval.png" alt="分割 · cascade eval" loading="lazy" />
             <figcaption>分割 · cascade eval</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_compare_int_2024.png" alt="分割 · compare int 2024" loading="lazy" />
+            <figcaption>分割 · compare int 2024</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_compare_multicenter.png" alt="分割 · compare multicenter" loading="lazy" />
+            <figcaption>分割 · compare multicenter</figcaption>
           </figure>
           <figure>
             <img src="figures/results/seg_compare_prospective.png" alt="分割 · compare prospective" loading="lazy" />
@@ -1083,24 +2080,84 @@
             <figcaption>分割 · multicenter comparison</figcaption>
           </figure>
           <figure>
+            <img src="figures/results/seg_nnunet_compare_compare_int_2018.png" alt="分割 · nnunet compare compare int 2018" loading="lazy" />
+            <figcaption>分割 · nnunet compare compare int 2018</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_compare_compare_int_2019.png" alt="分割 · nnunet compare compare int 2019" loading="lazy" />
+            <figcaption>分割 · nnunet compare compare int 2019</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_compare_compare_int_2024.png" alt="分割 · nnunet compare compare int 2024" loading="lazy" />
+            <figcaption>分割 · nnunet compare compare int 2024</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_compare_compare_multicenter.png" alt="分割 · nnunet compare compare multicenter" loading="lazy" />
+            <figcaption>分割 · nnunet compare compare multicenter</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_compare_compare_prospective.png" alt="分割 · nnunet compare compare prospective" loading="lazy" />
+            <figcaption>分割 · nnunet compare compare prospective</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_compare_compare_putian.png" alt="分割 · nnunet compare compare putian" loading="lazy" />
+            <figcaption>分割 · nnunet compare compare putian</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_main.png" alt="分割 · nnunet main" loading="lazy" />
+            <figcaption>分割 · nnunet main</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_nnunet_summary.png" alt="分割 · nnunet summary" loading="lazy" />
+            <figcaption>分割 · nnunet summary</figcaption>
+          </figure>
+          <figure>
             <img src="figures/results/seg_roi_gt_vs_pred.png" alt="分割 · roi gt vs pred" loading="lazy" />
             <figcaption>分割 · roi gt vs pred</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_int_2018.png" alt="分割 · sam2 compare compare int 2018" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare int 2018</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_int_2019.png" alt="分割 · sam2 compare compare int 2019" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare int 2019</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_int_2024.png" alt="分割 · sam2 compare compare int 2024" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare int 2024</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_multicenter.png" alt="分割 · sam2 compare compare multicenter" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare multicenter</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_prospective.png" alt="分割 · sam2 compare compare prospective" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare prospective</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_putian.png" alt="分割 · sam2 compare compare putian" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare putian</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_putian_2024.png" alt="分割 · sam2 compare compare putian 2024" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare putian 2024</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_compare_compare_putian_2024_new.png" alt="分割 · sam2 compare compare putian 2024 new" loading="lazy" />
+            <figcaption>分割 · sam2 compare compare putian 2024 new</figcaption>
           </figure>
           <figure>
             <img src="figures/results/seg_sam2_eval.png" alt="分割 · sam2 eval" loading="lazy" />
             <figcaption>分割 · sam2 eval</figcaption>
           </figure>
+          <figure>
+            <img src="figures/results/seg_sam2_training_curves.png" alt="分割 · sam2 training curves" loading="lazy" />
+            <figcaption>分割 · sam2 training curves</figcaption>
+          </figure>
         </div>
-        <h3>汇总指标 · AUC / 混淆矩阵 / ROC / 收敛</h3>
+        <h3>汇总指标 · scoreboard AUC / 混淆矩阵（eval JSON）</h3>
         <div class="figure-gallery">
-          <figure>
-            <img src="figures/results/metric_4class_heatmap_external.png" alt="指标 · 4class heatmap external" loading="lazy" />
-            <figcaption>指标 · 4class heatmap external</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/metric_4class_heatmap_prospective.png" alt="指标 · 4class heatmap prospective" loading="lazy" />
-            <figcaption>指标 · 4class heatmap prospective</figcaption>
-          </figure>
           <figure class="span-2">
             <img src="figures/results/metric_auc_comparison.png" alt="scoreboard 四分类 AUC（外部/前瞻）" loading="lazy" />
             <figcaption>scoreboard 四分类 AUC（外部/前瞻）</figcaption>
@@ -1122,28 +2179,12 @@
             <figcaption>冻结线 外部+前瞻 混淆矩阵</figcaption>
           </figure>
           <figure>
-            <img src="figures/results/metric_confusion_matrix.png" alt="指标 · confusion matrix" loading="lazy" />
-            <figcaption>指标 · confusion matrix</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/metric_convergence_loss_auc.png" alt="指标 · convergence loss auc" loading="lazy" />
-            <figcaption>指标 · convergence loss auc</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/metric_cross_domain_roc.png" alt="指标 · cross domain roc" loading="lazy" />
-            <figcaption>指标 · cross domain roc</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/metric_crosshospital_roc.png" alt="指标 · crosshospital roc" loading="lazy" />
-            <figcaption>指标 · crosshospital roc</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/results/metric_directional_rose.png" alt="方向性玫瑰图（T2/T3 证据）" loading="lazy" />
-            <figcaption>方向性玫瑰图（T2/T3 证据）</figcaption>
-          </figure>
-          <figure>
             <img src="figures/results/metric_per_class_recall_curves.png" alt="冻结线逐类 Recall 柱状图" loading="lazy" />
             <figcaption>冻结线逐类 Recall 柱状图</figcaption>
+          </figure>
+          <figure>
+            <img src="figures/results/metric_recall_heatmap.png" alt="各主线 per-class Recall 热力图" loading="lazy" />
+            <figcaption>各主线 per-class Recall 热力图</figcaption>
           </figure>
         </div>
       </section>

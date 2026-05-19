@@ -11,21 +11,34 @@ RESULTS = PROJECT_ROOT / "docs" / "mainline" / "figures" / "results"
 MANIFEST = RESULTS / "manifest.json"
 
 SECTIONS = [
-    ("case_agent_", "Agent 在线推理 · 单例产物（患者 1451370）"),
+    ("case_agent_", "Agent 在线推理 · 多患者产物（overlay / mask / wall / RAG）"),
+    ("case_multimodal_agent_", "Agent 多模态病例面板（pipeline reports）"),
+    ("case_regionaware_", "Region-aware / 对比学习 · Grad-CAM 病例"),
+    ("case_error_wall_", "误诊 / 胃壁证据 · 错误分析面板"),
+    ("case_regionaware_err_", "Region-aware · 错误步审查"),
+    ("case_rf_", "外部验证 · 帧级分类面板（莆田 / 肿瘤 / 多中心等）"),
     ("case_pipeline_", "超声病例 · 全流程管线示意（T1–T4+）"),
     ("case_boundary_", "超声病例 · 胃壁边界与浸润（按 T 分期）"),
     ("case_gradcam_", "超声病例 · 四分类 Grad-CAM（正确 / 漏诊 / 误诊）"),
-    ("case_rf_", "超声病例 · 外部验证帧级面板（莆田 / 肿瘤 / 多中心）"),
-    ("case_fusion_", "超声病例 · 多模态融合 / VLM 示意"),
-    ("seg_", "分割 · ROI · 多中心对比"),
-    ("metric_", "汇总指标 · AUC / 混淆矩阵 / ROC / 收敛"),
+    ("case_t2analysis_", "T2 专项 · 边界与误诊分析"),
+    ("case_dinov3_unetpp_", "DINOv3 + UNet++ 分割病例面板"),
+    ("case_fusion_", "多模态融合 / VLM 示意"),
+    ("case_review_", "医生复核 · 标注与 Grad-CAM 质控"),
+    ("case_overlay_", "多中心 Overlay 蒙太奇（外部）"),
+    ("study_", "研究总览 · 方向性与形态学统计图"),
+    ("seg_", "分割 · ROI · nnU-Net / SAM2 多中心对比"),
+    ("metric_", "汇总指标 · scoreboard AUC / 混淆矩阵（eval JSON）"),
 ]
 
 
 def caption_from_name(fname: str) -> str:
     stem = fname.replace(".png", "")
-    if stem.startswith("case_agent_1451370_"):
-        return "Agent · " + stem.replace("case_agent_1451370_", "").replace("_", " ")
+    if stem.startswith("case_agent_"):
+        rest = stem.replace("case_agent_", "", 1)
+        parts = rest.split("_", 1)
+        if len(parts) == 2:
+            return f"Agent 患者{parts[0]} · {parts[1].replace('_', ' ')}"
+        return "Agent · " + rest.replace("_", " ")
     if stem.startswith("case_pipeline_"):
         return "全流程 · " + stem.replace("case_pipeline_", "").replace("_", " ")
     if stem.startswith("case_boundary_"):
