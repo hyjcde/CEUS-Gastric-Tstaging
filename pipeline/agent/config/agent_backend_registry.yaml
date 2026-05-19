@@ -176,11 +176,22 @@ backends:
       external_eval_dice: 0.6820
       external_dice_delta_vs_unet_baseline: 0.0383
 
+  yolo_lumen_locator_cropui_combined_plus_zip2_20260417:
+    model_task: lumen_detection
+    checkpoint_path: experiments/detection/detection_yolo11l_lumen_locator_cropui_combined_plus_zip2_20260417_r001/ultralytics/weights/best.pt
+    adapter: pipeline.agent.tools.lumen_detection_tool.LumenDetectionTool
+    adapter_status: ready
+
+  wall_evidence_lumen_sdf_v1:
+    model_task: wall_evidence
+    adapter: pipeline.agent.tools.wall_evidence_tool.WallEvidenceTool
+    adapter_status: ready
+    notes: "Signed distance from YOLO lumen bbox + predicted lesion mask"
+
   yolo_internal_high_iou_v1:
     model_task: lumen_detection
     checkpoint_path: pipeline/experiments/yolo_internal_high_iou_v1/weights/best.pt
-    init_weights: archived/experiments_yolo/01_Detection/20260105_v6_refined_baseline/weights/best.pt
-    adapter_status: not_wired_in_analyze_case
+    adapter_status: fallback_weights_only
 
   dinov3_frame_encoder_default:
     model_task: representation
