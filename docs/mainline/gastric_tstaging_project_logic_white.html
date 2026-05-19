@@ -3,24 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GastricTstaging — 项目完整逻辑总览</title>
+  <title>GastricTstaging — 项目完整逻辑总览（白底版）</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
     :root {
-      --bg: #0f1419;
-      --surface: #1a2332;
-      --surface2: #243044;
-      --border: #2d3f56;
-      --text: #e8edf4;
-      --muted: #8fa3bf;
-      --accent: #3db8c9;
-      --accent2: #6ee7b7;
-      --p0: #f59e0b;
-      --p1: #3b82f6;
-      --p2: #8b5cf6;
-      --p3: #64748b;
-      --warn: #f87171;
-      --ok: #4ade80;
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --surface2: #f1f5f9;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #0e7490;
+      --accent2: #047857;
+      --p0: #b45309;
+      --p1: #1d4ed8;
+      --p2: #6d28d9;
+      --p3: #475569;
+      --warn: #dc2626;
+      --ok: #16a34a;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
@@ -127,7 +127,7 @@
       margin: 1.25rem 0 0.65rem;
       color: var(--text);
     }
-    p { margin-bottom: 0.85rem; color: #c5d0de; }
+    p { margin-bottom: 0.85rem; color: #334155; }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -155,10 +155,10 @@
       max-width: 520px;
       border: 1px solid var(--border);
     }
-    .pyramid .l4 { background: linear-gradient(135deg, #1e3a5f, #243044); max-width: 380px; }
-    .pyramid .l3 { background: linear-gradient(135deg, #1a4d5c, #243044); max-width: 440px; }
-    .pyramid .l2 { background: linear-gradient(135deg, #1a4d4a, #243044); max-width: 500px; }
-    .pyramid .l1 { background: linear-gradient(135deg, #2d3f56, #243044); max-width: 560px; }
+    .pyramid .l4 { background: linear-gradient(135deg, #dbeafe, #eff6ff); max-width: 380px; color: var(--text); }
+    .pyramid .l3 { background: linear-gradient(135deg, #cffafe, #ecfeff); max-width: 440px; color: var(--text); }
+    .pyramid .l2 { background: linear-gradient(135deg, #d1fae5, #ecfdf5); max-width: 500px; color: var(--text); }
+    .pyramid .l1 { background: linear-gradient(135deg, #e2e8f0, #f8fafc); max-width: 560px; color: var(--text); }
     .pyramid .arrow { color: var(--muted); font-size: 1.2rem; }
     .priority-grid {
       display: grid;
@@ -197,7 +197,7 @@
       text-align: left;
     }
     th { background: var(--surface2); color: var(--accent); font-weight: 600; }
-    tr:nth-child(even) td { background: rgba(36, 48, 68, 0.4); }
+    tr:nth-child(even) td { background: rgba(241, 245, 249, 0.9); }
     .mermaid-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -227,14 +227,14 @@
     }
     .pipeline .arr { color: var(--muted); }
     pre.json {
-      background: #0d1117;
+      background: #f8fafc;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 1rem;
       overflow-x: auto;
       font-size: 0.8rem;
       line-height: 1.5;
-      color: #a5d6ff;
+      color: #1e3a5f;
     }
     .timeline {
       border-left: 2px solid var(--accent);
@@ -319,10 +319,10 @@
       border-radius: 4px;
       margin-right: 0.25rem;
     }
-    .tier-1 { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
-    .tier-2 { background: rgba(139, 92, 246, 0.25); color: #c4b5fd; }
-    .tier-3 { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
-    .tier-dev { background: rgba(110, 231, 183, 0.15); color: var(--accent2); }
+    .tier-1 { background: rgba(59, 130, 246, 0.15); color: #1e40af; }
+    .tier-2 { background: rgba(139, 92, 246, 0.12); color: #5b21b6; }
+    .tier-3 { background: rgba(245, 158, 11, 0.15); color: #92400e; }
+    .tier-dev { background: rgba(16, 185, 129, 0.12); color: #047857; }
     .bar-chart { margin: 1rem 0; }
     .bar-row {
       display: grid;
@@ -403,7 +403,7 @@
     .gap-card ul {
       margin: 0.5rem 0 0 1.1rem;
       font-size: 0.88rem;
-      color: #b8c5d6;
+      color: #475569;
     }
     .gap-card li { margin-bottom: 0.35rem; }
     .gap-matrix td:first-child { font-weight: 600; white-space: nowrap; }
@@ -447,11 +447,11 @@
       background: var(--surface2);
     }
     .layer-card h4 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--accent2); }
-    .layer-card ul { margin-left: 1rem; font-size: 0.85rem; color: #b8c5d6; }
+    .layer-card ul { margin-left: 1rem; font-size: 0.85rem; color: #475569; }
     .exec-summary {
       margin-bottom: 2.5rem;
       padding: 1.75rem 2rem;
-      background: linear-gradient(135deg, rgba(26,35,50,0.95) 0%, rgba(36,48,68,0.9) 100%);
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
       border: 1px solid var(--border);
       border-radius: 12px;
       border-left: 4px solid var(--accent);
@@ -471,7 +471,7 @@
     .exec-summary p {
       margin-bottom: 0.85rem;
       text-align: justify;
-      color: #c5d0de;
+      color: #334155;
       font-size: 0.92rem;
       line-height: 1.75;
     }
@@ -509,6 +509,7 @@
           GastricTstaging 项目完整逻辑总览 — 从临床问题、已有模型资产，到以 <strong>T 分期为核心</strong> 的多模态循证 Agent 与冻结验证。
         </p>
         <div class="badge-row">
+          <span class="badge accent">白底版 · 打印/PPT</span>
           <span class="badge p0">P0 · T 分期</span>
           <span class="badge accent">经腹胃充盈超声</span>
           <span class="badge">单中心训练 + 多中心外部验证</span>
@@ -651,7 +652,7 @@
           </div>
           <div class="card">
             <h3>为何 T 分期是核心</h3>
-            <ul style="margin-left:1.2rem;color:#c5d0de;font-size:0.9rem;">
+            <ul style="margin-left:1.2rem;color:#475569;font-size:0.9rem;">
               <li>患者级 pT 标签 + 多帧噪声</li>
               <li>关键切面不总在每一帧</li>
               <li>T2/T3、T3/T4+ 是真实瓶颈</li>
@@ -1846,7 +1847,7 @@ flowchart LR
 
         <h3 id="data-issues">9.9 数据纪律与待办</h3>
         <div class="card highlight">
-          <ul style="margin-left:1.2rem;color:#c5d0de;font-size:0.9rem;">
+          <ul style="margin-left:1.2rem;color:#475569;font-size:0.9rem;">
             <li><span class="gap-warn">train 含 ~192 例外部患者（1,158 行）</span> — 与「协和-only 训练」冲突，Phase 0 必须迁出。</li>
             <li>CSV 行数 12,851 &gt; 去重图像 11,758：同一图像可出现在多 split 视图，<strong>患者级评估</strong>须去重。</li>
             <li>前瞻结果以 <code>test_prospective_clinical.csv</code> 为准（46 患者 / 234 帧）。</li>
@@ -1981,8 +1982,8 @@ flowchart TD
       </section>
 
       <footer>
-        <p>GastricTstaging · 生成自项目总框架 · 2026-05-19</p>
-        <p>在浏览器中打开本文件即可查看；Mermaid 图表需联网加载 CDN。白底打印版：<a href="gastric_tstaging_project_logic_white.html">gastric_tstaging_project_logic_white.html</a> · Markdown：<a href="gastric_tstaging_project_framework_zh.md">gastric_tstaging_project_framework_zh.md</a></p>
+        <p>GastricTstaging · 白底版 · 2026-05-19</p>
+        <p>深色原版：<a href="gastric_tstaging_project_logic.html">gastric_tstaging_project_logic.html</a> · 对应 Markdown：<a href="gastric_tstaging_project_framework_zh.md">gastric_tstaging_project_framework_zh.md</a></p>
       </footer>
     </main>
   </div>
@@ -1990,14 +1991,20 @@ flowchart TD
   <script>
     mermaid.initialize({
       startOnLoad: true,
-      theme: "dark",
+      theme: "base",
       themeVariables: {
-        primaryColor: "#1a4d5c",
-        primaryTextColor: "#e8edf4",
-        primaryBorderColor: "#3db8c9",
-        lineColor: "#8fa3bf",
-        secondaryColor: "#243044",
-        tertiaryColor: "#1a2332"
+        primaryColor: "#e0f2fe",
+        primaryTextColor: "#0f172a",
+        primaryBorderColor: "#0e7490",
+        lineColor: "#64748b",
+        secondaryColor: "#f1f5f9",
+        tertiaryColor: "#f8fafc",
+        background: "#ffffff",
+        mainBkg: "#f8fafc",
+        nodeBorder: "#0e7490",
+        clusterBkg: "#f1f5f9",
+        titleColor: "#0f172a",
+        edgeLabelBackground: "#ffffff"
       },
       flowchart: { curve: "basis", padding: 16 }
     });
