@@ -1,0 +1,172 @@
+# Agent production backend registry (Phase A lock).
+#
+# Sources of truth:
+#   - pipeline/experiments/tables/tstaging_4class_mainline_scoreboard.csv
+#   - pipeline/experiments/mainlines/tstaging_4class/baseline_registry.yaml
+#   - pipeline/agent/configs/model_tool_backends.yaml (research / caution backends)
+#
+# Selection policy (2026-05):
+#   - Agent **final T** uses governance-frozen primary (best prospective among promoted).
+#   - **External-generalization** signal uses region-aware as secondary evidence (not sole final).
+#   - Legacy 20260302 mask4ch run is deprecated (checkpoint often missing on disk).
+
+schema_version: "1.0.0"
+updated_at: "2026-05-19"
+
+selection_policy:
+  primary_metric_for_agent_final: test_prospective_auc
+  secondary_metric_for_external_panel: test_external_auc
+  promotion_governance: pipeline/experiments/mainlines/tstaging_4class/baseline_registry.yaml
+  notes:
+    - "region-aware ext=0.7480 > mask4ch ext=0.7326, but prospective 0.6857 < frozen 0.7455 → not promoted"
+    - "predroi+mask4ch ext=0.7438 but prospective 0.6683 → deploy reference only"
+    - "contrastive_dual backends need ContrastiveDual inference adapter (Phase B)"
+
+agent_bindings:
+  classification_primary:
+    backend_id: tstage_mask4ch_clinical22_frozen_20260423
+    tool: ClassificationTool
+    role: agent_final_t_stage
+    trust_label: trusted
+
+  classification_external_evidence:
+    backend_id: tstage_regionaware_clinical22_20260426
+    tool: ClassificationTool  # planned: ContrastiveTStagingTool
+    role: secondary_external_generalization_signal
+    trust_label: caution
+    weight_in_fusion: 0.0  # until adapter ships; expose in tool_evidence only
+
+  classification_deploy_no_doctor_roi:
+    backend_id: tstage_predroi_mask4ch_clinical22_20260424
+    tool: ClassificationTool
+    role: fallback_when_doctor_roi_unavailable
+    trust_label: caution
+
+  segmentation_primary:
+    backend_id: lesion_segmentation_unet_fulldata_convnext_base
+    tool: SegmentationTool
+    role: lesion_mask_and_roi
+    trust_label: trusted
+
+  segmentation_research:
+    backend_id: lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512
+    tool: DINOv3SegmentationTool
+    role: mask_candidate_and_t2_t3_review
+    trust_label: caution
+
+  lumen_detection_primary:
+    backend_id: yolo_internal_high_iou_v1
+    tool: LumenDetectionTool  # not wired in analyze_case yet
+    role: lumen_bbox_and_qc
+    trust_label: caution
+
+  dino_visualization:
+    backend_id: dinov3_frame_encoder_default
+    tool: analyze_case._run_dino_visualization
+    role: visualization_and_future_rag
+    trust_label: caution
+
+backends:
+  tstage_mask4ch_clinical22_frozen_20260423:
+    model_task: t_staging_4class
+    model_family: dual_branch
+    stage_id: structure_mask4ch_clinical22
+    scoreboard_decision: Promote
+    config_path: pipeline/configs/tstaging_4class_dual_v2_mask4ch_clinical22_full.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/best_model.pth
+    baseline_registry_id: structure_mask4ch_clinical22
+    metrics:
+      test_external_auc: 0.7326
+      test_prospective_auc: 0.7455
+      best_val_auc: 0.7394
+    adapter: pipeline.agent.tools.classification_tool.ClassificationTool
+    adapter_status: ready
+    inputs:
+      roi_type: doctor_roi
+      mask_type: predicted_lesion_mask_4ch
+      clinical_type: true_clinical_22d
+
+  tstage_regionaware_clinical22_20260426:
+    model_task: t_staging_4class
+    model_family: contrastive_dual
+    stage_id: breakthrough_regionaware_clinical22
+    scoreboard_decision: KeepForReference
+    config_path: pipeline/configs/tstaging_4class_regionaware_clinical22_full.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/contrastive/contrastive_dual_convnext/tstaging_4class_regionaware_clinical22_full_20260426_090539
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/contrastive/contrastive_dual_convnext/tstaging_4class_regionaware_clinical22_full_20260426_090539/best_model.pth
+    metrics:
+      test_external_auc: 0.7480
+      test_prospective_auc: 0.6857
+    adapter: planned.pipeline.agent.tools.contrastive_tstaging_tool
+    adapter_status: blocked_needs_contrastive_dual_loader
+    inputs:
+      roi_type: predicted_roi
+      mask_type: predicted_lesion_mask
+      breakthrough_type: direction_patch_plus_arcband
+      data_dir: pipeline/data/tstaging_4class_region_contrastive_full/regions
+
+  tstage_predroi_mask4ch_clinical22_20260424:
+    model_task: t_staging_4class
+    model_family: dual_branch
+    stage_id: deploy_predicted_roi_mask4ch_clinical22
+    scoreboard_decision: KeepForReference
+    config_path: pipeline/configs/tstaging_4class_dual_v2_predroi_mask4ch_clinical22_full.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_predroi_mask4ch_clinical22_full_20260424_233840
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_predroi_mask4ch_clinical22_full_20260424_233840/best_model.pth
+    metrics:
+      test_external_auc: 0.7438
+      test_prospective_auc: 0.6683
+    adapter: pipeline.agent.tools.classification_tool.ClassificationTool
+    adapter_status: ready_same_adapter_different_config
+    use_when: predicted_roi_required_and_doctor_roi_missing
+
+  tstage_boxguided_wall_contrastive_research_20260506:
+    model_task: t_staging_4class
+    model_family: contrastive_dual
+    stage_id: optimization_mainline
+    config_path: pipeline/configs/tstaging_4class_boxguided_wall_region_contrastive_clinical22_prospective_auc_retention_external_recovery_from_refinement_best.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/contrastive/contrastive_dual_convnext/tstaging_4class_boxguided_wall_region_contrastive_clinical22_prospective_auc_retention_external_recovery_from_refinement_best_20260506_222312
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/contrastive/contrastive_dual_convnext/tstaging_4class_boxguided_wall_region_contrastive_clinical22_prospective_auc_retention_external_recovery_from_refinement_best_20260506_222312/best_model.pth
+    metrics:
+      test_external_auc: 0.7067
+      test_prospective_auc: 0.7908
+    adapter_status: research_panel_only
+    notes: "Prospective-strong but external-weak; do not replace frozen primary"
+
+  tstage_legacy_mask4ch_20260302:
+    model_task: t_staging_4class
+    status: deprecated
+    experiment_dir: pipeline/experiments/tstaging_4class_dual_v2_mask4ch_20260302_201944
+    notes: "Superseded by frozen 20260423 full-data run; checkpoint may be absent"
+
+  lesion_segmentation_unet_fulldata_convnext_base:
+    model_task: lesion_segmentation
+    model_family: smp_unet
+    checkpoint_path: pipeline/experiments/tree/segmentation_auxiliary/segmentation/segmentation_misc/segmentation_fulldata/checkpoints/best_model.pth
+    adapter: pipeline.agent.tools.segmentation_tool.SegmentationTool
+    adapter_status: ready
+    notes: "ConvNeXt-Base fulldata UNet; primary Agent seg"
+
+  lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512:
+    model_task: lesion_segmentation
+    checkpoint_path: experiments/segmentation/segmentation_dinov3_vitb16_last2blocks_holdout_cropui_dataset_v20260409_20260511_r001/checkpoints/best.pt
+    adapter: pipeline.agent.tools.dinov3_segmentation_tool.DINOv3SegmentationTool
+    adapter_status: ready
+    validation_summary:
+      prospective_eval_dice: 0.7144
+      external_eval_dice: 0.6820
+      external_dice_delta_vs_unet_baseline: 0.0383
+
+  yolo_internal_high_iou_v1:
+    model_task: lumen_detection
+    checkpoint_path: pipeline/experiments/yolo_internal_high_iou_v1/weights/best.pt
+    init_weights: archived/experiments_yolo/01_Detection/20260105_v6_refined_baseline/weights/best.pt
+    adapter_status: not_wired_in_analyze_case
+
+  dinov3_frame_encoder_default:
+    model_task: representation
+    notes: "Used for DINO panel in analyze_case; Case-RAG adapter-DINO is separate track"
+
+deprecated_do_not_use:
+  - tstage_legacy_mask4ch_20260302

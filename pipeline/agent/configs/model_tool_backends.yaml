@@ -1,0 +1,169 @@
+# Network-model backends exposed as Agent tools.
+#
+# This registry is the contract layer between:
+# - frontend case review in apps/gastric_scan_next
+# - Python Agent orchestration in pipeline/agent
+# - trained checkpoints under pipeline/experiments
+#
+# It is intentionally descriptive first. Tool adapters should read this registry
+# before loading heavyweight checkpoints so model provenance and trust labels stay
+# visible to the Agent report.
+
+schema_version: "0.1.0"
+
+default_backend_policy:
+  prefer_trusted: true
+  allow_caution_for_research: true
+  require_manual_review_for_avoid: true
+  emit_backend_id_in_tool_trace: true
+
+backends:
+  - backend_id: lesion_segmentation_current_best
+    tool_name: segmentation
+    model_task: lesion_segmentation
+    adapter_target: pipeline.agent.tools.segmentation_tool.SegmentationTool
+    checkpoint_path: pipeline/experiments/tree/segmentation_auxiliary/segmentation/segmentation_misc/segmentation_fulldata/checkpoints/best_model.pth
+    trust_label: caution
+    use_for:
+      - roi_generation
+      - lesion_mask_evidence
+      - morphology_input
+    evidence_outputs:
+      - mask_available
+      - roi_bbox
+      - lesion_area_ratio
+      - roi_source
+    known_limits:
+      - Falls back when checkpoint is unavailable.
+      - Needs source-specific quality review before driving high-risk conclusions.
+
+  - backend_id: lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512
+    tool_name: segmentation_candidate
+    model_task: lesion_segmentation
+    adapter_target: pipeline.agent.tools.dinov3_segmentation_tool.DINOv3SegmentationTool
+    checkpoint_path: experiments/segmentation/segmentation_dinov3_vitb16_last2blocks_holdout_cropui_dataset_v20260409_20260511_r001/checkpoints/best.pt
+    config_path: configs/segmentation/dinov3/vitb16_last_blocks_adapter.yaml
+    trust_label: caution
+    use_for:
+      - roi_generation_candidate
+      - lesion_mask_evidence_candidate
+      - t2_t3_error_review
+      - external_prospective_segmentation_recovery
+    validation_summary:
+      internal_holdout_dice: 0.7499
+      internal_holdout_iou: 0.6269
+      internal_holdout_zero_dice_ratio: 0.0082
+      external_eval_dice: 0.6820
+      external_eval_iou: 0.5524
+      external_eval_zero_dice_ratio: 0.0172
+      prospective_eval_dice: 0.7144
+      prospective_eval_iou: 0.5900
+      prospective_eval_zero_dice_ratio: 0.0185
+      baseline: lesion_segmentation_unetplusplus_resnet34_imagenet_cropui_20260415
+      external_dice_delta_vs_baseline: 0.0383
+      prospective_dice_delta_vs_baseline: -0.0056
+    evidence_outputs:
+      - mask_available
+      - roi_bbox
+      - lesion_area_ratio
+      - boundary_f1
+      - zero_dice_risk
+      - backend_validation_summary
+    known_limits:
+      - Requires a DINOv3-specific inference adapter before live Agent use.
+      - Internal holdout Dice remains slightly below the UNet++ baseline.
+      - Prospective Dice is near parity but not above baseline; use as research candidate before promotion.
+      - Patient-level T2/T3 impact still needs a dedicated downstream panel.
+
+  - backend_id: tstage_4class_frozen_mask4ch_clinical22_20260423
+    tool_name: classification
+    model_task: t_staging_4class
+    adapter_target: pipeline.agent.tools.classification_tool.ClassificationTool
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/best_model.pth
+    registry_ref: pipeline/agent/config/agent_backend_registry.yaml#tstage_mask4ch_clinical22_frozen_20260423
+    trust_label: trusted
+    validation_summary:
+      test_external_auc: 0.7326
+      test_prospective_auc: 0.7455
+    use_for:
+      - single_case_t_stage_prior
+      - agent_final_classification_evidence
+
+  - backend_id: tstage_4class_legacy_dual_branch_mask4ch
+    tool_name: classification
+    model_task: t_staging_4class
+    adapter_target: pipeline.agent.tools.classification_tool.ClassificationTool
+    checkpoint_path: pipeline/experiments/tstaging_4class_dual_v2_mask4ch_20260302_201944/best_model.pth
+    trust_label: avoid
+    use_for:
+      - single_case_t_stage_prior
+      - fallback_classifier_evidence
+    evidence_outputs:
+      - top1_stage
+      - top1_prob
+      - probabilities
+      - entropy
+    known_limits:
+      - Older adapter reconstructs DualBranchClassifier rather than newer contrastive_dual runs.
+      - Should not be treated as the only final diagnostic evidence.
+
+  - backend_id: tstage_4class_boxguided_contrastive_external_prospective_candidate_20260506
+    tool_name: classification_candidate
+    model_task: t_staging_4class
+    adapter_target: planned.pipeline.agent.tools.contrastive_tstaging_tool
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/contrastive/contrastive_dual_convnext/tstaging_4class_boxguided_wall_region_contrastive_clinical22_prospective_auc_retention_external_recovery_from_refinement_best_20260506_222312/best_model.pth
+    config_path: pipeline/configs/tstaging_4class_boxguided_wall_region_contrastive_clinical22_prospective_auc_retention_external_recovery_from_refinement_best.yaml
+    trust_label: caution
+    use_for:
+      - external_prospective_t_stage_evidence
+      - t2_t3_error_review
+      - candidate_model_backend_for_agent_upgrade
+    validation_summary:
+      test_external_auc: 0.7067
+      test_external_accuracy: 0.4504
+      test_external_newzip_auc: 0.5682
+      test_external_newzip_accuracy: 0.3374
+      test_prospective_auc: 0.7908
+      test_prospective_accuracy: 0.4444
+    evidence_outputs:
+      - top1_stage
+      - probabilities
+      - classwise_auc_context
+      - uncertainty_flags
+      - backend_validation_summary
+    known_limits:
+      - Requires a new contrastive_dual inference adapter before use in live frontend analysis.
+      - External-newzip AUC remains weak and should trigger tool-governance caution.
+      - Current metrics are sample-level; patient-level report should be checked from run summary before promotion.
+
+  - backend_id: deterministic_report_cue_extractor_20260507
+    tool_name: structure_report
+    model_task: report_text_structuring
+    adapter_target: pipeline.agent.tools.report_tool.ReportTool
+    checkpoint_path: null
+    trust_label: caution
+    use_for:
+      - ultrasound_report_cue_extraction
+      - report_image_conflict_review
+      - multimodal_case_memory_input
+    evidence_outputs:
+      - sections_available
+      - report_cues
+      - text_length
+      - uncertainty_flags
+    known_limits:
+      - Rule-based Chinese/English keyword extractor; it is not a clinical language model.
+      - Report cues are supporting evidence only and must not directly determine final T stage.
+      - Pathology text may contain post-operative truth and should be separated from pre-operative inference.
+
+promotion_rules:
+  trusted:
+    minimum_external_auc: 0.70
+    minimum_prospective_auc: 0.75
+    requires_patient_level_review: true
+    requires_t2_t3_error_panel: true
+  caution:
+    allowed_in_research_panel: true
+    requires_uncertainty_flag: true
+  avoid:
+    block_final_report_weight: true
