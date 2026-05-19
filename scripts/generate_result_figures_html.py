@@ -83,7 +83,7 @@ def main() -> None:
                 x in fname for x in ("comprehensive", "contact_sheet", "comparison", "overview", "panel")
             ) else ""
             parts.append(f"          <figure{span}>")
-            parts.append(f'            <img src="figures/results/{fname}" alt="{cap}" loading="lazy" />')
+            parts.append(f'            <img src="figures/results/{fname}" alt="{cap}" loading="lazy" decoding="async" />')
             parts.append(f"            <figcaption>{cap}</figcaption>")
             parts.append("          </figure>")
         parts.append("        </div>")

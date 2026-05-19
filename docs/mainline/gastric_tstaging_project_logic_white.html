@@ -21,15 +21,20 @@
       --p3: #475569;
       --warn: #dc2626;
       --ok: #16a34a;
+      --font-serif: "Times New Roman", Times, "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+      --font-mono: "Courier New", Courier, monospace;
+      --fig-img-h: 14rem;
+      --fig-img-h-wide: 18rem;
+      --fig-img-h-hero: 22rem;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-family: var(--font-serif);
       background: var(--bg);
       color: var(--text);
-      line-height: 1.65;
-      font-size: 15px;
+      line-height: 1.5;
+      font-size: 11pt;
     }
     .layout {
       display: grid;
@@ -139,33 +144,98 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 1px rgba(61, 184, 201, 0.15);
     }
+    /* Paper-style figure grid: equal image height per row, Times captions */
     .figure-gallery {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.65rem 0.85rem;
       margin-top: 0.75rem;
+      align-items: stretch;
+    }
+    .figure-gallery.cols-2 {
+      grid-template-columns: repeat(2, 1fr);
     }
     .figure-gallery figure {
       margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
       text-align: center;
+      padding: 0.4rem 0.45rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: #fff;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
     .figure-gallery img {
+      display: block;
       width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      height: var(--fig-img-h);
+      object-fit: contain;
+      object-position: center;
+      border: none;
+      border-radius: 0;
       background: #fff;
+      flex: 0 0 var(--fig-img-h);
+    }
+    .figure-gallery figure.span-2 img {
+      height: var(--fig-img-h-wide);
+      flex-basis: var(--fig-img-h-wide);
     }
     .figure-gallery figcaption {
-      font-size: 0.82rem;
-      color: var(--muted);
-      margin-top: 0.4rem;
-      line-height: 1.4;
+      font-family: var(--font-serif);
+      font-size: 9pt;
+      color: #334155;
+      margin-top: 0.35rem;
+      line-height: 1.35;
+      text-align: center;
+      flex: 1 1 auto;
     }
     .figure-gallery figure.span-2 {
       grid-column: span 2;
     }
-    @media (max-width: 720px) {
+    figure.fig-standalone {
+      margin: 0 0 1rem;
+      text-align: center;
+    }
+    figure.fig-standalone img {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: var(--fig-img-h-hero);
+      object-fit: contain;
+      object-position: center;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: #fff;
+    }
+    figure.fig-standalone figcaption {
+      font-family: var(--font-serif);
+      font-size: 9pt;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .figure-gallery { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .figure-gallery { grid-template-columns: 1fr; }
       .figure-gallery figure.span-2 { grid-column: span 1; }
+      .figure-gallery figure.span-2 img {
+        height: var(--fig-img-h);
+        flex-basis: var(--fig-img-h);
+      }
+    }
+    @media print {
+      body { font-size: 10pt; }
+      nav.side { display: none; }
+      .layout { grid-template-columns: 1fr; }
+      main { max-width: none; padding: 0.5in; }
+      .figure-gallery { gap: 0.5rem; }
+      .figure-gallery figure { border-color: #ccc; }
     }
     .pyramid {
       display: flex;
@@ -404,7 +474,14 @@
       background: var(--surface2);
     }
     .note { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
-    code { font-size: 0.82em; color: var(--accent); }
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      color: var(--accent);
+    }
+    pre, pre.json {
+      font-family: var(--font-mono);
+    }
     .gap-card {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -616,7 +693,7 @@
           阶段 B–C 为 split 重建、对比学习推理接入、门控 Case-RAG 与 M14 后冻结的外部/前瞻主表。
           下文以 scoreboard 指标图、数据规模（§9）、分类器架构辨析（§4.5）与路线时间表为主；部分 Poe 示意图尚未生成，本页仅嵌入已有 PNG。
         </p>
-        <div class="figure-gallery" style="margin-top:1rem;">
+        <div class="figure-gallery cols-2" style="margin-top:1rem;">
           <figure>
             <img src="figures/results/metric_auc_comparison.png" alt="Local AUC comparison from training runs" />
             <figcaption>指标 · scoreboard 四分类 AUC（与正文 0.7326 / 0.7455 一致）</figcaption>
@@ -2930,13 +3007,12 @@ sequenceDiagram
             <code>python scripts/generate_agent_figures_poe_batch.py</code>（Chat API + GPT-Image-2）批量生成。
             规范见 <a href="gastric_us_agent_methodology_architecture_spec_zh.md" style="color:var(--accent)">methodology_architecture_spec_zh.md</a>。
           </p>
-          <figure style="margin:0;text-align:center;">
+          <figure class="fig-standalone">
             <img
               src="gastric_us_agent_methodology_architecture_poe.png"
               alt="Gastric US T-staging Agent methodology architecture"
-              style="max-width:100%;border:1px solid var(--border);border-radius:8px;background:#fff;"
             />
-            <figcaption class="note" style="margin-top:0.5rem;">
+            <figcaption class="note">
               <code>docs/mainline/gastric_us_agent_methodology_architecture_poe.png</code>
             </figcaption>
           </figure>
