@@ -448,12 +448,42 @@
     }
     .layer-card h4 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--accent2); }
     .layer-card ul { margin-left: 1rem; font-size: 0.85rem; color: #b8c5d6; }
+    .exec-summary {
+      margin-bottom: 2.5rem;
+      padding: 1.75rem 2rem;
+      background: linear-gradient(135deg, rgba(26,35,50,0.95) 0%, rgba(36,48,68,0.9) 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      border-left: 4px solid var(--accent);
+    }
+    .exec-summary h2 {
+      font-size: 1.2rem;
+      color: var(--text);
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .exec-summary h3 {
+      font-size: 0.95rem;
+      color: var(--accent2);
+      margin: 1.25rem 0 0.6rem;
+    }
+    .exec-summary p {
+      margin-bottom: 0.85rem;
+      text-align: justify;
+      color: #c5d0de;
+      font-size: 0.92rem;
+      line-height: 1.75;
+    }
+    .exec-summary p:last-child { margin-bottom: 0; }
+    .exec-summary strong { color: var(--text); }
   </style>
 </head>
 <body>
   <div class="layout">
     <nav class="side">
       <h2>目录</h2>
+      <a href="#preface">项目说明</a>
       <a href="#logic">逻辑主线</a>
       <a href="#priority">任务优先级</a>
       <a href="#clinical">临床终局</a>
@@ -511,6 +541,49 @@
           </div>
         </div>
       </header>
+
+      <section id="preface" class="exec-summary">
+        <h2>项目说明：背景、方法与当前结果</h2>
+
+        <h3>一、临床背景与项目定位</h3>
+        <p>
+          胃癌术前分期直接影响手术与新辅助决策，其中 <strong>T 分期（侵犯胃壁深度）</strong> 是充盈超声最能支撑、也最难稳定的环节。
+          本项目针对 <strong>经腹胃充盈超声（水充盈）</strong>，区别于 EUS：侧重术前可及、分流与辅助分期，不替代 EUS 的 N/M 精细评估。
+          以福建协和为主中心（2018–2025 连续病例），联合 <strong>11 家外部中心</strong> 做冻结验证。
+          临床终局是 <strong>术前辅助诊断 Agent</strong>：输出带证据链、相似病例与不确定性的结构化 T 建议，供医生复核，而非单一黑盒分数。
+          良恶性分类仅作方法验证（约 10% 资源），论文主终点始终是 T 分期与 Agent 可解释性。
+        </p>
+
+        <h3>二、科学问题与数据</h3>
+        <p>
+          T 分期本质是 <strong>患者级、多帧、胃壁层次</strong> 问题；瓶颈在 <strong>T2/T3、T3/T4+</strong>，且「分割好 ≠ 分期对」已在项目内多次验证。
+          数据纪律为 <strong>协和单中心训练 + 多中心外部验证</strong>：manifest 约 <strong>13,515</strong> 帧；T 分期建模 CSV 约 <strong>12,851</strong> 行、<strong>2,083</strong> 患者（协和有 T 标签约 <strong>1,556</strong> 例）。
+          推荐时间切分：2018–2022 训练、2023 验证、2024 内部测试、2025 前瞻。
+          待办：现有 train 仍混入约 <strong>192</strong> 名外部患者，须重建协和-only split 后再报外部泛化。
+          莆田系为 Tier-1 主外部表；小中心合并报告并辅以森林图（统计口径见 <code>DATASET_GUIDE.md</code>，复核 2026-05-05）。
+        </p>
+
+        <h3>三、方法体系</h3>
+        <p>
+          <strong>感知</strong>：YOLO 胃腔、nnU-Net/UNet++ 分割、DINO 分割候选 → ROI 与 mask 第四通道。
+          <strong>T 分期</strong>：ConvNeXt 双分支（Global+ROI）+ 22 维临床；mask4ch 将预测病灶 mask 并入全图；region-aware 用 direction patch、弧带等做区域对比学习（<code>contrastive_dual</code>）。
+          <strong>Agent</strong>：<code>analyze_case.py</code> 串联分割、分类、形态、临床、报告、相似病例与知识库；默认分类为 <code>dual_branch</code> 冻结线（仅 Global4ch+ROI+临床）；
+          相似病例由 FAISS 在 <strong>融合层</strong> 加权，不进入分类网络 forward；Case-RAG 计划在边界病例门控修正 T。
+          当前策略：<strong>少训多选</strong>，以 scoreboard 选型接入，而非继续无差别换 backbone。
+          分类头保持轻量（约 256 维 MLP）；优先把 patch 与胃壁证据放进融合层，而非堆大分类头。
+        </p>
+
+        <h3>四、当前结果与阶段</h3>
+        <p>
+          主线四分类 AUC（全量+clinical22）：基线 ROI+临床 外部 <strong>0.7276</strong>/前瞻 <strong>0.6968</strong>；
+          <strong>已冻结 mask4ch+临床</strong> 外部 <strong>0.7326</strong>、前瞻 <strong>0.7455</strong>（Agent 默认，20260423）；
+          部署线 predROI+mask 外部 <strong>0.7438</strong>/前瞻 0.6683；region-aware 外部 <strong>0.7480</strong>（最高）/前瞻 0.6857，作外部辅助、待推理适配器。
+          Workbench 可跑通 Agent；患者级 MIL、临床22 对齐、<code>rag_weight</code> 等为 Phase B。
+          阶段 A 资产审计已完成（<code>model_asset_audit.md</code>、<code>agent_backend_registry.yaml</code>）；
+          阶段 B–C 为 split 重建、对比学习推理接入、门控 Case-RAG 与 M14 后冻结的外部/前瞻主表。
+          下文展开 KPI、数据规模（§9）、分类器架构辨析（§4.5）、Agent JSON 输出示例与缺口路线图。
+        </p>
+      </section>
 
       <!-- §0 Logic -->
       <section id="logic">
