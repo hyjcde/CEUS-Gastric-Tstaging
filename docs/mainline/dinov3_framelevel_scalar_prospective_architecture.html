@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frame+agg · Prospective — 架构与统计</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3f56;
+      --text: #e8edf4;
+      --muted: #8fa3bf;
+      --accent: #3db8c9;
+      --accent2: #6ee7b7;
+      --warn: #f87171;
+      --ok: #4ade80;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav.side { position: relative; height: auto; }
+    }
+    nav.side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem 1rem;
+    }
+    nav.side h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    nav.side a {
+      display: block;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.88rem;
+    }
+    nav.side a:hover { color: var(--accent); background: var(--surface2); }
+    main { padding: 2rem 2.5rem 4rem; max-width: 1080px; }
+    header.hero {
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    header.hero h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    header.hero .subtitle { color: var(--muted); max-width: 40em; }
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0 2rem;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+    }
+    .kpi .label { font-size: 0.8rem; color: var(--muted); }
+    .kpi .value { font-size: 1.85rem; font-weight: 700; color: var(--accent2); }
+    .kpi.frame .value { color: var(--accent); }
+    .kpi .meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; }
+    section { margin-bottom: 2.5rem; scroll-margin-top: 1rem; }
+    section h2 {
+      font-size: 1.25rem;
+      color: var(--accent);
+      margin-bottom: 1rem;
+      border-left: 3px solid var(--accent);
+      padding-left: 0.6rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    th { background: var(--surface2); color: var(--muted); }
+    td.ok { color: var(--ok); font-weight: 600; }
+    .figure-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.25rem;
+    }
+    .stat-figure {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+    .stat-figure.span-2 { grid-column: 1 / -1; }
+    .stat-figure h4 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--muted); }
+    .stat-figure img { width: 100%; height: auto; border-radius: 6px; }
+    .stat-figure figcaption { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+    .mermaid-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      overflow-x: auto;
+    }
+    code, .mono {
+      font-family: ui-monospace, monospace;
+      font-size: 0.88em;
+      background: var(--surface2);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    .note {
+      background: var(--surface2);
+      border-left: 3px solid var(--warn);
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+    footer { color: var(--muted); font-size: 0.8rem; margin-top: 2rem; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="side">
+      <h2>目录</h2>
+      <a href="#summary">结果摘要</a>
+      <a href="#architecture">架构</a>
+      <a href="#metrics">指标表</a>
+      <a href="#figures">统计图</a>
+      <a href="#reproduce">复现</a>
+    </nav>
+    <main>
+      <header class="hero">
+        <h1>Frame+agg · Prospective</h1>
+        <p class="subtitle">
+          DINOv3 帧级标量 + 临床/解剖表格 · 帧级训练 + 病人级晚期聚合 ·
+          <code>test_prospective_full</code>（479 例 / 2285 帧）
+        </p>
+      </header>
+
+      <section id="summary">
+        <h2>结果摘要</h2>
+        <div class="kpi-row">
+          <div class="kpi frame">
+            <div class="label">帧级 · 四分类 macro AUC</div>
+            <div class="value">0.8084</div>
+            <p class="meta">clinical_anatomic · RF · 无聚合</p>
+          </div>
+          <div class="kpi">
+            <div class="label">病人级 · 四分类 macro AUC</div>
+            <div class="value">0.8034</div>
+            <p class="meta">top3_advanced 聚合 · 正式患者级口径</p>
+          </div>
+          <div class="kpi">
+            <div class="label">Early vs Advanced</div>
+            <div class="value">0.885</div>
+            <p class="meta">病人级 top3</p>
+          </div>
+        </div>
+        <div class="note">
+          帧级 AUC（0.808）高于病人级（0.803）因评估单位不同；部署汇报以<strong>病人级 top3_advanced</strong>为准。
+          完整 Markdown：<a href="dinov3_framelevel_scalar_prospective_architecture_zh.md">dinov3_framelevel_scalar_prospective_architecture_zh.md</a>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <h2>端到端架构</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart TB
+  subgraph upstream["上游离线"]
+    IMG[crop_ui 帧]
+    MASK[anatomic masks]
+    DINO[DINOv3 ViT-B/16 L2,5,8,11]
+    TAB[临床+解剖 43维]
+    DINO --> SCALAR[rich scalar 112维]
+    IMG --> DINO
+    MASK --> DINO
+    TAB --> MERGE[帧级表格]
+    SCALAR --> MERGE
+  end
+  subgraph train["帧级训练"]
+    MERGE --> RF[RandomForest / ET / LogReg]
+    TR[train 10007帧] --> RF
+  end
+  subgraph infer["推理聚合"]
+    RF --> P[帧级概率 4类]
+    P --> AGG[top3_advanced等]
+    AGG --> PAT[479病人 AUC 0.803]
+    P --> FRM[2285帧 AUC 0.808]
+  end
+          </pre>
+        </div>
+      </section>
+
+      <section id="metrics">
+        <h2>指标明细</h2>
+        <div class="figure-grid">
+          <div>
+            <h3 style="font-size:1rem;margin-bottom:0.5rem;color:var(--accent)">帧级最佳</h3>
+            <table>
+              <thead><tr><th>指标</th><th>AUC</th></tr></thead>
+              <tbody><tr><td>4-class macro</td><td class='ok'>0.8084</td></tr>
+<tr><td>Early vs Adv</td><td class='ok'>0.8884</td></tr>
+<tr><td>T1/T2</td><td class=''>0.7806</td></tr>
+<tr><td>T2/T3</td><td class='ok'>0.8157</td></tr>
+<tr><td>T3/T4+</td><td class=''>0.7945</td></tr></tbody>
+            </table>
+          </div>
+          <div>
+            <h3 style="font-size:1rem;margin-bottom:0.5rem;color:var(--accent2)">病人级 top3_advanced</h3>
+            <table>
+              <thead><tr><th>指标</th><th>AUC</th></tr></thead>
+              <tbody><tr><td>4-class macro</td><td class='ok'>0.8034</td></tr>
+<tr><td>Early vs Adv</td><td class='ok'>0.8852</td></tr>
+<tr><td>T1/T2</td><td class=''>0.7587</td></tr>
+<tr><td>T2/T3</td><td class=''>0.7716</td></tr>
+<tr><td>T3/T4+</td><td class='ok'>0.8241</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="figures">
+        <h2>统计可视化</h2>
+        <div class="figure-grid">
+          <figure class="stat-figure span-2">
+  <h4>病人级聚合对比</h4>
+  <img src="figures/results/framelevel_prosp_aggregation_patient.png" alt="病人级聚合对比" loading="lazy" />
+  <figcaption>clinical+anatomic · RF · 五种聚合方式 macro AUC</figcaption>
+</figure>
+<figure class="stat-figure span-2">
+  <h4>帧级 vs 病人级子任务 AUC</h4>
+  <img src="figures/results/framelevel_prosp_frame_vs_patient_metrics.png" alt="帧级 vs 病人级子任务 AUC" loading="lazy" />
+  <figcaption>左：帧级 0.808；右：病人 top3 0.803</figcaption>
+</figure>
+<figure class="stat-figure">
+  <h4>特征集消融</h4>
+  <img src="figures/results/framelevel_prosp_feature_ablation.png" alt="特征集消融" loading="lazy" />
+  <figcaption>各 feature_set 在病人级的最佳聚合 macro AUC</figcaption>
+</figure>
+<figure class="stat-figure">
+  <h4>分类器对比</h4>
+  <img src="figures/results/framelevel_prosp_model_comparison.png" alt="分类器对比" loading="lazy" />
+  <figcaption>top3_advanced · clinical+anatomic</figcaption>
+</figure>
+<figure class="stat-figure">
+  <h4>数据规模</h4>
+  <img src="figures/results/framelevel_prosp_data_scale.png" alt="数据规模" loading="lazy" />
+  <figcaption>train / val / test_prospective_full 帧数与测试病人数</figcaption>
+</figure>
+<figure class="stat-figure span-2">
+  <h4>特征×聚合热力图</h4>
+  <img src="figures/results/framelevel_prosp_heatmap_feature_agg.png" alt="特征×聚合热力图" loading="lazy" />
+  <figcaption>RF · patient level · macro AUC</figcaption>
+</figure>
+        </div>
+      </section>
+
+      <section id="reproduce">
+        <h2>复现</h2>
+        <pre class="mono" style="padding:1rem;border-radius:8px;overflow-x:auto;background:var(--surface);border:1px solid var(--border);">python scripts/run_dinov3_framelevel_scalar_train_eval.py
+python scripts/generate_framelevel_prospective_stats_html.py</pre>
+        <p style="margin-top:0.75rem;color:var(--muted);font-size:0.88rem;">
+          数据源：<code>pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/framelevel_dinov3_scalar_results.csv</code>
+        </p>
+      </section>
+
+      <footer>Generated by generate_framelevel_prospective_stats_html.py · GastricTstaging</footer>
+    </main>
+  </div>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+  </script>
+</body>
+</html>
