@@ -597,6 +597,60 @@
       color: var(--accent);
       margin: 1.5rem 0 0.75rem;
     }
+    main figure img,
+    main .figure-gallery img {
+      cursor: zoom-in;
+    }
+    #fig-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 2rem 1.5rem;
+      background: rgba(15, 23, 42, 0.92);
+    }
+    #fig-lightbox.open { display: flex; }
+    #fig-lightbox img {
+      max-width: min(96vw, 1600px);
+      max-height: 86vh;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    #fig-lightbox .lightbox-caption {
+      margin-top: 0.75rem;
+      max-width: min(92vw, 900px);
+      text-align: center;
+      color: #e2e8f0;
+      font-size: 10pt;
+      line-height: 1.4;
+    }
+    #fig-lightbox .lightbox-close {
+      position: absolute;
+      top: 0.75rem;
+      right: 1rem;
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-size: 2rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+    }
+    #fig-lightbox .lightbox-hint {
+      position: absolute;
+      bottom: 0.75rem;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #94a3b8;
+      font-size: 9pt;
+    }
   </style>
 </head>
 <body>
@@ -3680,6 +3734,13 @@ flowchart TD
     </main>
   </div>
 
+  <div id="fig-lightbox" class="lightbox-root" aria-hidden="true" role="dialog" aria-label="放大查看图片">
+    <button type="button" class="lightbox-close" title="关闭 (Esc)">&times;</button>
+    <img class="lightbox-img" alt="" />
+    <p class="lightbox-caption"></p>
+    <span class="lightbox-hint">Esc 或点击背景关闭</span>
+  </div>
+
   <script>
     mermaid.initialize({
       startOnLoad: true,
@@ -3700,6 +3761,50 @@ flowchart TD
       },
       flowchart: { curve: "basis", padding: 16 }
     });
+  </script>
+  <script>
+    (function () {
+      const lb = document.getElementById("fig-lightbox");
+      if (!lb) return;
+      const lbImg = lb.querySelector(".lightbox-img");
+      const lbCap = lb.querySelector(".lightbox-caption");
+      const closeBtn = lb.querySelector(".lightbox-close");
+
+      function openLightbox(img) {
+        lbImg.src = img.currentSrc || img.src;
+        lbImg.alt = img.alt || "";
+        const fig = img.closest("figure");
+        lbCap.textContent =
+          (fig && fig.querySelector("figcaption") && fig.querySelector("figcaption").textContent.trim()) ||
+          img.alt ||
+          "";
+        lb.classList.add("open");
+        lb.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeLightbox() {
+        lb.classList.remove("open");
+        lb.setAttribute("aria-hidden", "true");
+        lbImg.removeAttribute("src");
+        document.body.style.overflow = "";
+      }
+
+      document.querySelectorAll('main img[src*=".png"], main img[src*=".jpg"], main img[src*=".jpeg"]').forEach(function (img) {
+        img.addEventListener("click", function (e) {
+          e.preventDefault();
+          openLightbox(img);
+        });
+      });
+
+      closeBtn.addEventListener("click", closeLightbox);
+      lb.addEventListener("click", function (e) {
+        if (e.target === lb) closeLightbox();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closeLightbox();
+      });
+    })();
   </script>
 </body>
 </html>

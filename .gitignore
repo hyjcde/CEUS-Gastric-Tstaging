@@ -1,4 +1,7 @@
 *.zip
+.env
+.env.*
+!.env.example
 
 # Local datasets and large assets
 外部测试集/
@@ -13,3 +16,10 @@ external/
 __pycache__/
 *.pyc
 third_party/sms/logs/
+docs/mainline/figures/results/_gallery_body.html
+# Portable offline bundle (~350MB; run scripts/package_project_logic_white_bundle.py --copy)
+docs/mainline/project_logic_white/figures/
+docs/mainline/project_logic_white/*.png
+docs/mainline/project_logic_white/index.html
+docs/mainline/project_logic_white.zip
+*.pdf
