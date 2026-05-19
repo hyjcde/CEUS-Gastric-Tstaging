@@ -81,6 +81,7 @@ def _load_classifier(exp_dir: Path, device: torch.device):
         head_hidden=cfg.get("head_hidden", 512),
         global_in_channels=cfg.get("global_in_channels", 3),
         clinical_dim=cfg.get("clinical_dim", 0),
+        clinical_hidden=cfg.get("clinical_hidden", 32),
         multitask=cfg.get("multitask", False),
     )
 

@@ -55,10 +55,16 @@ agent_bindings:
     trust_label: caution
 
   lumen_detection_primary:
-    backend_id: yolo_internal_high_iou_v1
-    tool: LumenDetectionTool  # not wired in analyze_case yet
+    backend_id: yolo_lumen_locator_cropui_combined_plus_zip2_20260417
+    tool: LumenDetectionTool
     role: lumen_bbox_and_qc
-    trust_label: caution
+    trust_label: trusted
+
+  wall_evidence_primary:
+    backend_id: wall_evidence_lumen_sdf_v1
+    tool: WallEvidenceTool
+    role: wall_penetration_and_layer_profile
+    trust_label: trusted
 
   dino_visualization:
     backend_id: dinov3_frame_encoder_default

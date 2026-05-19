@@ -1,0 +1,51 @@
+# abdominal ultrasound Agent default configuration
+# ================================
+
+# ReAct loop settings
+max_steps: 8
+verbose: true
+
+# LLM settings
+llm:
+  # Uses env vars: AGENT_API_KEY / VLM_API_KEY, VLM_API_BASE_URL, AGENT_LLM_MODEL
+  max_tokens: 1024
+  temperature: 0.1
+  retries: 3
+
+# Model paths
+models:
+  segmentation:
+    path: pipeline/experiments/segmentation_strict/best_segmentation_model.pth
+  classification:
+    exp_dir: pipeline/experiments/tstaging_4class_dual_v2_mask4ch_20260302_201944
+
+# Tool settings
+tools:
+  quality:
+    enabled: true
+  segmentation:
+    enabled: true
+  classification:
+    enabled: true
+  morphology:
+    enabled: true
+  clinical:
+    enabled: true
+  similarity:
+    enabled: true
+    index_dir: pipeline/agent/memory/index
+    top_k: 5
+
+# Data paths
+data:
+  project_root: /data/research/gastric/GastricTstaging
+  patients_dir: dataset/patients
+  predicted_masks_dir: pipeline/data/predicted_masks
+  data_dir: pipeline/data/tstaging_4class
+
+# Evaluation
+evaluation:
+  splits:
+    - test_prospective
+    - test_external
+  output_dir: pipeline/experiments/agent_eval
