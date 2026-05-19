@@ -493,6 +493,7 @@
       <a href="#gaps">缺口</a>
       <a href="#arch">系统架构</a>
       <a href="#agent-flow">Agent 流程</a>
+      <a href="#methodology-fig">方法学架构图</a>
       <a href="#rag">Case-RAG</a>
       <a href="#data-stats">主要数据规模</a>
       <a href="#data">数据策略</a>
@@ -1316,7 +1317,7 @@ sequenceDiagram
   Doc->>UI: 选择病例 · 运行 Agent
   UI->>API: POST 病例 payload
   API->>Py: stdin JSON
-  Py->>Tools: 分割→形态→T分类(双分支)→临床→报告→相似病例(融合层)→知识库
+  Py->>Tools: 胃腔YOLO→分割→壁层SDF→形态→T分类(mask4ch+clinical22)→临床→报告→相似病例(RAG门控)→知识库
   Tools-->>Py: 结构化证据
   Py-->>API: stdout JSON
   API-->>UI: T 分期 · 支持/冲突 · 相似病例
@@ -1336,6 +1337,30 @@ sequenceDiagram
           <span class="step star">8. Case-RAG + Gate ★</span><span class="arr">→</span>
           <span class="step">9. 证据合成</span><span class="arr">→</span>
           <span class="step">10. Memory / 轨迹</span>
+        </div>
+
+        <h3 id="methodology-fig">§7.1 · 方法学架构图（Poe GPT-Image-2）</h3>
+        <div class="card">
+          <p style="margin:0 0 0.75rem;font-size:0.92rem;">
+            细粒度方法学总图（五泳道：UI → API → analyze_case 15 步 → 证据融合 v0.3.0 → 冻结模型资产）由
+            <code>scripts/generate_agent_architecture_image_poe.py --variant detailed</code> 生成。
+            规范见 <a href="gastric_us_agent_methodology_architecture_spec_zh.md" style="color:var(--accent)">methodology_architecture_spec_zh.md</a>。
+          </p>
+          <figure style="margin:0;text-align:center;">
+            <img
+              src="gastric_us_agent_methodology_architecture_poe.png"
+              alt="Gastric US T-staging Agent methodology architecture"
+              style="max-width:100%;border:1px solid var(--border);border-radius:8px;background:#fff;"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='block';"
+            />
+            <p class="note" style="display:none;margin-top:0.75rem;">
+              图尚未生成：请设置 <code>POE_API_KEY</code> 后运行
+              <code>python scripts/generate_agent_architecture_image_poe.py --variant detailed --model GPT-Image-2</code>
+            </p>
+            <figcaption class="note" style="margin-top:0.5rem;">
+              <code>docs/mainline/gastric_us_agent_methodology_architecture_poe.png</code>
+            </figcaption>
+          </figure>
         </div>
 
         <div class="card highlight">
