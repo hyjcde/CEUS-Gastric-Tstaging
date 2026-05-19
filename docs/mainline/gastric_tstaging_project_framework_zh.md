@@ -215,7 +215,7 @@ flowchart TB
 
 ### 3.2 Agent 工具链（目标顺序）
 
-与 [`gastric_us_agent_current_flow_and_poe_architecture.md`](gastric_us_agent_current_flow_and_poe_architecture.md) 一致，但强调 **T 分期工具权重最高**：
+与 [`gastric_us_agent_current_flow_and_poe_architecture.md`](gastric_us_agent_current_flow_and_poe_architecture.md) 一致，但强调 **T 分期工具权重最高**。方法学细图见 [`gastric_us_agent_methodology_architecture_spec_zh.md`](gastric_us_agent_methodology_architecture_spec_zh.md)（Poe GPT-Image-2 五泳道）。
 
 ```text
 1. LumenDetectionTool（YOLO）          → 胃腔/质控
