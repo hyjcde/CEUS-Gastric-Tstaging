@@ -136,7 +136,7 @@ T 分期在超声上本质是 **患者级、多帧、胃壁层次** 问题：
 | 工具 | segmentation / morphology / classification / clinical / report / similarity |
 | 记忆 | FAISS case index、KnowledgeMemory、session trajectory |
 
-**缺口**：ClassificationTool 仍常接 **旧 dual-v2**，未系统接入 scoreboard 上最强的 **region-aware / wall contrastive**；SimilarityTool 主要是 17 维概率+形态+临床，**未充分用 DINO 区域向量**。
+**缺口**：ClassificationTool 已指向冻结 **mask4ch dual_branch**，但该路线 **推理不含** direction/arcband patch；**region-aware** 的 patch 主要在训练对比损失里，默认 eval 也不进 logits（见 [`tstaging_classifier_architecture_zh.md`](tstaging_classifier_architecture_zh.md)）。**相似病例**在 `SimilarityTool` + 融合层，**不在分类器 forward**。待接：`ContrastiveTStagingTool` / `GastricWallEvidenceNet` 推理，以及 DINO 区域 Case-RAG。
 
 ### 2.2 我们现在最缺什么（整合层）
 
@@ -223,7 +223,8 @@ flowchart TB
 3. WallBandBuilder                   → 侵犯深度证据（T 核心）
 4. AdapterDINOEncoder（可选）        → 区域向量 / RAG
 5. FrameEvidenceMIL                  → 多帧 → 患者级
-6. TStagingClassifierTool ★          → 接入 scoreboard 最优 checkpoint
+6. TStagingClassifierTool ★          → dual_branch 主 checkpoint（global+ROI+mask+clinical）
+6b. TStagingContrastiveTool（计划）  → contrastive_dual / wall-evidence；推理可选启用本例 patch
 7. ClinicalTool / ReportTool         → 辅助证据
 8. CaseRAGRetriever + RAGGate ★      → 仅边界/冲突时加权
 9. EvidenceSynthesizer               → 推荐 T + 冲突 + 不确定性

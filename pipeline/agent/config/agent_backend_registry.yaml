@@ -70,6 +70,11 @@ backends:
   tstage_mask4ch_clinical22_frozen_20260423:
     model_task: t_staging_4class
     model_family: dual_branch
+    architecture_notes:
+      inference_inputs: [global_image_4ch, roi_image, clinical_vector]
+      uses_own_case_patches_at_inference: false
+      uses_similar_case_features_in_forward: false
+      cls_head_default_hidden: 256
     stage_id: structure_mask4ch_clinical22
     scoreboard_decision: Promote
     config_path: pipeline/configs/tstaging_4class_dual_v2_mask4ch_clinical22_full.yaml
@@ -90,6 +95,13 @@ backends:
   tstage_regionaware_clinical22_20260426:
     model_task: t_staging_4class
     model_family: contrastive_dual
+    architecture_notes:
+      training_patch_types: [direction_patch, arcband_strip, control_arcband_strip]
+      uses_own_case_patches_at_inference: false  # standard ContrastiveTrainer eval strips patches
+      uses_similar_case_features_in_forward: false
+      patch_role: supcon_regularizes_backbone_not_default_cls_path
+      cls_head_default_hidden: 256
+      doc: docs/mainline/tstaging_classifier_architecture_zh.md
     stage_id: breakthrough_regionaware_clinical22
     scoreboard_decision: KeepForReference
     config_path: pipeline/configs/tstaging_4class_regionaware_clinical22_full.yaml

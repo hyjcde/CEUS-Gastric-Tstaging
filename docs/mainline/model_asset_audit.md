@@ -23,6 +23,21 @@
 
 ---
 
+## 1.1 架构速查：是不是「多分支 + 本例 patch + 相似病例」？
+
+**不完全是。** 详见专文 [`tstaging_classifier_architecture_zh.md`](tstaging_classifier_architecture_zh.md)。
+
+| 能力 | 当前 Agent 默认（mask4ch `dual_branch`） | region-aware `contrastive_dual` | 相似病例 |
+|------|------------------------------------------|----------------------------------|----------|
+| Global + ROI 双分支 | ✅ | ✅ | — |
+| 本例 mask 第 4 通道 | ✅ | ✅（predicted mask） | — |
+| 本例 direction / arcband patch **进分类 logits** | ❌ | ❌（训练 SupCon；**标准 eval 丢弃 patch**） | — |
+| 相似病例特征 **进分类器 forward** | ❌ | ❌ | ✅ 仅在 Agent **融合层**（`SimilarityTool`） |
+
+结论：**你设想的那种「推理时多分支 + 病例 patch + 邻居病例一起进同一个分类网络」**，在仓库里 **尚未作为 Agent 默认路径实现**；现在是「强双分支 checkpoint + 工具并列 + 规则/门控融合」。分类头默认仅 `256→4` MLP，**不必盲目加大**；更值得做的是让 patch / 邻居证据进入 **融合层或 wall-evidence forward**，而非堆大 `cls_head`。
+
+---
+
 ## 2. T 分期 4-class（主结果表）
 
 来源：`tstaging_4class_mainline_scoreboard.csv`（全量数据 + clinical 22D）。
@@ -45,6 +60,7 @@
 | checkpoint | `.../best_model.pth`（约 1.1GB，已核验存在） |
 | config | `pipeline/configs/tstaging_4class_dual_v2_mask4ch_clinical22_full.yaml` |
 | model_type | `dual_branch` → `ClassificationTool` **已支持** |
+| inference_branches | global(4ch) + ROI + clinical；**无** patch bag、**无** 相似病例 tensor |
 
 ### 2.2 external 最强（辅助，Phase B 接推理）
 
@@ -53,7 +69,9 @@
 | backend_id | `tstage_regionaware_clinical22_20260426` |
 | run_dir | `.../tstaging_4class_regionaware_clinical22_full_20260426_090539` |
 | checkpoint | `.../best_model.pth`（已核验存在） |
-| model_type | `contrastive_dual` → **需新推理适配器**（`run_contrastive.py` 训练的 head，不是当前 `DualBranchClassifier`） |
+| model_type | `contrastive_dual` → **需新推理适配器**（`DualContrastiveClassifier`，不是 `DualBranchClassifier`） |
+| inference_branches | 与上类似；patch 在 **训练** 中做 SupCon，**默认 eval 不进 logits**（见架构说明 §4） |
+| optional_upgrade | `GastricWallEvidenceNet` 可在推理时显式用 patch → 更接近「本例 patch 定稿」 |
 
 ### 2.3 代码现状 vs 目标
 
