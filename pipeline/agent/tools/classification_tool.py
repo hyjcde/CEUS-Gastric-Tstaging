@@ -19,6 +19,7 @@ import torch
 from PIL import Image
 
 from .base import BaseTool, ToolParameter
+from .clinical_vector import clinical_vector_for_classifier
 from ..core.repo_paths import PROJECT_ROOT, first_existing_path
 
 logger = logging.getLogger(__name__)
@@ -274,10 +275,27 @@ def _prepare_clinical_tensor(
     device: torch.device,
     mask_array: Optional[np.ndarray] = None,
     clinical_features: Optional[Dict[str, Any]] = None,
+    patient_id: Optional[str] = None,
 ) -> Optional[torch.Tensor]:
     clinical_dim = int(cfg.get("clinical_dim", 0) or 0)
     if clinical_dim <= 0:
         return None
+
+    clinical_cols = cfg.get("clinical_cols") or []
+    if clinical_cols and clinical_dim == len(clinical_cols):
+        if clinical_features and clinical_features.get("clinical_vector"):
+            values = list(clinical_features["clinical_vector"])
+        else:
+            resolved = clinical_vector_for_classifier(
+                cfg,
+                payload_clinical=clinical_features,
+                patient_id=patient_id,
+                image_path=image_path,
+            )
+            values = (resolved or {}).get("clinical_vector") or []
+        if len(values) < clinical_dim:
+            values = list(values) + [0.0] * (clinical_dim - len(values))
+        return torch.tensor([values[:clinical_dim]], dtype=torch.float32, device=device)
 
     inferred = _infer_structured_features(
         image_path=image_path,
@@ -313,8 +331,9 @@ class ClassificationTool(BaseTool):
                        "ROI bounding box {x1,y1,x2,y2} from segmentation",
                        required=False),
         ToolParameter("clinical_features", "dict",
-                      "Optional structured lesion/lumen features aligned with training columns",
+                      "Optional clinical22 vector or raw clinical fields for encoding",
                       required=False),
+        ToolParameter("patient_id", "str", "Patient id for clinical CSV lookup", required=False),
     ]
 
     def __init__(self, exp_dir: Path = DEFAULT_EXP_DIR,
@@ -344,6 +363,7 @@ class ClassificationTool(BaseTool):
                 roi_path: Optional[str] = None,
                 roi_bbox: Optional[Dict] = None,
                 clinical_features: Optional[Dict[str, Any]] = None,
+                patient_id: Optional[str] = None,
                 **kwargs) -> Dict[str, Any]:
         try:
             self._ensure_model()
@@ -364,7 +384,14 @@ class ClassificationTool(BaseTool):
                 device=self._device,
                 mask_array=mask_array,
                 clinical_features=clinical_features,
+                patient_id=patient_id,
             )
+            clinical_meta = clinical_vector_for_classifier(
+                self._cfg,
+                payload_clinical=clinical_features,
+                patient_id=patient_id,
+                image_path=image_path,
+            ) if self._cfg.get("clinical_cols") else None
 
             with torch.no_grad():
                 output = self._model(global_input, local_input, clinical_input)
@@ -385,6 +412,22 @@ class ClassificationTool(BaseTool):
 
             uncertainty = 1.0 - float(probs[top1_idx] - probs[top2_idx])
 
+            clinical_cols = self._cfg.get("clinical_cols") or []
+            if clinical_input is not None and clinical_cols:
+                vec = clinical_input[0].detach().cpu().tolist()
+                structured = {
+                    col: round(float(vec[i]), 4) if i < len(vec) else 0.0
+                    for i, col in enumerate(clinical_cols)
+                }
+            elif clinical_input is not None:
+                vec = clinical_input[0].detach().cpu().tolist()
+                structured = {
+                    name: round(float(vec[i]), 4) if i < len(vec) else 0.0
+                    for i, name in enumerate(CLINICAL_FEATURE_NAMES)
+                }
+            else:
+                structured = {}
+
             return {
                 "available": True,
                 "runtime_invocation": {
@@ -395,14 +438,8 @@ class ClassificationTool(BaseTool):
                     "global_backbone": self._cfg.get("global_backbone"),
                     "device": str(self._device),
                 },
-                "structured_features": {
-                    name: round(float(value), 4)
-                    for name, value in zip(
-                        CLINICAL_FEATURE_NAMES,
-                        (clinical_input[0].detach().cpu().tolist() if clinical_input is not None else [])
-                        + [0.0] * len(CLINICAL_FEATURE_NAMES),
-                    )
-                },
+                "clinical_vector_source": (clinical_meta or {}).get("clinical_vector_source"),
+                "structured_features": structured,
                 "probabilities": {
                     CLASS_NAMES[i]: round(float(probs[i]), 4)
                     for i in range(len(CLASS_NAMES))

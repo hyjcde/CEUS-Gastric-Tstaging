@@ -432,7 +432,8 @@ def load_case_card_from_patient_info(json_path: Path,
 
 def load_case_cards_from_csv(csv_path: Path,
                              patients_dir: Path = PATIENTS_DIR,
-                             mask_dir: Path = PREDICTED_MASKS_DIR) -> List[CaseCard]:
+                             mask_dir: Path = PREDICTED_MASKS_DIR,
+                             require_existing_images: bool = False) -> List[CaseCard]:
     """
     Build CaseCards for all unique patients in a pipeline CSV
     (e.g. test_prospective.csv). Falls back to CSV-only construction
@@ -489,6 +490,19 @@ def load_case_cards_from_csv(csv_path: Path,
             gt_T_label=gt_label,
             gt_label_bm="malignant",
         ))
+
+    if require_existing_images:
+        filtered: List[CaseCard] = []
+        for card in cards:
+            valid_frames = [
+                frame for frame in card.frames
+                if frame.image_path and Path(frame.image_path).exists()
+            ]
+            if not valid_frames:
+                continue
+            card.frames = valid_frames
+            filtered.append(card)
+        cards = filtered
 
     logger.info("Loaded %d CaseCards from %s", len(cards), csv_path.name)
     return cards

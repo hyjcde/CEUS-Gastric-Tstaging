@@ -37,10 +37,13 @@ def build_registry(device=None, enable_rag=False):
     import torch
     from agent.tools.base import ToolRegistry
     from agent.tools.quality_tool import QualityTool
+    from agent.tools.lumen_detection_tool import LumenDetectionTool
+    from agent.tools.wall_evidence_tool import WallEvidenceTool
     from agent.tools.segmentation_tool import SegmentationTool
     from agent.tools.classification_tool import ClassificationTool
     from agent.tools.morphology_tool import MorphologyTool
     from agent.tools.clinical_tool import ClinicalTool
+    from agent.tools.report_tool import ReportTool
     from agent.tools.similarity_tool import SimilarityTool
 
     if device is None:
@@ -48,10 +51,13 @@ def build_registry(device=None, enable_rag=False):
 
     registry = ToolRegistry()
     registry.register(QualityTool())
+    registry.register(LumenDetectionTool(device=str(device)))
+    registry.register(WallEvidenceTool())
     registry.register(SegmentationTool(device=device))
     registry.register(ClassificationTool(device=device))
     registry.register(MorphologyTool())
     registry.register(ClinicalTool())
+    registry.register(ReportTool())
     if enable_rag:
         registry.register(SimilarityTool())
 
@@ -63,7 +69,22 @@ def load_test_cases(n: int = 5):
     from agent.core.case_card import load_case_cards_from_csv
 
     csv_path = PROJECT_ROOT / "pipeline" / "data" / "tstaging_4class" / "test_prospective.csv"
-    all_cards = load_case_cards_from_csv(csv_path)
+    all_cards = load_case_cards_from_csv(csv_path, require_existing_images=True)
+    if not all_cards:
+        lumen_img = (
+            PROJECT_ROOT
+            / "dataset/lumen_detection/crop_ui_confirmed/images/train/train_000222.jpg"
+        )
+        if lumen_img.exists():
+            from agent.core.case_card import CaseCard, FrameInfo
+            all_cards = [
+                CaseCard(
+                    patient_id="smoke_lumen_fallback",
+                    data_source="smoke_test",
+                    frames=[FrameInfo(image_path=str(lumen_img))],
+                    gt_T_stage=None,
+                )
+            ]
 
     # Pick diverse T-stages
     by_stage = {}
@@ -126,13 +147,32 @@ def test_tools_only(n: int = 3):
             q = registry.execute("quality_check", image_path=frame.image_path)
             print(f"    Quality: score={q.get('quality_score')}, usable={q.get('usable')}")
 
+            lumen = registry.execute("detect_lumen", image_path=frame.image_path)
+            print(f"    Lumen: detected={lumen.get('lumen_detected')}, "
+                  f"conf={lumen.get('lumen_confidence')}")
+
             # Segmentation
             seg = registry.execute("segment", image_path=frame.image_path)
             print(f"    Segment: mask={seg.get('mask_available')}, "
                   f"source={seg.get('roi_source')}, area={seg.get('lesion_area_ratio')}")
 
+            mask = None
+            seg_tool = registry.get("segment")
+            if seg_tool is not None and hasattr(seg_tool, "get_cached_mask"):
+                mask = seg_tool.get_cached_mask(frame.image_path)
+
+            if lumen.get("lumen_detected") and mask is not None:
+                wall = registry.execute(
+                    "wall_evidence",
+                    image_path=frame.image_path,
+                    lumen_bbox=lumen.get("lumen_bbox"),
+                    lesion_mask=mask,
+                )
+                print(f"    Wall: available={wall.get('available')}, "
+                      f"risk={wall.get('penetration_risk')}")
+
             # Classification
-            cls_kwargs = {"image_path": frame.image_path}
+            cls_kwargs = {"image_path": frame.image_path, "patient_id": card.patient_id}
             if frame.predicted_mask_path:
                 cls_kwargs["mask_path"] = frame.predicted_mask_path
             if frame.roi_path:
@@ -232,9 +272,25 @@ def test_full(n: int = 3):
     print("\n[OK] Full E2E smoke test completed.\n")
 
 
+def test_analyze_product(n: int = 1):
+    """Run analyze_case.py product path (full JSON, no LLM)."""
+    import subprocess
+
+    script = PROJECT_ROOT / "pipeline" / "agent" / "product" / "run_agent_batch.py"
+    print(f"\n=== ANALYZE-PRODUCT: {n} case(s) via run_agent_batch ===\n")
+    proc = subprocess.run(
+        [sys.executable, str(script), "-n", str(n)],
+        cwd=str(PROJECT_ROOT),
+        env={**{"PYTHONPATH": str(PROJECT_ROOT / "pipeline")}, **dict(__import__("os").environ)},
+    )
+    if proc.returncode != 0:
+        raise SystemExit(proc.returncode)
+    print("\n[OK] analyze_case product batch passed.\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="abdominal ultrasound Agent smoke test")
-    parser.add_argument("--mode", choices=["dry-run", "tools-only", "full"],
+    parser.add_argument("--mode", choices=["dry-run", "tools-only", "full", "analyze-product"],
                         default="dry-run")
     parser.add_argument("--n", type=int, default=3,
                         help="Number of patients to test")
@@ -250,6 +306,8 @@ def main():
         test_tools_only(args.n)
     elif args.mode == "full":
         test_full(args.n)
+    elif args.mode == "analyze-product":
+        test_analyze_product(args.n)
 
 
 if __name__ == "__main__":

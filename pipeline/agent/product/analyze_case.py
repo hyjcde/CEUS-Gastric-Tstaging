@@ -30,6 +30,7 @@ from agent.tools.lumen_detection_tool import LumenDetectionTool
 from agent.tools.segmentation_tool import SegmentationTool
 from agent.tools.similarity_tool import SimilarityTool
 from agent.tools.wall_evidence_tool import WallEvidenceTool
+from agent.tools.clinical_vector import clinical_vector_for_classifier
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("agent.product.analyze_case")
@@ -1000,6 +1001,86 @@ def _save_similarity_visual_artifacts(
     return artifacts
 
 
+def _boundary_stages(stage: str) -> bool:
+    return stage in {"T2", "T3", "T4+"}
+
+
+def _compute_rag_gate(
+    classification: Dict[str, Any],
+    similar_cases: List[Dict[str, Any]],
+    wall_evidence: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Gate Case-RAG weight on T-boundary uncertainty (plan § B6)."""
+    uncertainty = float(classification.get("uncertainty", 1.0)) if classification.get("available") else 1.0
+    top1 = str(classification.get("top1_stage", ""))
+    top2 = str(classification.get("top2_stage", ""))
+    boundary = _boundary_stages(top1) or _boundary_stages(top2)
+    gap = float(classification.get("top1_prob", 0.0)) - float(classification.get("top2_prob", 0.0))
+    wall_risk = str(wall_evidence.get("penetration_risk", "low"))
+
+    weight = 0.0
+    reason = "rag_suppressed_stable_classifier"
+    if not similar_cases:
+        reason = "no_similar_cases"
+    elif boundary and (uncertainty >= 0.35 or gap < 0.12):
+        weight = 0.35
+        reason = "t_boundary_low_margin"
+    elif wall_risk in {"medium", "high"} and boundary:
+        weight = 0.25
+        reason = "wall_risk_at_t_boundary"
+    elif uncertainty >= 0.5:
+        weight = 0.15
+        reason = "high_classifier_uncertainty"
+
+    return {
+        "rag_weight": round(weight, 3),
+        "rag_gate_reason": reason,
+        "classifier_uncertainty": round(uncertainty, 4),
+        "top1_top2_gap": round(gap, 4),
+    }
+
+
+def _collect_conflicting_evidence(
+    classification: Dict[str, Any],
+    similar_cases: List[Dict[str, Any]],
+    wall_evidence: Dict[str, Any],
+    morphology: Dict[str, Any],
+) -> List[str]:
+    conflicts: List[str] = []
+    if not classification.get("available"):
+        return conflicts
+
+    cls_top = str(classification.get("top1_stage", ""))
+    if similar_cases:
+        summary = _summarize_similarity(similar_cases)
+        majority = str(summary.get("majority_stage", ""))
+        majority_key = "T4+" if majority in {"T4a", "T4b", "T4"} else majority
+        if majority_key and majority_key != cls_top:
+            conflicts.append(
+                f"Classifier top-1 {cls_top} disagrees with similar-case majority {majority_key}."
+            )
+
+    if wall_evidence.get("available"):
+        risk = str(wall_evidence.get("penetration_risk", "low"))
+        if risk == "high" and cls_top in {"T1", "T2"}:
+            conflicts.append(
+                f"Wall penetration risk is high but classifier favors {cls_top}."
+            )
+        if risk == "low" and cls_top in {"T4+"}:
+            conflicts.append(
+                f"Wall penetration risk is low but classifier favors {cls_top}."
+            )
+
+    if morphology.get("valid"):
+        irregularity = float(morphology.get("boundary_irregularity", 0.0))
+        if irregularity >= 0.45 and cls_top == "T1":
+            conflicts.append(
+                f"High boundary irregularity ({irregularity:.2f}) conflicts with T1 prediction."
+            )
+
+    return conflicts
+
+
 def _build_rule_based_report(
     payload: Dict[str, Any],
     segmentation: Dict[str, Any],
@@ -1009,10 +1090,16 @@ def _build_rule_based_report(
     report_text: Dict[str, Any],
     similar_cases: List[Dict[str, Any]],
     knowledge: List[Dict[str, str]],
+    *,
+    lumen_detection: Optional[Dict[str, Any]] = None,
+    wall_evidence: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    lumen_detection = lumen_detection or {}
+    wall_evidence = wall_evidence or {}
     scores = {stage: 0.0 for stage in STAGES}
     uncertainty_flags: List[str] = []
     supporting_evidence: List[str] = []
+    conflicting_evidence: List[str] = []
 
     classification_probs = classification.get("probabilities", {}) if classification.get("available") else {}
     for stage in STAGES:
@@ -1075,18 +1162,55 @@ def _build_rule_based_report(
 
     uncertainty_flags.extend(report_text.get("uncertainty_flags", []))
 
+    if lumen_detection.get("lumen_detected"):
+        supporting_evidence.append(
+            f"Lumen detected (conf {float(lumen_detection.get('lumen_confidence', 0.0)):.2f})."
+        )
+    elif lumen_detection.get("available") is False:
+        uncertainty_flags.append("Lumen detector unavailable; wall evidence may be proxy-only.")
+
+    if wall_evidence.get("available"):
+        wf = wall_evidence.get("wall_features") or {}
+        risk = wall_evidence.get("penetration_risk", "low")
+        if risk == "high":
+            scores["T3"] += 0.2
+            scores["T4+"] += 0.15
+        elif risk == "medium":
+            scores["T3"] += 0.1
+        supporting_evidence.append(
+            f"Wall evidence ({wall_evidence.get('evidence_source')}): penetration_risk={risk}, "
+            f"fraction_outside_lumen={float(wf.get('fraction_outside_lumen', 0.0)):.2f}."
+        )
+    else:
+        uncertainty_flags.append("Live wall evidence unavailable; using lesion-centered proxy visuals only.")
+
+    rag_gate = _compute_rag_gate(classification, similar_cases, wall_evidence)
+    rag_weight = float(rag_gate.get("rag_weight", 0.0))
+
     similarity_summary = _summarize_similarity(similar_cases)
-    if similar_cases:
+    if similar_cases and rag_weight > 0:
         total = max(len(similar_cases), 1)
         for stage, count in similarity_summary["stage_distribution"].items():
             stage_key = "T4+" if stage in {"T4a", "T4b", "T4"} else stage
             if stage_key in scores:
-                scores[stage_key] += 0.35 * (count / total)
+                scores[stage_key] += rag_weight * (count / total)
         supporting_evidence.append(
-            f"Similar cases majority stage {similarity_summary['majority_stage']} from {len(similar_cases)} retrieved cases."
+            f"Similar cases (RAG weight {rag_weight:.2f}, {rag_gate.get('rag_gate_reason')}): "
+            f"majority {similarity_summary['majority_stage']} from {len(similar_cases)} cases."
+        )
+    elif similar_cases:
+        supporting_evidence.append(
+            f"Similar cases retrieved ({len(similar_cases)}) but RAG gate weight=0 "
+            f"({rag_gate.get('rag_gate_reason')})."
         )
     else:
         uncertainty_flags.append("No similar historical cases were available in case memory.")
+
+    conflicting_evidence = _collect_conflicting_evidence(
+        classification, similar_cases, wall_evidence, morphology
+    )
+    if conflicting_evidence:
+        uncertainty_flags.append("Conflicting evidence streams detected; manual review recommended.")
 
     if not segmentation.get("available") and not segmentation.get("mask_available"):
         uncertainty_flags.append("Segmentation tool unavailable; ROI evidence is weaker.")
@@ -1098,7 +1222,7 @@ def _build_rule_based_report(
     confidence = "high" if gap >= 0.35 else "medium" if gap >= 0.18 else "low"
 
     return {
-        "schema_version": "0.2.0",
+        "schema_version": "0.3.0",
         "status": "ready",
         "recommended_t_stage": top_stage,
         "confidence": confidence,
@@ -1107,10 +1231,16 @@ def _build_rule_based_report(
             f"Top evidence: {' '.join(supporting_evidence[:3])}"
         ),
         "supporting_evidence": supporting_evidence,
+        "conflicting_evidence": conflicting_evidence,
         "uncertainty_flags": uncertainty_flags,
         "similar_case_summary": similarity_summary,
+        "rag_gate": rag_gate,
         "knowledge_highlights": [item.get("title", "") for item in knowledge],
         "tool_status": {
+            "lumen_detection": "available" if lumen_detection.get("lumen_detected") else (
+                "partial" if lumen_detection.get("available") else "unavailable"
+            ),
+            "wall_evidence": "available" if wall_evidence.get("available") else "proxy_or_missing",
             "segmentation": "available" if segmentation.get("available") else "fallback",
             "classification": "available" if classification.get("available") else "unavailable",
             "morphology": "available" if morphology.get("valid") else "partial",
@@ -1775,17 +1905,25 @@ def main() -> None:
         },
     )
 
-    clinical_features = None
-    if lumen_detection.get("lumen_detected"):
-        clinical_features = {
-            "seg_has_lumen": 1.0,
-            "seg_lumen_box_area_ratio": float(lumen_detection.get("lumen_area_ratio", 0.0)),
-        }
-        if wall_evidence.get("available") and wall_evidence.get("wall_features"):
-            wf = wall_evidence["wall_features"]
-            clinical_features["seg_lumen_inside_ratio"] = 1.0 - float(
-                wf.get("fraction_outside_lumen", 0.0)
-            )
+    classification_tool._ensure_model()
+    split_hint = "test_prospective"
+    data_source = str(payload.get("data_source", ""))
+    if "train" in data_source:
+        split_hint = "train"
+    elif "external" in data_source:
+        split_hint = "test_external"
+
+    clinical_features: Optional[Dict[str, Any]] = None
+    if classification_tool._cfg:
+        clinical_bundle = clinical_vector_for_classifier(
+            classification_tool._cfg,
+            payload_clinical=clinical_payload if isinstance(clinical_payload, dict) else None,
+            patient_id=str(payload.get("patient_id", "")) or None,
+            image_path=image_path,
+            split_hint=split_hint,
+        )
+        if clinical_bundle:
+            clinical_features = clinical_bundle
 
     classification = classification_tool.execute(
         image_path=image_path,
@@ -1793,6 +1931,7 @@ def main() -> None:
         roi_path=roi_path,
         roi_bbox=segmentation.get("roi_bbox"),
         clinical_features=clinical_features,
+        patient_id=str(payload.get("patient_id", "")) or None,
     ) if image_path else {"available": False, "error": "Missing image_path"}
     traces.append({"tool": "classify", "result": classification})
     prediction_artifacts.update(
@@ -2037,6 +2176,8 @@ def main() -> None:
         report_text=report_text,
         similar_cases=similar_cases,
         knowledge=knowledge,
+        lumen_detection=lumen_detection,
+        wall_evidence=wall_evidence,
     )
     report, llm_invocation = _maybe_llm_synthesis(report, payload)
     _append_agent_step(
@@ -2074,7 +2215,8 @@ def main() -> None:
             "similar_case_count": len(similar_cases),
         },
         outputs=_compact_tool_output(report, [
-            "recommended_t_stage", "confidence", "reasoning", "supporting_evidence", "uncertainty_flags", "similar_case_summary", "tool_status"
+            "recommended_t_stage", "confidence", "reasoning", "supporting_evidence",
+            "conflicting_evidence", "uncertainty_flags", "rag_gate", "similar_case_summary", "tool_status",
         ]),
         reasoning=(
             "The Agent combines evidence streams and records uncertainty. The final T stage is not "

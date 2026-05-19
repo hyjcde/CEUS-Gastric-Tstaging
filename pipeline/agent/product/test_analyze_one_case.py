@@ -71,12 +71,16 @@ def main() -> int:
     lumen = te.get("lumen_detection", {})
     seg = te.get("segmentation", {})
     cls = te.get("classification", {})
+    report = result.get("report", {})
     checks = {
         "lumen_detection": lumen.get("lumen_detected") or lumen.get("available"),
         "wall_evidence": te.get("wall_evidence", {}).get("available"),
         "segmentation": seg.get("available") or seg.get("mask_available"),
         "classification": cls.get("available"),
-        "report_t_stage": result.get("report", {}).get("recommended_t_stage"),
+        "clinical22_source": cls.get("clinical_vector_source"),
+        "report_t_stage": report.get("recommended_t_stage"),
+        "conflicting_evidence": report.get("conflicting_evidence", []),
+        "rag_gate": report.get("rag_gate", {}),
         "agent_steps": len(result.get("agent_steps", [])),
         "wall_panel_source": result.get("prediction_artifacts", {}).get(
             "real_wall_analysis_panel_source"
