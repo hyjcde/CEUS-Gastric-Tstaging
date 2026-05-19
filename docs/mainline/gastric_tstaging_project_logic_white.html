@@ -614,7 +614,7 @@
           Workbench 可跑通 Agent；患者级 MIL、临床22 对齐、<code>rag_weight</code> 等为 Phase B。
           阶段 A 资产审计已完成（<code>model_asset_audit.md</code>、<code>agent_backend_registry.yaml</code>）；
           阶段 B–C 为 split 重建、对比学习推理接入、门控 Case-RAG 与 M14 后冻结的外部/前瞻主表。
-          下文展开 KPI、数据规模（§9）、分类器架构辨析（§4.5）、Agent JSON 输出示例与缺口路线图。
+          下文以 scoreboard 指标图、数据规模（§9）、分类器架构辨析（§4.5）与路线时间表为主；部分 Poe 示意图尚未生成，本页仅嵌入已有 PNG。
         </p>
         <div class="figure-gallery" style="margin-top:1rem;">
           <figure>
@@ -637,6 +637,7 @@
         <p style="font-size:0.92rem;color:var(--muted);">
           图片由 <code>scripts/generate_agent_figures_poe_batch.py</code> 生成（读取仓库根目录 <code>.env</code> 中的 <code>POE_API_KEY</code>）。
           完整离线包：<code>docs/mainline/project_logic_bundle/</code>（运行 <code>python scripts/package_project_logic_bundle.py --zip</code>）。
+          未落盘的 Poe 图（如前瞻 KPI、数据口径、路线总图、JSON 报告、MIL）本页不引用，避免裂图；KPI 以 <code>figures/results/metric_*.png</code> 为准。
         </p>
         <h3>方法学示意</h3>
         <div class="figure-gallery">
@@ -660,10 +661,6 @@
             <img src="figures/fig_rag_gate_flow.png" alt="RAG gate" />
             <figcaption>Case-RAG 门控</figcaption>
           </figure>
-          <figure>
-            <img src="figures/fig_mil_multiframe.png" alt="MIL multiframe" />
-            <figcaption>多帧 MIL 聚合</figcaption>
-          </figure>
         </div>
         <h3>结果与产品示意</h3>
         <div class="figure-gallery">
@@ -672,28 +669,12 @@
             <figcaption>T 分期 AUC（外部/前瞻）</figcaption>
           </figure>
           <figure>
-            <img src="figures/fig_prospective_cohort.png" alt="Prospective cohort" />
-            <figcaption>前瞻队列 KPI</figcaption>
-          </figure>
-          <figure>
             <img src="figures/fig_agent_workbench_ui.png" alt="Workbench" />
             <figcaption>Workbench UI</figcaption>
           </figure>
           <figure>
             <img src="figures/fig_wall_lumen_evidence.png" alt="Lumen wall" />
             <figcaption>Lumen + Wall 工具输出</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/fig_agent_json_report.png" alt="Agent JSON" />
-            <figcaption>Agent JSON 报告结构</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/fig_data_caliber_comparison.png" alt="Data calibers" />
-            <figcaption>数据多口径对照</figcaption>
-          </figure>
-          <figure>
-            <img src="figures/fig_roadmap_phases.png" alt="Roadmap" />
-            <figcaption>三阶段路线</figcaption>
           </figure>
         </div>
       </section>
@@ -3003,26 +2984,11 @@ sequenceDiagram
               <img src="figures/fig_rag_gate_flow.png" alt="RAG gate" />
               <figcaption>Case-RAG 门控</figcaption>
             </figure>
-            <figure>
-              <img src="figures/fig_mil_multiframe.png" alt="MIL" />
-              <figcaption>多帧 MIL</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_data_caliber_comparison.png" alt="Data caliber" />
-              <figcaption>数据口径</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_agent_json_report.png" alt="JSON report" />
-              <figcaption>JSON 报告</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_prospective_cohort.png" alt="Prospective" />
-              <figcaption>前瞻队列</figcaption>
-            </figure>
-            <figure>
-              <img src="figures/fig_roadmap_phases.png" alt="Roadmap" />
-              <figcaption>执行路线</figcaption>
-            </figure>
+
+
+
+
+
           </div>
         </div>
 
@@ -3082,10 +3048,7 @@ flowchart LR
         </div>
 
         <h3 id="data-caliber">9.1 多口径总览（最易混用）</h3>
-        <figure style="margin:0 0 1rem;text-align:center;">
-          <img src="figures/fig_data_caliber_comparison.png" alt="Data caliber comparison" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
-          <figcaption class="note">数据口径对照图 · <code>figures/fig_data_caliber_comparison.png</code></figcaption>
-        </figure>
+
         <div class="table-wrap">
           <table>
             <caption>不同口径服务不同任务；写论文 Methods 时必须写明用的是哪一种</caption>
@@ -3602,10 +3565,7 @@ flowchart TB
       <!-- Roadmap -->
       <section id="roadmap">
         <h2><span class="num">§12</span> 执行路线（三阶段）</h2>
-        <figure style="margin:0 0 1.25rem;text-align:center;">
-          <img src="figures/fig_roadmap_phases.png" alt="Project roadmap phases" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
-          <figcaption class="note">三阶段路线示意 · <code>figures/fig_roadmap_phases.png</code></figcaption>
-        </figure>
+
         <div class="timeline">
           <div class="phase">
             <h4>阶段 A · 读懂现有结果（2–3 周）</h4>
