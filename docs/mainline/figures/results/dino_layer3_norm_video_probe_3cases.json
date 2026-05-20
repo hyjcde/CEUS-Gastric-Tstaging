@@ -1,0 +1,76 @@
+{
+  "run_dir": "/data/research/gastric/GastricTstaging/experiments/segmentation/dinov3_vitb16_last2blocks_mlp_decoder_cropui_20260512_full_r001",
+  "layer_indices": [
+    2,
+    5,
+    8,
+    11
+  ],
+  "row_type": "dino_layer3_norm (grid row 6)",
+  "outputs": {
+    "layer3_only": "/data/research/gastric/GastricTstaging/docs/mainline/figures/results/dino_layer3_norm_video_probe_3cases.png",
+    "original_vs_layer3": "/data/research/gastric/GastricTstaging/docs/mainline/figures/results/dino_layer3_norm_video_probe_3cases_compare.png"
+  },
+  "cases": [
+    {
+      "label": "1408594 T3",
+      "video_path": "apps/gastric_scan_next/public/videos/direct_surgery/1048931-1.mp4",
+      "frame_times_sec": [
+        0.0,
+        2.0108108108108107,
+        4.0864864864864865,
+        6.162162162162162,
+        8.237837837837839,
+        10.313513513513515
+      ],
+      "frame_indices": [
+        0,
+        31,
+        63,
+        95,
+        127,
+        159
+      ]
+    },
+    {
+      "label": "1379039 T4a",
+      "video_path": "apps/gastric_scan_next/public/videos/direct_surgery/1255929-1.mp4",
+      "frame_times_sec": [
+        0.0,
+        2.4291497975708505,
+        4.858299595141701,
+        7.287449392712551,
+        9.716599190283402,
+        12.145748987854251
+      ],
+      "frame_indices": [
+        0,
+        50,
+        100,
+        150,
+        200,
+        250
+      ]
+    },
+    {
+      "label": "1391229 T4b",
+      "video_path": "apps/gastric_scan_next/public/videos/direct_surgery/1107460.mp4",
+      "frame_times_sec": [
+        0.0,
+        3.5465587044534415,
+        7.093117408906883,
+        10.639676113360325,
+        14.186234817813766,
+        17.781376518218625
+      ],
+      "frame_indices": [
+        0,
+        73,
+        146,
+        219,
+        292,
+        366
+      ]
+    }
+  ]
+}
