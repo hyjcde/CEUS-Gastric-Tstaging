@@ -37,6 +37,12 @@ export default function Home() {
   const userEditedRef = useRef<Set<string>>(new Set());
   const lastMergedAgentSessionRef = useRef<string | null>(null);
   const lastMergedExplainableRef = useRef<string | null>(null);
+  const patientConceptStatesRef = useRef<Map<string, ConceptState>>(new Map());
+  const conceptLoadTokenRef = useRef(0);
+
+  useEffect(() => {
+    patientConceptStatesRef.current = patientConceptStates;
+  }, [patientConceptStates]);
 
   useEffect(() => {
     setAgentAnalysis(null);
@@ -52,6 +58,15 @@ export default function Home() {
     [conceptState],
   );
 
+  const handlePatientsLoaded = useCallback((patients: Patient[]) => {
+    setAllPatients((prev) => {
+      if (prev.length === patients.length && prev.every((item, index) => item.id === patients[index]?.id)) {
+        return prev;
+      }
+      return patients;
+    });
+  }, []);
+
   const siblingImages = useMemo(() => {
     if (!selectedPatient || !allPatients.length) return [];
     const patientId = selectedPatient.patient_id;
@@ -63,6 +78,7 @@ export default function Home() {
     setPatientConceptStates((prevMap) => {
       const newMap = new Map(prevMap);
       newMap.set(patientId, state);
+      patientConceptStatesRef.current = newMap;
       return newMap;
     });
     if (markDirty) {
@@ -79,6 +95,7 @@ export default function Home() {
       setPatientConceptStates((prevMap) => {
         const newMap = new Map(prevMap);
         newMap.set(selectedPatient.id, newState);
+        patientConceptStatesRef.current = newMap;
         return newMap;
       });
       userEditedRef.current.add(selectedPatient.id);
@@ -127,16 +144,24 @@ export default function Home() {
     if (!selectedPatient) return;
     const patient: Patient = selectedPatient;
     const patientId = patient.id;
-
-    let cancelled = false;
+    const loadToken = ++conceptLoadTokenRef.current;
 
     async function loadPatientConceptState() {
       const baseline = getConceptStateFromPatient(patient);
       clinicalBaselinesRef.current.set(patientId, baseline);
 
-      const cached = patientConceptStates.get(patientId);
-      if (cached && userEditedRef.current.has(patientId)) {
-        if (!cancelled) setConceptState(cached);
+      const cached = patientConceptStatesRef.current.get(patientId);
+      if (cached) {
+        if (!userEditedRef.current.has(patientId)) {
+          // 已有内存缓存（含 Agent 合并结果），直接复用，避免重复 fetch 导致界面闪动
+          if (loadToken === conceptLoadTokenRef.current) {
+            setConceptState(cached);
+          }
+          return;
+        }
+        if (loadToken === conceptLoadTokenRef.current) {
+          setConceptState(cached);
+        }
         return;
       }
 
@@ -145,26 +170,26 @@ export default function Home() {
           `/api/patients/concept-overrides?patientId=${encodeURIComponent(patientId)}`,
         );
         const data = await response.json() as { state?: ConceptState | null };
+        if (loadToken !== conceptLoadTokenRef.current) return;
+
         const loaded = data.state ?? baseline;
-        if (!cancelled) {
-          applyConceptState(patientId, loaded, Boolean(data.state));
-          setIsDirty(Boolean(data.state));
-        }
+        applyConceptState(patientId, loaded, Boolean(data.state));
+        setIsDirty(Boolean(data.state));
       } catch {
-        if (!cancelled) applyConceptState(patientId, baseline, false);
+        if (loadToken !== conceptLoadTokenRef.current) return;
+        applyConceptState(patientId, baseline, false);
       }
     }
 
     loadPatientConceptState();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient?.id]);
+  }, [selectedPatient?.id, applyConceptState]);
 
   useEffect(() => {
     if (!agentAnalysis || !selectedPatient) return;
     if (lastMergedAgentSessionRef.current === agentAnalysis.session_id) return;
 
-    const baseline = clinicalBaselinesRef.current.get(selectedPatient.id)
+    const patientId = selectedPatient.id;
+    const baseline = clinicalBaselinesRef.current.get(patientId)
       ?? getConceptStateFromPatient(selectedPatient);
 
     setConceptState((prev) => {
@@ -173,14 +198,15 @@ export default function Home() {
       setAgentFilledCount(filled);
       setPatientConceptStates((prevMap) => {
         const newMap = new Map(prevMap);
-        newMap.set(selectedPatient.id, merged);
+        newMap.set(patientId, merged);
+        patientConceptStatesRef.current = newMap;
         return newMap;
       });
       return merged;
     });
 
     lastMergedAgentSessionRef.current = agentAnalysis.session_id;
-  }, [agentAnalysis, selectedPatient]);
+  }, [agentAnalysis?.session_id, selectedPatient?.id, agentAnalysis, selectedPatient]);
 
   const handleExplainableComplete = useCallback((result: ExplainableAnalysisResult) => {
     if (!selectedPatient || !result.success) return;
@@ -198,6 +224,7 @@ export default function Home() {
       setPatientConceptStates((prevMap) => {
         const newMap = new Map(prevMap);
         newMap.set(selectedPatient.id, merged);
+        patientConceptStatesRef.current = newMap;
         return newMap;
       });
       return merged;
@@ -223,7 +250,7 @@ export default function Home() {
               key={`${dataset}-${cohortYear}`}
               onSelect={setSelectedPatient}
               selectedId={selectedPatient?.id || null}
-              onPatientsLoaded={setAllPatients}
+              onPatientsLoaded={handlePatientsLoaded}
             />
           </div>
         </div>

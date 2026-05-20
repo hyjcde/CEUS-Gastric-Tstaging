@@ -29,6 +29,22 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
   const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isLoadingMore = useRef(false);
+  const onSelectRef = useRef(onSelect);
+  const onPatientsLoadedRef = useRef(onPatientsLoaded);
+  const selectedIdRef = useRef(selectedId);
+  const hasAutoSelectedRef = useRef(false);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
+  useEffect(() => {
+    onPatientsLoadedRef.current = onPatientsLoaded;
+  }, [onPatientsLoaded]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -80,11 +96,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
 
       setPatients(merged);
       setLoading(false);
-      onPatientsLoaded?.(merged);
+      onPatientsLoadedRef.current?.(merged);
+
+      const currentSelectedId = selectedIdRef.current;
 
       // Auto-expand the group of the selected patient if exists
-      if (selectedId) {
-          const p = merged.find((x: Patient) => x.id === selectedId);
+      if (currentSelectedId) {
+          const p = merged.find((x: Patient) => x.id === currentSelectedId);
           if (p) {
               const patientId = p.patient_id || p.id_short.split('(')[0].trim();
               const isNAC = p.group === 'NAC' || p.id.startsWith('NAC_');
@@ -92,8 +110,9 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
               const groupKey = `${patientId}_${treatmentType}`;
               setExpandedGroups(new Set([groupKey]));
           }
-      } else if (merged.length > 0) {
-          onSelect(merged[0]);
+      } else if (merged.length > 0 && !hasAutoSelectedRef.current) {
+          hasAutoSelectedRef.current = true;
+          onSelectRef.current(merged[0]);
           const patientId = merged[0].patient_id || merged[0].id_short.split('(')[0].trim();
           const isNAC = merged[0].group === 'NAC' || merged[0].id.startsWith('NAC_');
           const treatmentType = isNAC ? 'NAC' : 'Surgery';
@@ -113,7 +132,11 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
     return () => {
       isMounted = false;
     };
-  }, [dataset, cohortYear, onSelect, selectedId]); // Removed treatmentType dependency
+  }, [dataset, cohortYear]);
+
+  useEffect(() => {
+    hasAutoSelectedRef.current = false;
+  }, [dataset, cohortYear]);
 
   // Grouping Logic - Group by patient_id and treatment type
   const groupedPatients = useMemo(() => {

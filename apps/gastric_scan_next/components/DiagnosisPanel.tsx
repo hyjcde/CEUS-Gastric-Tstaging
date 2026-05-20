@@ -245,7 +245,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
     }, 2);
 
     return () => clearInterval(timer);
-  }, [patient, state, language, diagnosis, t]);
+  }, [patient?.id, state, language, diagnosis, t.diagnosis.waiting]);
 
   const agentDraft = agentAnalysis?.report.dynamic_report_draft;
   const agentClassificationProbs = useMemo(() => {
