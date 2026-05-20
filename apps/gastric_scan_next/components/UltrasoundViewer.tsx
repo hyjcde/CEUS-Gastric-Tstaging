@@ -58,6 +58,12 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
   const imageWrapperRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
+  const patientJsonUrl = patient?.json_url ?? '';
+  const cropOffsetX = cropOffset?.offsetX ?? -1;
+  const cropOffsetY = cropOffset?.offsetY ?? -1;
+  const imageNaturalWidth = imageMetrics?.naturalWidth ?? 0;
+  const imageNaturalHeight = imageMetrics?.naturalHeight ?? 0;
+
   const resetAdjustments = () => {
       setBrightness(100);
       setContrast(100);
@@ -227,21 +233,24 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
     loadAnnotations();
 
     return () => controller.abort();
-  }, [patient, dataset]);
+  }, [patient?.id, patient?.json_url, patient?.image_url, dataset]);
   
   // Effect to generate peritumoral ring
   useEffect(() => {
-    if (showRing && patient && patient.json_url && imageMetrics) {
+    if (showRing && patientJsonUrl && imageNaturalWidth > 0 && imageNaturalHeight > 0) {
+      const ringOffset = cropOffsetX >= 0 && cropOffsetY >= 0
+        ? { offsetX: cropOffsetX, offsetY: cropOffsetY }
+        : undefined;
+
       generatePeritumoralRingFromAnnotation(
-        patient.json_url,
-        imageMetrics.naturalWidth,
-        imageMetrics.naturalHeight,
+        patientJsonUrl,
+        imageNaturalWidth,
+        imageNaturalHeight,
         20,
         [255, 165, 0, 200],
-        cropOffset ? { offsetX: cropOffset.offsetX, offsetY: cropOffset.offsetY } : undefined,
+        ringOffset,
       )
         .then(url => {
-           console.log('[Ring] Generated successfully, data URL length:', url.length);
            setRingImageUrl(url);
         })
         .catch(err => {
@@ -252,7 +261,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
     } else if (!showRing) {
       setRingImageUrl(null);
     }
-  }, [showRing, patient, imageMetrics, language, cropOffset]);
+  }, [showRing, patientJsonUrl, imageNaturalWidth, imageNaturalHeight, language, cropOffsetX, cropOffsetY]);
 
   const undoMeasurement = () => {
       setMeasurements(prev => prev.slice(0, -1));
