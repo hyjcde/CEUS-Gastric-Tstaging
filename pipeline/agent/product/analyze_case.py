@@ -2305,6 +2305,7 @@ def main() -> None:
         mask_array=predicted_mask,
         roi_path=roi_path,
         roi_bbox=segmentation.get("roi_bbox"),
+        lumen_bbox=lumen_detection.get("lumen_bbox") if lumen_detection.get("lumen_detected") else None,
         clinical_features=clinical_features,
         patient_id=str(payload.get("patient_id", "")) or None,
     ) if image_path else {"available": False, "error": "Missing image_path"}
@@ -2319,6 +2320,7 @@ def main() -> None:
             mask_array=mask_extra,
             roi_path=extra.get("roi_path"),
             roi_bbox=seg_extra.get("roi_bbox") if isinstance(seg_extra, dict) else None,
+            lumen_bbox=lumen_detection.get("lumen_bbox") if lumen_detection.get("lumen_detected") else None,
             clinical_features=clinical_features,
             patient_id=str(payload.get("patient_id", "")) or None,
         )
@@ -2489,9 +2491,21 @@ def main() -> None:
         cls_results=[classification] if classification else [],
         morph_results=[morphology] if morphology else [],
         clinical_info=clinical_kwargs,
+        wall_evidence=wall_evidence,
     )
 
-    similar_payload = similarity_tool.execute(query_vector=query_vector.tolist(), top_k=5)
+    case_context = {
+        "cls_results": [classification] if classification else [],
+        "morph_results": [morphology] if morphology else [],
+        "clinical_info": clinical_kwargs,
+        "wall_evidence": wall_evidence,
+    }
+    similar_payload = similarity_tool.execute(
+        query_vector=query_vector.tolist(),
+        case_context=case_context,
+        top_k=5,
+        patient_id=str(payload.get("patient_id", "")) or None,
+    )
     similar_cases = similar_payload.get("similar_cases", []) if similar_payload.get("available") else []
     memory_source = "faiss_index"
     if not similar_cases:

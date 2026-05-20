@@ -663,6 +663,7 @@
       <a href="#clinical">临床终局</a>
       <a href="#phase">阶段判断</a>
       <a href="#assets">模型资产</a>
+      <a href="#seg-localization">定位分割</a>
       <a href="#classifier-arch">分类器架构</a>
       <a href="#gaps">缺口</a>
       <a href="#arch">系统架构</a>
@@ -1167,6 +1168,232 @@ flowchart LR
           </tbody>
         </table>
 
+        <h3 id="seg-localization">§4.1 · 定位分割全景（2026-05 数据梳理）</h3>
+        <p class="note">
+          统一评测集：<code>crop_ui</code> holdout（<code>sms_baseline_holdout_crop_ui_v20260408</code>，853 / 2856 / 2430 帧）。
+          手稿表 2 为另一套 cohort 划分，<strong>不可与下表 Dice 直接横比</strong>，但可对照趋势。
+          专文：<code>docs/references/dinov3/segmentation_experiment_20260512.md</code> ·
+          <code>docs/references/segdino/segdino_tstaging_dice_and_classification_plan_zh.md</code>
+        </p>
+
+        <div class="callout warn">
+          <strong>当前瓶颈判断：</strong>
+          外部 Dice 仅 ~0.64–0.68，且 zero-Dice 仍占 2%–5%；
+          手稿已证明 <strong>SAM2 + 真值 bbox → Dice &gt;0.80</strong>，但 <strong>级联自动 bbox → 明显低于 nnU-Net</strong>。
+          因此短板更可能在 <strong>定位（YOLO / lesion detector）</strong> 与 <strong>跨院域偏移</strong>，而不只是分割 decoder 选型。
+          项目原则不变：<strong>分割 Dice 高 ≠ T 分期正确</strong>（高 Dice 帧仍有 40%–51% 错分）。
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption>表 A · crop_ui 统一 holdout 分割 Dice（2026-05 仓库实测）</caption>
+            <thead>
+              <tr>
+                <th>模型 / run</th>
+                <th>角色</th>
+                <th>Internal<br/>853</th>
+                <th>External<br/>2856</th>
+                <th>Prospective<br/>2430</th>
+                <th>Ext Zero-Dice</th>
+                <th>Agent</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>UNet++ ResNet34</strong><br/><small>对比基线 20260415</small></td>
+                <td>holdout 基线</td>
+                <td>0.7586</td>
+                <td>0.6437</td>
+                <td><strong>0.7199</strong></td>
+                <td>94</td>
+                <td>对照</td>
+              </tr>
+              <tr>
+                <td><strong>ConvNeXt-Base UNet fulldata</strong></td>
+                <td>在线默认</td>
+                <td>~0.87*</td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td class="status-ok"><strong>SegmentationTool</strong></td>
+              </tr>
+              <tr style="background:rgba(61,184,201,0.08);">
+                <td><strong>DINOv3 ViT-B last-2-block</strong><br/><small>20260511_r001 ★</small></td>
+                <td>研究候选</td>
+                <td>0.7499</td>
+                <td><strong>0.6820</strong></td>
+                <td>0.7144</td>
+                <td><strong>49</strong></td>
+                <td>DINOv3SegmentationTool</td>
+              </tr>
+              <tr>
+                <td>DINOv3 ViT-B frozen decoder</td>
+                <td>探针</td>
+                <td>0.7155</td>
+                <td>0.6188</td>
+                <td>0.6772</td>
+                <td>132</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>SegDINO clean MLP 512</td>
+                <td>SegDINO 线</td>
+                <td>0.7104</td>
+                <td>0.6457</td>
+                <td>0.6735</td>
+                <td>36</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>EfficientSAM3 + box prompt</td>
+                <td>FM 实验</td>
+                <td>0.4581</td>
+                <td>0.5691</td>
+                <td>0.4958</td>
+                <td>65</td>
+                <td>❌ 不推荐</td>
+              </tr>
+              <tr>
+                <td>SAM3 / MedSAM-3 零样本</td>
+                <td>FM 实验</td>
+                <td colspan="3" style="text-align:center;color:var(--warn);">Dice = 0（全失效）</td>
+                <td>—</td>
+                <td>❌ 域鸿沟</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="note" style="margin-top:0.5rem;">* ConvNeXt fulldata 仅在训练 val 约 0.87，未跑三 split holdout；Agent 在线用此权重，与 holdout 数字不同 checkpoint。</p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption>表 B · 手稿五方案（多中心 cohort，趋势参考）</caption>
+            <thead>
+              <tr><th>模型</th><th>内部</th><th>前瞻</th><th>莆田</th><th>多中心</th><th>备注</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>UNet + ConvNeXt-Tiny</td><td>0.83–0.89</td><td>0.876</td><td>0.537</td><td>0.240</td><td>内部高、外部崩塌</td></tr>
+              <tr><td>SAM2 级联（UNet→bbox→SAM2）</td><td>0.78–0.80</td><td>0.682</td><td>0.590</td><td>0.478</td><td>定位拖累分割</td></tr>
+              <tr><td>SAM2 + <strong>真值 bbox</strong></td><td>0.82–0.83</td><td>0.852</td><td>0.821</td><td>0.808</td><td>分割头能力足够</td></tr>
+              <tr style="background:rgba(110,231,183,0.08);"><td><strong>nnU-Net v2</strong></td><td>—</td><td>—</td><td>0.796</td><td><strong>0.872</strong></td><td>外部最稳；离线产 mask</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>定位（Detection）现状</h4>
+        <table>
+          <thead><tr><th>能力</th><th>资产</th><th>状态</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td>胃腔 YOLO11-L</td><td><code>detection_yolo11l_lumen_locator_*</code></td><td class="status-partial">已训 · 未进 Agent registry</td><td>Grad-CAM 管线 live 调用；wall-band 坐标</td></tr>
+            <tr><td>病灶 lesion detector</td><td>YOLO / det box → SAM prompt</td><td class="status-miss">瓶颈</td><td>SAM2 GT-bbox 与级联差距说明 auto bbox 是主因</td></tr>
+            <tr><td>nnU-Net 粗定位</td><td>Dataset001 predicted mask</td><td class="status-ok">离线可用</td><td>mask4ch 训练主链；Agent 未直接加载</td></tr>
+          </tbody>
+        </table>
+
+        <h4>候选大模型 · 适合作定位/分割（按优先级）</h4>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>优先级</th><th>模型</th><th>为何适合经腹超声</th><th>建议接入方式</th><th>风险</th></tr>
+            </thead>
+            <tbody>
+              <tr style="background:rgba(110,231,183,0.06);">
+                <td><strong>P0</strong></td>
+                <td><strong>nnU-Net v2</strong>（已有）</td>
+                <td>手稿外部 Dice 0.83+；自配置跨域最稳</td>
+                <td>继续作离线 mask 主链；promote 进 Agent SegmentationTool</td>
+                <td>推理慢；需 3D/2D 管线对齐 crop_ui</td>
+              </tr>
+              <tr style="background:rgba(110,231,183,0.06);">
+                <td><strong>P0</strong></td>
+                <td><strong>MedSAM2</strong></td>
+                <td>SAM2 医学微调；含 ultrasound / endoscopy；455k 3D + 76k video</td>
+                <td><strong>YOLO bbox → MedSAM2</strong> 级联；对比 SAM2 手稿结果</td>
+                <td>需 bbox 质量；胃壁病灶需 fine-tune</td>
+              </tr>
+              <tr>
+                <td><strong>P1</strong></td>
+                <td><strong>SAMUSA</strong>（MICCAI 2025）</td>
+                <td>SAM2 超声专用；boundary + temporal point prompt；边界模糊友好</td>
+                <td>lumen box + lesion point prompt；boundary loss</td>
+                <td>论文为肝脏；需 gastric wall 微调</td>
+              </tr>
+              <tr>
+                <td><strong>P1</strong></td>
+                <td><strong>Grounding DINO-US-SAM</strong></td>
+                <td>18 个公开 US 数据集 LoRA；text prompt 多器官</td>
+                <td>prompt <code>"gastric tumor"</code> / <code>"gastric wall lesion"</code> 零样本 → 再微调</td>
+                <td>无胃癌专项；text 定位可能偏</td>
+              </tr>
+              <tr>
+                <td><strong>P1</strong></td>
+                <td><strong>DINOv3 last-2-block</strong>（已有）</td>
+                <td>external +0.038 Dice；zero-Dice 减半</td>
+                <td>与 nnU-Net ensemble；T2/T3 错例 mask 复核</td>
+                <td>prospective 仍略低于 UNet++</td>
+              </tr>
+              <tr>
+                <td>P2</td>
+                <td>SegDINO multilayer MLP 512</td>
+                <td>frozen DINO dense token；external zero-Dice 更少</td>
+                <td>阈值/连通域后处理 → 再训 last2-block</td>
+                <td>平均 Dice 仍低于 adapter</td>
+              </tr>
+              <tr>
+                <td>P3</td>
+                <td>BiomedParse / MedCLIP-SAM</td>
+                <td>医学 VLM 分割</td>
+                <td>仅作对照；Grounding DINO-US 已优于 MedSAM</td>
+                <td>经腹超声 OOD</td>
+              </tr>
+              <tr>
+                <td>❌</td>
+                <td>MedSAM-3 / SAM3 零样本</td>
+                <td>—</td>
+                <td>已测全失效</td>
+                <td>训练域无 TAUS</td>
+              </tr>
+              <tr>
+                <td>❌</td>
+                <td>EfficientSAM3</td>
+                <td>—</td>
+                <td>已测 Dice &lt;0.57</td>
+                <td>弱于 UNet++</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <strong>推荐实验顺序（定位分割专项）：</strong>
+          ① 先把 <strong>nnU-Net predicted mask</strong> 接入 Agent（替换 fulldata UNet 做 A/B）→
+          ② 训/接 <strong>lesion YOLO detector</strong>（或强化现有 lumen+lesion box）→
+          ③ <strong>MedSAM2 / SAMUSA</strong> bbox+point 级联，复现「GT bbox 高 Dice」→
+          ④ 在 gastric crop_ui 上 LoRA 微调 MedSAM2（50–100 epoch）→
+          ⑤ 患者级 T2/T3 面板验证：新 mask 是否降低 <code>pred ROI → cls</code> 的 0.08 AUC 落差。
+        </div>
+
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+flowchart LR
+  IMG[crop_ui 帧]
+  YOLO[YOLO 胃腔 + lesion box]
+  SEG{"分割后端"}
+  NN[nnU-Net v2 ★外部最稳]
+  DINO[DINOv3 last2blocks ★ext +0.038]
+  MED[MedSAM2 / SAMUSA 候选]
+  UNet[ConvNeXt UNet 在线默认]
+  IMG --> YOLO
+  YOLO --> SEG
+  SEG --> NN
+  SEG --> DINO
+  SEG --> MED
+  SEG --> UNet
+  SEG --> MASK[mask / ROI / 4th ch]
+  MASK --> CLS[T 分类 mask4ch]
+          </pre>
+        </div>
+
         <h3>B · T 分期分类（Stage 2 — 核心）</h3>
         <p>登记：<code>pipeline/experiments/tables/tstaging_4class_mainline_scoreboard.csv</code></p>
         <table>
@@ -1571,24 +1798,60 @@ sequenceDiagram
 
       <!-- RAG -->
       <section id="rag">
-        <h2><span class="num">§8</span> Case-RAG（服从 T，不喧宾夺主）</h2>
+        <h2><span class="num">§8</span> 记忆系统 · Case-RAG · 相似度（医学 × AI）</h2>
+        <p class="note">专文：<code>docs/mainline/agent_memory_similarity_design_zh.md</code> · 代码：<code>multimodal_case_vector.py</code> · <code>case_similarity.py</code> · <code>SimilarityTool</code></p>
+
+        <div class="callout">
+          <strong>医学原则：</strong>相似病例 ≠ 图像像素像，而是 <strong>胃壁侵犯模式</strong> 相近（过渡带深度、浆膜突破、壁层连续性）。
+          相似度必须 <strong>wall/boundary 块高权重</strong>，分类 logits 仅作弱先验，避免「用模型输出检索模型输出」的循环论证。
+        </div>
+
         <div class="mermaid-wrap">
           <pre class="mermaid">
-flowchart LR
-  Q[当前病例] --> E[多区域 embedding]
-  E --> M[(Memory · 仅协和 train)]
-  M --> K[top-k 相似 T 病例]
-  K --> V[case vote · entropy · 冲突检测]
-  B[base T 模型] --> G{RAG Gate}
-  V --> G
-  G -->|低权重/冲突| OUT[推荐 T + 不确定性]
-  G -->|边界模糊| OUT
+flowchart TB
+  subgraph mem["三层记忆"]
+    L1[L1 病例情节 memory · train only]
+    L2[L2 会话 memory · session JSON]
+    L3[L3 知识 memory · 指南 MD 检索]
+  end
+  subgraph feat["特征取法"]
+    W[WallEvidenceTool SDF 7维]
+    B[boundary 4维 T2/T3 质量]
+    M[morph 5 + clinical 8]
+    C[cls 4维 低权重]
+    D[Adapter-DINO NCA 32维 可选]
+  end
+  Q[当前病例工具输出] --> feat
+  feat --> L1
+  L1 --> SIM[分块加权 cosine / NCA vote]
+  SIM --> GATE{RAG Gate · 仅 T 边界}
+  CLS[base mask4ch] --> GATE
+  GATE --> OUT[推荐 T + 冲突 + 相似病例解释]
           </pre>
         </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption>28 维分块向量与默认相似度权重（2026-05 Agent 升级）</caption>
+            <thead>
+              <tr><th>块</th><th>维</th><th>来源</th><th>权重</th><th>医学含义</th></tr>
+            </thead>
+            <tbody>
+              <tr style="background:rgba(110,231,183,0.06);"><td><strong>wall</strong></td><td>7</td><td>WallEvidenceTool</td><td><strong>0.40</strong></td><td>外突深度、穿透风险 — T2↔T3 核心</td></tr>
+              <tr style="background:rgba(110,231,183,0.06);"><td><strong>boundary</strong></td><td>4</td><td>派生</td><td><strong>0.25</strong></td><td>T2+T3 / T3+T4+ 质量、entropy</td></tr>
+              <tr><td>morphology</td><td>5</td><td>MorphologyTool</td><td>0.13</td><td>不规则度、面积比</td></tr>
+              <tr><td>classification</td><td>4</td><td>ClassificationTool</td><td>0.12</td><td>弱先验（故意压低）</td></tr>
+              <tr><td>clinical</td><td>8</td><td>ClinicalInfo</td><td>0.10</td><td>部位、分化、肿瘤大小</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <table>
-          <tr><th>检索向量</th><td>lesion · wall-band · breakthrough · intact control · 差分特征</td></tr>
-          <tr><th>Hard negative</th><td>T2↔T3 · T3↔T4+ · 假突破 · 外观相似分期不同</td></tr>
-          <tr><th>门控规则</th><td>mask 差 → 只展示 · entropy 高 → 不改 T · 冲突 → 记冲突证据</td></tr>
+          <tr><th>检索后端</th><td>① block_weighted 28-d（优先）② FAISS 17-d legacy ③ Adapter-DINO NCA vote</td></tr>
+          <tr><th>boundary_boost</th><td>P(T2)+P(T3)≥0.45 或 wall_risk≥medium → wall/boundary 权重 +10%</td></tr>
+          <tr><th>Hard negative</th><td>T2↔T3 · T3↔T4+ · 假突破 · 外观相似 pT 不同</td></tr>
+          <tr><th>rag_weight 上限</th><td>0.35（仅 T 边界 + 低 margin）；稳定非边界 → 0</td></tr>
+          <tr><th>构建命令</th><td><code>python pipeline/agent/memory/case_memory.py</code> · <code>python scripts/export_adapter_dino_case_retriever.py</code></td></tr>
         </table>
         <figure style="margin:1.25rem 0;text-align:center;">
           <img src="figures/fig_rag_gate_flow.png" alt="RAG gate flowchart" style="max-width:100%;border:1px solid var(--border);border-radius:8px;" />
@@ -2456,6 +2719,18 @@ flowchart TD
           <figure class="span-2">
             <img src="figures/results/case_multimodal_agent_test_internal_xh_2025_1451370_visual_panel.png" alt="case multimodal agent test internal xh 2025 1451370 visual panel" loading="lazy" />
             <figcaption>case multimodal agent test internal xh 2025 1451370 visual panel</figcaption>
+          </figure>
+        </div>
+        <h3>冻结 mask4ch · T2/T3 Grad-CAM（crop_ui · GT · DINOv3 分割 · 双YOLO · ROI CAM）</h3>
+        <p class="note"><strong>crop_ui</strong>；<strong>GT 病灶</strong>；在线 <strong>DINOv3 ViT-B/16 分割</strong>（外部 Dice≈0.68）+ <strong>YOLO11-L 胃腔/病灶</strong>；Grad-CAM global + ROI local。4×3 等大，Times New Roman。</p>
+        <div class="figure-gallery">
+          <figure class="span-2">
+            <img src="figures/results/t2t3_gradcam_panel_err_T3_to_T2.png" alt="mask4ch Grad-CAM panel T3 misclassified as T2" loading="lazy" />
+            <figcaption>pt201-1 · 真值 T2→预测 T3（DINOv3 分割 + GT 对比 + ROI CAM）</figcaption>
+          </figure>
+          <figure class="span-2">
+            <img src="figures/results/t2t3_gradcam_panel_ok_T2.png" alt="mask4ch Grad-CAM panel T2 correct" loading="lazy" />
+            <figcaption>pt105-1 · 真值 T3 预测正确（大病灶 GT + DINOv3 分割）</figcaption>
           </figure>
         </div>
         <h3>Region-aware / 对比学习 · Grad-CAM 病例</h3>
