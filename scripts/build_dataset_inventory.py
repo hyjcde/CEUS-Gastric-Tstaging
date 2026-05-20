@@ -227,8 +227,286 @@ def build_inventory() -> dict:
     }
 
 
+def _fmt_num(value: int | float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{int(value):,}"
+
+
+def _pct(part: int, total: int) -> str:
+    if not total:
+        return "—"
+    return f"{(part / total) * 100:.1f}%"
+
+
+def _esc(text: str) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _render_table(headers: list[str], rows: list[list[str]]) -> str:
+    thead = "".join(f"<th>{_esc(h)}</th>" for h in headers)
+    body_rows = []
+    for row in rows:
+        cells = []
+        for idx, cell in enumerate(row):
+            cls = ' class="num"' if idx > 0 and cell.replace(",", "").isdigit() else ""
+            cells.append(f"<td{cls}>{cell}</td>")
+        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+    tbody = "".join(body_rows)
+    return f"<table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+
+
+def _render_bar(value: int, max_value: int) -> str:
+    width = min(100, (value / max_value) * 100) if max_value else 0
+    return (
+        f'<div class="bar-cell">{_fmt_num(value)}'
+        f'<div class="bar"><span style="width:{width:.1f}%"></span></div></div>'
+    )
+
+
+def _render_body(data: dict) -> str:
+    s = data["summary"]
+    internal = data["internal"]
+    external = data["external"]
+    tables = data["tables"]
+
+    kpis = [
+        ("正式 manifest 总帧", s["total_manifest"] - external.get("newzip_manifest_rows", 0)),
+        ("internal manifest", s["internal_manifest"]),
+        ("external manifest", s["external_manifest"]),
+        ("newzip manifest", s["external_newzip_manifest"]),
+        ("物理 original 图像", s["internal_physical_original_images"]),
+        ("临床主表患者行", tables["patient_clinical_master_rows"]),
+    ]
+    kpi_html = '<div class="kpi-grid">' + "".join(
+        f'<div class="kpi"><div class="val">{_fmt_num(v)}</div><div class="lbl">{_esc(l)}</div></div>'
+        for l, v in kpis
+    ) + "</div>"
+
+    overview_rows = [
+        ["internal/", _fmt_num(internal["manifest_rows"]), "协和内部直接手术，含 training_2018_2024 + prospective_2025"],
+        ["external/ (原多中心)", _fmt_num(external["manifest_rows"]), "莆田/肿瘤/三明/莆田二院等"],
+        ["external/ (newzip)", _fmt_num(external["newzip_manifest_rows"]), "外省整理 + 德化医院等新增外部"],
+        ["合计 (manifest+newzip)", _fmt_num(s["total_manifest"]), "磁盘正式预处理成功样本"],
+    ]
+
+    caliber_rows = [
+        [c["name"], f'<code>{_esc(c["scope"])}</code>', _fmt_num(c["frames"]), c["use"]]
+        for c in data["calibers"]
+    ]
+
+    int_max = max([1, *internal.get("manifest_by_pool", {}).values()])
+    int_pool_rows = [
+        [
+            f'<code>{_esc(k)}</code>',
+            _fmt_num(v),
+            _pct(v, internal["manifest_rows"]),
+            _render_bar(v, int_max),
+        ]
+        for k, v in internal.get("manifest_by_pool", {}).items()
+    ]
+
+    int_year_rows = []
+    for group in internal.get("groups", []):
+        views = group.get("views", {})
+        pool_label = group["pool"].replace("training_2018_2024", "train池").replace(
+            "prospective_2025", "前瞻池"
+        )
+        badge = (
+            '<span class="badge warn">建议独立 test</span>'
+            if "prospective" in group["pool"]
+            else '<span class="badge ok">训练主池</span>'
+        )
+        int_year_rows.append(
+            [
+                pool_label,
+                group["year"],
+                _fmt_num(views.get("original", {}).get("images", 0)),
+                _fmt_num(views.get("crop_ui", {}).get("images", 0)),
+                _fmt_num(views.get("crop_roi", {}).get("images", 0)),
+                badge,
+            ]
+        )
+
+    ext_max = max(
+        [
+            *external.get("manifest_by_center", {}).values(),
+            *external.get("newzip_by_center", {}).values(),
+            1,
+        ],
+        default=1,
+    )
+    ext_center_rows = [
+        [
+            _esc(k),
+            _fmt_num(v),
+            _pct(v, external["manifest_rows"]),
+            _render_bar(v, ext_max),
+        ]
+        for k, v in external.get("manifest_by_center", {}).items()
+    ]
+    ext_phys_rows = []
+    for center in external.get("centers", []):
+        count = center.get("views", {}).get("original", {}).get("images", 0)
+        size = "大中心" if count > 500 else ("小中心" if count < 50 else "中")
+        ext_phys_rows.append([_esc(center["folder"]), _fmt_num(count), size])
+
+    newzip_rows = [
+        [_esc(k), _render_bar(v, ext_max)]
+        for k, v in external.get("newzip_by_center", {}).items()
+    ]
+
+    label_names = {"0": "T1", "1": "T2", "2": "T3", "3": "T4+"}
+    model_rows = []
+    total_model_rows = 0
+    for name, info in data.get("modeling_splits", {}).items():
+        total_model_rows += info.get("rows", 0)
+        labels = ", ".join(
+            f'{label_names.get(l, f"L{l}")}:{n}'
+            for l, n in info.get("labels", {}).items()
+        )
+        model_rows.append(
+            [
+                f"<code>{_esc(name)}</code>",
+                _fmt_num(info.get("rows", 0)),
+                _fmt_num(info.get("patients", 0)),
+                labels,
+            ]
+        )
+
+    table_file_rows = [
+        [f"<code>{_esc(f['name'])}</code>", str(f["size_mb"])]
+        for f in tables.get("files", [])
+    ]
+
+    center_cols = [
+        "standard_hospital_name",
+        "folder_name",
+        "tstaging_manifest",
+        "tstaging_split",
+        "manifest_frames",
+        "clinical_patients",
+        "benign_data",
+        "malignant_data",
+    ]
+    center_rows = [
+        [_esc(c.get(col, "—")) for col in center_cols]
+        for c in tables.get("centers", [])
+    ]
+
+    lumen_rows = []
+    for name, stats in data.get("lumen_detection", {}).items():
+        total = (
+            stats.get("images_train", 0)
+            + stats.get("images_val", 0)
+            + stats.get("images_test", 0)
+        )
+        lumen_rows.append(
+            [
+                _esc(name),
+                _fmt_num(stats.get("images_train", 0)),
+                _fmt_num(stats.get("images_val", 0)),
+                _fmt_num(stats.get("images_test", 0)),
+                _fmt_num(total),
+            ]
+        )
+
+    doc_items = "".join(
+        f'<li><a href="../../{_esc(d["path"])}">{_esc(d["title"])}</a> '
+        f'<code>{_esc(d["path"])}</code></li>'
+        for d in data.get("docs", [])
+    )
+
+    return f"""
+{kpi_html}
+<section id="overview"><h2>1. 总览</h2>
+<p class="note"><strong>口径提醒：</strong>做分割/ROI 实验以 <code>manifest.csv</code> 为准；做 T 分期 AUC 以 <code>pipeline/data/.../regions/*_clinical.csv</code> 为准。二者不可混用。</p>
+{_render_table(["数据块", "manifest 成功样本", "说明"], overview_rows)}
+</section>
+
+<section id="calibers"><h2>2. 统计口径对照</h2>
+{_render_table(["口径", "范围", "帧/行数", "用途"], caliber_rows)}
+</section>
+
+<section id="tree"><h2>3. 目录结构</h2>
+<pre class="tree">dataset/
+├── DATASET_GUIDE.md
+├── README.md
+├── inventory/          ← 本盘点页
+├── internal/
+│   ├── manifest.csv
+│   ├── training_2018_2024/{{2018,2019,2020_2023,2024}}/
+│   └── prospective_2025/2025/
+├── external/
+│   ├── manifest.csv
+│   ├── new_external_zip_manifest.csv
+│   └── {{各中心}}/{{original,crop_ui,crop_roi}}/
+├── lumen_detection/
+└── tables/</pre>
+</section>
+
+<section id="internal"><h2>4. 内部数据 (internal/)</h2>
+<h3>4.1 manifest 按池分布</h3>
+{_render_table(["group_targets", "样本数", "占比", ""], int_pool_rows)}
+<p>未匹配：{_fmt_num(internal.get("unmatched_rows", 0))} · 预处理错误：{_fmt_num(internal.get("error_rows", 0))}</p>
+<h3>4.2 按年份 × 视图（物理文件数，original/images）</h3>
+{_render_table(["池", "年份", "original", "crop_ui", "crop_roi", "建议"], int_year_rows)}
+</section>
+
+<section id="external"><h2>5. 外部数据 (external/)</h2>
+<h3>5.1 原多中心 manifest</h3>
+{_render_table(["中心 (group_targets)", "manifest 帧", "占比", ""], ext_center_rows)}
+<h3>5.2 各中心物理规模 (original/images)</h3>
+{_render_table(["目录名", "original 图像", "规模"], ext_phys_rows)}
+<p>未匹配：{_fmt_num(external.get("unmatched_rows", 0))} · 错误：{_fmt_num(external.get("error_rows", 0))}</p>
+</section>
+
+<section id="newzip"><h2>6. 新增外部 zip (new_external_zip_manifest)</h2>
+{_render_table(["中心", "manifest 帧"], newzip_rows)}
+<p class="note">newzip 数据已写入独立建模 split <code>test_external_newzip_clinical.csv</code>；未匹配 pT 的图像保留在 manifest 但不进入建模 CSV。</p>
+</section>
+
+<section id="modeling"><h2>7. T 分期建模 CSV</h2>
+<p>路径：<code>pipeline/data/tstaging_4class_region_contrastive_full/regions/</code></p>
+{_render_table(["split 文件", "CSV 行数", "patient_id", "label 分布"], model_rows)}
+<p>建模 CSV 行数合计：<strong>{_fmt_num(total_model_rows)}</strong>（各 split 可能有重复样本行，去重图像数以 DATASET_GUIDE 为准）</p>
+</section>
+
+<section id="tables"><h2>8. 临床表资产 (tables/)</h2>
+{_render_table(["文件", "大小 (MB)"], table_file_rows)}
+<p>患者临床主表行数：<strong>{_fmt_num(tables.get("patient_clinical_master_rows", 0))}</strong></p>
+</section>
+
+<section id="centers"><h2>9. 多中心标准命名对照</h2>
+{_render_table(center_cols, center_rows) if center_rows else "<p>无数据</p>"}
+</section>
+
+<section id="lumen"><h2>10. 胃腔检测 (lumen_detection/)</h2>
+{_render_table(["子集", "train", "val", "test", "合计"], lumen_rows)}
+</section>
+
+<section id="docs"><h2>11. 相关文档</h2>
+<ul>
+{doc_items}
+<li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>
+</ul>
+</section>
+"""
+
+
 def render_html(data: dict) -> str:
-    payload = json.dumps(data, ensure_ascii=False)
+    body = _render_body(data)
+    meta = (
+        f"生成时间：{_esc(data['generated_at'])} · "
+        f"数据根目录：{_esc(data['dataset_root'])} · "
+        f"重新生成：<code>python scripts/build_dataset_inventory.py</code>"
+    )
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -410,195 +688,11 @@ def render_html(data: dict) -> str:
           基于 <code>dataset/</code> 目录的正式预处理数据、manifest 清单、临床表与 T 分期建模 split 的交互式盘点页。
           实验前请区分 <strong>manifest 物理口径</strong> 与 <strong>建模 CSV 口径</strong>。
         </p>
-        <p class="meta" id="generated-meta"></p>
+        <p class="meta">{meta}</p>
       </header>
-      <div id="app"></div>
+      <div id="app">{body}</div>
     </main>
   </div>
-  <script id="inventory-data" type="application/json">{payload}</script>
-  <script>
-    const DATA = JSON.parse(document.getElementById('inventory-data').textContent);
-    const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('zh-CN'));
-    const pct = (part, total) => total ? ((part / total) * 100).toFixed(1) + '%' : '—';
-
-    document.getElementById('generated-meta').textContent =
-      `生成时间：${{DATA.generated_at}} · 数据根目录：${{DATA.dataset_root}} · 重新生成：python scripts/build_dataset_inventory.py`;
-
-    function table(headers, rows) {{
-      const thead = '<tr>' + headers.map(h => `<th>${{h}}</th>`).join('') + '</tr>';
-      const tbody = rows.map(r => '<tr>' + r.map((c, i) => {{
-        const cls = typeof c === 'object' && c?.num ? ' class="num"' : (i > 0 && !isNaN(parseFloat(String(c).replace(/,/g,''))) ? ' class="num"' : '');
-        const val = typeof c === 'object' ? c.html : c;
-        return `<td${{cls}}>${{val}}</td>`;
-      }}).join('') + '</tr>').join('');
-      return `<table><thead>${{thead}}</thead><tbody>${{tbody}}</tbody></table>`;
-    }}
-
-    function barRow(label, value, max) {{
-      const w = max ? Math.min(100, (value / max) * 100) : 0;
-      return [label + ` (${{fmt(value)}})`, {{ html: `<div class="bar-cell">${{fmt(value)}}<div class="bar"><span style="width:${{w}}%"></span></div></div>` }}];
-    }}
-
-    const s = DATA.summary;
-    const kpis = [
-      ['正式 manifest 总帧', s.total_manifest - (DATA.external.newzip_manifest_rows || 0)],
-      ['internal manifest', s.internal_manifest],
-      ['external manifest', s.external_manifest],
-      ['newzip manifest', s.external_newzip_manifest],
-      ['物理 original 图像', s.internal_physical_original_images],
-      ['临床主表患者行', DATA.tables.patient_clinical_master_rows],
-    ];
-
-    let html = '<div class="kpi-grid">';
-    kpis.forEach(([lbl, val]) => {{
-      html += `<div class="kpi"><div class="val">${{fmt(val)}}</div><div class="lbl">${{lbl}}</div></div>`;
-    }});
-    html += '</div>';
-
-    html += '<section id="overview"><h2>1. 总览</h2>';
-    html += '<p class="note"><strong>口径提醒：</strong>做分割/ROI 实验以 <code>manifest.csv</code> 为准；做 T 分期 AUC 以 <code>pipeline/data/.../regions/*_clinical.csv</code> 为准。二者不可混用。</p>';
-    html += table(
-      ['数据块', 'manifest 成功样本', '说明'],
-      [
-        ['internal/', fmt(DATA.internal.manifest_rows), '协和内部直接手术，含 training_2018_2024 + prospective_2025'],
-        ['external/ (原多中心)', fmt(DATA.external.manifest_rows), '莆田/肿瘤/三明/莆田二院等'],
-        ['external/ (newzip)', fmt(DATA.external.newzip_manifest_rows), '外省整理 + 德化医院等新增外部'],
-        ['合计 (manifest+newzip)', fmt(s.total_manifest), '磁盘正式预处理成功样本'],
-      ]
-    );
-    html += '</section>';
-
-    html += '<section id="calibers"><h2>2. 统计口径对照</h2>';
-    html += table(
-      ['口径', '范围', '帧/行数', '用途'],
-      DATA.calibers.map(c => [c.name, c.scope, fmt(c.frames), c.use])
-    );
-    html += '</section>';
-
-    html += '<section id="tree"><h2>3. 目录结构</h2><pre class="tree">dataset/
-├── DATASET_GUIDE.md
-├── README.md
-├── inventory/          ← 本盘点页
-├── internal/
-│   ├── manifest.csv
-│   ├── training_2018_2024/{{2018,2019,2020_2023,2024}}/
-│   └── prospective_2025/2025/
-├── external/
-│   ├── manifest.csv
-│   ├── new_external_zip_manifest.csv
-│   └── {{各中心}}/{{original,crop_ui,crop_roi}}/
-├── lumen_detection/
-└── tables/</pre></section>';
-
-    const intMax = Math.max(...Object.values(DATA.internal.manifest_by_pool || {{}}), 1);
-    html += '<section id="internal"><h2>4. 内部数据 (internal/)</h2>';
-    html += '<h3>4.1 manifest 按池分布</h3>';
-    html += table(
-      ['group_targets', '样本数', '占比', ''],
-      Object.entries(DATA.internal.manifest_by_pool || {{}}).map(([k, v]) => [
-        `<code>${{k}}</code>`, fmt(v), pct(v, DATA.internal.manifest_rows),
-        {{ html: `<div class="bar"><span style="width:${{(v/intMax)*100}}%"></span></div>` }}
-      ])
-    );
-    html += `<p>未匹配：${{fmt(DATA.internal.unmatched_rows)}} · 预处理错误：${{fmt(DATA.internal.error_rows)}}</p>`;
-    html += '<h3>4.2 按年份 × 视图（物理文件数，original/images）</h3>';
-    const intRows = (DATA.internal.groups || []).map(g => {{
-      const orig = g.views?.original?.images ?? 0;
-      const ui = g.views?.crop_ui?.images ?? 0;
-      const roi = g.views?.crop_roi?.images ?? 0;
-      return [
-        g.pool.replace('training_2018_2024', 'train池').replace('prospective_2025', '前瞻池'),
-        g.year,
-        fmt(orig), fmt(ui), fmt(roi),
-        g.pool.includes('prospective') ? '<span class="badge warn">建议独立 test</span>' : '<span class="badge ok">训练主池</span>'
-      ];
-    }});
-    html += table(['池', '年份', 'original', 'crop_ui', 'crop_roi', '建议'], intRows);
-    html += '</section>';
-
-    const extMax = Math.max(
-      ...Object.values(DATA.external.manifest_by_center || {{}}),
-      ...Object.values(DATA.external.newzip_by_center || {{}}),
-      1
-    );
-    html += '<section id="external"><h2>5. 外部数据 (external/)</h2>';
-    html += '<h3>5.1 原多中心 manifest</h3>';
-    html += table(
-      ['中心 (group_targets)', 'manifest 帧', '占比', ''],
-      Object.entries(DATA.external.manifest_by_center || {{}}).map(([k, v]) => [
-        k, fmt(v), pct(v, DATA.external.manifest_rows),
-        {{ html: `<div class="bar"><span style="width:${{(v/extMax)*100}}%"></span></div>` }}
-      ])
-    );
-    html += '<h3>5.2 各中心物理规模 (original/images)</h3>';
-    const extPhys = (DATA.external.centers || []).map(c => {{
-      const o = c.views?.original?.images ?? 0;
-      return [c.folder, fmt(o), o > 500 ? '大中心' : (o < 50 ? '小中心' : '中')];
-    }});
-    html += table(['目录名', 'original 图像', '规模'], extPhys);
-    html += `<p>未匹配：${{fmt(DATA.external.unmatched_rows)}} · 错误：${{fmt(DATA.external.error_rows)}}</p>`;
-    html += '</section>';
-
-    html += '<section id="newzip"><h2>6. 新增外部 zip (new_external_zip_manifest)</h2>';
-    html += table(
-      ['中心', 'manifest 帧', ''],
-      Object.entries(DATA.external.newzip_by_center || {{}}).map(([k, v]) =>
-        barRow(k, v, extMax)
-      )
-    );
-    html += '<p class="note">newzip 数据已写入独立建模 split <code>test_external_newzip_clinical.csv</code>；未匹配 pT 的图像保留在 manifest 但不进入建模 CSV。</p>';
-    html += '</section>';
-
-    html += '<section id="modeling"><h2>7. T 分期建模 CSV</h2>';
-    html += '<p>路径：<code>pipeline/data/tstaging_4class_region_contrastive_full/regions/</code></p>';
-    const modelRows = Object.entries(DATA.modeling_splits || {{}}).map(([name, info]) => [
-      `<code>${{name}}</code>`,
-      fmt(info.rows),
-      fmt(info.patients),
-      Object.entries(info.labels || {{}}).map(([l, n]) => `${{l}}:${{n}}`).join(', ')
-    ]);
-    html += table(['split 文件', 'CSV 行数', 'patient_id', 'label 分布'], modelRows);
-    const totalModelRows = Object.values(DATA.modeling_splits || {{}}).reduce((a, b) => a + (b.rows || 0), 0);
-    html += `<p>建模 CSV 行数合计：<strong>${{fmt(totalModelRows)}}</strong>（各 split 可能有重复样本行，去重图像数以 DATASET_GUIDE 为准）</p>`;
-    html += '</section>';
-
-    html += '<section id="tables"><h2>8. 临床表资产 (tables/)</h2>';
-    html += table(
-      ['文件', '大小 (MB)'],
-      (DATA.tables.files || []).map(f => [`<code>${{f.name}}</code>`, String(f.size_mb)])
-    );
-    html += `<p>患者临床主表行数：<strong>${{fmt(DATA.tables.patient_clinical_master_rows)}}</strong></p>`;
-    html += '</section>';
-
-    html += '<section id="centers"><h2>9. 多中心标准命名对照</h2>';
-    const centerCols = ['standard_hospital_name', 'folder_name', 'tstaging_manifest', 'tstaging_split', 'manifest_frames', 'clinical_patients', 'benign_data', 'malignant_data'];
-    const centers = DATA.tables.centers || [];
-    if (centers.length) {{
-      html += table(
-        centerCols,
-        centers.map(c => centerCols.map(col => c[col] ?? '—'))
-      );
-    }}
-    html += '</section>';
-
-    html += '<section id="lumen"><h2>10. 胃腔检测 (lumen_detection/)</h2>';
-    const lumenRows = Object.entries(DATA.lumen_detection || {{}}).map(([name, v]) => [
-      name,
-      fmt(v.images_train), fmt(v.images_val), fmt(v.images_test),
-      fmt((v.images_train||0)+(v.images_val||0)+(v.images_test||0))
-    ]);
-    html += table(['子集', 'train', 'val', 'test', '合计'], lumenRows);
-    html += '</section>';
-
-    html += '<section id="docs"><h2>11. 相关文档</h2><ul>';
-    (DATA.docs || []).forEach(d => {{
-      html += `<li><a href="../../${{d.path}}">${{d.title}}</a> <code>${{d.path}}</code></li>`;
-    }});
-    html += `<li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>`;
-    html += '</ul></section>';
-
-    document.getElementById('app').innerHTML = html;
-  </script>
 </body>
 </html>
 """
