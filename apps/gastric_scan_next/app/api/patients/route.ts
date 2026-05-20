@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { DatasetType, CohortYear, TreatmentType, getClinicalDataPath, getDatasetPaths, parseCohortYear, parseDatasetType } from '@/lib/config';
+import { getVideosForPatient } from '@/lib/video-index';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
 
 interface PatientAsset {
@@ -348,6 +349,7 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
         overlay_transparent_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         roi_url: hasRoi ? `/api/images/cropped/roi/${encodeURIComponent(asset.roiFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         json_url: hasAnnotation ? `/api/images/original/annotations/${encodeURIComponent(asset.annotationFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
+        video_urls: getVideosForPatient(normalizePatientId(patientId)),
         segmentation: {
           source: sourceLabel,
           has_annotation: hasAnnotation,

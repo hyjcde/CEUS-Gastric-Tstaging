@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { DatasetType, CohortYear, TreatmentType, parseCohortYear, PROJECT_ROOT } from '@/lib/config';
+import { DatasetType, CohortYear, TreatmentType, parseCohortYear, PROJECT_ROOT, getDatasetPaths } from '@/lib/config';
 import { resolvePatientAgentPaths } from '@/lib/agent-server';
 import { Patient } from '@/types';
 
@@ -56,7 +56,14 @@ export async function POST(request: NextRequest) {
 
     const cohort = parseCohortYear(cohortYear);
     const resolved = resolvePatientAgentPaths(patient, cohort, treatmentType, dataset);
-    const imagePath = resolved.image_path;
+    const originalPaths = getDatasetPaths('original', cohort, treatmentType);
+    const imagePath = resolved.annotation_path && originalPaths.images
+      ? (() => {
+          const filename = path.basename(resolved.image_path || '');
+          const originalImage = path.join(originalPaths.images, filename);
+          return fs.existsSync(originalImage) ? originalImage : resolved.image_path;
+        })()
+      : resolved.image_path;
     const annotationPath = resolved.annotation_path;
 
     if (!imagePath || !fs.existsSync(imagePath)) {

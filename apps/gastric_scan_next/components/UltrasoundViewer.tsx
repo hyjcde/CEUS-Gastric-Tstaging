@@ -14,6 +14,7 @@ import {
   extractAnnotationBbox, 
   ImageMetrics 
 } from '@/lib/image-utils';
+import { clampBboxToCrop, CropOffset } from '@/lib/crop-transform';
 import { generatePeritumoralRingFromAnnotation } from '@/lib/morphology';
 import { OptimizedImage } from './OptimizedImage';
 import toast from 'react-hot-toast';
@@ -50,6 +51,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
   const [showRing, setShowRing] = useState(false);
   const [ringImageUrl, setRingImageUrl] = useState<string | null>(null);
   const [annotationBbox, setAnnotationBbox] = useState<AnnotationBbox | null>(null);
+  const [cropOffset, setCropOffset] = useState<CropOffset | null>(null);
   const [imageMetrics, setImageMetrics] = useState<ImageMetrics | null>(null);
   const [zoomToROI, setZoomToROI] = useState(false);
   const [showExplainableAnalysis, setShowExplainableAnalysis] = useState(false);
@@ -175,6 +177,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
   useEffect(() => {
     if (!patient) {
       setAnnotationBbox(null);
+      setCropOffset(null);
       setRingImageUrl(null);
       return;
     }
@@ -185,17 +188,38 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
         const response = await fetch(patient.json_url, { signal: controller.signal });
         if (!response.ok) throw new Error('Annotation download failed');
         const payload = await response.json();
-        const bbox = extractAnnotationBbox(payload.shapes);
-        if (bbox) {
-          setAnnotationBbox(bbox);
-        } else {
-          setAnnotationBbox(null);
+        let bbox = extractAnnotationBbox(payload.shapes);
+        let offset: CropOffset | null = null;
+
+        if (dataset === 'cropped' && bbox && patient.image_url) {
+          try {
+            const imageUrl = new URL(patient.image_url, window.location.origin);
+            const filename = decodeURIComponent(imageUrl.pathname.split('/').pop() || '');
+            const cohort = imageUrl.searchParams.get('cohort') || '2025';
+            const treatment = imageUrl.searchParams.get('treatment') || 'surgery';
+            const offsetRes = await fetch(
+              `/api/images/crop-offset?filename=${encodeURIComponent(filename)}&cohort=${cohort}&treatment=${treatment}`,
+              { signal: controller.signal },
+            );
+            if (offsetRes.ok) {
+              offset = await offsetRes.json() as CropOffset;
+              bbox = clampBboxToCrop(bbox, offset);
+            }
+          } catch (offsetError) {
+            if (!(offsetError instanceof DOMException && offsetError.name === 'AbortError')) {
+              console.warn('Crop offset lookup failed, using raw annotation bbox', offsetError);
+            }
+          }
         }
+
+        setCropOffset(offset);
+        setAnnotationBbox(bbox ?? null);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           console.error('Failed to load ROI annotation', error);
           toast.error('Failed to load annotation data');
         }
+        setCropOffset(null);
         setAnnotationBbox(null);
       }
     };
@@ -203,20 +227,18 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
     loadAnnotations();
 
     return () => controller.abort();
-  }, [patient]);
+  }, [patient, dataset]);
   
   // Effect to generate peritumoral ring
   useEffect(() => {
     if (showRing && patient && patient.json_url && imageMetrics) {
-      console.log('[Ring] Generating ring from annotation:', patient.json_url);
-      console.log('[Ring] Image dimensions:', imageMetrics.naturalWidth, 'x', imageMetrics.naturalHeight);
-      
       generatePeritumoralRingFromAnnotation(
         patient.json_url,
         imageMetrics.naturalWidth,
         imageMetrics.naturalHeight,
-        20, // radius in pixels (~5mm)
-        [255, 165, 0, 200] // Orange color
+        20,
+        [255, 165, 0, 200],
+        cropOffset ? { offsetX: cropOffset.offsetX, offsetY: cropOffset.offsetY } : undefined,
       )
         .then(url => {
            console.log('[Ring] Generated successfully, data URL length:', url.length);
@@ -230,7 +252,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
     } else if (!showRing) {
       setRingImageUrl(null);
     }
-  }, [showRing, patient, imageMetrics, language]);
+  }, [showRing, patient, imageMetrics, language, cropOffset]);
 
   const undoMeasurement = () => {
       setMeasurements(prev => prev.slice(0, -1));

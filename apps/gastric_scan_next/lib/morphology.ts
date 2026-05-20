@@ -36,7 +36,8 @@ export async function generatePeritumoralRingFromAnnotation(
   imageWidth: number,
   imageHeight: number,
   radius: number = 20,
-  color: [number, number, number, number] = [255, 165, 0, 200] // Orange color
+  color: [number, number, number, number] = [255, 165, 0, 200],
+  cropOffset?: { offsetX: number; offsetY: number },
 ): Promise<string> {
   // 1. 获取标注数据
   const response = await fetch(jsonUrl);
@@ -47,6 +48,13 @@ export async function generatePeritumoralRingFromAnnotation(
   
   if (!annotationData.shapes || annotationData.shapes.length === 0) {
     throw new Error('No shapes found in annotation');
+  }
+
+  if (cropOffset) {
+    annotationData.shapes = annotationData.shapes.map((shape) => ({
+      ...shape,
+      points: shape.points.map(([x, y]) => [x - cropOffset.offsetX, y - cropOffset.offsetY] as [number, number]),
+    }));
   }
   
   console.log(`[Morphology] Found ${annotationData.shapes.length} shapes in annotation`);
