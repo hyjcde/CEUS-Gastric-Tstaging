@@ -21,6 +21,10 @@ export const dictionary = {
         settings: 'System Settings',
         signout: 'Sign Out'
     },
+    nav: {
+        annotator: 'Annotation',
+        annotatorTitle: 'Open direction annotation tool',
+    },
     cohort: {
         title: 'Study Cohort',
         search: 'Filter by PID / MRN...',
@@ -108,6 +112,10 @@ export const dictionary = {
         reports: '我的报告',
         settings: '系统设置',
         signout: '退出登录'
+    },
+    nav: {
+        annotator: '标注',
+        annotatorTitle: '打开突破方向标注工具',
     },
     cohort: {
         title: '研究队列',

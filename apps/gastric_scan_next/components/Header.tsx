@@ -2,9 +2,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
-import { ALL_COHORT_YEARS, CohortYear, getCohortDisplayLabel } from '@/lib/cohort';
-import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2 } from 'lucide-react';
+import { GASTRIC_COHORT_YEARS, GastricCohortYear, getCohortDisplayLabel } from '@/lib/cohort';
+import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { getDirectionAnnotatorUrl } from '@/lib/annotator-url';
 
 interface HeaderProps {
   onShowStatistics?: () => void;
@@ -30,6 +31,12 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
   const handleNavigate = (path: string) => {
       router.push(path);
       setShowUserMenu(false);
+  };
+
+  const openAnnotator = () => {
+    const url = getDirectionAnnotatorUrl();
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setShowUserMenu(false);
   };
 
   return (
@@ -76,24 +83,22 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
 
             {/* Cohort Year Switcher */}
             <div className="flex items-center gap-1 bg-[#111] p-1 rounded border border-white/5 max-w-[min(52vw,520px)] overflow-x-auto custom-scrollbar">
-                {ALL_COHORT_YEARS.map((year) => {
+                {GASTRIC_COHORT_YEARS.map((year) => {
                   const isActive = cohortYear === year;
                   const activeClass = year === '2025'
                     ? 'bg-emerald-600 text-white'
                     : year === '2024'
                       ? 'bg-cyan-600 text-white'
-                      : year === 'gist'
-                        ? 'bg-purple-600 text-white'
-                        : year === '2020_2023'
-                          ? 'bg-orange-600 text-white'
-                          : year === '2019'
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-600 text-white';
+                      : year === '2020_2023'
+                        ? 'bg-orange-600 text-white'
+                        : year === '2019'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-600 text-white';
                   return (
                     <button
                       key={year}
                       type="button"
-                      onClick={() => setCohortYear(year as CohortYear)}
+                      onClick={() => setCohortYear(year as GastricCohortYear)}
                       className={`shrink-0 px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${isActive ? activeClass : 'text-gray-500 hover:text-gray-300'}`}
                     >
                       {getCohortDisplayLabel(year)}
@@ -133,6 +138,15 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
             <span className="text-[10px] font-semibold">{language === 'zh' ? '统计' : 'Stats'}</span>
           </button>
         )}
+
+        <button
+          onClick={openAnnotator}
+          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-amber-500/50 hover:bg-amber-500/10 transition-colors text-amber-400 hover:text-amber-300"
+          title={t.nav.annotatorTitle}
+        >
+          <PenTool size={12} />
+          <span className="text-[10px] font-semibold">{t.nav.annotator}</span>
+        </button>
         
         <div className="hidden md:flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 shadow-inner">
             <div className="relative flex h-1.5 w-1.5">
@@ -170,6 +184,12 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
                         className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
                     >
                         <FileText size={12} /> {t.userMenu.reports}
+                    </button>
+                    <button 
+                        onClick={openAnnotator}
+                        className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
+                    >
+                        <PenTool size={12} /> {t.nav.annotator}
                     </button>
                     
                     <div className="h-px bg-white/5 my-1"></div>
