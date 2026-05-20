@@ -1,4 +1,7 @@
 *.zip
+# Baidu Netdisk sync debris (not data)
+*.baiduyun.uploading.cfg
+.baiduyun.*
 .env
 .env.*
 !.env.example
