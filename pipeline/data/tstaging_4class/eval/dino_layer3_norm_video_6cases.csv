@@ -1,0 +1,7 @@
+patient_id,t_stage,case_key,video_path
+1048931,T3,1048931_T3,apps/gastric_scan_next/public/videos/direct_surgery/1048931-1.mp4
+1354139,T3,1354139_T3,/data/research/gastric/Tstaging/raw data/Historical_Video_Pool/videos/直接手术/造影/1354139-1.wmv
+1379039,T4a,1379039_T4a,/data/research/gastric/Tstaging/raw data/Historical_Video_Pool/videos/直接手术/喝水/1379039.wmv
+1391229,T4b,1391229_T4b,/data/research/gastric/Tstaging/raw data/Historical_Video_Pool/videos/直接手术/喝水/1391229.wmv
+1398975,T4a,1398975_T4a,/data/research/gastric/Tstaging/raw data/Historical_Video_Pool/videos/直接手术/造影/1398975.wmv
+1408594,T3,1408594_T3,/data/research/gastric/Tstaging/raw data/Historical_Video_Pool/videos/直接手术/喝水/1408594-1.wmv

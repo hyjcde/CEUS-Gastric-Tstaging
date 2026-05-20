@@ -1,0 +1,32 @@
+{
+  "case_key": "1391229_T4b",
+  "video_path": "/data/research/gastric/Tstaging/raw data/Historical_Video_Pool/videos/直接手术/喝水/1391229.wmv",
+  "output_video": "/data/research/gastric/GastricTstaging/docs/mainline/figures/results/dino_layer3_norm_video_6cases/1391229_T4b/1391229_T4b_dino_layer3_norm_overlay.mp4",
+  "layout": "overlay",
+  "run_dir": "/data/research/gastric/GastricTstaging/experiments/segmentation/dinov3_vitb16_last2blocks_mlp_decoder_cropui_20260512_full_r001",
+  "layer": "dino_layer3_norm",
+  "vit_block": 11,
+  "layer_indices": [
+    2,
+    5,
+    8,
+    11
+  ],
+  "source_fps": 17.24137931034483,
+  "output_fps": 17.24137931034483,
+  "frame_step": 1,
+  "source_frames": 149,
+  "written_frames": 149,
+  "source_size": [
+    1280,
+    960
+  ],
+  "output_size": [
+    1280,
+    960
+  ],
+  "batch_size": 8,
+  "image_size": 512,
+  "elapsed_sec": 4.93,
+  "throughput_fps": 30.2
+}
