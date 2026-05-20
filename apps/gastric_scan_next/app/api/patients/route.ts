@@ -340,7 +340,7 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
         id: asset.imageFilename,
         id_short: asset.imageFilename.replace(/\.(jpg|jpeg)$/i, ''),
         patient_id: normalizePatientId(patientId),
-        group: 'Surgery',
+        group: treatmentType === 'nac' ? 'NAC' : 'Surgery',
         phase: cohortYear,
         source_label: sourceLabel,
         frame_count: sortedAssets.length,
