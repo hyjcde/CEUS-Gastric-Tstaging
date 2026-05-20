@@ -1,5 +1,7 @@
 # 数据集说明
 
+**交互式盘点页**：[`inventory/index.html`](inventory/index.html)（由 `python scripts/build_dataset_inventory.py` 生成，含 manifest / 物理目录 / 建模 split 统计）
+
 本目录保存当前项目已经整理好的正式数据集，重点服务于胃充盈超声 T 分期相关的分割、定位和后续分类实验。
 
 当前正式数据集只看两块：

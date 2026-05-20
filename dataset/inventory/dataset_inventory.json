@@ -1,0 +1,723 @@
+{
+  "generated_at": "2026-05-20 06:54 UTC",
+  "project_root": "/data/research/gastric/GastricTstaging",
+  "dataset_root": "/data/research/gastric/GastricTstaging/dataset",
+  "summary": {
+    "internal_manifest": 10659,
+    "external_manifest": 2856,
+    "external_newzip_manifest": 552,
+    "total_manifest": 14067,
+    "internal_physical_original_images": 10659,
+    "lumen_detection_train": 1439
+  },
+  "calibers": [
+    {
+      "name": "正式 manifest 口径",
+      "scope": "dataset/internal + external manifest.csv",
+      "frames": 13515,
+      "use": "分割、ROI、正式物理数据统计"
+    },
+    {
+      "name": "manifest + newzip",
+      "scope": "正式 manifest + new_external_zip_manifest.csv",
+      "frames": 14067,
+      "use": "含新增外部 zip 的磁盘可用标注图像"
+    },
+    {
+      "name": "T 分期建模 CSV",
+      "scope": "pipeline/data/.../regions/*_clinical.csv",
+      "frames": 12851,
+      "use": "4 类 T 分期训练与 AUC 评估"
+    }
+  ],
+  "internal": {
+    "manifest_rows": 10659,
+    "unmatched_rows": 110,
+    "error_rows": 6,
+    "manifest_by_pool": {
+      "training_2018_2024": 8229,
+      "prospective_2025": 2430
+    },
+    "groups": [
+      {
+        "pool": "training_2018_2024",
+        "year": "2018",
+        "views": {
+          "original": {
+            "images": 3638,
+            "annotations": 3638,
+            "roi_masks": 3638,
+            "overlays": 3638
+          },
+          "crop_ui": {
+            "images": 3638,
+            "annotations": 3638,
+            "roi_masks": 3638,
+            "overlays": 3638
+          },
+          "crop_roi": {
+            "images": 3638,
+            "annotations": 3638,
+            "roi_masks": 3638,
+            "overlays": 3638
+          }
+        }
+      },
+      {
+        "pool": "training_2018_2024",
+        "year": "2019",
+        "views": {
+          "original": {
+            "images": 2853,
+            "annotations": 2853,
+            "roi_masks": 2853,
+            "overlays": 2853
+          },
+          "crop_ui": {
+            "images": 2853,
+            "annotations": 2853,
+            "roi_masks": 2853,
+            "overlays": 2853
+          },
+          "crop_roi": {
+            "images": 2853,
+            "annotations": 2853,
+            "roi_masks": 2853,
+            "overlays": 2853
+          }
+        }
+      },
+      {
+        "pool": "training_2018_2024",
+        "year": "2020_2023",
+        "views": {
+          "original": {
+            "images": 199,
+            "annotations": 199,
+            "roi_masks": 199,
+            "overlays": 199
+          },
+          "crop_ui": {
+            "images": 199,
+            "annotations": 199,
+            "roi_masks": 199,
+            "overlays": 199
+          },
+          "crop_roi": {
+            "images": 199,
+            "annotations": 199,
+            "roi_masks": 199,
+            "overlays": 199
+          }
+        }
+      },
+      {
+        "pool": "training_2018_2024",
+        "year": "2024",
+        "views": {
+          "original": {
+            "images": 1539,
+            "annotations": 1539,
+            "roi_masks": 1539,
+            "overlays": 1539
+          },
+          "crop_ui": {
+            "images": 1539,
+            "annotations": 1539,
+            "roi_masks": 1539,
+            "overlays": 1539
+          },
+          "crop_roi": {
+            "images": 1539,
+            "annotations": 1539,
+            "roi_masks": 1539,
+            "overlays": 1539
+          }
+        }
+      },
+      {
+        "pool": "prospective_2025",
+        "year": "2025",
+        "views": {
+          "original": {
+            "images": 2430,
+            "annotations": 2430,
+            "roi_masks": 2430,
+            "overlays": 2430
+          },
+          "crop_ui": {
+            "images": 2430,
+            "annotations": 2430,
+            "roi_masks": 2430,
+            "overlays": 2430
+          },
+          "crop_roi": {
+            "images": 2430,
+            "annotations": 2430,
+            "roi_masks": 2430,
+            "overlays": 2430
+          }
+        }
+      }
+    ]
+  },
+  "external": {
+    "manifest_rows": 2856,
+    "newzip_manifest_rows": 552,
+    "combined_manifest_rows": 3408,
+    "unmatched_rows": 16,
+    "error_rows": 2,
+    "manifest_by_center": {
+      "莆田学院附属医院": 2376,
+      "福建省肿瘤医院": 436,
+      "莆田市第一医院": 25,
+      "三明市第二医院": 19
+    },
+    "newzip_by_center": {
+      "湖北中西医结合医院": 216,
+      "北京友谊医院": 124,
+      "佛山市第一人民医院": 112,
+      "福建省德化县医院": 100
+    },
+    "centers": [
+      {
+        "folder": "三明市第二医院",
+        "views": {
+          "original": {
+            "images": 19,
+            "annotations": 19,
+            "roi_masks": 19,
+            "overlays": 19
+          },
+          "crop_ui": {
+            "images": 19,
+            "annotations": 19,
+            "roi_masks": 19,
+            "overlays": 19
+          },
+          "crop_roi": {
+            "images": 19,
+            "annotations": 19,
+            "roi_masks": 19,
+            "overlays": 19
+          }
+        }
+      },
+      {
+        "folder": "佛山市第一人民医院",
+        "views": {
+          "original": {
+            "images": 112,
+            "annotations": 112,
+            "roi_masks": 112,
+            "overlays": 112
+          },
+          "crop_ui": {
+            "images": 112,
+            "annotations": 112,
+            "roi_masks": 112,
+            "overlays": 112
+          },
+          "crop_roi": {
+            "images": 112,
+            "annotations": 112,
+            "roi_masks": 112,
+            "overlays": 112
+          }
+        }
+      },
+      {
+        "folder": "北京友谊医院",
+        "views": {
+          "original": {
+            "images": 124,
+            "annotations": 124,
+            "roi_masks": 124,
+            "overlays": 124
+          },
+          "crop_ui": {
+            "images": 124,
+            "annotations": 124,
+            "roi_masks": 124,
+            "overlays": 124
+          },
+          "crop_roi": {
+            "images": 124,
+            "annotations": 124,
+            "roi_masks": 124,
+            "overlays": 124
+          }
+        }
+      },
+      {
+        "folder": "湖北中西医结合医院",
+        "views": {
+          "original": {
+            "images": 216,
+            "annotations": 216,
+            "roi_masks": 216,
+            "overlays": 216
+          },
+          "crop_ui": {
+            "images": 216,
+            "annotations": 216,
+            "roi_masks": 216,
+            "overlays": 216
+          },
+          "crop_roi": {
+            "images": 216,
+            "annotations": 216,
+            "roi_masks": 216,
+            "overlays": 216
+          }
+        }
+      },
+      {
+        "folder": "福建省德化县医院",
+        "views": {
+          "original": {
+            "images": 100,
+            "annotations": 100,
+            "roi_masks": 100,
+            "overlays": 100
+          },
+          "crop_ui": {
+            "images": 100,
+            "annotations": 100,
+            "roi_masks": 100,
+            "overlays": 100
+          },
+          "crop_roi": {
+            "images": 100,
+            "annotations": 100,
+            "roi_masks": 100,
+            "overlays": 100
+          }
+        }
+      },
+      {
+        "folder": "福建省肿瘤医院",
+        "views": {
+          "original": {
+            "images": 436,
+            "annotations": 436,
+            "roi_masks": 436,
+            "overlays": 436
+          },
+          "crop_ui": {
+            "images": 436,
+            "annotations": 436,
+            "roi_masks": 436,
+            "overlays": 436
+          },
+          "crop_roi": {
+            "images": 436,
+            "annotations": 436,
+            "roi_masks": 436,
+            "overlays": 436
+          }
+        }
+      },
+      {
+        "folder": "莆田学院附属医院",
+        "views": {
+          "original": {
+            "images": 2376,
+            "annotations": 2376,
+            "roi_masks": 2376,
+            "overlays": 2376
+          },
+          "crop_ui": {
+            "images": 2376,
+            "annotations": 2376,
+            "roi_masks": 2376,
+            "overlays": 2376
+          },
+          "crop_roi": {
+            "images": 2376,
+            "annotations": 2376,
+            "roi_masks": 2376,
+            "overlays": 2376
+          }
+        }
+      },
+      {
+        "folder": "莆田市第一医院",
+        "views": {
+          "original": {
+            "images": 25,
+            "annotations": 25,
+            "roi_masks": 25,
+            "overlays": 25
+          },
+          "crop_ui": {
+            "images": 25,
+            "annotations": 25,
+            "roi_masks": 25,
+            "overlays": 25
+          },
+          "crop_roi": {
+            "images": 25,
+            "annotations": 25,
+            "roi_masks": 25,
+            "overlays": 25
+          }
+        }
+      }
+    ]
+  },
+  "lumen_detection": {
+    "crop_ui_confirmed": {
+      "images_train": 1439,
+      "images_val": 211,
+      "images_test": 183,
+      "labels_train": 1439,
+      "labels_val": 211,
+      "labels_test": 183
+    }
+  },
+  "tables": {
+    "files": [
+      {
+        "name": "README.md",
+        "size_mb": 0.001
+      },
+      {
+        "name": "center_name_registry.csv",
+        "size_mb": 0.002
+      },
+      {
+        "name": "clinical_table_index.csv",
+        "size_mb": 0.282
+      },
+      {
+        "name": "clinical_table_registry.csv",
+        "size_mb": 185.62
+      },
+      {
+        "name": "patient_clinical_candidates.csv",
+        "size_mb": 179.928
+      },
+      {
+        "name": "patient_clinical_master.csv",
+        "size_mb": 7.658
+      },
+      {
+        "name": "patient_clinical_master_coverage_by_group.csv",
+        "size_mb": 0.019
+      },
+      {
+        "name": "patient_clinical_master_coverage_overall.csv",
+        "size_mb": 0.001
+      },
+      {
+        "name": "patient_clinical_schema.json",
+        "size_mb": 0.004
+      }
+    ],
+    "center_registry_rows": 12,
+    "centers": [
+      {
+        "center_id": "internal_xh",
+        "standard_hospital_name": "福建医科大学附属协和医院",
+        "folder_name": "internal",
+        "legacy_folder_aliases": "int/协和内部",
+        "source_prefix": "int/",
+        "dataset_key": "",
+        "cohort": "internal_xh_2018;internal_xh_2019;internal_xh_2020_2023;internal_xh_2024;internal_xh_2025",
+        "tstaging_manifest": "internal",
+        "tstaging_split": "yes",
+        "benign_data": "train;val;test_external;test_prospective",
+        "malignant_data": "yes",
+        "video_data": "yes",
+        "image_data": "no",
+        "manifest_frames": "yes",
+        "modeled_frames": "10659",
+        "clinical_patients": "9681",
+        "notes": "1883",
+        "null": [
+          "organized by year under dataset/internal/"
+        ]
+      },
+      {
+        "center_id": "external_putian1",
+        "standard_hospital_name": "莆田学院附属医院",
+        "folder_name": "莆田学院附属医院",
+        "legacy_folder_aliases": "莆田1胃癌直接手术",
+        "source_prefix": "ext/putian",
+        "dataset_key": "external_putian1",
+        "cohort": "external",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "train;val;test_external",
+        "benign_data": "yes",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "2376",
+        "modeled_frames": "1103",
+        "clinical_patients": "344",
+        "notes": ""
+      },
+      {
+        "center_id": "external_putian2",
+        "standard_hospital_name": "莆田市第一医院",
+        "folder_name": "莆田市第一医院",
+        "legacy_folder_aliases": "莆田2胃癌直接手术",
+        "source_prefix": "ext/putian2",
+        "dataset_key": "external_putian2",
+        "cohort": "external",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
+        "benign_data": "no",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "25",
+        "modeled_frames": "0",
+        "clinical_patients": "8",
+        "notes": ""
+      },
+      {
+        "center_id": "external_tumor",
+        "standard_hospital_name": "福建省肿瘤医院",
+        "folder_name": "福建省肿瘤医院",
+        "legacy_folder_aliases": "肿瘤医院直接手术",
+        "source_prefix": "ext/zhongliu",
+        "dataset_key": "external_tumor",
+        "cohort": "external",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
+        "benign_data": "yes",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "436",
+        "modeled_frames": "229",
+        "clinical_patients": "135",
+        "notes": ""
+      },
+      {
+        "center_id": "external_sanming",
+        "standard_hospital_name": "三明市第二医院",
+        "folder_name": "三明市第二医院",
+        "legacy_folder_aliases": "三明胃癌直接手术",
+        "source_prefix": "ext/sanming",
+        "dataset_key": "external_sanming",
+        "cohort": "external",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
+        "benign_data": "yes",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "19",
+        "modeled_frames": "0",
+        "clinical_patients": "4",
+        "notes": ""
+      },
+      {
+        "center_id": "external_dehua",
+        "standard_hospital_name": "福建省德化县医院",
+        "folder_name": "福建省德化县医院",
+        "legacy_folder_aliases": "德化直接手术",
+        "source_prefix": "ext/newzip/福建省德化县医院",
+        "dataset_key": "external_dehua",
+        "cohort": "external",
+        "tstaging_manifest": "newzip_only",
+        "tstaging_split": "test_external_newzip",
+        "benign_data": "no",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "100",
+        "modeled_frames": "88",
+        "clinical_patients": "16",
+        "notes": ""
+      },
+      {
+        "center_id": "external_beijing_friendship",
+        "standard_hospital_name": "北京友谊医院",
+        "folder_name": "北京友谊医院",
+        "legacy_folder_aliases": "外省整理/北京;外省整理",
+        "source_prefix": "ext/newzip/北京友谊医院",
+        "dataset_key": "external_beijing_friendship",
+        "cohort": "external",
+        "tstaging_manifest": "newzip_only",
+        "tstaging_split": "test_external_newzip",
+        "benign_data": "no",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "124",
+        "modeled_frames": "124",
+        "clinical_patients": "22",
+        "notes": ""
+      },
+      {
+        "center_id": "external_foshan_first",
+        "standard_hospital_name": "佛山市第一人民医院",
+        "folder_name": "佛山市第一人民医院",
+        "legacy_folder_aliases": "外省整理/广东;外省整理",
+        "source_prefix": "ext/newzip/佛山市第一人民医院",
+        "dataset_key": "external_foshan_first",
+        "cohort": "external",
+        "tstaging_manifest": "newzip_only",
+        "tstaging_split": "test_external_newzip",
+        "benign_data": "no",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "112",
+        "modeled_frames": "67",
+        "clinical_patients": "31",
+        "notes": ""
+      },
+      {
+        "center_id": "external_hubei_tcm",
+        "standard_hospital_name": "湖北中西医结合医院",
+        "folder_name": "湖北中西医结合医院",
+        "legacy_folder_aliases": "外省整理/湖北窦;外省整理",
+        "source_prefix": "ext/newzip/湖北中西医结合医院",
+        "dataset_key": "external_hubei_tcm",
+        "cohort": "external",
+        "tstaging_manifest": "newzip_only",
+        "tstaging_split": "test_external_newzip",
+        "benign_data": "yes",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "216",
+        "modeled_frames": "216",
+        "clinical_patients": "67",
+        "notes": ""
+      },
+      {
+        "center_id": "external_cnnc_504",
+        "standard_hospital_name": "中核五〇四医院",
+        "folder_name": "中核五〇四医院",
+        "legacy_folder_aliases": "窦晓霞中核五〇四医院胃溃疡病例(1)",
+        "source_prefix": "",
+        "dataset_key": "",
+        "cohort": "external_cnnc_504",
+        "tstaging_manifest": "external",
+        "tstaging_split": "no",
+        "benign_data": "",
+        "malignant_data": "yes",
+        "video_data": "yes",
+        "image_data": "yes",
+        "manifest_frames": "yes",
+        "modeled_frames": "0",
+        "clinical_patients": "0",
+        "notes": "0",
+        "null": [
+          "ulcer video task under data/中核五〇四医院/"
+        ]
+      },
+      {
+        "center_id": "external_fujian_provincial",
+        "standard_hospital_name": "福建省立医院",
+        "folder_name": "",
+        "legacy_folder_aliases": "",
+        "source_prefix": "",
+        "dataset_key": "external_fujian_provincial",
+        "cohort": "external",
+        "tstaging_manifest": "no",
+        "tstaging_split": "",
+        "benign_data": "no",
+        "malignant_data": "yes",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "0",
+        "modeled_frames": "0",
+        "clinical_patients": "0",
+        "notes": "not imported"
+      },
+      {
+        "center_id": "external_ningde",
+        "standard_hospital_name": "宁德市医院",
+        "folder_name": "",
+        "legacy_folder_aliases": "",
+        "source_prefix": "",
+        "dataset_key": "external_ningde",
+        "cohort": "external",
+        "tstaging_manifest": "no",
+        "tstaging_split": "",
+        "benign_data": "yes",
+        "malignant_data": "no",
+        "video_data": "no",
+        "image_data": "yes",
+        "manifest_frames": "0",
+        "modeled_frames": "0",
+        "clinical_patients": "0",
+        "notes": "not imported"
+      }
+    ],
+    "patient_clinical_master_rows": 2374
+  },
+  "modeling_splits": {
+    "test_external_clinical": {
+      "rows": 2298,
+      "patients": 381,
+      "labels": {
+        "2": 893,
+        "3": 800,
+        "0": 421,
+        "1": 184
+      }
+    },
+    "test_external_newzip_clinical": {
+      "rows": 495,
+      "patients": 136,
+      "labels": {
+        "3": 169,
+        "2": 157,
+        "1": 106,
+        "0": 63
+      }
+    },
+    "test_prospective_clinical": {
+      "rows": 234,
+      "patients": 46,
+      "labels": {
+        "2": 100,
+        "3": 64,
+        "0": 39,
+        "1": 31
+      }
+    },
+    "train_clinical": {
+      "rows": 8783,
+      "patients": 1405,
+      "labels": {
+        "2": 3136,
+        "3": 3100,
+        "0": 1510,
+        "1": 1037
+      }
+    },
+    "val_clinical": {
+      "rows": 1041,
+      "patients": 161,
+      "labels": {
+        "3": 402,
+        "2": 350,
+        "0": 206,
+        "1": 83
+      }
+    }
+  },
+  "docs": [
+    {
+      "title": "DATASET_GUIDE.md",
+      "path": "dataset/DATASET_GUIDE.md"
+    },
+    {
+      "title": "README.md",
+      "path": "dataset/README.md"
+    },
+    {
+      "title": "tables/README.md",
+      "path": "dataset/tables/README.md"
+    }
+  ]
+}

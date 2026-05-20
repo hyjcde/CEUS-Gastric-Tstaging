@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GastricTstaging — 完整数据集盘点</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --surface2: #f1f5f9;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #0e7490;
+      --accent2: #047857;
+      --warn: #b45309;
+      --ok: #16a34a;
+      --font: "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "Cascadia Code", monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav.side { position: relative; height: auto; }
+    }
+    nav.side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem 1rem;
+    }
+    nav.side h2 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    nav.side a {
+      display: block;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.86rem;
+      margin-bottom: 2px;
+    }
+    nav.side a:hover { color: var(--accent); background: var(--surface2); }
+    main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
+    header.hero {
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    header.hero h1 { font-size: 1.75rem; margin-bottom: 0.4rem; }
+    header.hero .subtitle { color: var(--muted); max-width: 48em; }
+    .meta { margin-top: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin: 1.25rem 0 2rem;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .kpi .val { font-size: 1.6rem; font-weight: 700; color: var(--accent); }
+    .kpi .lbl { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
+    section { margin-bottom: 2.5rem; scroll-margin-top: 1rem; }
+    section h2 {
+      font-size: 1.2rem;
+      color: var(--accent);
+      margin-bottom: 0.85rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid var(--border);
+    }
+    section h3 { font-size: 1rem; margin: 1rem 0 0.5rem; color: var(--text); }
+    p.note {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.88rem;
+      color: #92400e;
+      margin-bottom: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+      margin-bottom: 1rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.45rem 0.6rem;
+      text-align: left;
+    }
+    th { background: var(--surface2); font-weight: 600; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    code, .mono { font-family: var(--mono); font-size: 0.82em; }
+    .tree {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--muted);
+    }
+    .badge.ok { border-color: var(--ok); color: var(--ok); }
+    .badge.warn { border-color: var(--warn); color: var(--warn); }
+    a { color: var(--accent); }
+    .bar-cell { min-width: 120px; }
+    .bar {
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .bar > span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="side">
+      <h2>数据集盘点</h2>
+      <a href="#overview">总览</a>
+      <a href="#calibers">统计口径</a>
+      <a href="#tree">目录树</a>
+      <a href="#internal">内部数据</a>
+      <a href="#external">外部数据</a>
+      <a href="#newzip">新增 zip</a>
+      <a href="#modeling">建模 CSV</a>
+      <a href="#tables">临床表</a>
+      <a href="#centers">多中心对照</a>
+      <a href="#lumen">胃腔检测</a>
+      <a href="#docs">相关文档</a>
+    </nav>
+    <main>
+      <header class="hero">
+        <h1>完整数据集盘点</h1>
+        <p class="subtitle">
+          基于 <code>dataset/</code> 目录的正式预处理数据、manifest 清单、临床表与 T 分期建模 split 的交互式盘点页。
+          实验前请区分 <strong>manifest 物理口径</strong> 与 <strong>建模 CSV 口径</strong>。
+        </p>
+        <p class="meta" id="generated-meta"></p>
+      </header>
+      <div id="app"></div>
+    </main>
+  </div>
+  <script id="inventory-data" type="application/json">{"generated_at": "2026-05-20 06:54 UTC", "project_root": "/data/research/gastric/GastricTstaging", "dataset_root": "/data/research/gastric/GastricTstaging/dataset", "summary": {"internal_manifest": 10659, "external_manifest": 2856, "external_newzip_manifest": 552, "total_manifest": 14067, "internal_physical_original_images": 10659, "lumen_detection_train": 1439}, "calibers": [{"name": "正式 manifest 口径", "scope": "dataset/internal + external manifest.csv", "frames": 13515, "use": "分割、ROI、正式物理数据统计"}, {"name": "manifest + newzip", "scope": "正式 manifest + new_external_zip_manifest.csv", "frames": 14067, "use": "含新增外部 zip 的磁盘可用标注图像"}, {"name": "T 分期建模 CSV", "scope": "pipeline/data/.../regions/*_clinical.csv", "frames": 12851, "use": "4 类 T 分期训练与 AUC 评估"}], "internal": {"manifest_rows": 10659, "unmatched_rows": 110, "error_rows": 6, "manifest_by_pool": {"training_2018_2024": 8229, "prospective_2025": 2430}, "groups": [{"pool": "training_2018_2024", "year": "2018", "views": {"original": {"images": 3638, "annotations": 3638, "roi_masks": 3638, "overlays": 3638}, "crop_ui": {"images": 3638, "annotations": 3638, "roi_masks": 3638, "overlays": 3638}, "crop_roi": {"images": 3638, "annotations": 3638, "roi_masks": 3638, "overlays": 3638}}}, {"pool": "training_2018_2024", "year": "2019", "views": {"original": {"images": 2853, "annotations": 2853, "roi_masks": 2853, "overlays": 2853}, "crop_ui": {"images": 2853, "annotations": 2853, "roi_masks": 2853, "overlays": 2853}, "crop_roi": {"images": 2853, "annotations": 2853, "roi_masks": 2853, "overlays": 2853}}}, {"pool": "training_2018_2024", "year": "2020_2023", "views": {"original": {"images": 199, "annotations": 199, "roi_masks": 199, "overlays": 199}, "crop_ui": {"images": 199, "annotations": 199, "roi_masks": 199, "overlays": 199}, "crop_roi": {"images": 199, "annotations": 199, "roi_masks": 199, "overlays": 199}}}, {"pool": "training_2018_2024", "year": "2024", "views": {"original": {"images": 1539, "annotations": 1539, "roi_masks": 1539, "overlays": 1539}, "crop_ui": {"images": 1539, "annotations": 1539, "roi_masks": 1539, "overlays": 1539}, "crop_roi": {"images": 1539, "annotations": 1539, "roi_masks": 1539, "overlays": 1539}}}, {"pool": "prospective_2025", "year": "2025", "views": {"original": {"images": 2430, "annotations": 2430, "roi_masks": 2430, "overlays": 2430}, "crop_ui": {"images": 2430, "annotations": 2430, "roi_masks": 2430, "overlays": 2430}, "crop_roi": {"images": 2430, "annotations": 2430, "roi_masks": 2430, "overlays": 2430}}}]}, "external": {"manifest_rows": 2856, "newzip_manifest_rows": 552, "combined_manifest_rows": 3408, "unmatched_rows": 16, "error_rows": 2, "manifest_by_center": {"莆田学院附属医院": 2376, "福建省肿瘤医院": 436, "莆田市第一医院": 25, "三明市第二医院": 19}, "newzip_by_center": {"湖北中西医结合医院": 216, "北京友谊医院": 124, "佛山市第一人民医院": 112, "福建省德化县医院": 100}, "centers": [{"folder": "三明市第二医院", "views": {"original": {"images": 19, "annotations": 19, "roi_masks": 19, "overlays": 19}, "crop_ui": {"images": 19, "annotations": 19, "roi_masks": 19, "overlays": 19}, "crop_roi": {"images": 19, "annotations": 19, "roi_masks": 19, "overlays": 19}}}, {"folder": "佛山市第一人民医院", "views": {"original": {"images": 112, "annotations": 112, "roi_masks": 112, "overlays": 112}, "crop_ui": {"images": 112, "annotations": 112, "roi_masks": 112, "overlays": 112}, "crop_roi": {"images": 112, "annotations": 112, "roi_masks": 112, "overlays": 112}}}, {"folder": "北京友谊医院", "views": {"original": {"images": 124, "annotations": 124, "roi_masks": 124, "overlays": 124}, "crop_ui": {"images": 124, "annotations": 124, "roi_masks": 124, "overlays": 124}, "crop_roi": {"images": 124, "annotations": 124, "roi_masks": 124, "overlays": 124}}}, {"folder": "湖北中西医结合医院", "views": {"original": {"images": 216, "annotations": 216, "roi_masks": 216, "overlays": 216}, "crop_ui": {"images": 216, "annotations": 216, "roi_masks": 216, "overlays": 216}, "crop_roi": {"images": 216, "annotations": 216, "roi_masks": 216, "overlays": 216}}}, {"folder": "福建省德化县医院", "views": {"original": {"images": 100, "annotations": 100, "roi_masks": 100, "overlays": 100}, "crop_ui": {"images": 100, "annotations": 100, "roi_masks": 100, "overlays": 100}, "crop_roi": {"images": 100, "annotations": 100, "roi_masks": 100, "overlays": 100}}}, {"folder": "福建省肿瘤医院", "views": {"original": {"images": 436, "annotations": 436, "roi_masks": 436, "overlays": 436}, "crop_ui": {"images": 436, "annotations": 436, "roi_masks": 436, "overlays": 436}, "crop_roi": {"images": 436, "annotations": 436, "roi_masks": 436, "overlays": 436}}}, {"folder": "莆田学院附属医院", "views": {"original": {"images": 2376, "annotations": 2376, "roi_masks": 2376, "overlays": 2376}, "crop_ui": {"images": 2376, "annotations": 2376, "roi_masks": 2376, "overlays": 2376}, "crop_roi": {"images": 2376, "annotations": 2376, "roi_masks": 2376, "overlays": 2376}}}, {"folder": "莆田市第一医院", "views": {"original": {"images": 25, "annotations": 25, "roi_masks": 25, "overlays": 25}, "crop_ui": {"images": 25, "annotations": 25, "roi_masks": 25, "overlays": 25}, "crop_roi": {"images": 25, "annotations": 25, "roi_masks": 25, "overlays": 25}}}]}, "lumen_detection": {"crop_ui_confirmed": {"images_train": 1439, "images_val": 211, "images_test": 183, "labels_train": 1439, "labels_val": 211, "labels_test": 183}}, "tables": {"files": [{"name": "README.md", "size_mb": 0.001}, {"name": "center_name_registry.csv", "size_mb": 0.002}, {"name": "clinical_table_index.csv", "size_mb": 0.282}, {"name": "clinical_table_registry.csv", "size_mb": 185.62}, {"name": "patient_clinical_candidates.csv", "size_mb": 179.928}, {"name": "patient_clinical_master.csv", "size_mb": 7.658}, {"name": "patient_clinical_master_coverage_by_group.csv", "size_mb": 0.019}, {"name": "patient_clinical_master_coverage_overall.csv", "size_mb": 0.001}, {"name": "patient_clinical_schema.json", "size_mb": 0.004}], "center_registry_rows": 12, "centers": [{"center_id": "internal_xh", "standard_hospital_name": "福建医科大学附属协和医院", "folder_name": "internal", "legacy_folder_aliases": "int/协和内部", "source_prefix": "int/", "dataset_key": "", "cohort": "internal_xh_2018;internal_xh_2019;internal_xh_2020_2023;internal_xh_2024;internal_xh_2025", "tstaging_manifest": "internal", "tstaging_split": "yes", "benign_data": "train;val;test_external;test_prospective", "malignant_data": "yes", "video_data": "yes", "image_data": "no", "manifest_frames": "yes", "modeled_frames": "10659", "clinical_patients": "9681", "notes": "1883", "null": ["organized by year under dataset/internal/"]}, {"center_id": "external_putian1", "standard_hospital_name": "莆田学院附属医院", "folder_name": "莆田学院附属医院", "legacy_folder_aliases": "莆田1胃癌直接手术", "source_prefix": "ext/putian", "dataset_key": "external_putian1", "cohort": "external", "tstaging_manifest": "yes", "tstaging_split": "train;val;test_external", "benign_data": "yes", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "2376", "modeled_frames": "1103", "clinical_patients": "344", "notes": ""}, {"center_id": "external_putian2", "standard_hospital_name": "莆田市第一医院", "folder_name": "莆田市第一医院", "legacy_folder_aliases": "莆田2胃癌直接手术", "source_prefix": "ext/putian2", "dataset_key": "external_putian2", "cohort": "external", "tstaging_manifest": "yes", "tstaging_split": "test_external", "benign_data": "no", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "25", "modeled_frames": "0", "clinical_patients": "8", "notes": ""}, {"center_id": "external_tumor", "standard_hospital_name": "福建省肿瘤医院", "folder_name": "福建省肿瘤医院", "legacy_folder_aliases": "肿瘤医院直接手术", "source_prefix": "ext/zhongliu", "dataset_key": "external_tumor", "cohort": "external", "tstaging_manifest": "yes", "tstaging_split": "test_external", "benign_data": "yes", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "436", "modeled_frames": "229", "clinical_patients": "135", "notes": ""}, {"center_id": "external_sanming", "standard_hospital_name": "三明市第二医院", "folder_name": "三明市第二医院", "legacy_folder_aliases": "三明胃癌直接手术", "source_prefix": "ext/sanming", "dataset_key": "external_sanming", "cohort": "external", "tstaging_manifest": "yes", "tstaging_split": "test_external", "benign_data": "yes", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "19", "modeled_frames": "0", "clinical_patients": "4", "notes": ""}, {"center_id": "external_dehua", "standard_hospital_name": "福建省德化县医院", "folder_name": "福建省德化县医院", "legacy_folder_aliases": "德化直接手术", "source_prefix": "ext/newzip/福建省德化县医院", "dataset_key": "external_dehua", "cohort": "external", "tstaging_manifest": "newzip_only", "tstaging_split": "test_external_newzip", "benign_data": "no", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "100", "modeled_frames": "88", "clinical_patients": "16", "notes": ""}, {"center_id": "external_beijing_friendship", "standard_hospital_name": "北京友谊医院", "folder_name": "北京友谊医院", "legacy_folder_aliases": "外省整理/北京;外省整理", "source_prefix": "ext/newzip/北京友谊医院", "dataset_key": "external_beijing_friendship", "cohort": "external", "tstaging_manifest": "newzip_only", "tstaging_split": "test_external_newzip", "benign_data": "no", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "124", "modeled_frames": "124", "clinical_patients": "22", "notes": ""}, {"center_id": "external_foshan_first", "standard_hospital_name": "佛山市第一人民医院", "folder_name": "佛山市第一人民医院", "legacy_folder_aliases": "外省整理/广东;外省整理", "source_prefix": "ext/newzip/佛山市第一人民医院", "dataset_key": "external_foshan_first", "cohort": "external", "tstaging_manifest": "newzip_only", "tstaging_split": "test_external_newzip", "benign_data": "no", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "112", "modeled_frames": "67", "clinical_patients": "31", "notes": ""}, {"center_id": "external_hubei_tcm", "standard_hospital_name": "湖北中西医结合医院", "folder_name": "湖北中西医结合医院", "legacy_folder_aliases": "外省整理/湖北窦;外省整理", "source_prefix": "ext/newzip/湖北中西医结合医院", "dataset_key": "external_hubei_tcm", "cohort": "external", "tstaging_manifest": "newzip_only", "tstaging_split": "test_external_newzip", "benign_data": "yes", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "216", "modeled_frames": "216", "clinical_patients": "67", "notes": ""}, {"center_id": "external_cnnc_504", "standard_hospital_name": "中核五〇四医院", "folder_name": "中核五〇四医院", "legacy_folder_aliases": "窦晓霞中核五〇四医院胃溃疡病例(1)", "source_prefix": "", "dataset_key": "", "cohort": "external_cnnc_504", "tstaging_manifest": "external", "tstaging_split": "no", "benign_data": "", "malignant_data": "yes", "video_data": "yes", "image_data": "yes", "manifest_frames": "yes", "modeled_frames": "0", "clinical_patients": "0", "notes": "0", "null": ["ulcer video task under data/中核五〇四医院/"]}, {"center_id": "external_fujian_provincial", "standard_hospital_name": "福建省立医院", "folder_name": "", "legacy_folder_aliases": "", "source_prefix": "", "dataset_key": "external_fujian_provincial", "cohort": "external", "tstaging_manifest": "no", "tstaging_split": "", "benign_data": "no", "malignant_data": "yes", "video_data": "no", "image_data": "yes", "manifest_frames": "0", "modeled_frames": "0", "clinical_patients": "0", "notes": "not imported"}, {"center_id": "external_ningde", "standard_hospital_name": "宁德市医院", "folder_name": "", "legacy_folder_aliases": "", "source_prefix": "", "dataset_key": "external_ningde", "cohort": "external", "tstaging_manifest": "no", "tstaging_split": "", "benign_data": "yes", "malignant_data": "no", "video_data": "no", "image_data": "yes", "manifest_frames": "0", "modeled_frames": "0", "clinical_patients": "0", "notes": "not imported"}], "patient_clinical_master_rows": 2374}, "modeling_splits": {"test_external_clinical": {"rows": 2298, "patients": 381, "labels": {"2": 893, "3": 800, "0": 421, "1": 184}}, "test_external_newzip_clinical": {"rows": 495, "patients": 136, "labels": {"3": 169, "2": 157, "1": 106, "0": 63}}, "test_prospective_clinical": {"rows": 234, "patients": 46, "labels": {"2": 100, "3": 64, "0": 39, "1": 31}}, "train_clinical": {"rows": 8783, "patients": 1405, "labels": {"2": 3136, "3": 3100, "0": 1510, "1": 1037}}, "val_clinical": {"rows": 1041, "patients": 161, "labels": {"3": 402, "2": 350, "0": 206, "1": 83}}}, "docs": [{"title": "DATASET_GUIDE.md", "path": "dataset/DATASET_GUIDE.md"}, {"title": "README.md", "path": "dataset/README.md"}, {"title": "tables/README.md", "path": "dataset/tables/README.md"}]}</script>
+  <script>
+    const DATA = JSON.parse(document.getElementById('inventory-data').textContent);
+    const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('zh-CN'));
+    const pct = (part, total) => total ? ((part / total) * 100).toFixed(1) + '%' : '—';
+
+    document.getElementById('generated-meta').textContent =
+      `生成时间：${DATA.generated_at} · 数据根目录：${DATA.dataset_root} · 重新生成：python scripts/build_dataset_inventory.py`;
+
+    function table(headers, rows) {
+      const thead = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+      const tbody = rows.map(r => '<tr>' + r.map((c, i) => {
+        const cls = typeof c === 'object' && c?.num ? ' class="num"' : (i > 0 && !isNaN(parseFloat(String(c).replace(/,/g,''))) ? ' class="num"' : '');
+        const val = typeof c === 'object' ? c.html : c;
+        return `<td${cls}>${val}</td>`;
+      }).join('') + '</tr>').join('');
+      return `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+    }
+
+    function barRow(label, value, max) {
+      const w = max ? Math.min(100, (value / max) * 100) : 0;
+      return [label + ` (${fmt(value)})`, { html: `<div class="bar-cell">${fmt(value)}<div class="bar"><span style="width:${w}%"></span></div></div>` }];
+    }
+
+    const s = DATA.summary;
+    const kpis = [
+      ['正式 manifest 总帧', s.total_manifest - (DATA.external.newzip_manifest_rows || 0)],
+      ['internal manifest', s.internal_manifest],
+      ['external manifest', s.external_manifest],
+      ['newzip manifest', s.external_newzip_manifest],
+      ['物理 original 图像', s.internal_physical_original_images],
+      ['临床主表患者行', DATA.tables.patient_clinical_master_rows],
+    ];
+
+    let html = '<div class="kpi-grid">';
+    kpis.forEach(([lbl, val]) => {
+      html += `<div class="kpi"><div class="val">${fmt(val)}</div><div class="lbl">${lbl}</div></div>`;
+    });
+    html += '</div>';
+
+    html += '<section id="overview"><h2>1. 总览</h2>';
+    html += '<p class="note"><strong>口径提醒：</strong>做分割/ROI 实验以 <code>manifest.csv</code> 为准；做 T 分期 AUC 以 <code>pipeline/data/.../regions/*_clinical.csv</code> 为准。二者不可混用。</p>';
+    html += table(
+      ['数据块', 'manifest 成功样本', '说明'],
+      [
+        ['internal/', fmt(DATA.internal.manifest_rows), '协和内部直接手术，含 training_2018_2024 + prospective_2025'],
+        ['external/ (原多中心)', fmt(DATA.external.manifest_rows), '莆田/肿瘤/三明/莆田二院等'],
+        ['external/ (newzip)', fmt(DATA.external.newzip_manifest_rows), '外省整理 + 德化医院等新增外部'],
+        ['合计 (manifest+newzip)', fmt(s.total_manifest), '磁盘正式预处理成功样本'],
+      ]
+    );
+    html += '</section>';
+
+    html += '<section id="calibers"><h2>2. 统计口径对照</h2>';
+    html += table(
+      ['口径', '范围', '帧/行数', '用途'],
+      DATA.calibers.map(c => [c.name, c.scope, fmt(c.frames), c.use])
+    );
+    html += '</section>';
+
+    html += '<section id="tree"><h2>3. 目录结构</h2><pre class="tree">dataset/
+├── DATASET_GUIDE.md
+├── README.md
+├── inventory/          ← 本盘点页
+├── internal/
+│   ├── manifest.csv
+│   ├── training_2018_2024/{2018,2019,2020_2023,2024}/
+│   └── prospective_2025/2025/
+├── external/
+│   ├── manifest.csv
+│   ├── new_external_zip_manifest.csv
+│   └── {各中心}/{original,crop_ui,crop_roi}/
+├── lumen_detection/
+└── tables/</pre></section>';
+
+    const intMax = Math.max(...Object.values(DATA.internal.manifest_by_pool || {}), 1);
+    html += '<section id="internal"><h2>4. 内部数据 (internal/)</h2>';
+    html += '<h3>4.1 manifest 按池分布</h3>';
+    html += table(
+      ['group_targets', '样本数', '占比', ''],
+      Object.entries(DATA.internal.manifest_by_pool || {}).map(([k, v]) => [
+        `<code>${k}</code>`, fmt(v), pct(v, DATA.internal.manifest_rows),
+        { html: `<div class="bar"><span style="width:${(v/intMax)*100}%"></span></div>` }
+      ])
+    );
+    html += `<p>未匹配：${fmt(DATA.internal.unmatched_rows)} · 预处理错误：${fmt(DATA.internal.error_rows)}</p>`;
+    html += '<h3>4.2 按年份 × 视图（物理文件数，original/images）</h3>';
+    const intRows = (DATA.internal.groups || []).map(g => {
+      const orig = g.views?.original?.images ?? 0;
+      const ui = g.views?.crop_ui?.images ?? 0;
+      const roi = g.views?.crop_roi?.images ?? 0;
+      return [
+        g.pool.replace('training_2018_2024', 'train池').replace('prospective_2025', '前瞻池'),
+        g.year,
+        fmt(orig), fmt(ui), fmt(roi),
+        g.pool.includes('prospective') ? '<span class="badge warn">建议独立 test</span>' : '<span class="badge ok">训练主池</span>'
+      ];
+    });
+    html += table(['池', '年份', 'original', 'crop_ui', 'crop_roi', '建议'], intRows);
+    html += '</section>';
+
+    const extMax = Math.max(
+      ...Object.values(DATA.external.manifest_by_center || {}),
+      ...Object.values(DATA.external.newzip_by_center || {}),
+      1
+    );
+    html += '<section id="external"><h2>5. 外部数据 (external/)</h2>';
+    html += '<h3>5.1 原多中心 manifest</h3>';
+    html += table(
+      ['中心 (group_targets)', 'manifest 帧', '占比', ''],
+      Object.entries(DATA.external.manifest_by_center || {}).map(([k, v]) => [
+        k, fmt(v), pct(v, DATA.external.manifest_rows),
+        { html: `<div class="bar"><span style="width:${(v/extMax)*100}%"></span></div>` }
+      ])
+    );
+    html += '<h3>5.2 各中心物理规模 (original/images)</h3>';
+    const extPhys = (DATA.external.centers || []).map(c => {
+      const o = c.views?.original?.images ?? 0;
+      return [c.folder, fmt(o), o > 500 ? '大中心' : (o < 50 ? '小中心' : '中')];
+    });
+    html += table(['目录名', 'original 图像', '规模'], extPhys);
+    html += `<p>未匹配：${fmt(DATA.external.unmatched_rows)} · 错误：${fmt(DATA.external.error_rows)}</p>`;
+    html += '</section>';
+
+    html += '<section id="newzip"><h2>6. 新增外部 zip (new_external_zip_manifest)</h2>';
+    html += table(
+      ['中心', 'manifest 帧', ''],
+      Object.entries(DATA.external.newzip_by_center || {}).map(([k, v]) =>
+        barRow(k, v, extMax)
+      )
+    );
+    html += '<p class="note">newzip 数据已写入独立建模 split <code>test_external_newzip_clinical.csv</code>；未匹配 pT 的图像保留在 manifest 但不进入建模 CSV。</p>';
+    html += '</section>';
+
+    html += '<section id="modeling"><h2>7. T 分期建模 CSV</h2>';
+    html += '<p>路径：<code>pipeline/data/tstaging_4class_region_contrastive_full/regions/</code></p>';
+    const modelRows = Object.entries(DATA.modeling_splits || {}).map(([name, info]) => [
+      `<code>${name}</code>`,
+      fmt(info.rows),
+      fmt(info.patients),
+      Object.entries(info.labels || {}).map(([l, n]) => `${l}:${n}`).join(', ')
+    ]);
+    html += table(['split 文件', 'CSV 行数', 'patient_id', 'label 分布'], modelRows);
+    const totalModelRows = Object.values(DATA.modeling_splits || {}).reduce((a, b) => a + (b.rows || 0), 0);
+    html += `<p>建模 CSV 行数合计：<strong>${fmt(totalModelRows)}</strong>（各 split 可能有重复样本行，去重图像数以 DATASET_GUIDE 为准）</p>`;
+    html += '</section>';
+
+    html += '<section id="tables"><h2>8. 临床表资产 (tables/)</h2>';
+    html += table(
+      ['文件', '大小 (MB)'],
+      (DATA.tables.files || []).map(f => [`<code>${f.name}</code>`, String(f.size_mb)])
+    );
+    html += `<p>患者临床主表行数：<strong>${fmt(DATA.tables.patient_clinical_master_rows)}</strong></p>`;
+    html += '</section>';
+
+    html += '<section id="centers"><h2>9. 多中心标准命名对照</h2>';
+    const centerCols = ['standard_hospital_name', 'folder_name', 'tstaging_manifest', 'tstaging_split', 'manifest_frames', 'clinical_patients', 'benign_data', 'malignant_data'];
+    const centers = DATA.tables.centers || [];
+    if (centers.length) {
+      html += table(
+        centerCols,
+        centers.map(c => centerCols.map(col => c[col] ?? '—'))
+      );
+    }
+    html += '</section>';
+
+    html += '<section id="lumen"><h2>10. 胃腔检测 (lumen_detection/)</h2>';
+    const lumenRows = Object.entries(DATA.lumen_detection || {}).map(([name, v]) => [
+      name,
+      fmt(v.images_train), fmt(v.images_val), fmt(v.images_test),
+      fmt((v.images_train||0)+(v.images_val||0)+(v.images_test||0))
+    ]);
+    html += table(['子集', 'train', 'val', 'test', '合计'], lumenRows);
+    html += '</section>';
+
+    html += '<section id="docs"><h2>11. 相关文档</h2><ul>';
+    (DATA.docs || []).forEach(d => {
+      html += `<li><a href="../../${d.path}">${d.title}</a> <code>${d.path}</code></li>`;
+    });
+    html += `<li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>`;
+    html += '</ul></section>';
+
+    document.getElementById('app').innerHTML = html;
+  </script>
+</body>
+</html>
