@@ -1,6 +1,7 @@
 "use client";
 
 import { CONCEPT_CONFIGS, getConceptBarGradient } from '@/lib/medical-config';
+import { ConceptFieldSource, ConceptFieldSources } from '@/lib/concept-agent-merge';
 import { ConceptState } from '@/types';
 import { Activity, RotateCcw, Save, ShieldAlert, Sliders } from 'lucide-react';
 import React from 'react';
@@ -14,9 +15,11 @@ interface ConceptReasoningProps {
   onSave?: () => void;
   populatedCount?: number;
   agentFilledCount?: number;
+  fieldSources?: ConceptFieldSources;
   hasClinicalData?: boolean;
   isDirty?: boolean;
   saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  autoSaveEnabled?: boolean;
 }
 
 export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
@@ -26,11 +29,34 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
   onSave,
   populatedCount = 0,
   agentFilledCount = 0,
+  fieldSources,
   hasClinicalData = false,
   isDirty = false,
   saveStatus = 'idle',
+  autoSaveEnabled = false,
 }) => {
   const { t, language } = useSettings();
+
+  const sourceMeta = (source?: ConceptFieldSource) => {
+    if (!source || source === 'default') return null;
+    if (source === 'clinical') {
+      return { label: language === 'zh' ? '病理' : 'PATH', className: 'text-emerald-400/90 border-emerald-500/30 bg-emerald-500/10' };
+    }
+    if (source === 'agent') {
+      return { label: language === 'zh' ? 'Agent' : 'AGT', className: 'text-purple-400/90 border-purple-500/30 bg-purple-500/10' };
+    }
+    return { label: language === 'zh' ? '手动' : 'EDIT', className: 'text-amber-400/90 border-amber-500/30 bg-amber-500/10' };
+  };
+
+  const renderSourceBadge = (key: keyof ConceptState) => {
+    const meta = sourceMeta(fieldSources?.[key]);
+    if (!meta) return null;
+    return (
+      <span className={`ml-1 px-1 py-0 rounded border text-[7px] font-bold uppercase tracking-wide ${meta.className}`}>
+        {meta.label}
+      </span>
+    );
+  };
   
   const renderSlider = (key: keyof ConceptState) => {
     const config = CONCEPT_CONFIGS[key as string];
@@ -47,6 +73,7 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
         <div className="flex justify-between items-end mb-1.5">
           <span className="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase tracking-tight">
             {config.label[language as 'zh' | 'en']}
+            {renderSourceBadge(key)}
           </span>
           <div className="flex items-baseline gap-1">
              <span className={`text-[10px] font-mono font-bold ${val > config.thresholds.warning ? 'text-gray-100' : 'text-gray-500'}`}>{val}%</span>
@@ -97,7 +124,10 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
 
     return (
       <div className="py-2 border-t border-white/5">
-        <div className="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-tight">{label}</div>
+        <div className="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-tight">
+          {label}
+          {renderSourceBadge(key)}
+        </div>
         <div className="grid grid-cols-1 gap-1">
           {options.map((opt) => (
             <button
@@ -124,7 +154,10 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
 
     return (
       <div className="py-2 flex items-center justify-between border-t border-white/5">
-        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{label}</span>
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">
+          {label}
+          {renderSourceBadge(key)}
+        </span>
         <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/5">
           <button
             onClick={() => onChange(key, 0)}
@@ -198,6 +231,11 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
           {agentFilledCount > 0 && (
             <span className="text-purple-400 ml-1">
               {language === 'zh' ? `· Agent/超声 +${agentFilledCount}` : `· Agent/US +${agentFilledCount}`}
+            </span>
+          )}
+          {autoSaveEnabled && isDirty && saveStatus === 'idle' && (
+            <span className="text-blue-400 ml-1">
+              {language === 'zh' ? '· 待自动保存' : '· pending autosave'}
             </span>
           )}
         </span>

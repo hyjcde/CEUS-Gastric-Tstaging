@@ -16,7 +16,13 @@ import {
   mergeAgentIntoConceptState,
   mergeExplainableIntoConceptState,
   countAgentFilledFields,
+  buildClinicalFieldSources,
+  markAgentFilledSources,
+  markManualFieldSource,
+  createDefaultFieldSources,
   ExplainableAnalysisResult,
+  ConceptFieldSources,
+  CONCEPT_STATE_KEYS,
 } from '@/lib/concept-agent-merge';
 
 export default function Home() {
@@ -32,17 +38,30 @@ export default function Home() {
   const [agentFilledCount, setAgentFilledCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isDirty, setIsDirty] = useState(false);
+  const [fieldSources, setFieldSources] = useState<ConceptFieldSources>(createDefaultFieldSources());
 
   const clinicalBaselinesRef = useRef<Map<string, ConceptState>>(new Map());
+  const fieldSourcesRef = useRef<Map<string, ConceptFieldSources>>(new Map());
   const userEditedRef = useRef<Set<string>>(new Set());
   const lastMergedAgentSessionRef = useRef<string | null>(null);
   const lastMergedExplainableRef = useRef<string | null>(null);
   const patientConceptStatesRef = useRef<Map<string, ConceptState>>(new Map());
   const conceptLoadTokenRef = useRef(0);
+  const conceptStateRef = useRef(conceptState);
+  const saveConceptStateRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    conceptStateRef.current = conceptState;
+  }, [conceptState]);
 
   useEffect(() => {
     patientConceptStatesRef.current = patientConceptStates;
   }, [patientConceptStates]);
+
+  const syncFieldSourcesForPatient = useCallback((patientId: string, sources: ConceptFieldSources) => {
+    fieldSourcesRef.current.set(patientId, sources);
+    setFieldSources(sources);
+  }, []);
 
   useEffect(() => {
     setAgentAnalysis(null);
@@ -51,7 +70,22 @@ export default function Home() {
     setIsDirty(false);
     lastMergedAgentSessionRef.current = null;
     lastMergedExplainableRef.current = null;
-  }, [selectedPatient?.id]);
+
+    if (!selectedPatient) {
+      setFieldSources(createDefaultFieldSources());
+      return;
+    }
+
+    const cachedSources = fieldSourcesRef.current.get(selectedPatient.id);
+    if (cachedSources) {
+      setFieldSources(cachedSources);
+      return;
+    }
+
+    const baseline = clinicalBaselinesRef.current.get(selectedPatient.id)
+      ?? getConceptStateFromPatient(selectedPatient);
+    syncFieldSourcesForPatient(selectedPatient.id, buildClinicalFieldSources(baseline));
+  }, [selectedPatient?.id, syncFieldSourcesForPatient]);
 
   const conceptPopulatedCount = useMemo(
     () => countPopulatedConceptFields(conceptState),
@@ -99,6 +133,11 @@ export default function Home() {
         return newMap;
       });
       userEditedRef.current.add(selectedPatient.id);
+      setFieldSources((prevSources) => {
+        const nextSources = markManualFieldSource(prevSources, key);
+        fieldSourcesRef.current.set(selectedPatient.id, nextSources);
+        return nextSources;
+      });
       setIsDirty(true);
       setSaveStatus('idle');
       return newState;
@@ -112,7 +151,7 @@ export default function Home() {
       const response = await fetch('/api/patients/concept-overrides', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId: selectedPatient.id, state: conceptState }),
+        body: JSON.stringify({ patientId: selectedPatient.id, state: conceptStateRef.current }),
       });
       if (!response.ok) throw new Error('Save failed');
       setSaveStatus('saved');
@@ -120,14 +159,31 @@ export default function Home() {
     } catch {
       setSaveStatus('error');
     }
-  }, [selectedPatient, conceptState]);
+  }, [selectedPatient]);
+
+  useEffect(() => {
+    saveConceptStateRef.current = handleSaveConceptState;
+  }, [handleSaveConceptState]);
+
+  useEffect(() => {
+    if (!selectedPatient || !isDirty) return;
+    if (!userEditedRef.current.has(selectedPatient.id)) return;
+
+    const timer = window.setTimeout(() => {
+      void saveConceptStateRef.current?.();
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [conceptState, isDirty, selectedPatient?.id]);
 
   const handleResetConceptState = useCallback(async () => {
     if (!selectedPatient) return;
     const baseline = getConceptStateFromPatient(selectedPatient);
     clinicalBaselinesRef.current.set(selectedPatient.id, baseline);
     userEditedRef.current.delete(selectedPatient.id);
+    fieldSourcesRef.current.delete(selectedPatient.id);
     applyConceptState(selectedPatient.id, baseline, false);
+    syncFieldSourcesForPatient(selectedPatient.id, buildClinicalFieldSources(baseline));
     setIsDirty(false);
     setSaveStatus('idle');
     setAgentFilledCount(0);
@@ -138,7 +194,7 @@ export default function Home() {
     } catch {
       // 忽略删除失败，本地已恢复
     }
-  }, [selectedPatient, applyConceptState]);
+  }, [selectedPatient, applyConceptState, syncFieldSourcesForPatient]);
 
   useEffect(() => {
     if (!selectedPatient) return;
@@ -149,6 +205,9 @@ export default function Home() {
     async function loadPatientConceptState() {
       const baseline = getConceptStateFromPatient(patient);
       clinicalBaselinesRef.current.set(patientId, baseline);
+      if (!fieldSourcesRef.current.has(patientId)) {
+        syncFieldSourcesForPatient(patientId, buildClinicalFieldSources(baseline));
+      }
 
       const cached = patientConceptStatesRef.current.get(patientId);
       if (cached) {
@@ -173,6 +232,15 @@ export default function Home() {
         if (loadToken !== conceptLoadTokenRef.current) return;
 
         const loaded = data.state ?? baseline;
+        if (data.state) {
+          const sources = buildClinicalFieldSources(baseline);
+          for (const key of CONCEPT_STATE_KEYS) {
+            if (loaded[key] !== baseline[key]) {
+              sources[key] = 'manual';
+            }
+          }
+          syncFieldSourcesForPatient(patientId, sources);
+        }
         applyConceptState(patientId, loaded, Boolean(data.state));
         setIsDirty(Boolean(data.state));
       } catch {
@@ -182,7 +250,7 @@ export default function Home() {
     }
 
     loadPatientConceptState();
-  }, [selectedPatient?.id, applyConceptState]);
+  }, [selectedPatient?.id, applyConceptState, syncFieldSourcesForPatient]);
 
   useEffect(() => {
     if (!agentAnalysis || !selectedPatient) return;
@@ -196,6 +264,11 @@ export default function Home() {
       const merged = mergeAgentIntoConceptState(prev, baseline, agentAnalysis);
       const filled = countAgentFilledFields(prev, merged, baseline);
       setAgentFilledCount(filled);
+      setFieldSources((prevSources) => {
+        const nextSources = markAgentFilledSources(prevSources, prev, merged, baseline);
+        fieldSourcesRef.current.set(patientId, nextSources);
+        return nextSources;
+      });
       setPatientConceptStates((prevMap) => {
         const newMap = new Map(prevMap);
         newMap.set(patientId, merged);
@@ -221,6 +294,11 @@ export default function Home() {
       const merged = mergeExplainableIntoConceptState(prev, baseline, result);
       const filled = countAgentFilledFields(prev, merged, baseline);
       setAgentFilledCount((count) => count + filled);
+      setFieldSources((prevSources) => {
+        const nextSources = markAgentFilledSources(prevSources, prev, merged, baseline);
+        fieldSourcesRef.current.set(selectedPatient.id, nextSources);
+        return nextSources;
+      });
       setPatientConceptStates((prevMap) => {
         const newMap = new Map(prevMap);
         newMap.set(selectedPatient.id, merged);
@@ -287,9 +365,11 @@ export default function Home() {
               onSave={handleSaveConceptState}
               populatedCount={conceptPopulatedCount}
               agentFilledCount={agentFilledCount}
+              fieldSources={fieldSources}
               hasClinicalData={Boolean(selectedPatient?.clinical)}
               isDirty={isDirty}
               saveStatus={saveStatus}
+              autoSaveEnabled
             />
           </div>
 

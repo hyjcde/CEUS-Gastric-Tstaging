@@ -187,3 +187,51 @@ export function countAgentFilledFields(
     return true;
   }).length;
 }
+
+export type ConceptFieldSource = 'default' | 'clinical' | 'agent' | 'manual';
+
+export type ConceptFieldSources = Record<keyof ConceptState, ConceptFieldSource>;
+
+export const CONCEPT_STATE_KEYS: (keyof ConceptState)[] = [
+  'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7',
+  'differentiation', 'lauren', 'vascularInvasion', 'neuralInvasion',
+];
+
+export function createDefaultFieldSources(): ConceptFieldSources {
+  return Object.fromEntries(
+    CONCEPT_STATE_KEYS.map((key) => [key, 'default']),
+  ) as ConceptFieldSources;
+}
+
+export function buildClinicalFieldSources(baseline: ConceptState): ConceptFieldSources {
+  const sources = createDefaultFieldSources();
+  for (const key of CONCEPT_STATE_KEYS) {
+    if (baseline[key] !== DEFAULT_STATE[key]) {
+      sources[key] = 'clinical';
+    }
+  }
+  return sources;
+}
+
+export function markAgentFilledSources(
+  sources: ConceptFieldSources,
+  before: ConceptState,
+  after: ConceptState,
+  clinicalBaseline: ConceptState,
+): ConceptFieldSources {
+  const next = { ...sources };
+  for (const key of CONCEPT_STATE_KEYS) {
+    if (after[key] === before[key]) continue;
+    if (isClinicalPopulated(clinicalBaseline, key)) continue;
+    if (next[key] === 'manual') continue;
+    next[key] = 'agent';
+  }
+  return next;
+}
+
+export function markManualFieldSource(
+  sources: ConceptFieldSources,
+  key: keyof ConceptState,
+): ConceptFieldSources {
+  return { ...sources, [key]: 'manual' };
+}
