@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getDataRoot } from "@/lib/direction-annotation/dataRoot";
+import { resolveConfiguredPaths } from "@/lib/direction-annotation/dataRoot";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path: segments } = await params;
-  const relPath = segments.join("/");
-  const root = path.resolve(getDataRoot());
+  const relPath = segments.map((segment) => decodeURIComponent(segment)).join("/");
+  const { projectRoot } = resolveConfiguredPaths();
+  const root = path.resolve(projectRoot);
   const absPath = path.resolve(root, relPath);
 
   if (absPath !== root && !absPath.startsWith(`${root}${path.sep}`)) {

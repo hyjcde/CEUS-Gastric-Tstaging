@@ -3,9 +3,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
 import { GASTRIC_COHORT_YEARS, GastricCohortYear, getCohortDisplayLabel } from '@/lib/cohort';
-import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool } from 'lucide-react';
+import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool, Clapperboard } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getDirectionAnnotatorPath } from '@/lib/annotator-url';
+import { getVideoAnnotatorUrl } from '@/lib/video-annotator-url';
 
 interface HeaderProps {
   onShowStatistics?: () => void;
@@ -35,6 +36,11 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
 
   const openAnnotator = () => {
     router.push(getDirectionAnnotatorPath());
+    setShowUserMenu(false);
+  };
+
+  const openVideoAnnotator = () => {
+    window.open(getVideoAnnotatorUrl(), '_blank', 'noopener,noreferrer');
     setShowUserMenu(false);
   };
 
@@ -146,6 +152,15 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
           <PenTool size={12} />
           <span className="text-[10px] font-semibold">{t.nav.annotator}</span>
         </button>
+
+        <button
+          onClick={openVideoAnnotator}
+          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-colors text-cyan-400 hover:text-cyan-300"
+          title={t.nav.videoAnnotatorTitle}
+        >
+          <Clapperboard size={12} />
+          <span className="text-[10px] font-semibold">{t.nav.videoAnnotator}</span>
+        </button>
         
         <div className="hidden md:flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 shadow-inner">
             <div className="relative flex h-1.5 w-1.5">
@@ -189,6 +204,12 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
                         className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
                     >
                         <PenTool size={12} /> {t.nav.annotator}
+                    </button>
+                    <button 
+                        onClick={openVideoAnnotator}
+                        className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
+                    >
+                        <Clapperboard size={12} /> {t.nav.videoAnnotator}
                     </button>
                     
                     <div className="h-px bg-white/5 my-1"></div>

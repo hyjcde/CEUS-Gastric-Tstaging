@@ -7,6 +7,11 @@ import type {
   DirectionBatchItem, GridCellAnnotation, BreachPolygon,
   VisibleLayers, BreachConfidence, DirectionAnnotationPayload,
 } from "@/lib/direction-annotation/directionAnnotationTypes";
+import {
+  encodeDatasetPath,
+  parseLesionMaskFromLabelMe,
+  resolveMaskBbox,
+} from "@/lib/direction-annotation/labelme-utils";
 
 const GRID_ROWS = 3;
 const GRID_COLS = 3;
@@ -81,6 +86,7 @@ export default function AnnotatePage() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const [maskPolygon, setMaskPolygon] = useState<number[][] | null>(null);
+  const [maskBbox, setMaskBbox] = useState<[number, number, number, number] | null>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
@@ -96,7 +102,8 @@ export default function AnnotatePage() {
   const [showHelp, setShowHelp] = useState(false);
 
   const currentItem = items[currentIdx] ?? null;
-  const hasMask = currentItem?.has_mask && currentItem?.mask_bbox;
+  const effectiveMaskBbox = maskBbox || resolveMaskBbox(currentItem);
+  const hasMask = Boolean(effectiveMaskBbox);
 
   const siblingIndices: number[] = useMemo(() => {
     if (!currentItem) return [];
@@ -137,23 +144,25 @@ export default function AnnotatePage() {
     if (!currentItem) return;
     setImgLoaded(false);
     setMaskPolygon(null);
+    setMaskBbox(null);
     setZoomLevel(1);
     setPanOffset([0, 0]);
 
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = `/api/direction-annotation/image/${currentItem.image_path}`;
+    img.src = `/api/direction-annotation/image/${encodeDatasetPath(currentItem.image_path)}`;
     img.onload = () => { imgRef.current = img; setImgLoaded(true); };
     img.onerror = () => { imgRef.current = null; setImgLoaded(true); };
 
     if (currentItem.annotation_path) {
-      fetch(`/api/direction-annotation/annotation/${currentItem.annotation_path}`)
+      fetch(`/api/direction-annotation/annotation/${encodeDatasetPath(currentItem.annotation_path)}`)
         .then((r) => { if (r.ok) return r.json(); throw new Error("not found"); })
         .then((data) => {
-          const tumorShape = data.shapes?.find(
-            (s: any) => s.label?.toLowerCase() === "tumor" && s.points?.length > 0
-          );
-          if (tumorShape) setMaskPolygon(tumorShape.points);
+          const parsed = parseLesionMaskFromLabelMe(data);
+          if (parsed) {
+            setMaskPolygon(parsed.points);
+            setMaskBbox(parsed.bbox);
+          }
         })
         .catch(() => {});
     }
@@ -185,12 +194,12 @@ export default function AnnotatePage() {
       return { srcX: 0, srcY: 0, srcW: img.width, srcH: img.height, dx, dy, scale };
     }
 
-    const roi = computeROI(currentItem.mask_bbox!, img.width, img.height);
+    const roi = computeROI(effectiveMaskBbox!, img.width, img.height);
     const scale = Math.min(canvas.width / roi.rw, canvas.height / roi.rh);
     const dx = (canvas.width - roi.rw * scale) / 2;
     const dy = (canvas.height - roi.rh * scale) / 2;
     return { srcX: roi.rx0, srcY: roi.ry0, srcW: roi.rw, srcH: roi.rh, dx, dy, scale };
-  }, [currentItem, imgLoaded, activeTab, hasMask, zoomLevel, panOffset]);
+  }, [currentItem, imgLoaded, activeTab, hasMask, effectiveMaskBbox, zoomLevel, panOffset]);
 
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -224,7 +233,7 @@ export default function AnnotatePage() {
     }
 
     if (activeTab === "grid" && hasMask) {
-      const [bx0, by0, bx1, by1] = currentItem.mask_bbox!;
+      const [bx0, by0, bx1, by1] = effectiveMaskBbox!;
       const cellW = ((bx1 - bx0) * t.scale) / GRID_COLS;
       const cellH = ((by1 - by0) * t.scale) / GRID_ROWS;
       const [gx0, gy0] = toCanvas(bx0, by0);
@@ -300,7 +309,7 @@ export default function AnnotatePage() {
     }
 
     if (activeTab === "overlay" && hasMask) {
-      const [bx0, by0, bx1, by1] = currentItem.mask_bbox!;
+      const [bx0, by0, bx1, by1] = effectiveMaskBbox!;
       const [cx0, cy0] = toCanvas(bx0, by0);
       const [cx1, cy1] = toCanvas(bx1, by1);
       ctx.setLineDash([6, 4]);
@@ -342,7 +351,7 @@ export default function AnnotatePage() {
     const pt = canvasToImage(e);
     if (!pt) return null;
     const [ix, iy] = pt;
-    const [bx0, by0, bx1, by1] = currentItem.mask_bbox!;
+    const [bx0, by0, bx1, by1] = effectiveMaskBbox!;
     if (ix < bx0 || ix > bx1 || iy < by0 || iy > by1) return null;
     const col = Math.min(GRID_COLS - 1, Math.floor(((ix - bx0) / (bx1 - bx0)) * GRID_COLS));
     const row = Math.min(GRID_ROWS - 1, Math.floor(((iy - by0) / (by1 - by0)) * GRID_ROWS));
@@ -406,7 +415,7 @@ export default function AnnotatePage() {
       grid_cells: gridCells.filter(c => c.has_breach),
       breach_polygons: breachPolygons,
       mask_centroid: currentItem.mask_centroid || [0, 0],
-      mask_bbox: currentItem.mask_bbox || [0, 0, 0, 0],
+      mask_bbox: effectiveMaskBbox || [0, 0, 0, 0],
       note,
       timestamp: new Date().toISOString(),
     };
@@ -465,7 +474,7 @@ export default function AnnotatePage() {
   const drawPatchPreviews = useCallback(() => {
     const img = imgRef.current;
     if (!img || !currentItem || !imgLoaded || !hasMask) return;
-    const [bx0, by0, bx1, by1] = currentItem.mask_bbox!;
+    const [bx0, by0, bx1, by1] = effectiveMaskBbox!;
     const cellW = (bx1 - bx0) / GRID_COLS;
     const cellH = (by1 - by0) / GRID_ROWS;
     for (let r = 0; r < GRID_ROWS; r++) {
@@ -563,7 +572,7 @@ export default function AnnotatePage() {
               return (
                 <button key={idx} onClick={() => setCurrentIdx(idx)}
                   className={`w-full rounded overflow-hidden border-2 transition-colors ${isCurrent ? "border-blue-500" : it.is_annotated ? "border-green-800" : "border-transparent hover:border-gray-600"}`}>
-                  <img src={`/api/direction-annotation/image/${it.image_path}`} alt="" className="w-full h-auto" loading="lazy" />
+                  <img src={`/api/direction-annotation/image/${encodeDatasetPath(it.image_path)}`} alt="" className="w-full h-auto" loading="lazy" />
                   <div className={`text-[7px] px-0.5 py-0.5 truncate ${isCurrent ? "bg-blue-900/50 text-blue-200" : "bg-gray-900 text-gray-500"}`}>
                     {it.image_path.split("/").pop()?.replace(/\.[^.]+$/, "")}
                   </div>
@@ -620,7 +629,7 @@ export default function AnnotatePage() {
                   <span className="text-gray-500">来源</span>
                   <span className="text-gray-300">{currentItem.source}</span>
                   <span className="text-gray-500">Mask</span>
-                  <span className={currentItem.has_mask ? "text-green-400" : "text-yellow-500"}>{currentItem.has_mask ? "有" : "无"}</span>
+                  <span className={hasMask ? "text-green-400" : "text-yellow-500"}>{hasMask ? "有" : "无"}</span>
                 </div>
               </div>
             )}
@@ -749,7 +758,7 @@ export default function AnnotatePage() {
               <div className="p-3 border-b border-gray-800">
                 <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">完整图模式</h3>
                 <div className="text-xs text-gray-400 leading-relaxed">
-                  <p>查看完整 EUS 图像，绿色区域为 tumor mask 标注。</p>
+                  <p>查看完整 EUS 图像，绿色区域为 lesion/tumor mask 标注。</p>
                   <p className="mt-1">滚轮缩放，拖拽平移，<span className="text-blue-400 font-mono">R</span> 重置视图。</p>
                   <p className="mt-1">按 <span className="text-blue-400 font-mono">W</span> 进入网格模式开始标注突破方向。</p>
                 </div>

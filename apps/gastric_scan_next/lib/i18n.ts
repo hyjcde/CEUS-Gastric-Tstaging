@@ -24,6 +24,8 @@ export const dictionary = {
     nav: {
         annotator: 'Annotation',
         annotatorTitle: 'Open direction annotation tool',
+        videoAnnotator: 'Video Platform',
+        videoAnnotatorTitle: 'Open MedDINO video/static annotation platform',
     },
     cohort: {
         title: 'Study Cohort',
@@ -114,8 +116,10 @@ export const dictionary = {
         signout: '退出登录'
     },
     nav: {
-        annotator: '标注',
+        annotator: '方向标注',
         annotatorTitle: '打开突破方向标注工具',
+        videoAnnotator: '视频标注',
+        videoAnnotatorTitle: '打开 MedDINO 视频/静态图标注平台',
     },
     cohort: {
         title: '研究队列',

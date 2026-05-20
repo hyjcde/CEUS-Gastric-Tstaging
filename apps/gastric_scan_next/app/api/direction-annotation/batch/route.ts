@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getBatchFilePath, getSaveDir } from "@/lib/direction-annotation/dataRoot";
+import { getBatchFilePath, getSaveDir, resolveConfiguredPaths } from "@/lib/direction-annotation/dataRoot";
+import { enrichBatchItemWithMask } from "@/lib/direction-annotation/enrich-batch-item";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +75,10 @@ export async function GET(request: NextRequest) {
     const totalFiltered = items.length;
     const totalPages = Math.ceil(totalFiltered / pageSize);
     const start = (page - 1) * pageSize;
-    const pageItems = items.slice(start, start + pageSize);
+    const { projectRoot } = resolveConfiguredPaths();
+    const pageItems = items.slice(start, start + pageSize).map((item: any) =>
+      enrichBatchItemWithMask(projectRoot, item),
+    );
 
     const patientGroups: Record<string, number[]> = {};
     for (let i = 0; i < pageItems.length; i++) {
