@@ -1,0 +1,167 @@
+{
+  "hub_model": "dinov3_vitb16",
+  "layer_index": 11,
+  "test_frames": 2285,
+  "test_patients": 479,
+  "panel_count": 15,
+  "buckets": {
+    "correct_advanced": 3,
+    "correct_early": 3,
+    "errors_high_conf": 3,
+    "t2_t3_boundary": 3,
+    "t3_t4_understage": 3
+  },
+  "public_figures": [
+    {
+      "bucket": "correct_advanced",
+      "patient_id": "207151",
+      "figure": "figures/results/case_framelevel_prosp_dino_correct_advanced_207151_T4plus_pred_T4plus.png",
+      "true_label": "T4+",
+      "pred_label": "T4+",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/correct_advanced/207151_T4plus_pred_T4plus_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_correct_advanced_207151_T4plus_pred_T4plus.png"
+    },
+    {
+      "bucket": "correct_advanced",
+      "patient_id": "206183",
+      "figure": "figures/results/case_framelevel_prosp_dino_correct_advanced_206183_T4plus_pred_T4plus.png",
+      "true_label": "T4+",
+      "pred_label": "T4+",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/correct_advanced/206183_T4plus_pred_T4plus_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_correct_advanced_206183_T4plus_pred_T4plus.png"
+    },
+    {
+      "bucket": "correct_advanced",
+      "patient_id": "1474295",
+      "figure": "figures/results/case_framelevel_prosp_dino_correct_advanced_1474295_T4plus_pred_T4plus.png",
+      "true_label": "T4+",
+      "pred_label": "T4+",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/correct_advanced/1474295_T4plus_pred_T4plus_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_correct_advanced_1474295_T4plus_pred_T4plus.png"
+    },
+    {
+      "bucket": "correct_early",
+      "patient_id": "1508038",
+      "figure": "figures/results/case_framelevel_prosp_dino_correct_early_1508038_T1_pred_T1.png",
+      "true_label": "T1",
+      "pred_label": "T1",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/correct_early/1508038_T1_pred_T1_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_correct_early_1508038_T1_pred_T1.png"
+    },
+    {
+      "bucket": "correct_early",
+      "patient_id": "1279829",
+      "figure": "figures/results/case_framelevel_prosp_dino_correct_early_1279829_T1_pred_T1.png",
+      "true_label": "T1",
+      "pred_label": "T1",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/correct_early/1279829_T1_pred_T1_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_correct_early_1279829_T1_pred_T1.png"
+    },
+    {
+      "bucket": "correct_early",
+      "patient_id": "732535",
+      "figure": "figures/results/case_framelevel_prosp_dino_correct_early_732535_T1_pred_T1.png",
+      "true_label": "T1",
+      "pred_label": "T1",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/correct_early/732535_T1_pred_T1_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_correct_early_732535_T1_pred_T1.png"
+    },
+    {
+      "bucket": "errors_high_conf",
+      "patient_id": "226491",
+      "figure": "figures/results/case_framelevel_prosp_dino_errors_high_conf_226491_T3_pred_T1.png",
+      "true_label": "T3",
+      "pred_label": "T1",
+      "correct": 0,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/errors_high_conf/226491_T3_pred_T1_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_errors_high_conf_226491_T3_pred_T1.png"
+    },
+    {
+      "bucket": "errors_high_conf",
+      "patient_id": "218944",
+      "figure": "figures/results/case_framelevel_prosp_dino_errors_high_conf_218944_T2_pred_T1.png",
+      "true_label": "T2",
+      "pred_label": "T1",
+      "correct": 0,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/errors_high_conf/218944_T2_pred_T1_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_errors_high_conf_218944_T2_pred_T1.png"
+    },
+    {
+      "bucket": "errors_high_conf",
+      "patient_id": "226445",
+      "figure": "figures/results/case_framelevel_prosp_dino_errors_high_conf_226445_T3_pred_T1.png",
+      "true_label": "T3",
+      "pred_label": "T1",
+      "correct": 0,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/errors_high_conf/226445_T3_pred_T1_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_errors_high_conf_226445_T3_pred_T1.png"
+    },
+    {
+      "bucket": "t2_t3_boundary",
+      "patient_id": "1483904",
+      "figure": "figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1483904_T3_pred_T3.png",
+      "true_label": "T3",
+      "pred_label": "T3",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/t2_t3_boundary/1483904_T3_pred_T3_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1483904_T3_pred_T3.png"
+    },
+    {
+      "bucket": "t2_t3_boundary",
+      "patient_id": "1489524",
+      "figure": "figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1489524_T3_pred_T3.png",
+      "true_label": "T3",
+      "pred_label": "T3",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/t2_t3_boundary/1489524_T3_pred_T3_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1489524_T3_pred_T3.png"
+    },
+    {
+      "bucket": "t2_t3_boundary",
+      "patient_id": "1459726",
+      "figure": "figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1459726_T3_pred_T3.png",
+      "true_label": "T3",
+      "pred_label": "T3",
+      "correct": 1,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/t2_t3_boundary/1459726_T3_pred_T3_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1459726_T3_pred_T3.png"
+    },
+    {
+      "bucket": "t3_t4_understage",
+      "patient_id": "1450863",
+      "figure": "figures/results/case_framelevel_prosp_dino_t3_t4_understage_1450863_T4plus_pred_T3.png",
+      "true_label": "T4+",
+      "pred_label": "T3",
+      "correct": 0,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/t3_t4_understage/1450863_T4plus_pred_T3_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_t3_t4_understage_1450863_T4plus_pred_T3.png"
+    },
+    {
+      "bucket": "t3_t4_understage",
+      "patient_id": "1510817",
+      "figure": "figures/results/case_framelevel_prosp_dino_t3_t4_understage_1510817_T4plus_pred_T3.png",
+      "true_label": "T4+",
+      "pred_label": "T3",
+      "correct": 0,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/t3_t4_understage/1510817_T4plus_pred_T3_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_t3_t4_understage_1510817_T4plus_pred_T3.png"
+    },
+    {
+      "bucket": "t3_t4_understage",
+      "patient_id": "1509301",
+      "figure": "figures/results/case_framelevel_prosp_dino_t3_t4_understage_1509301_T4plus_pred_T3.png",
+      "true_label": "T4+",
+      "pred_label": "T3",
+      "correct": 0,
+      "output_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels/t3_t4_understage/1509301_T4plus_pred_T3_dino.png",
+      "public_figure": "figures/results/case_framelevel_prosp_dino_t3_t4_understage_1509301_T4plus_pred_T3.png"
+    }
+  ],
+  "output_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/prospective_dino_case_panels"
+}

@@ -20,7 +20,7 @@ CSV_PATH = (
 )
 FIG_DIR = PROJECT_ROOT / "docs/mainline/figures/results"
 HTML_PATH = PROJECT_ROOT / "docs/mainline/dinov3_framelevel_scalar_prospective_architecture.html"
-MD_PATH = PROJECT_ROOT / "docs/mainline/dinov3_framelevel_scalar_prospective_architecture_zh.md"
+CASE_META_PATH = FIG_DIR / "framelevel_prosp_dino_cases_meta.json"
 
 SPLIT = "test_prospective_full"
 MODEL_BEST = "random_forest"
@@ -285,7 +285,64 @@ def build_stats_json(df: pd.DataFrame) -> dict:
     }
 
 
-def render_html(figures: list[tuple[str, str, str]], stats: dict) -> None:
+CASE_BUCKET_ZH = {
+    "correct_advanced": "正确 · 晚期 T3/T4+ 高置信",
+    "correct_early": "正确 · 早期 T1/T2 高置信",
+    "errors_high_conf": "误诊 · 高置信错误",
+    "t2_t3_boundary": "边界 · T2/T3 难分",
+    "t3_t4_understage": "边界 · T4+ 低估为 T3",
+}
+
+
+def load_case_gallery_html() -> str:
+    if not CASE_META_PATH.is_file():
+        return (
+            '<p class="note">尚未生成 DINO 病例面板。运行 '
+            "<code>python scripts/generate_framelevel_prospective_dino_case_panels.py</code></p>"
+        )
+    meta = json.loads(CASE_META_PATH.read_text(encoding="utf-8"))
+    items = meta.get("public_figures", [])
+    if not items:
+        return "<p class=\"note\">病例 meta 为空。</p>"
+
+    legend = """
+<div class="case-legend">
+  <strong>每行 7 列：</strong>
+  Original US · Anatomic overlay ·
+  <em>DINO token norm</em> · <em>DINO PCA-1</em> ·
+  <em>Lesion affinity</em> · <em>Outer−inner evidence</em> · Frame 四分类概率。
+  展示 top-3 advanced 帧（按 P(T3)+P(T4+) 选取）。Layer 11 · ViT-B/16 · 512px。
+</div>"""
+    parts = [legend]
+    order = list(CASE_BUCKET_ZH.keys())
+    by_bucket: dict[str, list] = {b: [] for b in order}
+    for it in items:
+        b = str(it.get("bucket", "other"))
+        by_bucket.setdefault(b, []).append(it)
+
+    for bucket in order:
+        group = by_bucket.get(bucket) or []
+        if not group:
+            continue
+        parts.append(f'<h3 class="case-bucket">{CASE_BUCKET_ZH.get(bucket, bucket)}</h3>')
+        parts.append('<div class="case-gallery">')
+        for it in group:
+            src = it.get("public_figure") or it.get("figure", "")
+            pid = it.get("patient_id", "?")
+            true_l = it.get("true_label", "?")
+            pred_l = it.get("pred_label", "?")
+            ok = "✓" if it.get("correct") else "✗"
+            cap = f"Patient {pid} · True {true_l} → Pred {pred_l} {ok}"
+            parts.append(
+                f'<figure class="case-figure">'
+                f'<img src="{src}" alt="{cap}" loading="lazy" />'
+                f"<figcaption>{cap}</figcaption></figure>"
+            )
+        parts.append("</div>")
+    return "\n".join(parts)
+
+
+def render_html(figures: list[tuple[str, str, str]], stats: dict, case_html: str) -> None:
     frame_m = stats["frame_best"]
     pat_m = stats["patient_best"]
 
@@ -434,6 +491,44 @@ def render_html(figures: list[tuple[str, str, str]], stats: dict) -> None:
     .stat-figure h4 {{ font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--muted); }}
     .stat-figure img {{ width: 100%; height: auto; border-radius: 6px; }}
     .stat-figure figcaption {{ font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }}
+    .case-legend {{
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+    }}
+    .case-bucket {{
+      font-size: 1rem;
+      color: var(--accent2);
+      margin: 1.5rem 0 0.75rem;
+    }}
+    .case-gallery {{
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }}
+    .case-figure {{
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.5rem;
+      margin: 0;
+    }}
+    .case-figure img {{
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+      display: block;
+    }}
+    .case-figure figcaption {{
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 0.45rem;
+      padding: 0 0.25rem;
+    }}
     .mermaid-wrap {{
       background: var(--surface);
       border: 1px solid var(--border);
@@ -467,6 +562,7 @@ def render_html(figures: list[tuple[str, str, str]], stats: dict) -> None:
       <a href="#architecture">架构</a>
       <a href="#metrics">指标表</a>
       <a href="#figures">统计图</a>
+      <a href="#cases">DINO 病例</a>
       <a href="#reproduce">复现</a>
     </nav>
     <main>
@@ -560,9 +656,19 @@ flowchart TB
         </div>
       </section>
 
+      <section id="cases">
+        <h2>DINO 病例效果可视化</h2>
+        <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">
+          前瞻全量测试集 <code>test_prospective_full</code> · RF + clinical_anatomic · 病人级 top3_advanced 选例。
+          DINO 列为 dense token 证据（非 Grad-CAM）。
+        </p>
+        {case_html}
+      </section>
+
       <section id="reproduce">
         <h2>复现</h2>
         <pre class="mono" style="padding:1rem;border-radius:8px;overflow-x:auto;background:var(--surface);border:1px solid var(--border);">python scripts/run_dinov3_framelevel_scalar_train_eval.py
+python scripts/generate_framelevel_prospective_dino_case_panels.py
 python scripts/generate_framelevel_prospective_stats_html.py</pre>
         <p style="margin-top:0.75rem;color:var(--muted);font-size:0.88rem;">
           数据源：<code>pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/framelevel_dinov3_scalar_results.csv</code>
@@ -606,7 +712,7 @@ def main() -> None:
         (fig_data_scale(), "数据规模", "train / val / test_prospective_full 帧数与测试病人数"),
         (fig_heatmap_feature_agg(df), "特征×聚合热力图", "RF · patient level · macro AUC"),
     ]
-    render_html(figures, stats)
+    render_html(figures, stats, load_case_gallery_html())
     meta = {"figures": [f[0] for f in figures], "stats": stats}
     (FIG_DIR / "framelevel_prosp_stats_meta.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

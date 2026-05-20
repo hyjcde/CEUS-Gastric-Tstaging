@@ -121,6 +121,44 @@
     .stat-figure h4 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--muted); }
     .stat-figure img { width: 100%; height: auto; border-radius: 6px; }
     .stat-figure figcaption { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+    .case-legend {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+    }
+    .case-bucket {
+      font-size: 1rem;
+      color: var(--accent2);
+      margin: 1.5rem 0 0.75rem;
+    }
+    .case-gallery {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .case-figure {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.5rem;
+      margin: 0;
+    }
+    .case-figure img {
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+      display: block;
+    }
+    .case-figure figcaption {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 0.45rem;
+      padding: 0 0.25rem;
+    }
     .mermaid-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -154,6 +192,7 @@
       <a href="#architecture">架构</a>
       <a href="#metrics">指标表</a>
       <a href="#figures">统计图</a>
+      <a href="#cases">DINO 病例</a>
       <a href="#reproduce">复现</a>
     </nav>
     <main>
@@ -284,9 +323,56 @@ flowchart TB
         </div>
       </section>
 
+      <section id="cases">
+        <h2>DINO 病例效果可视化</h2>
+        <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">
+          前瞻全量测试集 <code>test_prospective_full</code> · RF + clinical_anatomic · 病人级 top3_advanced 选例。
+          DINO 列为 dense token 证据（非 Grad-CAM）。
+        </p>
+        
+<div class="case-legend">
+  <strong>每行 7 列：</strong>
+  Original US · Anatomic overlay ·
+  <em>DINO token norm</em> · <em>DINO PCA-1</em> ·
+  <em>Lesion affinity</em> · <em>Outer−inner evidence</em> · Frame 四分类概率。
+  展示 top-3 advanced 帧（按 P(T3)+P(T4+) 选取）。Layer 11 · ViT-B/16 · 512px。
+</div>
+<h3 class="case-bucket">正确 · 晚期 T3/T4+ 高置信</h3>
+<div class="case-gallery">
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_correct_advanced_207151_T4plus_pred_T4plus.png" alt="Patient 207151 · True T4+ → Pred T4+ ✓" loading="lazy" /><figcaption>Patient 207151 · True T4+ → Pred T4+ ✓</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_correct_advanced_206183_T4plus_pred_T4plus.png" alt="Patient 206183 · True T4+ → Pred T4+ ✓" loading="lazy" /><figcaption>Patient 206183 · True T4+ → Pred T4+ ✓</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_correct_advanced_1474295_T4plus_pred_T4plus.png" alt="Patient 1474295 · True T4+ → Pred T4+ ✓" loading="lazy" /><figcaption>Patient 1474295 · True T4+ → Pred T4+ ✓</figcaption></figure>
+</div>
+<h3 class="case-bucket">正确 · 早期 T1/T2 高置信</h3>
+<div class="case-gallery">
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_correct_early_1508038_T1_pred_T1.png" alt="Patient 1508038 · True T1 → Pred T1 ✓" loading="lazy" /><figcaption>Patient 1508038 · True T1 → Pred T1 ✓</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_correct_early_1279829_T1_pred_T1.png" alt="Patient 1279829 · True T1 → Pred T1 ✓" loading="lazy" /><figcaption>Patient 1279829 · True T1 → Pred T1 ✓</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_correct_early_732535_T1_pred_T1.png" alt="Patient 732535 · True T1 → Pred T1 ✓" loading="lazy" /><figcaption>Patient 732535 · True T1 → Pred T1 ✓</figcaption></figure>
+</div>
+<h3 class="case-bucket">误诊 · 高置信错误</h3>
+<div class="case-gallery">
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_errors_high_conf_226491_T3_pred_T1.png" alt="Patient 226491 · True T3 → Pred T1 ✗" loading="lazy" /><figcaption>Patient 226491 · True T3 → Pred T1 ✗</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_errors_high_conf_218944_T2_pred_T1.png" alt="Patient 218944 · True T2 → Pred T1 ✗" loading="lazy" /><figcaption>Patient 218944 · True T2 → Pred T1 ✗</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_errors_high_conf_226445_T3_pred_T1.png" alt="Patient 226445 · True T3 → Pred T1 ✗" loading="lazy" /><figcaption>Patient 226445 · True T3 → Pred T1 ✗</figcaption></figure>
+</div>
+<h3 class="case-bucket">边界 · T2/T3 难分</h3>
+<div class="case-gallery">
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1483904_T3_pred_T3.png" alt="Patient 1483904 · True T3 → Pred T3 ✓" loading="lazy" /><figcaption>Patient 1483904 · True T3 → Pred T3 ✓</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1489524_T3_pred_T3.png" alt="Patient 1489524 · True T3 → Pred T3 ✓" loading="lazy" /><figcaption>Patient 1489524 · True T3 → Pred T3 ✓</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_t2_t3_boundary_1459726_T3_pred_T3.png" alt="Patient 1459726 · True T3 → Pred T3 ✓" loading="lazy" /><figcaption>Patient 1459726 · True T3 → Pred T3 ✓</figcaption></figure>
+</div>
+<h3 class="case-bucket">边界 · T4+ 低估为 T3</h3>
+<div class="case-gallery">
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_t3_t4_understage_1450863_T4plus_pred_T3.png" alt="Patient 1450863 · True T4+ → Pred T3 ✗" loading="lazy" /><figcaption>Patient 1450863 · True T4+ → Pred T3 ✗</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_t3_t4_understage_1510817_T4plus_pred_T3.png" alt="Patient 1510817 · True T4+ → Pred T3 ✗" loading="lazy" /><figcaption>Patient 1510817 · True T4+ → Pred T3 ✗</figcaption></figure>
+<figure class="case-figure"><img src="figures/results/case_framelevel_prosp_dino_t3_t4_understage_1509301_T4plus_pred_T3.png" alt="Patient 1509301 · True T4+ → Pred T3 ✗" loading="lazy" /><figcaption>Patient 1509301 · True T4+ → Pred T3 ✗</figcaption></figure>
+</div>
+      </section>
+
       <section id="reproduce">
         <h2>复现</h2>
         <pre class="mono" style="padding:1rem;border-radius:8px;overflow-x:auto;background:var(--surface);border:1px solid var(--border);">python scripts/run_dinov3_framelevel_scalar_train_eval.py
+python scripts/generate_framelevel_prospective_dino_case_panels.py
 python scripts/generate_framelevel_prospective_stats_html.py</pre>
         <p style="margin-top:0.75rem;color:var(--muted);font-size:0.88rem;">
           数据源：<code>pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/framelevel_dinov3_scalar_results.csv</code>

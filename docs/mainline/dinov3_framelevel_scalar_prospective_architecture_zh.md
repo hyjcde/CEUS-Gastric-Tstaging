@@ -16,7 +16,7 @@
 
 对应脚本：`scripts/run_dinov3_framelevel_scalar_train_eval.py`  
 结果 CSV：`pipeline/experiments/reports/dinov3_framelevel_scalar_train_eval/framelevel_dinov3_scalar_results.csv`  
-**交互报告（统计图 + 架构）**：[`dinov3_framelevel_scalar_prospective_architecture.html`](dinov3_framelevel_scalar_prospective_architecture.html)（由 `scripts/generate_framelevel_prospective_stats_html.py` 生成）
+**交互报告（统计图 + 架构 + DINO 病例）**：[`dinov3_framelevel_scalar_prospective_architecture.html`](dinov3_framelevel_scalar_prospective_architecture.html)（由 `scripts/generate_framelevel_prospective_stats_html.py` 生成；病例图由 `scripts/generate_framelevel_prospective_dino_case_panels.py` 生成）
 
 ---
 
@@ -295,6 +295,31 @@ python scripts/run_dinov3_framelevel_scalar_train_eval.py \
 ```
 
 **帧级 0.808** 用于说明「单帧判别力上限」与特征工程有效性；**正式患者级 T 分期** 应以 **0.803 病人级 + top3_advanced** 为准。
+
+---
+
+## 12. DINO 病例效果可视化
+
+HTML 报告 **「DINO 病例」** 一节展示 15 例前瞻测试面板（每类 3 例）：
+
+| 分组 | 说明 |
+|------|------|
+| `correct_advanced` | 正确预测 T3/T4+，高置信 |
+| `correct_early` | 正确预测 T1/T2，高置信 |
+| `errors_high_conf` | 高置信误诊（供错误分析） |
+| `t2_t3_boundary` | T2/T3 边界病例 |
+| `t3_t4_understage` | T4+ 低估为 T3 |
+
+每例展示 top-3 advanced 帧，7 列：**原图 · 解剖 overlay · DINO token norm · PCA-1 · Lesion affinity · Outer−inner evidence · 帧概率**。
+
+生成命令：
+
+```bash
+python scripts/generate_framelevel_prospective_dino_case_panels.py
+python scripts/generate_framelevel_prospective_stats_html.py
+```
+
+产物：`docs/mainline/figures/results/case_framelevel_prosp_dino_*.png`
 
 ---
 
