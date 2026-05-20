@@ -12,9 +12,8 @@ import {
   parseLesionMaskFromLabelMe,
   resolveMaskBbox,
 } from "@/lib/direction-annotation/labelme-utils";
+import { createEmptyGrid, mergeSavedGridCells, GRID_ROWS, GRID_COLS } from "@/lib/direction-annotation/grid-utils";
 
-const GRID_ROWS = 3;
-const GRID_COLS = 3;
 const ROI_PAD = 60;
 const PAGE_SIZE = 200;
 const PATCH_SIZE = 130;
@@ -35,15 +34,10 @@ const CONFIDENCE_OPTIONS: { value: BreachConfidence; label: string }[] = [
 
 type TabId = "overlay" | "grid" | "draw";
 type StageFilter = "all" | "T1" | "T2" | "T3" | "T4a" | "T4b";
+type AnnotatedFilter = "all" | "yes" | "no";
 
 function defaultCell(row: number, col: number): GridCellAnnotation {
   return { row, col, has_breach: false, visible_layers: "uncertain", breach_confidence: "medium" };
-}
-function initGrid(): GridCellAnnotation[] {
-  const cells: GridCellAnnotation[] = [];
-  for (let r = 0; r < GRID_ROWS; r++)
-    for (let c = 0; c < GRID_COLS; c++) cells.push(defaultCell(r, c));
-  return cells;
 }
 function computeROI(bbox: [number, number, number, number], imgW: number, imgH: number) {
   const [bx0, by0, bx1, by1] = bbox;
@@ -71,6 +65,7 @@ export default function AnnotatePage() {
   const [error, setError] = useState<string | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [filter, setFilter] = useState<StageFilter>("all");
+  const [annotatedFilter, setAnnotatedFilter] = useState<AnnotatedFilter>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalFiltered: 0, totalAll: 0 });
@@ -78,7 +73,7 @@ export default function AnnotatePage() {
   const [annotatedCount, setAnnotatedCount] = useState(0);
 
   const [activeTab, setActiveTab] = useState<TabId>("overlay");
-  const [gridCells, setGridCells] = useState<GridCellAnnotation[]>(initGrid);
+  const [gridCells, setGridCells] = useState<GridCellAnnotation[]>(createEmptyGrid);
   const [breachPolygons, setBreachPolygons] = useState<BreachPolygon[]>([]);
   const [drawingPoints, setDrawingPoints] = useState<[number, number][]>([]);
   const [note, setNote] = useState("");
@@ -110,11 +105,19 @@ export default function AnnotatePage() {
     return patientGroups[currentItem.patient_id] ?? [];
   }, [currentItem, patientGroups]);
 
-  const fetchBatch = useCallback(async (p: number, f: StageFilter, s: string) => {
+  const directionLoadTokenRef = useRef(0);
+
+  const fetchBatch = useCallback(async (p: number, f: StageFilter, a: AnnotatedFilter, s: string) => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE), filter: f, search: s });
+      const params = new URLSearchParams({
+        page: String(p),
+        pageSize: String(PAGE_SIZE),
+        filter: f,
+        annotated: a,
+        search: s,
+      });
       const res = await fetch(`/api/direction-annotation/batch?${params}`);
       const data = await res.json();
       if (data.success) {
@@ -131,22 +134,28 @@ export default function AnnotatePage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchBatch(page, filter, search); }, [page, filter, fetchBatch]);
+  useEffect(() => { fetchBatch(page, filter, annotatedFilter, search); }, [page, filter, annotatedFilter, fetchBatch]);
 
   const searchTimeout = useRef<NodeJS.Timeout>(undefined);
   const handleSearchChange = (val: string) => {
     setSearch(val);
     clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(() => { setPage(1); fetchBatch(1, filter, val); }, 400);
+    searchTimeout.current = setTimeout(() => { setPage(1); fetchBatch(1, filter, annotatedFilter, val); }, 400);
   };
 
   useEffect(() => {
     if (!currentItem) return;
+    const loadToken = ++directionLoadTokenRef.current;
     setImgLoaded(false);
     setMaskPolygon(null);
     setMaskBbox(null);
     setZoomLevel(1);
     setPanOffset([0, 0]);
+    setGridCells(createEmptyGrid());
+    setBreachPolygons([]);
+    setDrawingPoints([]);
+    setNote("");
+    setSaveMsg(null);
 
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -167,11 +176,18 @@ export default function AnnotatePage() {
         .catch(() => {});
     }
 
-    setGridCells(initGrid());
-    setBreachPolygons([]);
-    setDrawingPoints([]);
-    setNote("");
-    setSaveMsg(null);
+    fetch(`/api/direction-annotation/load?image_path=${encodeURIComponent(currentItem.image_path)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (loadToken !== directionLoadTokenRef.current) return;
+        if (!data.success || !data.payload) return;
+        const payload = data.payload as DirectionAnnotationPayload;
+        setGridCells(mergeSavedGridCells(payload.grid_cells || []));
+        setBreachPolygons(payload.breach_polygons || []);
+        setNote(payload.note || "");
+        setSaveMsg("已载入历史标注，可继续编辑");
+      })
+      .catch(() => {});
   }, [currentItem?.image_path]);
 
   const getCanvasTransform = useCallback(() => {
@@ -427,13 +443,16 @@ export default function AnnotatePage() {
       const data = await res.json();
       if (data.success) {
         setSaveMsg("已保存 ✓");
+        const wasAnnotated = Boolean(currentItem.is_annotated);
         setItems(prev => {
           const n = [...prev];
           const it = n.find(i => i.image_path === currentItem.image_path);
           if (it) it.is_annotated = true;
           return n;
         });
-        setAnnotatedCount(prev => prev + 1);
+        if (!wasAnnotated) {
+          setAnnotatedCount(prev => prev + 1);
+        }
         setTimeout(() => { if (currentIdx < items.length - 1) setCurrentIdx(p => p + 1); }, 500);
       } else { setSaveMsg(`失败: ${data.error}`); }
     } catch (err) { setSaveMsg(`错误: ${String(err)}`); }
@@ -550,6 +569,22 @@ export default function AnnotatePage() {
               <button key={f} onClick={() => { setFilter(f); setPage(1); setCurrentIdx(0); }}
                 className={`px-1.5 py-1 rounded transition-colors ${filter === f ? (f === "all" ? "bg-emerald-700 text-white" : `${stageBg[f] || "bg-gray-600"} text-white`) : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}>
                 {f === "all" ? "全部" : f}{f !== "all" && stageCounts[f] ? ` (${stageCounts[f]})` : ""}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-gray-700" />
+          <div className="flex gap-0.5 text-[11px]">
+            {([
+              ["all", "全部"],
+              ["yes", "已标"],
+              ["no", "未标"],
+            ] as [AnnotatedFilter, string][]).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => { setAnnotatedFilter(value); setPage(1); setCurrentIdx(0); }}
+                className={`px-1.5 py-1 rounded transition-colors ${annotatedFilter === value ? "bg-emerald-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+              >
+                {label}
               </button>
             ))}
           </div>

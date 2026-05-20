@@ -95,6 +95,23 @@ export function getSaveDir(): string {
   return path.join(projectRoot, "direction_annotations");
 }
 
+export function getDirectionAnnotationFilePath(imagePath: string): string {
+  const safeName = imagePath
+    .replace(/[/\\]/g, "__")
+    .replace(/\.(jpg|jpeg|png|webp)$/i, "");
+  return path.join(getSaveDir(), `${safeName}_direction.json`);
+}
+
+export function readDirectionAnnotationIfExists(imagePath: string) {
+  const filePath = getDirectionAnnotationFilePath(imagePath);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 export function resolveDataPath(relPath: string): string | null {
   const { projectRoot, datasetDir } = resolveConfiguredPaths();
   const normalizedRelPath = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
