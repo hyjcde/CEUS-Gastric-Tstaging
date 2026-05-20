@@ -110,9 +110,13 @@ def main() -> None:
     centers = [
         ("北京友谊医院", args.review_root / "北京友谊医院"),
         ("佛山市第一人民医院", args.review_root / "佛山市第一人民医院"),
-        ("湖北中西医结合医院", args.review_root / "湖北中西医结合医院"),
+        ("中核五〇四医院", args.review_root / "中核五〇四医院"),
         ("福建省德化县医院", args.dehua_root),
     ]
+    # Legacy mislabeled folder (pre-2026-05-20); audit if still present
+    legacy = args.review_root / "湖北中西医结合医院"
+    if legacy.exists():
+        centers.append(("湖北中西医结合医院(legacy)", legacy))
     all_rows: list[dict] = []
     for name, root in centers:
         if not root.exists():

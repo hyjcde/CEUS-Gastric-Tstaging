@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-20 06:56 UTC",
+  "generated_at": "2026-05-20 07:07 UTC",
   "project_root": "/data/research/gastric/GastricTstaging",
   "dataset_root": "/data/research/gastric/GastricTstaging/dataset",
   "summary": {
@@ -174,7 +174,7 @@
       "三明市第二医院": 19
     },
     "newzip_by_center": {
-      "湖北中西医结合医院": 216,
+      "中核五〇四医院": 216,
       "北京友谊医院": 124,
       "佛山市第一人民医院": 112,
       "福建省德化县医院": 100
@@ -200,6 +200,29 @@
             "annotations": 19,
             "roi_masks": 19,
             "overlays": 19
+          }
+        }
+      },
+      {
+        "folder": "中核五〇四医院",
+        "views": {
+          "original": {
+            "images": 216,
+            "annotations": 216,
+            "roi_masks": 216,
+            "overlays": 216
+          },
+          "crop_ui": {
+            "images": 216,
+            "annotations": 216,
+            "roi_masks": 216,
+            "overlays": 216
+          },
+          "crop_roi": {
+            "images": 216,
+            "annotations": 216,
+            "roi_masks": 216,
+            "overlays": 216
           }
         }
       },
@@ -246,29 +269,6 @@
             "annotations": 124,
             "roi_masks": 124,
             "overlays": 124
-          }
-        }
-      },
-      {
-        "folder": "湖北中西医结合医院",
-        "views": {
-          "original": {
-            "images": 216,
-            "annotations": 216,
-            "roi_masks": 216,
-            "overlays": 216
-          },
-          "crop_ui": {
-            "images": 216,
-            "annotations": 216,
-            "roi_masks": 216,
-            "overlays": 216
-          },
-          "crop_roi": {
-            "images": 216,
-            "annotations": 216,
-            "roi_masks": 216,
-            "overlays": 216
           }
         }
       },
@@ -384,7 +384,7 @@
       },
       {
         "name": "center_name_registry.csv",
-        "size_mb": 0.002
+        "size_mb": 0.003
       },
       {
         "name": "clinical_table_index.csv",
@@ -393,6 +393,14 @@
       {
         "name": "clinical_table_registry.csv",
         "size_mb": 185.62
+      },
+      {
+        "name": "external_hospital_overlay_audit.csv",
+        "size_mb": 0.113
+      },
+      {
+        "name": "external_hubei_mislabel_remediation.md",
+        "size_mb": 0.002
       },
       {
         "name": "patient_clinical_candidates.csv",
@@ -580,38 +588,35 @@
         "source_prefix": "ext/newzip/湖北中西医结合医院",
         "dataset_key": "external_hubei_tcm",
         "cohort": "external",
-        "tstaging_manifest": "newzip_only",
-        "tstaging_split": "test_external_newzip",
-        "benign_data": "yes",
-        "malignant_data": "yes",
+        "tstaging_manifest": "no",
+        "tstaging_split": "",
+        "benign_data": "no",
+        "malignant_data": "no",
         "video_data": "no",
-        "image_data": "yes",
-        "manifest_frames": "216",
-        "modeled_frames": "216",
-        "clinical_patients": "67",
-        "notes": ""
+        "image_data": "no",
+        "manifest_frames": "0",
+        "modeled_frames": "0",
+        "clinical_patients": "0",
+        "notes": "DEPRECATED mislabeled zip; images are 中核五〇四医院 Lanzhou 504"
       },
       {
         "center_id": "external_cnnc_504",
         "standard_hospital_name": "中核五〇四医院",
         "folder_name": "中核五〇四医院",
-        "legacy_folder_aliases": "窦晓霞中核五〇四医院胃溃疡病例(1)",
-        "source_prefix": "",
-        "dataset_key": "",
-        "cohort": "external_cnnc_504",
-        "tstaging_manifest": "external",
-        "tstaging_split": "no",
-        "benign_data": "",
+        "legacy_folder_aliases": "外省整理/湖北窦;湖北中西医结合医院;窦晓霞中核五〇四医院胃溃疡病例(1)",
+        "source_prefix": "ext/newzip/中核五〇四医院",
+        "dataset_key": "external_cnnc_504",
+        "cohort": "external",
+        "tstaging_manifest": "newzip_only",
+        "tstaging_split": "test_external_newzip",
+        "benign_data": "yes",
         "malignant_data": "yes",
         "video_data": "yes",
         "image_data": "yes",
-        "manifest_frames": "yes",
-        "modeled_frames": "0",
-        "clinical_patients": "0",
-        "notes": "0",
-        "null": [
-          "ulcer video task under data/中核五〇四医院/"
-        ]
+        "manifest_frames": "216",
+        "modeled_frames": "216",
+        "clinical_patients": "67",
+        "notes": "Gastric direct-surgery hbd* cohort; ulcer videos under data/中核五〇四医院/"
       },
       {
         "center_id": "external_fujian_provincial",
@@ -706,7 +711,41 @@
       }
     }
   },
+  "overlay_audit": {
+    "audit_csv": "dataset/tables/external_hospital_overlay_audit.csv",
+    "by_center": {
+      "北京友谊医院": {
+        "total": 124,
+        "mismatch": 0,
+        "lanzhou_504": 3
+      },
+      "佛山市第一人民医院": {
+        "total": 112,
+        "mismatch": 0,
+        "lanzhou_504": 0
+      },
+      "中核五〇四医院": {
+        "total": 216,
+        "mismatch": 0,
+        "lanzhou_504": 214
+      },
+      "福建省德化县医院": {
+        "total": 100,
+        "mismatch": 0,
+        "lanzhou_504": 0
+      }
+    },
+    "mislabel_fix": {
+      "issue": "外省整理.zip 内「湖北窦」曾被误标为湖北中西医结合医院",
+      "fix": "2026-05-20 重分类为 中核五〇四医院（帧头 OCR: LanZhou 504 Hospital）",
+      "doc": "dataset/tables/external_hubei_mislabel_remediation.md"
+    }
+  },
   "docs": [
+    {
+      "title": "外省整理误标修复说明",
+      "path": "dataset/tables/external_hubei_mislabel_remediation.md"
+    },
     {
       "title": "DATASET_GUIDE.md",
       "path": "dataset/DATASET_GUIDE.md"

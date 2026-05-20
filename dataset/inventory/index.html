@@ -171,6 +171,7 @@
       <a href="#centers">多中心对照</a>
       <a href="#lumen">胃腔检测</a>
       <a href="#docs">相关文档</a>
+      <a href="#quality">数据质量</a>
     </nav>
     <main>
       <header class="hero">
@@ -179,7 +180,7 @@
           基于 <code>dataset/</code> 目录的正式预处理数据、manifest 清单、临床表与 T 分期建模 split 的交互式盘点页。
           实验前请区分 <strong>manifest 物理口径</strong> 与 <strong>建模 CSV 口径</strong>。
         </p>
-        <p class="meta">生成时间：2026-05-20 06:56 UTC · 数据根目录：/data/research/gastric/GastricTstaging/dataset · 重新生成：<code>python scripts/build_dataset_inventory.py</code></p>
+        <p class="meta">生成时间：2026-05-20 07:07 UTC · 数据根目录：/data/research/gastric/GastricTstaging/dataset · 重新生成：<code>python scripts/build_dataset_inventory.py</code></p>
       </header>
       <div id="app">
 <div class="kpi-grid"><div class="kpi"><div class="val">13,515</div><div class="lbl">正式 manifest 总帧</div></div><div class="kpi"><div class="val">10,659</div><div class="lbl">internal manifest</div></div><div class="kpi"><div class="val">2,856</div><div class="lbl">external manifest</div></div><div class="kpi"><div class="val">552</div><div class="lbl">newzip manifest</div></div><div class="kpi"><div class="val">10,659</div><div class="lbl">物理 original 图像</div></div><div class="kpi"><div class="val">2,374</div><div class="lbl">临床主表患者行</div></div></div>
@@ -221,12 +222,12 @@
 <h3>5.1 原多中心 manifest</h3>
 <table><thead><tr><th>中心 (group_targets)</th><th>manifest 帧</th><th>占比</th><th></th></tr></thead><tbody><tr><td>莆田学院附属医院</td><td class="num">2,376</td><td>83.2%</td><td><div class="bar-cell">2,376<div class="bar"><span style="width:100.0%"></span></div></div></td></tr><tr><td>福建省肿瘤医院</td><td class="num">436</td><td>15.3%</td><td><div class="bar-cell">436<div class="bar"><span style="width:18.4%"></span></div></div></td></tr><tr><td>莆田市第一医院</td><td class="num">25</td><td>0.9%</td><td><div class="bar-cell">25<div class="bar"><span style="width:1.1%"></span></div></div></td></tr><tr><td>三明市第二医院</td><td class="num">19</td><td>0.7%</td><td><div class="bar-cell">19<div class="bar"><span style="width:0.8%"></span></div></div></td></tr></tbody></table>
 <h3>5.2 各中心物理规模 (original/images)</h3>
-<table><thead><tr><th>目录名</th><th>original 图像</th><th>规模</th></tr></thead><tbody><tr><td>三明市第二医院</td><td class="num">19</td><td>小中心</td></tr><tr><td>佛山市第一人民医院</td><td class="num">112</td><td>中</td></tr><tr><td>北京友谊医院</td><td class="num">124</td><td>中</td></tr><tr><td>湖北中西医结合医院</td><td class="num">216</td><td>中</td></tr><tr><td>福建省德化县医院</td><td class="num">100</td><td>中</td></tr><tr><td>福建省肿瘤医院</td><td class="num">436</td><td>中</td></tr><tr><td>莆田学院附属医院</td><td class="num">2,376</td><td>大中心</td></tr><tr><td>莆田市第一医院</td><td class="num">25</td><td>小中心</td></tr></tbody></table>
+<table><thead><tr><th>目录名</th><th>original 图像</th><th>规模</th></tr></thead><tbody><tr><td>三明市第二医院</td><td class="num">19</td><td>小中心</td></tr><tr><td>中核五〇四医院</td><td class="num">216</td><td>中</td></tr><tr><td>佛山市第一人民医院</td><td class="num">112</td><td>中</td></tr><tr><td>北京友谊医院</td><td class="num">124</td><td>中</td></tr><tr><td>福建省德化县医院</td><td class="num">100</td><td>中</td></tr><tr><td>福建省肿瘤医院</td><td class="num">436</td><td>中</td></tr><tr><td>莆田学院附属医院</td><td class="num">2,376</td><td>大中心</td></tr><tr><td>莆田市第一医院</td><td class="num">25</td><td>小中心</td></tr></tbody></table>
 <p>未匹配：16 · 错误：2</p>
 </section>
 
 <section id="newzip"><h2>6. 新增外部 zip (new_external_zip_manifest)</h2>
-<table><thead><tr><th>中心</th><th>manifest 帧</th></tr></thead><tbody><tr><td>湖北中西医结合医院</td><td><div class="bar-cell">216<div class="bar"><span style="width:9.1%"></span></div></div></td></tr><tr><td>北京友谊医院</td><td><div class="bar-cell">124<div class="bar"><span style="width:5.2%"></span></div></div></td></tr><tr><td>佛山市第一人民医院</td><td><div class="bar-cell">112<div class="bar"><span style="width:4.7%"></span></div></div></td></tr><tr><td>福建省德化县医院</td><td><div class="bar-cell">100<div class="bar"><span style="width:4.2%"></span></div></div></td></tr></tbody></table>
+<table><thead><tr><th>中心</th><th>manifest 帧</th></tr></thead><tbody><tr><td>中核五〇四医院</td><td><div class="bar-cell">216<div class="bar"><span style="width:9.1%"></span></div></div></td></tr><tr><td>北京友谊医院</td><td><div class="bar-cell">124<div class="bar"><span style="width:5.2%"></span></div></div></td></tr><tr><td>佛山市第一人民医院</td><td><div class="bar-cell">112<div class="bar"><span style="width:4.7%"></span></div></div></td></tr><tr><td>福建省德化县医院</td><td><div class="bar-cell">100<div class="bar"><span style="width:4.2%"></span></div></div></td></tr></tbody></table>
 <p class="note">newzip 数据已写入独立建模 split <code>test_external_newzip_clinical.csv</code>；未匹配 pT 的图像保留在 manifest 但不进入建模 CSV。</p>
 </section>
 
@@ -237,12 +238,12 @@
 </section>
 
 <section id="tables"><h2>8. 临床表资产 (tables/)</h2>
-<table><thead><tr><th>文件</th><th>大小 (MB)</th></tr></thead><tbody><tr><td><code>README.md</code></td><td>0.001</td></tr><tr><td><code>center_name_registry.csv</code></td><td>0.002</td></tr><tr><td><code>clinical_table_index.csv</code></td><td>0.282</td></tr><tr><td><code>clinical_table_registry.csv</code></td><td>185.62</td></tr><tr><td><code>patient_clinical_candidates.csv</code></td><td>179.928</td></tr><tr><td><code>patient_clinical_master.csv</code></td><td>7.658</td></tr><tr><td><code>patient_clinical_master_coverage_by_group.csv</code></td><td>0.019</td></tr><tr><td><code>patient_clinical_master_coverage_overall.csv</code></td><td>0.001</td></tr><tr><td><code>patient_clinical_schema.json</code></td><td>0.004</td></tr></tbody></table>
+<table><thead><tr><th>文件</th><th>大小 (MB)</th></tr></thead><tbody><tr><td><code>README.md</code></td><td>0.001</td></tr><tr><td><code>center_name_registry.csv</code></td><td>0.003</td></tr><tr><td><code>clinical_table_index.csv</code></td><td>0.282</td></tr><tr><td><code>clinical_table_registry.csv</code></td><td>185.62</td></tr><tr><td><code>external_hospital_overlay_audit.csv</code></td><td>0.113</td></tr><tr><td><code>external_hubei_mislabel_remediation.md</code></td><td>0.002</td></tr><tr><td><code>patient_clinical_candidates.csv</code></td><td>179.928</td></tr><tr><td><code>patient_clinical_master.csv</code></td><td>7.658</td></tr><tr><td><code>patient_clinical_master_coverage_by_group.csv</code></td><td>0.019</td></tr><tr><td><code>patient_clinical_master_coverage_overall.csv</code></td><td>0.001</td></tr><tr><td><code>patient_clinical_schema.json</code></td><td>0.004</td></tr></tbody></table>
 <p>患者临床主表行数：<strong>2,374</strong></p>
 </section>
 
 <section id="centers"><h2>9. 多中心标准命名对照</h2>
-<table><thead><tr><th>standard_hospital_name</th><th>folder_name</th><th>tstaging_manifest</th><th>tstaging_split</th><th>manifest_frames</th><th>clinical_patients</th><th>benign_data</th><th>malignant_data</th></tr></thead><tbody><tr><td>福建医科大学附属协和医院</td><td>internal</td><td>internal</td><td>yes</td><td>yes</td><td class="num">9681</td><td>train;val;test_external;test_prospective</td><td>yes</td></tr><tr><td>莆田学院附属医院</td><td>莆田学院附属医院</td><td>yes</td><td>train;val;test_external</td><td class="num">2376</td><td class="num">344</td><td>yes</td><td>yes</td></tr><tr><td>莆田市第一医院</td><td>莆田市第一医院</td><td>yes</td><td>test_external</td><td class="num">25</td><td class="num">8</td><td>no</td><td>yes</td></tr><tr><td>福建省肿瘤医院</td><td>福建省肿瘤医院</td><td>yes</td><td>test_external</td><td class="num">436</td><td class="num">135</td><td>yes</td><td>yes</td></tr><tr><td>三明市第二医院</td><td>三明市第二医院</td><td>yes</td><td>test_external</td><td class="num">19</td><td class="num">4</td><td>yes</td><td>yes</td></tr><tr><td>福建省德化县医院</td><td>福建省德化县医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">100</td><td class="num">16</td><td>no</td><td>yes</td></tr><tr><td>北京友谊医院</td><td>北京友谊医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">124</td><td class="num">22</td><td>no</td><td>yes</td></tr><tr><td>佛山市第一人民医院</td><td>佛山市第一人民医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">112</td><td class="num">31</td><td>no</td><td>yes</td></tr><tr><td>湖北中西医结合医院</td><td>湖北中西医结合医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">216</td><td class="num">67</td><td>yes</td><td>yes</td></tr><tr><td>中核五〇四医院</td><td>中核五〇四医院</td><td>external</td><td>no</td><td>yes</td><td class="num">0</td><td></td><td>yes</td></tr><tr><td>福建省立医院</td><td></td><td>no</td><td></td><td class="num">0</td><td class="num">0</td><td>no</td><td>yes</td></tr><tr><td>宁德市医院</td><td></td><td>no</td><td></td><td class="num">0</td><td class="num">0</td><td>yes</td><td>no</td></tr></tbody></table>
+<table><thead><tr><th>standard_hospital_name</th><th>folder_name</th><th>tstaging_manifest</th><th>tstaging_split</th><th>manifest_frames</th><th>clinical_patients</th><th>benign_data</th><th>malignant_data</th></tr></thead><tbody><tr><td>福建医科大学附属协和医院</td><td>internal</td><td>internal</td><td>yes</td><td>yes</td><td class="num">9681</td><td>train;val;test_external;test_prospective</td><td>yes</td></tr><tr><td>莆田学院附属医院</td><td>莆田学院附属医院</td><td>yes</td><td>train;val;test_external</td><td class="num">2376</td><td class="num">344</td><td>yes</td><td>yes</td></tr><tr><td>莆田市第一医院</td><td>莆田市第一医院</td><td>yes</td><td>test_external</td><td class="num">25</td><td class="num">8</td><td>no</td><td>yes</td></tr><tr><td>福建省肿瘤医院</td><td>福建省肿瘤医院</td><td>yes</td><td>test_external</td><td class="num">436</td><td class="num">135</td><td>yes</td><td>yes</td></tr><tr><td>三明市第二医院</td><td>三明市第二医院</td><td>yes</td><td>test_external</td><td class="num">19</td><td class="num">4</td><td>yes</td><td>yes</td></tr><tr><td>福建省德化县医院</td><td>福建省德化县医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">100</td><td class="num">16</td><td>no</td><td>yes</td></tr><tr><td>北京友谊医院</td><td>北京友谊医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">124</td><td class="num">22</td><td>no</td><td>yes</td></tr><tr><td>佛山市第一人民医院</td><td>佛山市第一人民医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">112</td><td class="num">31</td><td>no</td><td>yes</td></tr><tr><td>湖北中西医结合医院</td><td>湖北中西医结合医院</td><td>no</td><td></td><td class="num">0</td><td class="num">0</td><td>no</td><td>no</td></tr><tr><td>中核五〇四医院</td><td>中核五〇四医院</td><td>newzip_only</td><td>test_external_newzip</td><td class="num">216</td><td class="num">67</td><td>yes</td><td>yes</td></tr><tr><td>福建省立医院</td><td></td><td>no</td><td></td><td class="num">0</td><td class="num">0</td><td>no</td><td>yes</td></tr><tr><td>宁德市医院</td><td></td><td>no</td><td></td><td class="num">0</td><td class="num">0</td><td>yes</td><td>no</td></tr></tbody></table>
 </section>
 
 <section id="lumen"><h2>10. 胃腔检测 (lumen_detection/)</h2>
@@ -251,10 +252,19 @@
 
 <section id="docs"><h2>11. 相关文档</h2>
 <ul>
-<li><a href="../../dataset/DATASET_GUIDE.md">DATASET_GUIDE.md</a> <code>dataset/DATASET_GUIDE.md</code></li><li><a href="../../dataset/README.md">README.md</a> <code>dataset/README.md</code></li><li><a href="../../dataset/tables/README.md">tables/README.md</a> <code>dataset/tables/README.md</code></li>
+<li><a href="../../dataset/tables/external_hubei_mislabel_remediation.md">外省整理误标修复说明</a> <code>dataset/tables/external_hubei_mislabel_remediation.md</code></li><li><a href="../../dataset/DATASET_GUIDE.md">DATASET_GUIDE.md</a> <code>dataset/DATASET_GUIDE.md</code></li><li><a href="../../dataset/README.md">README.md</a> <code>dataset/README.md</code></li><li><a href="../../dataset/tables/README.md">tables/README.md</a> <code>dataset/tables/README.md</code></li>
 <li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>
 </ul>
 </section>
+
+<section id="quality"><h2>12. 外部数据质量（帧头 OCR 审计）</h2>
+<p class="note"><strong>外省整理.zip 内「湖北窦」曾被误标为湖北中西医结合医院</strong> — 2026-05-20 重分类为 中核五〇四医院（帧头 OCR: LanZhou 504 Hospital）
+见 <a href="../../dataset/tables/external_hubei_mislabel_remediation.md">修复说明</a>。</p>
+<p>审计文件：<code>dataset/tables/external_hospital_overlay_audit.csv</code>（全 newzip 原图帧头 OCR，当前文件夹标签与帧头一致则 <code>mismatch=0</code>）</p>
+<table><thead><tr><th>中心目录</th><th>审计图像数</th><th>帧头含 504/兰州</th><th>与目录不一致</th></tr></thead><tbody><tr><td>中核五〇四医院</td><td class="num">216</td><td class="num">214</td><td class="num">0</td></tr><tr><td>佛山市第一人民医院</td><td class="num">112</td><td class="num">0</td><td class="num">0</td></tr><tr><td>北京友谊医院</td><td class="num">124</td><td class="num">3</td><td class="num">0</td></tr><tr><td>福建省德化县医院</td><td class="num">100</td><td class="num">0</td><td class="num">0</td></tr></tbody></table>
+<p>典型样例 <code>hbd1-3.jpg</code> 帧头为 <strong>LanZhou 504 Hospital</strong>，现归属 <code>dataset/external/中核五〇四医院/</code>，不再使用 <code>湖北中西医结合医院</code>。</p>
+</section>
+
 </div>
     </main>
   </div>

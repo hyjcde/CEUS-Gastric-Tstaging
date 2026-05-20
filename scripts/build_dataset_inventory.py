@@ -153,6 +153,33 @@ def scan_tables() -> dict:
     }
 
 
+def load_overlay_audit() -> dict:
+    path = DATASET / "tables" / "external_hospital_overlay_audit.csv"
+    if not path.exists():
+        return {}
+    rows = read_csv_rows(path)
+    by_center: dict[str, dict] = {}
+    for row in rows:
+        center = row.get("center_folder", "")
+        if center not in by_center:
+            by_center[center] = {"total": 0, "mismatch": 0, "lanzhou_504": 0}
+        by_center[center]["total"] += 1
+        if str(row.get("mismatch", "")).lower() in {"true", "1"}:
+            by_center[center]["mismatch"] += 1
+        detected = row.get("detected_hospitals", "")
+        if "中核五〇四医院" in detected or "504" in row.get("ocr_header", ""):
+            by_center[center]["lanzhou_504"] += 1
+    return {
+        "audit_csv": str(path.relative_to(PROJECT_ROOT)),
+        "by_center": by_center,
+        "mislabel_fix": {
+            "issue": "外省整理.zip 内「湖北窦」曾被误标为湖北中西医结合医院",
+            "fix": "2026-05-20 重分类为 中核五〇四医院（帧头 OCR: LanZhou 504 Hospital）",
+            "doc": "dataset/tables/external_hubei_mislabel_remediation.md",
+        },
+    }
+
+
 def scan_modeling_csv() -> dict:
     regions = (
         PROJECT_ROOT
@@ -219,7 +246,9 @@ def build_inventory() -> dict:
         "lumen_detection": scan_lumen(),
         "tables": scan_tables(),
         "modeling_splits": scan_modeling_csv(),
+        "overlay_audit": load_overlay_audit(),
         "docs": [
+            {"title": "外省整理误标修复说明", "path": "dataset/tables/external_hubei_mislabel_remediation.md"},
             {"title": "DATASET_GUIDE.md", "path": "dataset/DATASET_GUIDE.md"},
             {"title": "README.md", "path": "dataset/README.md"},
             {"title": "tables/README.md", "path": "dataset/tables/README.md"},
@@ -423,6 +452,36 @@ def _render_body(data: dict) -> str:
         for d in data.get("docs", [])
     )
 
+    quality_html = ""
+    audit = data.get("overlay_audit") or {}
+    if audit:
+        fix = audit.get("mislabel_fix", {})
+        quality_html = f"""
+<section id="quality"><h2>12. 外部数据质量（帧头 OCR 审计）</h2>
+<p class="note"><strong>{_esc(fix.get("issue", ""))}</strong> — {_esc(fix.get("fix", ""))}
+见 <a href="../../{_esc(fix.get("doc", ""))}">修复说明</a>。</p>
+<p>审计文件：<code>{_esc(audit.get("audit_csv", ""))}</code>（全 newzip 原图帧头 OCR，当前文件夹标签与帧头一致则 <code>mismatch=0</code>）</p>
+"""
+        audit_rows = []
+        for center, stats in sorted(audit.get("by_center", {}).items()):
+            audit_rows.append(
+                [
+                    _esc(center),
+                    _fmt_num(stats.get("total", 0)),
+                    _fmt_num(stats.get("lanzhou_504", 0)),
+                    _fmt_num(stats.get("mismatch", 0)),
+                ]
+            )
+        if audit_rows:
+            quality_html += _render_table(
+                ["中心目录", "审计图像数", "帧头含 504/兰州", "与目录不一致"],
+                audit_rows,
+            )
+        quality_html += """
+<p>典型样例 <code>hbd1-3.jpg</code> 帧头为 <strong>LanZhou 504 Hospital</strong>，现归属 <code>dataset/external/中核五〇四医院/</code>，不再使用 <code>湖北中西医结合医院</code>。</p>
+</section>
+"""
+
     return f"""
 {kpi_html}
 <section id="overview"><h2>1. 总览</h2>
@@ -497,6 +556,7 @@ def _render_body(data: dict) -> str:
 <li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>
 </ul>
 </section>
+{quality_html}
 """
 
 
@@ -680,6 +740,7 @@ def render_html(data: dict) -> str:
       <a href="#centers">多中心对照</a>
       <a href="#lumen">胃腔检测</a>
       <a href="#docs">相关文档</a>
+      <a href="#quality">数据质量</a>
     </nav>
     <main>
       <header class="hero">

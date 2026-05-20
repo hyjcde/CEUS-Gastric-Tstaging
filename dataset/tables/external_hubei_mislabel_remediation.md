@@ -26,11 +26,13 @@
 
 附加修复：`safe_slug` 现保留 Unicode **〇**（U+3007），避免 sample_id 变成 `中核五_四医院`。
 
-## 审计产物
+## 审计产物（2026-05-20 复跑）
 
-- `dataset/external/湖北中西医结合医院/hospital_ocr_audit.csv`（历史 OCR，目录已迁移）
-- `scripts/audit_external_center_hospital_overlay.py`（可复跑全中心审计）
-- `scripts/fix_mislabeled_hubei_to_cnnc504.py`（一键重分类 + 重建 manifest/split）
+- `dataset/tables/external_hospital_overlay_audit.csv` — 全 newzip 原图 552 张，**mismatch=0**
+- `scripts/audit_external_center_hospital_overlay.py` — 可复跑全中心帧头 OCR
+- `scripts/fix_mislabeled_hubei_to_cnnc504.py` — 一键重分类 + 重建 manifest/split
+
+复跑后 `中核五〇四医院` 目录下 **214/216** 张 JPG 帧头 OCR 含 `LanZhou 504 Hospital`；**0** 张出现「湖北」「中西医结合」。
 
 ## 未匹配 OCR 的 2 张图
 
