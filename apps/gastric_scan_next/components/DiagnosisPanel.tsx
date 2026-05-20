@@ -271,7 +271,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
   const expandedConfidence = formatAgentConfidence(agentAnalysis?.report.confidence);
 
   const renderBar = (label: string, prob: number, color: string) => (
-    <div className="flex items-center gap-2 text-[10px] font-mono mb-1.5">
+    <div key={label} className="flex items-center gap-2 text-[10px] font-mono mb-1.5">
         <span className="w-8 text-gray-500 text-right">{label}</span>
         <div className="flex-1 h-1.5 bg-[#222] rounded-full overflow-hidden">
             <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${prob}%` }}></div>
