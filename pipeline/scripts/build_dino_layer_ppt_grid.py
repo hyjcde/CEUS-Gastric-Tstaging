@@ -39,14 +39,24 @@ DEFAULT_RUN_DIR = (
     / "dinov3_vitb16_last2blocks_mlp_decoder_cropui_20260512_full_r001"
 )
 
-# Same 5-row footprint as t2t3_gradcam_ppt_grid_8x5_multicenter.png; row labels differ.
+# 8 columns × 7 rows: crop_ui + seg + fusion tokens + decoder (deeper than 8×5 version).
 ROW_SPECS = [
     ("original", "Original\n(crop_ui)", None),
     ("pred_lesion", "Pred lesion\n(DINOv3 seg)", None),
     ("dino_layer1_norm", "DINO layer 1 norm\n(ViT block 5)", "viridis"),
     ("dino_layer2_norm", "DINO layer 2 norm\n(ViT block 8)", "viridis"),
     ("dino_last_pca", "Last token PCA-1\n(ViT block 11)", "coolwarm"),
+    ("dino_layer3_norm", "DINO layer 3 norm\n(ViT block 11)", "viridis"),
+    ("decoder_prob", "Decoder prob\n(MLP seg head)", "magma"),
 ]
+
+DINO_CACHE_KEYS = (
+    "dino_layer1_norm",
+    "dino_layer2_norm",
+    "dino_last_pca",
+    "dino_layer3_norm",
+    "decoder_prob",
+)
 
 ROW_LABELS = {key: label for key, label, _ in ROW_SPECS}
 
@@ -116,15 +126,21 @@ def infer_dino_row_maps(
     layer_indices: list[int],
 ) -> dict[str, np.ndarray]:
     segmenter = dino_train.unwrap_segmenter(model)
-    tensor = preprocess(image_path, image_size, next(model.parameters()).device)
+    device = next(model.parameters()).device
+    tensor = preprocess(image_path, image_size, device)
     features = segmenter.extract_features(tensor)
+    logits, _decoder_features = segmenter.forward_features(tensor)
     maps: dict[str, np.ndarray] = {}
     if len(features) > 1:
         maps["dino_layer1_norm"] = feature_norm_map(features[1][0])
     if len(features) > 2:
         maps["dino_layer2_norm"] = feature_norm_map(features[2][0])
+    if len(features) > 3:
+        maps["dino_layer3_norm"] = feature_norm_map(features[3][0])
     if features:
         maps["dino_last_pca"] = pca_first_component(features[-1][0])
+    prob = torch.sigmoid(logits)[0, 0].detach().float().cpu().numpy()
+    maps["decoder_prob"] = normalize_map(prob)
     maps["_layer_indices"] = np.array(layer_indices, dtype=np.int32)
     return maps
 
@@ -188,7 +204,9 @@ def build_dino_grid(
 
     if title_text is None:
         blocks = ", ".join(str(i) for i in layer_indices)
-        title_text = f"SegDINO multi-layer tokens: crop_ui → seg → layer norms (blocks {blocks})"
+        title_text = (
+            f"SegDINO deep features: tokens (blocks {blocks}) → PCA → decoder prob (8 sources)"
+        )
     title_font = _load_font(title_font_size, bold=True)
     tw, th = _text_size(draw, title_text, title_font)
     draw.text(
@@ -216,7 +234,7 @@ def build_dino_grid(
         cache_stem = img_path.stem
         if cache_dir is not None:
             hit = True
-            for key in ("dino_layer1_norm", "dino_layer2_norm", "dino_last_pca"):
+            for key in DINO_CACHE_KEYS:
                 cache_path = cache_dir / f"{cache_stem}_{key}.png"
                 if cache_path.is_file():
                     dino_rgb[key] = np.array(Image.open(cache_path).convert("RGB"))
@@ -280,7 +298,7 @@ def build_dino_grid(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build DINO layer PPT grid (8 sources, 5 rows)")
+    parser = argparse.ArgumentParser(description="Build DINO layer PPT grid (8 sources, 7 rows)")
     parser.add_argument(
         "--cases-csv",
         type=Path,
@@ -298,7 +316,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=PROJECT_ROOT / "docs/mainline/figures/results/t2t3_dino_layer_ppt_grid_8x5_multicenter.png",
+        default=PROJECT_ROOT / "docs/mainline/figures/results/t2t3_dino_layer_ppt_grid_8x7_multicenter.png",
     )
     parser.add_argument("--cache-dir", type=Path, default=None)
     parser.add_argument("--cell-w", type=int, default=480)
