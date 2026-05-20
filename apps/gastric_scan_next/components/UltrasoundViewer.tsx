@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Patient } from '@/types';
+import { ExplainableAnalysisResult } from '@/lib/concept-agent-merge';
 import { Columns, Eye, Layers, Maximize2, RefreshCw, Ruler, Scan, Settings2, Undo2, XCircle, CircleDashed, ZoomIn, Minimize2, Brain, Grid2X2, ChevronLeft, ChevronRight, Video, FileStack } from 'lucide-react';
 import { ExplainableAnalysis } from './ExplainableAnalysis';
 import { DicomViewer } from './DicomViewer';
@@ -23,11 +24,17 @@ interface UltrasoundViewerProps {
   patient: Patient | null;
   siblingImages?: Patient[];
   onSelectSibling?: (patient: Patient) => void;
+  onExplainableComplete?: (result: ExplainableAnalysisResult) => void;
 }
 
 type ViewMode = 'original' | 'overlay' | 'roi' | 'heatmap' | 'split' | 'multi' | 'video' | 'dicom';
 
-export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, siblingImages = [], onSelectSibling }) => {
+export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
+  patient,
+  siblingImages = [],
+  onSelectSibling,
+  onExplainableComplete,
+}) => {
   const { t, language, dataset } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<ViewMode>('original');
@@ -1154,6 +1161,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, sib
         patient={patient}
         isOpen={showExplainableAnalysis}
         onClose={() => setShowExplainableAnalysis(false)}
+        onAnalysisComplete={onExplainableComplete}
       />
     </div>
   );

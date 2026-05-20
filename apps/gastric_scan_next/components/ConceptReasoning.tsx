@@ -2,7 +2,7 @@
 
 import { CONCEPT_CONFIGS, getConceptBarGradient } from '@/lib/medical-config';
 import { ConceptState } from '@/types';
-import { Activity, RotateCcw, ShieldAlert, Sliders } from 'lucide-react';
+import { Activity, RotateCcw, Save, ShieldAlert, Sliders } from 'lucide-react';
 import React from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
 import { RadarChart } from './RadarChart';
@@ -11,11 +11,25 @@ interface ConceptReasoningProps {
   state: ConceptState;
   onChange: (key: keyof ConceptState, value: number) => void;
   onReset?: () => void;
+  onSave?: () => void;
   populatedCount?: number;
+  agentFilledCount?: number;
   hasClinicalData?: boolean;
+  isDirty?: boolean;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
-export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({ state, onChange, onReset, populatedCount = 0, hasClinicalData = false }) => {
+export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
+  state,
+  onChange,
+  onReset,
+  onSave,
+  populatedCount = 0,
+  agentFilledCount = 0,
+  hasClinicalData = false,
+  isDirty = false,
+  saveStatus = 'idle',
+}) => {
   const { t, language } = useSettings();
   
   const renderSlider = (key: keyof ConceptState) => {
@@ -144,20 +158,50 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({ s
           <Sliders size={12} className="text-blue-500" /> 
           {language === 'zh' ? '病理特征推理 (CBM)' : 'Pathology CBM Reasoning'}
         </span>
-        <button onClick={onReset} className="text-gray-600 hover:text-white transition-colors" title="Reset">
+        <div className="flex items-center gap-2">
+          {onSave && (
+            <button
+              onClick={onSave}
+              disabled={saveStatus === 'saving'}
+              className={`flex items-center gap-1 text-[9px] px-2 py-0.5 rounded border transition-colors ${
+                saveStatus === 'saved'
+                  ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                  : isDirty
+                    ? 'border-blue-500/40 text-blue-300 bg-blue-500/10 hover:bg-blue-500/20'
+                    : 'border-white/10 text-gray-500 hover:text-gray-300'
+              }`}
+              title={language === 'zh' ? '保存当前 CBM 调整' : 'Save CBM adjustments'}
+            >
+              <Save size={10} />
+              {saveStatus === 'saving'
+                ? (language === 'zh' ? '保存中' : 'Saving')
+                : saveStatus === 'saved'
+                  ? (language === 'zh' ? '已保存' : 'Saved')
+                  : saveStatus === 'error'
+                    ? (language === 'zh' ? '失败' : 'Failed')
+                    : (language === 'zh' ? '保存' : 'Save')}
+            </button>
+          )}
+          <button onClick={onReset} className="text-gray-600 hover:text-white transition-colors" title="Reset">
             <RotateCcw size={12} />
-        </button>
+          </button>
+        </div>
       </div>
 
-      <div className="px-4 py-1.5 border-b border-white/5 bg-[#101014] text-[9px] text-gray-500 flex items-center justify-between">
-        <span>
+      <div className="px-4 py-1.5 border-b border-white/5 bg-[#101014] text-[9px] text-gray-500 flex items-center justify-between gap-2">
+        <span className="truncate">
           {hasClinicalData
             ? (language === 'zh'
-              ? `已载入病理/IHC ${populatedCount > 0 ? `${populatedCount} 项` : '特征'}`
-              : `Loaded pathology/IHC ${populatedCount > 0 ? `(${populatedCount})` : 'features'}`)
-            : (language === 'zh' ? '无临床数据，显示 CBM 默认值' : 'No clinical data, showing CBM defaults')}
+              ? `病理/IHC ${populatedCount > 0 ? `${populatedCount} 项` : '已载入'}`
+              : `Pathology/IHC ${populatedCount > 0 ? `(${populatedCount})` : 'loaded'}`)
+            : (language === 'zh' ? '无临床数据，显示默认值' : 'No clinical data, defaults')}
+          {agentFilledCount > 0 && (
+            <span className="text-purple-400 ml-1">
+              {language === 'zh' ? `· Agent/超声 +${agentFilledCount}` : `· Agent/US +${agentFilledCount}`}
+            </span>
+          )}
         </span>
-        <span className="font-mono text-gray-600">
+        <span className="font-mono text-gray-600 shrink-0">
           Ki67 {state.c1}% · CPS {state.c2}
         </span>
       </div>

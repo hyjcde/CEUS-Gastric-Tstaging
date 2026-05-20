@@ -22,10 +22,13 @@ import {
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
+import { ExplainableAnalysisResult } from '@/lib/concept-agent-merge';
+
 interface ExplainableAnalysisProps {
   patient: Patient | null;
   isOpen: boolean;
   onClose: () => void;
+  onAnalysisComplete?: (result: ExplainableAnalysisResult) => void;
 }
 
 interface MorphologyData {
@@ -57,7 +60,8 @@ const API_BASE_URL = '/api/explainable/analyze';
 export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
   patient,
   isOpen,
-  onClose
+  onClose,
+  onAnalysisComplete,
 }) => {
   const { language, dataset, cohortYear, treatmentType } = useSettings();
   const [loading, setLoading] = useState(false);
@@ -95,6 +99,7 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
       
       if (data.success) {
         setResult(data);
+        onAnalysisComplete?.(data);
       } else {
         setError(data.error || 'Analysis failed');
       }
@@ -104,7 +109,7 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [patient, dataset, cohortYear, treatmentType]);
+  }, [patient, dataset, cohortYear, treatmentType, onAnalysisComplete]);
 
   // 导出为图片（论文用）
   const exportAsImage = useCallback(async () => {

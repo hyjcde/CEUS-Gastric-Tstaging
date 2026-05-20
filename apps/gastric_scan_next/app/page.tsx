@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Header } from '@/components/Header';
 import { PatientList } from '@/components/PatientList';
 import { UltrasoundViewer } from '@/components/UltrasoundViewer';
@@ -12,6 +12,12 @@ import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse } from '@/t
 import { useSettings } from '@/contexts/SettingsContext';
 import { ChevronLeft, Users, BarChart2, X } from 'lucide-react';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
+import {
+  mergeAgentIntoConceptState,
+  mergeExplainableIntoConceptState,
+  countAgentFilledFields,
+  ExplainableAnalysisResult,
+} from '@/lib/concept-agent-merge';
 
 export default function Home() {
   const { dataset, cohortYear, language } = useSettings();
@@ -23,10 +29,22 @@ export default function Home() {
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [patientConceptStates, setPatientConceptStates] = useState<Map<string, ConceptState>>(new Map());
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisResponse | null>(null);
+  const [agentFilledCount, setAgentFilledCount] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [isDirty, setIsDirty] = useState(false);
 
-  // 切换患者时清空 Agent 分析结果
-  React.useEffect(() => {
+  const clinicalBaselinesRef = useRef<Map<string, ConceptState>>(new Map());
+  const userEditedRef = useRef<Set<string>>(new Set());
+  const lastMergedAgentSessionRef = useRef<string | null>(null);
+  const lastMergedExplainableRef = useRef<string | null>(null);
+
+  useEffect(() => {
     setAgentAnalysis(null);
+    setAgentFilledCount(0);
+    setSaveStatus('idle');
+    setIsDirty(false);
+    lastMergedAgentSessionRef.current = null;
+    lastMergedExplainableRef.current = null;
   }, [selectedPatient?.id]);
 
   const conceptPopulatedCount = useMemo(
@@ -40,116 +58,224 @@ export default function Home() {
     return allPatients.filter((p) => p.patient_id === patientId);
   }, [selectedPatient, allPatients]);
 
+  const applyConceptState = useCallback((patientId: string, state: ConceptState, markDirty = false) => {
+    setConceptState(state);
+    setPatientConceptStates((prevMap) => {
+      const newMap = new Map(prevMap);
+      newMap.set(patientId, state);
+      return newMap;
+    });
+    if (markDirty) {
+      userEditedRef.current.add(patientId);
+      setIsDirty(true);
+      setSaveStatus('idle');
+    }
+  }, []);
+
   const handleStateChange = useCallback((key: keyof ConceptState, value: number) => {
-    setConceptState(prev => {
-      const newState = {
-        ...prev,
-        [key]: value
-      };
-      // 更新当前患者的概念状态
-      if (selectedPatient) {
-        setPatientConceptStates(prevMap => {
-          const newMap = new Map(prevMap);
-          newMap.set(selectedPatient.id, newState);
-          return newMap;
-        });
-      }
+    if (!selectedPatient) return;
+    setConceptState((prev) => {
+      const newState = { ...prev, [key]: value };
+      setPatientConceptStates((prevMap) => {
+        const newMap = new Map(prevMap);
+        newMap.set(selectedPatient.id, newState);
+        return newMap;
+      });
+      userEditedRef.current.add(selectedPatient.id);
+      setIsDirty(true);
+      setSaveStatus('idle');
       return newState;
     });
   }, [selectedPatient]);
 
-  // 当选择新患者时，加载或使用默认状态
-  React.useEffect(() => {
-    if (selectedPatient) {
-      const savedState = patientConceptStates.get(selectedPatient.id);
-      if (savedState) {
-        setConceptState(savedState);
-      } else {
-        // 尝试从患者临床数据中加载
-        const fromPatient = getConceptStateFromPatient(selectedPatient);
-        setConceptState(fromPatient);
-        // 保存到状态中
-        setPatientConceptStates(prevMap => {
-          const newMap = new Map(prevMap);
-          newMap.set(selectedPatient.id, fromPatient);
-          return newMap;
-        });
+  const handleSaveConceptState = useCallback(async () => {
+    if (!selectedPatient) return;
+    setSaveStatus('saving');
+    try {
+      const response = await fetch('/api/patients/concept-overrides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId: selectedPatient.id, state: conceptState }),
+      });
+      if (!response.ok) throw new Error('Save failed');
+      setSaveStatus('saved');
+      setIsDirty(false);
+    } catch {
+      setSaveStatus('error');
+    }
+  }, [selectedPatient, conceptState]);
+
+  const handleResetConceptState = useCallback(async () => {
+    if (!selectedPatient) return;
+    const baseline = getConceptStateFromPatient(selectedPatient);
+    clinicalBaselinesRef.current.set(selectedPatient.id, baseline);
+    userEditedRef.current.delete(selectedPatient.id);
+    applyConceptState(selectedPatient.id, baseline, false);
+    setIsDirty(false);
+    setSaveStatus('idle');
+    setAgentFilledCount(0);
+    try {
+      await fetch(`/api/patients/concept-overrides?patientId=${encodeURIComponent(selectedPatient.id)}`, {
+        method: 'DELETE',
+      });
+    } catch {
+      // 忽略删除失败，本地已恢复
+    }
+  }, [selectedPatient, applyConceptState]);
+
+  useEffect(() => {
+    if (!selectedPatient) return;
+    const patient: Patient = selectedPatient;
+    const patientId = patient.id;
+
+    let cancelled = false;
+
+    async function loadPatientConceptState() {
+      const baseline = getConceptStateFromPatient(patient);
+      clinicalBaselinesRef.current.set(patientId, baseline);
+
+      const cached = patientConceptStates.get(patientId);
+      if (cached && userEditedRef.current.has(patientId)) {
+        if (!cancelled) setConceptState(cached);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/patients/concept-overrides?patientId=${encodeURIComponent(patientId)}`,
+        );
+        const data = await response.json() as { state?: ConceptState | null };
+        const loaded = data.state ?? baseline;
+        if (!cancelled) {
+          applyConceptState(patientId, loaded, Boolean(data.state));
+          setIsDirty(Boolean(data.state));
+        }
+      } catch {
+        if (!cancelled) applyConceptState(patientId, baseline, false);
       }
     }
-  }, [selectedPatient, patientConceptStates]);
+
+    loadPatientConceptState();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient?.id]);
+
+  useEffect(() => {
+    if (!agentAnalysis || !selectedPatient) return;
+    if (lastMergedAgentSessionRef.current === agentAnalysis.session_id) return;
+
+    const baseline = clinicalBaselinesRef.current.get(selectedPatient.id)
+      ?? getConceptStateFromPatient(selectedPatient);
+
+    setConceptState((prev) => {
+      const merged = mergeAgentIntoConceptState(prev, baseline, agentAnalysis);
+      const filled = countAgentFilledFields(prev, merged, baseline);
+      setAgentFilledCount(filled);
+      setPatientConceptStates((prevMap) => {
+        const newMap = new Map(prevMap);
+        newMap.set(selectedPatient.id, merged);
+        return newMap;
+      });
+      return merged;
+    });
+
+    lastMergedAgentSessionRef.current = agentAnalysis.session_id;
+  }, [agentAnalysis, selectedPatient]);
+
+  const handleExplainableComplete = useCallback((result: ExplainableAnalysisResult) => {
+    if (!selectedPatient || !result.success) return;
+
+    const signature = `${selectedPatient.id}:${result.predicted_stage}:${result.composite_score}`;
+    if (lastMergedExplainableRef.current === signature) return;
+
+    const baseline = clinicalBaselinesRef.current.get(selectedPatient.id)
+      ?? getConceptStateFromPatient(selectedPatient);
+
+    setConceptState((prev) => {
+      const merged = mergeExplainableIntoConceptState(prev, baseline, result);
+      const filled = countAgentFilledFields(prev, merged, baseline);
+      setAgentFilledCount((count) => count + filled);
+      setPatientConceptStates((prevMap) => {
+        const newMap = new Map(prevMap);
+        newMap.set(selectedPatient.id, merged);
+        return newMap;
+      });
+      return merged;
+    });
+
+    lastMergedExplainableRef.current = signature;
+  }, [selectedPatient]);
 
   return (
     <main className="flex h-screen w-screen flex-col bg-[#000000] text-gray-200 overflow-hidden selection:bg-blue-500/30">
-      {/* Header: Fixed Height */}
       <div className="h-16 shrink-0 border-b border-white/10 z-50">
         <Header onShowStatistics={() => setShowStatistics(true)} />
       </div>
 
-      {/* Main Layout: Flex Row */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
-        
-        {/* Left: Patient List (Collapsible) */}
-        <div 
-            className={`shrink-0 border-r border-white/10 bg-[#0b0b0d] flex flex-col min-h-0 z-40 transition-all duration-300 ease-in-out ${
-                isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full opacity-0 border-none'
-            }`}
+        <div
+          className={`shrink-0 border-r border-white/10 bg-[#0b0b0d] flex flex-col min-h-0 z-40 transition-all duration-300 ease-in-out ${
+            isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full opacity-0 border-none'
+          }`}
         >
           <div className="w-72 h-full">
-          <PatientList 
-            key={`${dataset}-${cohortYear}`} 
-            onSelect={setSelectedPatient} 
-            selectedId={selectedPatient?.id || null}
-            onPatientsLoaded={setAllPatients}
-          />
+            <PatientList
+              key={`${dataset}-${cohortYear}`}
+              onSelect={setSelectedPatient}
+              selectedId={selectedPatient?.id || null}
+              onPatientsLoaded={setAllPatients}
+            />
           </div>
         </div>
 
-        {/* Sidebar Toggle Button (Floating) - Hidden when report is expanded */}
         {!isReportExpanded && (
-          <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className={`absolute top-1/2 -translate-y-1/2 z-40 bg-neutral-800/80 backdrop-blur border border-white/10 text-gray-400 hover:text-white p-1.5 rounded-r-lg shadow-lg transition-all duration-300 hover:bg-blue-600 hover:border-blue-500 ${
-                  isSidebarOpen ? 'left-72' : 'left-0'
-              }`}
-              title={isSidebarOpen ? "Collapse Patient List" : "Expand Patient List"}
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className={`absolute top-1/2 -translate-y-1/2 z-40 bg-neutral-800/80 backdrop-blur border border-white/10 text-gray-400 hover:text-white p-1.5 rounded-r-lg shadow-lg transition-all duration-300 hover:bg-blue-600 hover:border-blue-500 ${
+              isSidebarOpen ? 'left-72' : 'left-0'
+            }`}
+            title={isSidebarOpen ? 'Collapse Patient List' : 'Expand Patient List'}
           >
-              {isSidebarOpen ? <ChevronLeft size={16} /> : <Users size={16} />}
+            {isSidebarOpen ? <ChevronLeft size={16} /> : <Users size={16} />}
           </button>
         )}
 
-        {/* Middle: Viewer (Flexible, Darkest Background) */}
         <div className="flex-1 flex flex-col min-h-0 bg-black relative min-w-0 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
           <UltrasoundViewer
             key={`${selectedPatient?.id}-${dataset}`}
             patient={selectedPatient}
             siblingImages={siblingImages}
             onSelectSibling={setSelectedPatient}
+            onExplainableComplete={handleExplainableComplete}
           />
           <AgentWorkbenchPanel patient={selectedPatient} onAnalysisComplete={setAgentAnalysis} />
         </div>
 
-        {/* Right: Analysis (Fixed Width, Split Vertically) */}
         <div className="w-[420px] shrink-0 border-l border-white/10 bg-panel-bg flex flex-col min-h-0 z-40 transition-all duration-300">
-          
-          {/* Top Right: Reasoning (35% Height) - Reduced from 45% to give more space to diagnosis */}
           <div className="h-[35%] shrink-0 border-b border-white/10 flex flex-col min-h-0 bg-panel-bg">
-             <ConceptReasoning
-               state={conceptState}
-               onChange={handleStateChange}
-               onReset={() => setConceptState(getConceptStateFromPatient(selectedPatient))}
-               populatedCount={conceptPopulatedCount}
-               hasClinicalData={Boolean(selectedPatient?.clinical)}
-             />
+            <ConceptReasoning
+              state={conceptState}
+              onChange={handleStateChange}
+              onReset={handleResetConceptState}
+              onSave={handleSaveConceptState}
+              populatedCount={conceptPopulatedCount}
+              agentFilledCount={agentFilledCount}
+              hasClinicalData={Boolean(selectedPatient?.clinical)}
+              isDirty={isDirty}
+              saveStatus={saveStatus}
+            />
           </div>
-          
-          {/* Bottom Right: Report (Rest Height - 65%) */}
+
           <div className="flex-1 flex flex-col min-h-0 bg-bg-dark relative">
-             <DiagnosisPanel state={conceptState} patient={selectedPatient} agentAnalysis={agentAnalysis} onExpandedChange={setIsReportExpanded} />
+            <DiagnosisPanel
+              state={conceptState}
+              patient={selectedPatient}
+              agentAnalysis={agentAnalysis}
+              onExpandedChange={setIsReportExpanded}
+            />
           </div>
-          
         </div>
 
-        {/* Statistics Panel Modal */}
         {showStatistics && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8">
             <div className="bg-[#0b0b0d] border border-white/10 rounded-xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl">
@@ -173,7 +299,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
       </div>
     </main>
   );
