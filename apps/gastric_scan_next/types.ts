@@ -34,6 +34,13 @@ export const DEFAULT_STATE: ConceptState = {
   neuralInvasion: 0
 };
 
+export interface VideoInfo {
+  url: string;
+  filename: string;
+  treatment: 'direct_surgery' | 'neoadjuvant';
+  water_filled: boolean;
+}
+
 export interface ConceptFeatures {
   ki67?: string;
   cps?: string;
@@ -133,6 +140,7 @@ export interface Patient {
   agent_report: AgentReport;
   clinical?: ClinicalData;
   report?: PatientReportData;
+  video_urls?: VideoInfo[];
 }
 
 export interface AgentToolResult {
@@ -149,6 +157,7 @@ export interface AgentReportCue {
 }
 
 export interface SimilarCaseResult {
+  rank?: number;
   patient_id: string;
   cohort_year?: string;
   data_source: string;

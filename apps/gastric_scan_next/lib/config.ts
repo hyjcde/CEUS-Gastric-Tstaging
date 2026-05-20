@@ -162,3 +162,22 @@ export function getClinicalDataPath(cohortYear: CohortYear = '2025', treatmentTy
       return path.join(APP_ROOT, 'data', 'clinical_data.json');
   }
 }
+
+const DICOM_DIR_CANDIDATES: Partial<Record<CohortYear, string[]>> = {
+  '2024': [
+    path.join(PROJECT_ROOT, 'data', '2024年胃癌直接手术', 'DICOM1+NII1', 'DICOM1'),
+    path.join(PROJECT_ROOT, 'archive', '2024年胃癌直接手术', 'DICOM1+NII1', 'DICOM1'),
+  ],
+  '2019': [
+    path.join(PROJECT_ROOT, 'data', '2019年直接手术', 'DICOM'),
+  ],
+};
+
+export function getDicomDir(cohortYear: CohortYear): string | null {
+  const candidates = DICOM_DIR_CANDIDATES[cohortYear];
+  if (!candidates) return null;
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}

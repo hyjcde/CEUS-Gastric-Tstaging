@@ -2,7 +2,10 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Patient } from '@/types';
-import { Columns, Eye, Flame, Layers, Maximize2, RefreshCw, Ruler, Scan, Settings2, Undo2, XCircle } from 'lucide-react';
+import { Columns, Eye, Layers, Maximize2, RefreshCw, Ruler, Scan, Settings2, Undo2, XCircle, CircleDashed, ZoomIn, Minimize2, Brain, Grid2X2, ChevronLeft, ChevronRight, Video, FileStack } from 'lucide-react';
+import { ExplainableAnalysis } from './ExplainableAnalysis';
+import { DicomViewer } from './DicomViewer';
+import { VideoPlayer } from './VideoPlayer';
 import { useSettings } from '@/contexts/SettingsContext';
 import { 
   AnnotationBbox, 
@@ -11,16 +14,19 @@ import {
   extractAnnotationBbox, 
   ImageMetrics 
 } from '@/lib/image-utils';
+import { generatePeritumoralRingFromAnnotation } from '@/lib/morphology';
 import { OptimizedImage } from './OptimizedImage';
 import toast from 'react-hot-toast';
 
 interface UltrasoundViewerProps {
   patient: Patient | null;
+  siblingImages?: Patient[];
+  onSelectSibling?: (patient: Patient) => void;
 }
 
-type ViewMode = 'original' | 'overlay' | 'roi' | 'heatmap' | 'split';
+type ViewMode = 'original' | 'overlay' | 'roi' | 'heatmap' | 'split' | 'multi' | 'video' | 'dicom';
 
-export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) => {
+export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient, siblingImages = [], onSelectSibling }) => {
   const { t, language, dataset } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<ViewMode>('original');
@@ -41,8 +47,12 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
   const [measurements, setMeasurements] = useState<Array<{id: number, start: {x:number, y:number}, end: {x:number, y:number}}>>([]);
   const [activeMeasurement, setActiveMeasurement] = useState<{start: {x:number, y:number}, end: {x:number, y:number}} | null>(null);
   const [showDetectionBox, setShowDetectionBox] = useState(false);
+  const [showRing, setShowRing] = useState(false);
+  const [ringImageUrl, setRingImageUrl] = useState<string | null>(null);
   const [annotationBbox, setAnnotationBbox] = useState<AnnotationBbox | null>(null);
   const [imageMetrics, setImageMetrics] = useState<ImageMetrics | null>(null);
+  const [zoomToROI, setZoomToROI] = useState(false);
+  const [showExplainableAnalysis, setShowExplainableAnalysis] = useState(false);
   const imageWrapperRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
@@ -54,7 +64,77 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
       setMeasurements([]);
       setActiveMeasurement(null);
       setIsMeasuring(false);
+      setShowRing(false);
+      setZoomToROI(false);
   }
+  
+  // 计算 ROI 放大参数
+  const roiZoomParams = useMemo(() => {
+    if (!zoomToROI || !annotationBbox || !imageMetrics) return null;
+    
+    // ROI 在原始图像中的坐标
+    const roiX = annotationBbox.x1;
+    const roiY = annotationBbox.y1;
+    const roiWidth = annotationBbox.x2 - annotationBbox.x1;
+    const roiHeight = annotationBbox.y2 - annotationBbox.y1;
+    
+    // 添加 20% 的边距
+    const padding = 0.2;
+    const paddedWidth = roiWidth * (1 + padding * 2);
+    const paddedHeight = roiHeight * (1 + padding * 2);
+    const paddedX = roiX - roiWidth * padding;
+    const paddedY = roiY - roiHeight * padding;
+    
+    // 计算需要的缩放比例（使 ROI 填充显示区域）
+    const scaleX = imageMetrics.naturalWidth / paddedWidth;
+    const scaleY = imageMetrics.naturalHeight / paddedHeight;
+    const targetScale = Math.min(scaleX, scaleY, 4); // 最大 4x
+    
+    // 计算 ROI 中心点在原始图像中的位置
+    const roiCenterX = paddedX + paddedWidth / 2;
+    const roiCenterY = paddedY + paddedHeight / 2;
+    
+    // 计算偏移量（使 ROI 中心对齐到显示区域中心）
+    const imageCenterX = imageMetrics.naturalWidth / 2;
+    const imageCenterY = imageMetrics.naturalHeight / 2;
+    
+    // 显示尺寸下的偏移
+    const offsetX = (imageCenterX - roiCenterX) * (imageMetrics.displayWidth / imageMetrics.naturalWidth);
+    const offsetY = (imageCenterY - roiCenterY) * (imageMetrics.displayHeight / imageMetrics.naturalHeight);
+    
+    return {
+      scale: targetScale,
+      offsetX: offsetX * targetScale,
+      offsetY: offsetY * targetScale
+    };
+  }, [zoomToROI, annotationBbox, imageMetrics]);
+  
+  // 切换 ROI 放大模式
+  const toggleZoomToROI = useCallback(() => {
+    if (!annotationBbox) return;
+    
+    if (zoomToROI) {
+      // 退出 ROI 放大模式，恢复正常
+      setZoomToROI(false);
+      setScale(1);
+      setPosition({ x: 0, y: 0 });
+    } else {
+      // 进入 ROI 放大模式
+      setZoomToROI(true);
+      if (roiZoomParams) {
+        setScale(roiZoomParams.scale);
+        setPosition({ x: roiZoomParams.offsetX, y: roiZoomParams.offsetY });
+      }
+    }
+  }, [annotationBbox, zoomToROI, roiZoomParams]);
+  
+  // 当 roiZoomParams 变化且处于 ROI 模式时，更新缩放和位置
+  useEffect(() => {
+    if (zoomToROI && roiZoomParams) {
+      setScale(roiZoomParams.scale);
+      setPosition({ x: roiZoomParams.offsetX, y: roiZoomParams.offsetY });
+    }
+  }, [zoomToROI, roiZoomParams]);
 
   const updateImageMetrics = useCallback(() => {
     const img = imageRef.current;
@@ -82,19 +162,20 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
   }, [updateImageMetrics]);
 
   useEffect(() => {
-    resetAdjustments();
-    setMode('original');
-  }, [patient?.id, dataset]);
-
-  useEffect(() => {
     if (!annotationBbox) {
       setShowDetectionBox(false);
     }
   }, [annotationBbox]);
 
   useEffect(() => {
+    resetAdjustments();
+    setMode('original');
+  }, [patient?.id, dataset]);
+
+  useEffect(() => {
     if (!patient) {
       setAnnotationBbox(null);
+      setRingImageUrl(null);
       return;
     }
 
@@ -123,6 +204,33 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
 
     return () => controller.abort();
   }, [patient]);
+  
+  // Effect to generate peritumoral ring
+  useEffect(() => {
+    if (showRing && patient && patient.json_url && imageMetrics) {
+      console.log('[Ring] Generating ring from annotation:', patient.json_url);
+      console.log('[Ring] Image dimensions:', imageMetrics.naturalWidth, 'x', imageMetrics.naturalHeight);
+      
+      generatePeritumoralRingFromAnnotation(
+        patient.json_url,
+        imageMetrics.naturalWidth,
+        imageMetrics.naturalHeight,
+        20, // radius in pixels (~5mm)
+        [255, 165, 0, 200] // Orange color
+      )
+        .then(url => {
+           console.log('[Ring] Generated successfully, data URL length:', url.length);
+           setRingImageUrl(url);
+        })
+        .catch(err => {
+           console.error("[Ring] Failed to generate peritumoral ring", err);
+           toast.error(language === 'zh' ? "生成瘤周环失败: " + err.message : "Failed to generate peritumoral ring: " + err.message);
+           setShowRing(false);
+        });
+    } else if (!showRing) {
+      setRingImageUrl(null);
+    }
+  }, [showRing, patient, imageMetrics, language]);
 
   const undoMeasurement = () => {
       setMeasurements(prev => prev.slice(0, -1));
@@ -151,13 +259,10 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
           setMode('overlay');
           break;
         case '3':
-          if (patient?.roi_url) setMode('roi');
+          setMode('roi');
           break;
         case '4':
           setMode('split');
-          break;
-        case '5':
-          setMode('heatmap');
           break;
         case ' ':
           e.preventDefault();
@@ -308,6 +413,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
   }
 
   const getImageUrl = (m: ViewMode) => {
+    if (!patient) return '';
     switch (m) {
       case 'overlay': return patient.overlay_url;
       case 'roi': return patient.roi_url || patient.image_url;
@@ -320,17 +426,34 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
 
   const getModeLabel = () => {
       if (mode === 'split') return 'SPLIT COMPARISON';
+      if (mode === 'multi') return `MULTI-IMAGE (${siblingImages.length})`;
+      if (mode === 'video') return `VIDEO (${patient?.video_urls?.length || 0})`;
+      if (mode === 'dicom') return language === 'zh' ? 'DICOM 原始帧' : 'DICOM RAW';
       if (mode === 'original') return primaryViewLabel;
       if (mode === 'overlay') return t.viewer.mask;
-      if (mode === 'roi') return 'ROI (TIGHT)';
+      if (mode === 'roi') return language === 'zh' ? '病灶 ROI' : 'LESION ROI';
       return t.viewer.heatmap;
   }
+  
+  // 当前图片在兄弟图片中的索引
+  const currentImageIndex = patient ? siblingImages.findIndex((p) => p.id === patient.id) : -1;
+  
+  // 导航到上一张/下一张
+  const navigateImage = (direction: 'prev' | 'next') => {
+    if (!onSelectSibling || siblingImages.length <= 1) return;
+    const newIndex = direction === 'prev' 
+      ? (currentImageIndex - 1 + siblingImages.length) % siblingImages.length
+      : (currentImageIndex + 1) % siblingImages.length;
+    onSelectSibling(siblingImages[newIndex]);
+  };
 
   const getStatusColor = () => {
       if (mode === 'original') return dataset === 'cropped' ? 'bg-amber-500 text-amber-500' : 'bg-blue-500 text-blue-500';
       if (mode === 'overlay') return 'bg-amber-500 text-amber-500';
       if (mode === 'roi') return 'bg-emerald-500 text-emerald-500';
       if (mode === 'split') return 'bg-purple-500 text-purple-500';
+      if (mode === 'video') return 'bg-rose-500 text-rose-500';
+      if (mode === 'dicom') return 'bg-violet-500 text-violet-500';
       return 'bg-red-500 text-red-500';
   }
 
@@ -366,6 +489,11 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
              </div>
            ) : (
              <div className="text-[10px] font-mono text-gray-500">{t.viewer.detection_missing}</div>
+           )}
+           {zoomToROI && (
+             <div className="text-[10px] font-mono text-cyan-400 animate-pulse">
+               {language === 'zh' ? '🔍 ROI 放大模式' : '🔍 ROI ZOOM MODE'}
+             </div>
            )}
         </div>
       </div>
@@ -408,10 +536,109 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
       </div>
 
       {/* Main Image Area */}
-      <div className="flex-1 flex items-center justify-center overflow-hidden p-4 pb-24 relative z-10 bg-black">
+      <div className="flex-1 flex items-center justify-center overflow-hidden p-4 relative z-10 bg-black">
+        
+        {/* Multi-Image Navigation (when multiple images exist) */}
+        {siblingImages.length > 1 && mode !== 'multi' && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-black/80 backdrop-blur border border-white/10 rounded-full px-4 py-2">
+            <button 
+              onClick={() => navigateImage('prev')}
+              className="p-1 text-gray-400 hover:text-white transition-colors"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div className="flex items-center gap-1.5">
+              {siblingImages.map((img, idx) => (
+                <button
+                  key={img.id}
+                  onClick={() => onSelectSibling?.(img)}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    img.id === patient?.id 
+                      ? 'bg-blue-500 scale-125' 
+                      : 'bg-gray-600 hover:bg-gray-400'
+                  }`}
+                  title={img.id_short}
+                />
+              ))}
+            </div>
+            <button 
+              onClick={() => navigateImage('next')}
+              className="p-1 text-gray-400 hover:text-white transition-colors"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <span className="text-[10px] text-gray-500 font-mono ml-1">
+              {currentImageIndex + 1}/{siblingImages.length}
+            </span>
+          </div>
+        )}
         
         {/* Image Container */}
-        {mode === 'split' ? (
+        {mode === 'dicom' ? (
+          /* DICOM Raw Viewer Mode */
+          <div className="w-full h-full">
+            <DicomViewer patient={patient} language={language} />
+          </div>
+        ) : mode === 'video' ? (
+          /* Video Mode */
+          <div className="w-full h-full">
+            <VideoPlayer 
+              videos={patient?.video_urls || []} 
+              language={language}
+            />
+          </div>
+        ) : mode === 'multi' && siblingImages.length > 1 ? (
+          /* Multi-Image Mode: Grid View */
+          <div className={`grid w-full h-full gap-2 p-2 ${
+            siblingImages.length <= 2 ? 'grid-cols-2' :
+            siblingImages.length <= 4 ? 'grid-cols-2' :
+            siblingImages.length <= 6 ? 'grid-cols-3' :
+            'grid-cols-4'
+          }`}>
+            {siblingImages.map((img, idx) => (
+              <div 
+                key={img.id}
+                onClick={() => onSelectSibling?.(img)}
+                className={`relative flex items-center justify-center bg-[#0a0a0a] rounded-lg overflow-hidden cursor-pointer transition-all hover:ring-2 hover:ring-blue-500/50 ${
+                  img.id === patient?.id ? 'ring-2 ring-blue-500' : ''
+                }`}
+              >
+                <OptimizedImage 
+                  src={img.image_url} 
+                  alt={img.id_short} 
+                  className="max-h-full max-w-full object-contain"
+                  priority={idx < 4}
+                />
+                {/* Overlay if available */}
+                {img.overlay_transparent_url && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <OptimizedImage 
+                      src={img.overlay_transparent_url} 
+                      alt="Overlay" 
+                      className="max-h-full max-w-full object-contain opacity-80"
+                      silentError={true}
+                    />
+                  </div>
+                )}
+                {/* Label */}
+                <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between">
+                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                    img.id === patient?.id 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-black/60 text-gray-300'
+                  }`}>
+                    {img.id_short}
+                  </span>
+                  {idx + 1 <= siblingImages.length && (
+                    <span className="text-[8px] font-mono text-gray-500 bg-black/60 px-1 rounded">
+                      {idx + 1}/{siblingImages.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : mode === 'split' ? (
           /* Split Mode: Side by Side */
           <div className="grid grid-cols-2 w-full h-full gap-1">
             {/* Left: Original Image */}
@@ -425,12 +652,8 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
                 className="max-h-full max-w-full object-contain shadow-2xl pointer-events-none"
                 priority={!!patient}
               />
-              <span className={`absolute bottom-2 left-2 text-[9px] font-bold bg-black/40 backdrop-blur-sm px-1.5 py-0.5 rounded border ${
-                dataset === 'cropped'
-                  ? 'text-amber-400 border-amber-500/20'
-                  : 'text-blue-400 border-blue-500/20'
-              }`}>
-                {primaryViewLabel}
+              <span className="absolute bottom-2 left-2 text-[9px] font-bold text-blue-400 bg-black/40 backdrop-blur-sm px-1.5 py-0.5 rounded border border-blue-500/20">
+                SOURCE
               </span>
               <div className="absolute right-0 top-1/4 bottom-1/4 w-px bg-linear-to-b from-transparent via-white/10 to-transparent"></div>
             </div>
@@ -457,6 +680,18 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
                       silentError={true}
                     />
                   </div>
+                  {/* Peritumoral Ring */}
+                  {ringImageUrl && (
+                    <div className="absolute inset-0 w-full h-full flex items-center justify-center pointer-events-none z-20">
+                      <OptimizedImage 
+                        src={ringImageUrl} 
+                        alt="Peritumoral Ring" 
+                        className="max-h-full max-w-full object-contain animate-in fade-in duration-500"
+                        style={{ opacity: 1 }}
+                        silentError={true}
+                      />
+                    </div>
+                  )}
                   {/* Detection Box */}
                   {showDetectionBox && detectionOverlayStyle && (
                     <div
@@ -525,6 +760,18 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
                         silentError={true}
                         />
                     </div>
+                    {/* Peritumoral Ring */}
+                    {ringImageUrl && (
+                        <div className="absolute inset-0 w-full h-full flex items-center justify-center pointer-events-none z-20">
+                            <OptimizedImage 
+                            src={ringImageUrl} 
+                            alt="Peritumoral Ring" 
+                            className="max-h-full max-w-full object-contain animate-in fade-in duration-500"
+                            style={{ opacity: 1 }}
+                            silentError={true}
+                            />
+                        </div>
+                    )}
                   </>
                 ) : (
                   <OptimizedImage 
@@ -692,104 +939,191 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({ patient }) =
       {/* Keyboard Shortcuts Hint */}
       <div className="absolute bottom-4 left-4 z-30 bg-black/60 backdrop-blur border border-white/10 rounded-lg p-2 text-[9px] text-gray-500 font-mono opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
         <div className="space-y-0.5">
-          <div><kbd className="px-1 py-0.5 bg-white/10 rounded">1-5</kbd> Views</div>
+          <div><kbd className="px-1 py-0.5 bg-white/10 rounded">1-4</kbd> Views</div>
           <div><kbd className="px-1 py-0.5 bg-white/10 rounded">Space</kbd> Toggle</div>
           <div><kbd className="px-1 py-0.5 bg-white/10 rounded">M</kbd> Measure</div>
         </div>
       </div>
 
-      {/* Bottom Controls */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 w-max max-w-[92%] pointer-events-auto">
-        <div className="bg-black/90 backdrop-blur border border-white/10 rounded-full p-1 flex gap-1 shadow-lg overflow-x-auto scrollbar-hide">
+      {/* Toolbar - Compact Design */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 transition-opacity duration-300 opacity-0 group-hover:opacity-100">
+        <div className="flex items-center gap-1.5">
+          
+          {/* View Mode Group */}
+          <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-1 py-0.5 flex items-center gap-0.5">
           <button
             onClick={() => setMode('original')}
-            className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              mode === 'original' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'
+              className={`p-1.5 rounded-md transition-all ${
+                mode === 'original' ? 'bg-white/20 text-white' : 'text-gray-500 hover:text-white hover:bg-white/10'
             }`}
+              title={primaryViewLabel}
           >
-            <Eye size={12} /> {primaryViewLabel}
+              <Eye size={14} />
           </button>
           <button
             onClick={() => setMode('overlay')}
-            className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              mode === 'overlay' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'
+              className={`p-1.5 rounded-md transition-all ${
+                mode === 'overlay' ? 'bg-amber-500/30 text-amber-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
             }`}
+              title={t.viewer.seg}
           >
-            <Layers size={12} /> {t.viewer.seg}
+              <Layers size={14} />
           </button>
+          <button
+            onClick={() => setMode('roi')}
+              disabled={!patient.roi_url}
+              className={`p-1.5 rounded-md transition-all ${
+                !patient.roi_url
+                  ? 'opacity-30 cursor-not-allowed text-gray-600'
+                  : mode === 'roi'
+                    ? 'bg-emerald-500/30 text-emerald-400'
+                    : 'text-gray-500 hover:text-white hover:bg-white/10'
+            }`}
+              title={language === 'zh' ? '病灶 ROI' : 'Lesion ROI'}
+          >
+              <Scan size={14} />
+          </button>
+            <button
+              onClick={() => setMode('split')}
+              className={`p-1.5 rounded-md transition-all ${
+                mode === 'split' ? 'bg-purple-500/30 text-purple-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
+              }`}
+              title={t.viewer.contrast}
+            >
+              <Columns size={14} />
+            </button>
+            {siblingImages.length > 1 && (
+              <button
+                onClick={() => setMode(mode === 'multi' ? 'original' : 'multi')}
+                className={`p-1.5 rounded-md transition-all relative ${
+                  mode === 'multi' ? 'bg-blue-500/30 text-blue-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
+                }`}
+                title={language === 'zh' ? `${siblingImages.length} 张图片` : `${siblingImages.length} images`}
+              >
+                <Grid2X2 size={14} />
+                <span className="absolute -top-1 -right-1 text-[8px] bg-blue-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold">
+                  {siblingImages.length}
+                </span>
+              </button>
+            )}
+            {patient?.video_urls && patient.video_urls.length > 0 && (
+              <button
+                onClick={() => setMode(mode === 'video' ? 'original' : 'video')}
+                className={`p-1.5 rounded-md transition-all relative ${
+                  mode === 'video' ? 'bg-rose-500/30 text-rose-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
+                }`}
+                title={language === 'zh' ? `${patient.video_urls.length} 个视频` : `${patient.video_urls.length} videos`}
+              >
+                <Video size={14} />
+                <span className="absolute -top-1 -right-1 text-[8px] bg-rose-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold">
+                  {patient.video_urls.length}
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => setMode('dicom')}
+              className={`p-2 rounded-xl transition-all relative group/btn ${
+                mode === 'dicom'
+                ? 'text-violet-400'
+                : 'text-gray-500 hover:text-gray-300'
+              }`}
+              title={language === 'zh' ? 'DICOM 原始帧查看' : 'DICOM Raw Viewer'}
+            >
+              <div className={`absolute inset-0 bg-violet-500/10 rounded-xl blur-md transition-opacity duration-500 ${mode === 'dicom' ? 'opacity-100' : 'opacity-0'}`}></div>
+              <FileStack size={16} className="relative z-10" />
+            </button>
+          </div>
+
+          {/* Overlay & ROI Group */}
+          <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-1 py-0.5 flex items-center gap-0.5">
           <button
             onClick={() => annotationBbox && setShowDetectionBox(prev => !prev)}
             disabled={!annotationBbox}
-            className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              annotationBbox
-                ? showDetectionBox
-                  ? 'bg-white text-black'
-                  : 'text-gray-400 hover:text-white'
-                : 'opacity-40 cursor-not-allowed text-gray-500'
-            }`}
-            title={annotationBbox ? (showDetectionBox ? (language === 'zh' ? '关闭检测' : 'Hide Detection Box') : (language === 'zh' ? '显示检测' : 'Show Detection Box')) : (language === 'zh' ? '注释数据缺失' : 'Annotation missing')}
+              className={`p-1.5 rounded-md transition-all ${
+                !annotationBbox ? 'opacity-30 cursor-not-allowed text-gray-600' :
+                showDetectionBox ? 'bg-emerald-500/30 text-emerald-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
+              }`}
+              title={t.viewer.detect}
           >
-            <Scan size={12} /> {t.viewer.detect}
+              <Scan size={14} />
           </button>
           <button
-            onClick={() => patient.roi_url && setMode('roi')}
-            disabled={!patient.roi_url}
-            className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              patient.roi_url
-                ? mode === 'roi'
-                  ? 'bg-white text-black'
-                  : 'text-gray-400 hover:text-white'
-                : 'opacity-40 cursor-not-allowed text-gray-500'
+              onClick={() => setShowRing(prev => !prev)}
+              disabled={!patient.json_url}
+              className={`p-1.5 rounded-md transition-all ${
+                !patient.json_url ? 'opacity-30 cursor-not-allowed text-gray-600' :
+                showRing ? 'bg-orange-500/30 text-orange-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
             }`}
+              title={language === 'zh' ? '瘤周环' : 'Peritumoral'}
           >
-            <Layers size={12} /> ROI
+              <CircleDashed size={14} />
           </button>
           <button
-            onClick={() => setMode('split')}
-            className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              mode === 'split' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'
+              onClick={toggleZoomToROI}
+              disabled={!annotationBbox}
+              className={`p-1.5 rounded-md transition-all ${
+                !annotationBbox ? 'opacity-30 cursor-not-allowed text-gray-600' :
+                zoomToROI ? 'bg-cyan-500/30 text-cyan-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
             }`}
-          >
-            <Columns size={12} /> {t.viewer.contrast}
+              title="ROI Zoom"
+            >
+              {zoomToROI ? <Minimize2 size={14} /> : <ZoomIn size={14} />}
           </button>
-          <button
-            onClick={() => setMode('heatmap')}
-            className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              mode === 'heatmap' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Flame size={12} /> {t.viewer.xai}
-          </button>
-          
-          <div className="w-px bg-white/20 mx-1 shrink-0"></div>
-          
+          </div>
+
+          {/* Tools Group */}
+          <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-1 py-0.5 flex items-center gap-0.5">
+            <button 
+              onClick={() => setIsMeasuring(!isMeasuring)}
+              className={`p-1.5 rounded-md transition-all ${
+                isMeasuring ? 'bg-amber-500/30 text-amber-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
+              }`}
+              title={language === 'zh' ? '测量' : 'Measure'}
+            >
+              <Ruler size={14} />
+            </button>
           <button 
             onClick={() => setShowControls(!showControls)}
-            className={`flex shrink-0 items-center justify-center w-7 h-7 rounded-full transition-colors ${showControls ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-            title="Image Adjustments"
+              className={`p-1.5 rounded-md transition-all ${
+                showControls ? 'bg-blue-500/30 text-blue-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
+              }`}
+              title={language === 'zh' ? '调节' : 'Adjust'}
           >
              <Settings2 size={14} />
           </button>
+          </div>
           
+          {/* Analysis Button - Highlighted */}
           <button 
-            onClick={() => setIsMeasuring(!isMeasuring)}
-            className={`flex shrink-0 items-center justify-center w-7 h-7 rounded-full transition-colors ${isMeasuring ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}
-            title="Measurement Tool"
+            onClick={() => setShowExplainableAnalysis(true)}
+            disabled={!patient.json_url}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              patient.json_url
+                ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-lg shadow-emerald-500/20'
+                : 'bg-gray-800 text-gray-600 cursor-not-allowed'
+            }`}
           >
-             <Ruler size={14} />
+            <Brain size={14} />
+            <span>{language === 'zh' ? '分析' : 'AI'}</span>
           </button>
 
-          <div className="w-px bg-white/20 mx-1 shrink-0"></div>
-
+          {/* Fullscreen */}
           <button 
             onClick={toggleFullscreen}
-            className="flex shrink-0 items-center justify-center w-7 h-7 text-gray-400 hover:text-white transition-colors"
-            title="Toggle Fullscreen"
+            className="p-1.5 bg-black/70 backdrop-blur-md border border-white/10 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-all"
+            title={language === 'zh' ? '全屏' : 'Fullscreen'}
           >
              <Maximize2 size={14} />
           </button>
         </div>
       </div>
+
+      {/* Explainable Analysis Modal */}
+      <ExplainableAnalysis
+        patient={patient}
+        isOpen={showExplainableAnalysis}
+        onClose={() => setShowExplainableAnalysis(false)}
+      />
     </div>
   );
 };
