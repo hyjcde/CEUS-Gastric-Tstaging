@@ -149,18 +149,19 @@ export function getClinicalDataPath(cohortYear: CohortYear = '2025', treatmentTy
   }
 
   const suffix = treatmentType === 'nac' ? '_nac' : '';
-  switch (cohortYear) {
-    case '2018':
-      return path.join(APP_ROOT, 'data', 'clinical_data_2018.json');
-    case '2019':
-      return path.join(APP_ROOT, 'data', `clinical_data_2019${suffix}.json`);
-    case '2020_2023':
-      return path.join(APP_ROOT, 'data', 'clinical_data_2020_2023.json');
-    case '2024':
-      return path.join(APP_ROOT, 'data', `clinical_data_2024${suffix}.json`);
-    default:
-      return path.join(APP_ROOT, 'data', 'clinical_data.json');
-  }
+  const yearToken = cohortYear === '2020_2023' ? '2020_2023' : cohortYear;
+
+  const candidates = [
+    path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_ultimate.json`),
+    path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_super.json`),
+    path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_enhanced.json`),
+    path.join(APP_ROOT, 'data', `clinical_data_${yearToken}${suffix}.json`),
+    cohortYear === '2025' ? path.join(APP_ROOT, 'data', 'clinical_data_ultimate.json') : null,
+    cohortYear === '2025' ? path.join(APP_ROOT, 'data', 'clinical_data.json') : null,
+    path.join(APP_ROOT, 'data', `clinical_data${suffix}.json`),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return resolveExistingPath(...candidates) || candidates[candidates.length - 1];
 }
 
 const DICOM_DIR_CANDIDATES: Partial<Record<CohortYear, string[]>> = {

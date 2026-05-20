@@ -11,7 +11,7 @@ import { AgentWorkbenchPanel } from '@/components/AgentWorkbenchPanel';
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
 import { ChevronLeft, Users, BarChart2, X } from 'lucide-react';
-import { getConceptStateFromPatient } from '@/lib/patient-utils';
+import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
 
 export default function Home() {
   const { dataset, cohortYear, language } = useSettings();
@@ -28,6 +28,11 @@ export default function Home() {
   React.useEffect(() => {
     setAgentAnalysis(null);
   }, [selectedPatient?.id]);
+
+  const conceptPopulatedCount = useMemo(
+    () => countPopulatedConceptFields(conceptState),
+    [conceptState],
+  );
 
   const siblingImages = useMemo(() => {
     if (!selectedPatient || !allPatients.length) return [];
@@ -128,7 +133,13 @@ export default function Home() {
           
           {/* Top Right: Reasoning (35% Height) - Reduced from 45% to give more space to diagnosis */}
           <div className="h-[35%] shrink-0 border-b border-white/10 flex flex-col min-h-0 bg-panel-bg">
-             <ConceptReasoning state={conceptState} onChange={handleStateChange} onReset={() => setConceptState(DEFAULT_STATE)} />
+             <ConceptReasoning
+               state={conceptState}
+               onChange={handleStateChange}
+               onReset={() => setConceptState(getConceptStateFromPatient(selectedPatient))}
+               populatedCount={conceptPopulatedCount}
+               hasClinicalData={Boolean(selectedPatient?.clinical)}
+             />
           </div>
           
           {/* Bottom Right: Report (Rest Height - 65%) */}

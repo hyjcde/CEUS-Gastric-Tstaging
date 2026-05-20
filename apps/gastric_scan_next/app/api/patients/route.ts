@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { DatasetType, CohortYear, TreatmentType, getClinicalDataPath, getDatasetPaths, parseCohortYear, parseDatasetType } from '@/lib/config';
 import { getVideosForPatient } from '@/lib/video-index';
+import { enrichConceptFeaturesFromClinical } from '@/lib/concept-extract';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
 
 interface PatientAsset {
@@ -117,11 +118,7 @@ function toPublicReport(clinical: Record<string, unknown> | undefined): PatientR
 }
 
 function buildConceptFeatures(clinical: Record<string, unknown> | undefined): ConceptFeatures | undefined {
-  if (!clinical) return undefined;
-  return {
-    differentiation: String(clinical.differentiation ?? ''),
-    lauren: String(clinical.lauren_type ?? ''),
-  };
+  return enrichConceptFeaturesFromClinical(clinical);
 }
 
 function toPublicClinical(clinical: Record<string, unknown> | undefined): ClinicalData | undefined {
@@ -171,7 +168,7 @@ function normalizeCurrentClinical(clinical: Record<string, unknown> | undefined)
       },
       differentiation: String(pathology?.differentiation ?? clinical.differentiation ?? ''),
       lauren: String(pathology?.lauren ?? clinical.lauren ?? ''),
-      concept_features: (clinical.concept_features as ConceptFeatures | undefined) ?? buildConceptFeatures(clinical),
+      concept_features: enrichConceptFeaturesFromClinical(clinical),
     };
   }
 
@@ -269,7 +266,18 @@ function getClinicalEntryForPatient(
   clinicalData: Record<string, Record<string, unknown>>,
   patientId: string,
 ): Record<string, unknown> | undefined {
-  return clinicalData[patientId] ?? clinicalData[patientId.replace(/^0+/, '')] ?? clinicalData[patientId.toUpperCase()];
+  const candidates = new Set([
+    patientId,
+    patientId.replace(/^0+/, ''),
+    patientId.padStart(7, '0'),
+    patientId.toUpperCase(),
+    `0${patientId.replace(/^0+/, '')}`,
+  ]);
+
+  for (const key of candidates) {
+    if (clinicalData[key]) return clinicalData[key];
+  }
+  return undefined;
 }
 
 function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatmentType: TreatmentType, dataset: DatasetType): Patient[] {
