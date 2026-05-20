@@ -17,5 +17,6 @@ export DATA_ROOT="${DATA_ROOT:-$ROOT/data}"
 echo "Starting video annotator at http://localhost:${PORT}"
 echo "Root: $ROOT"
 echo "Data: $DATA_ROOT"
+echo "Tip: first page load parses pre_annotations_summary.json once; later loads use cache."
 
 exec npm run dev -- -p "$PORT"
