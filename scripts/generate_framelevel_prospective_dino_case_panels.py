@@ -25,9 +25,9 @@ from sklearn.pipeline import make_pipeline
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_external_source_dino_token_panels import (  # noqa: E402
     CLASS_NAMES,
-    PROB_COLORS,
     infer_dino_maps,
     load_model,
+    mark_query_on_axis,
     plot_probs,
     read_image,
     resolve_path,
@@ -170,7 +170,7 @@ def plot_dino_case(
     selected = patient_rows.iloc[np.argsort(advanced)[-min(args.frames_per_case, len(patient_rows)) :][::-1]].copy()
     n = len(selected)
     bucket = str(manifest_row["bucket"])
-    fig, axes = plt.subplots(nrows=n, ncols=7, figsize=(22, 3.35 * n))
+    fig, axes = plt.subplots(nrows=n, ncols=8, figsize=(25, 3.35 * n))
     if n == 1:
         axes = np.array([axes])
     fig.patch.set_facecolor("#1a2332")
@@ -193,18 +193,24 @@ def plot_dino_case(
         panels = [
             (original, "Original US", None),
             (overlay, "Anatomic overlay", None),
+            (maps["rainbow_pca"], "Rainbow PCA (official)", None),
+            (maps["query_cosine"], "Cosine @ lesion center", "magma"),
             (maps["token_norm"], "DINO token norm", "viridis"),
-            (maps["pca"], "DINO PCA-1", "coolwarm"),
-            (maps["lesion_affinity"], "Lesion affinity", "magma"),
+            (maps["lesion_affinity"], "Lesion region affinity", "magma"),
             (maps["wall_evidence"], "Outer−inner evidence", "coolwarm"),
         ]
         for col_i, (content, title, cmap) in enumerate(panels):
             ax = axes[row_i, col_i]
-            ax.imshow(content, cmap=cmap)
+            if cmap is None and getattr(content, "ndim", 2) == 3:
+                ax.imshow(content)
+            else:
+                ax.imshow(content, cmap=cmap)
             ax.set_title(title, fontsize=9, color="#e8edf4")
             ax.axis("off")
             ax.set_facecolor("#1a2332")
-        axp = axes[row_i, 6]
+            if col_i == 3:
+                mark_query_on_axis(ax, maps, maps["input_size"])
+        axp = axes[row_i, 7]
         axp.set_facecolor("#243044")
         plot_probs(axp, probs, f"Frame P(T) · Adv={float(probs[2]+probs[3]):.2f}")
         for spine in axp.spines.values():

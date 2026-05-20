@@ -307,11 +307,12 @@ def load_case_gallery_html() -> str:
 
     legend = """
 <div class="case-legend">
-  <strong>每行 7 列：</strong>
+  <strong>每行 8 列：</strong>
   Original US · Anatomic overlay ·
-  <em>DINO token norm</em> · <em>DINO PCA-1</em> ·
-  <em>Lesion affinity</em> · <em>Outer−inner evidence</em> · Frame 四分类概率。
-  展示 top-3 advanced 帧（按 P(T3)+P(T4+) 选取）。Layer 11 · ViT-B/16 · 512px。
+  <em>Rainbow PCA</em>（官方 <code>pca.ipynb</code> 前景彩虹图）·
+  <em>Cosine @ lesion center</em>（官方 README 红点 patch 相似度，红十字=病灶中心 token）·
+  DINO token norm · Lesion region affinity · Outer−inner evidence · Frame 四分类概率。
+  展示 top-3 advanced 帧。Layer 11 · ViT-B/16 · 512px。
 </div>"""
     parts = [legend]
     order = list(CASE_BUCKET_ZH.keys())

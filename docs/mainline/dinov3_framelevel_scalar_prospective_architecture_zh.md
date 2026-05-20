@@ -310,7 +310,7 @@ HTML 报告 **「DINO 病例」** 一节展示 15 例前瞻测试面板（每类
 | `t2_t3_boundary` | T2/T3 边界病例 |
 | `t3_t4_understage` | T4+ 低估为 T3 |
 
-每例展示 top-3 advanced 帧，7 列：**原图 · 解剖 overlay · DINO token norm · PCA-1 · Lesion affinity · Outer−inner evidence · 帧概率**。
+每例展示 top-3 advanced 帧，8 列：**原图 · 解剖 overlay · Rainbow PCA（官方）· Cosine@病灶中心（官方）· token norm · Lesion affinity · Outer−inner · 帧概率**。
 
 生成命令：
 
