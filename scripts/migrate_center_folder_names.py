@@ -25,14 +25,14 @@ DIRECT_RENAMES: dict[str, str] = {
 NEWZIP_SPLIT_MARKERS: list[tuple[str, str]] = [
     ("__北京__", "北京友谊医院"),
     ("__广东__", "佛山市第一人民医院"),
-    ("__湖北", "湖北中西医结合医院"),
+    ("__湖北", "中核五〇四医院"),
 ]
 
 # Extracted review layout uses province subfolders before hospital rename.
 EXTRACTED_PROVINCE_RENAMES: dict[str, str] = {
     "北京": "北京友谊医院",
     "广东": "佛山市第一人民医院",
-    "湖北窦": "湖北中西医结合医院",
+    "湖北窦": "中核五〇四医院",
 }
 
 EXTRACTED_DEHUA_RENAME = ("德化直接手术", "福建省德化县医院")
@@ -53,10 +53,11 @@ SKIP_DIR_NAMES = {".git", "__pycache__", "node_modules", ".venv"}
 def replace_text(content: str) -> str:
     out = content
     # newzip split in paths and sample ids first
-    out = out.replace("外省整理__湖北窦", "湖北中西医结合医院")
+    out = out.replace("外省整理__湖北窦", "中核五〇四医院")
+    out = out.replace("湖北中西医结合医院", "中核五〇四医院")
     out = out.replace("外省整理__广东", "佛山市第一人民医院")
     out = out.replace("外省整理__北京", "北京友谊医院")
-    out = out.replace("外省整理/湖北窦", "湖北中西医结合医院")
+    out = out.replace("外省整理/湖北窦", "中核五〇四医院")
     out = out.replace("外省整理/广东", "佛山市第一人民医院")
     out = out.replace("外省整理/北京", "北京友谊医院")
     for old, new in DIRECT_RENAMES.items():
@@ -211,8 +212,8 @@ def patch_newzip_sources(path: Path, dry_run: bool) -> bool:
             return "ext/newzip/北京友谊医院"
         if "广东" in p or "佛山市第一人民医院" in p:
             return "ext/newzip/佛山市第一人民医院"
-        if "湖北" in p or "湖北中西医结合医院" in p:
-            return "ext/newzip/湖北中西医结合医院"
+        if "湖北" in p or "湖北中西医结合医院" in p or "中核五〇四医院" in p or "504" in p:
+            return "ext/newzip/中核五〇四医院"
         return "ext/newzip/unknown"
 
     df["source"] = df["image_path"].map(map_source)
@@ -302,7 +303,7 @@ def update_center_registry(dry_run: bool) -> None:
             **DIRECT_RENAMES,
             "外省整理/北京": "北京友谊医院",
             "外省整理/广东": "佛山市第一人民医院",
-            "外省整理/湖北窦": "湖北中西医结合医院",
+            "外省整理/湖北窦": "中核五〇四医院",
         }
         df["legacy_folder_name"] = df["legacy_folder_name"].replace(mapping)
     if "legacy_source_prefix" in df.columns:
@@ -314,7 +315,7 @@ def update_center_registry(dry_run: bool) -> None:
         )
         df.loc[df["center_id"] == "external_beijing_friendship", "legacy_source_prefix"] = "ext/newzip/北京友谊医院"
         df.loc[df["center_id"] == "external_foshan_first", "legacy_source_prefix"] = "ext/newzip/佛山市第一人民医院"
-        df.loc[df["center_id"] == "external_hubei_tcm", "legacy_source_prefix"] = "ext/newzip/湖北中西医结合医院"
+        df.loc[df["center_id"] == "external_cnnc_504", "legacy_source_prefix"] = "ext/newzip/中核五〇四医院"
     if not dry_run:
         df.to_csv(path, index=False)
 

@@ -7,7 +7,7 @@ external_sanming,三明市第二医院,三明市第二医院,三明胃癌直接�
 external_dehua,福建省德化县医院,福建省德化县医院,德化直接手术,ext/newzip/福建省德化县医院,external_dehua,external,newzip_only,test_external_newzip,no,yes,no,yes,100,88,16,
 external_beijing_friendship,北京友谊医院,北京友谊医院,外省整理/北京;外省整理,ext/newzip/北京友谊医院,external_beijing_friendship,external,newzip_only,test_external_newzip,no,yes,no,yes,124,124,22,
 external_foshan_first,佛山市第一人民医院,佛山市第一人民医院,外省整理/广东;外省整理,ext/newzip/佛山市第一人民医院,external_foshan_first,external,newzip_only,test_external_newzip,no,yes,no,yes,112,67,31,
-external_hubei_tcm,湖北中西医结合医院,湖北中西医结合医院,外省整理/湖北窦;外省整理,ext/newzip/湖北中西医结合医院,external_hubei_tcm,external,newzip_only,test_external_newzip,yes,yes,no,yes,216,216,67,
-external_cnnc_504,中核五〇四医院,中核五〇四医院,窦晓霞中核五〇四医院胃溃疡病例(1),,,external_cnnc_504,external,no,,yes,yes,yes,yes,0,0,0,ulcer video task under data/中核五〇四医院/
+external_hubei_tcm,湖北中西医结合医院,湖北中西医结合医院,外省整理/湖北窦;外省整理,ext/newzip/湖北中西医结合医院,external_hubei_tcm,external,no,,no,no,no,no,0,0,0,DEPRECATED mislabeled zip; images are 中核五〇四医院 Lanzhou 504
+external_cnnc_504,中核五〇四医院,中核五〇四医院,外省整理/湖北窦;湖北中西医结合医院;窦晓霞中核五〇四医院胃溃疡病例(1),ext/newzip/中核五〇四医院,external_cnnc_504,external,newzip_only,test_external_newzip,yes,yes,yes,yes,216,216,67,Gastric direct-surgery hbd* cohort; ulcer videos under data/中核五〇四医院/
 external_fujian_provincial,福建省立医院,,,,external_fujian_provincial,external,no,,no,yes,no,yes,0,0,0,not imported
 external_ningde,宁德市医院,,,,external_ningde,external,no,,yes,no,no,yes,0,0,0,not imported
