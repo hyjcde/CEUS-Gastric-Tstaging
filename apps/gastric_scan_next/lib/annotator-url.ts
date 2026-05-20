@@ -1,13 +1,13 @@
-/** 突破方向标注工具（direction_annotator）默认 Web 端口 */
-const DEFAULT_ANNOTATOR_URL = 'http://localhost:3099';
+/** 标注工具路由（已合并进主应用） */
+export function getDirectionAnnotatorPath(): string {
+  return '/annotate';
+}
 
-/**
- * 标注系统 Web 入口。可通过 NEXT_PUBLIC_DIRECTION_ANNOTATOR_URL 覆盖。
- */
+/** @deprecated 保留兼容；合并后默认走主应用内 /annotate */
 export function getDirectionAnnotatorUrl(): string {
   const configured = process.env.NEXT_PUBLIC_DIRECTION_ANNOTATOR_URL?.trim();
   if (configured) {
     return configured.replace(/\/$/, '');
   }
-  return DEFAULT_ANNOTATOR_URL;
+  return getDirectionAnnotatorPath();
 }

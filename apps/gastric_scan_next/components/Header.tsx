@@ -5,7 +5,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { GASTRIC_COHORT_YEARS, GastricCohortYear, getCohortDisplayLabel } from '@/lib/cohort';
 import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { getDirectionAnnotatorUrl } from '@/lib/annotator-url';
+import { getDirectionAnnotatorPath } from '@/lib/annotator-url';
 
 interface HeaderProps {
   onShowStatistics?: () => void;
@@ -34,8 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
   };
 
   const openAnnotator = () => {
-    const url = getDirectionAnnotatorUrl();
-    window.open(url, '_blank', 'noopener,noreferrer');
+    router.push(getDirectionAnnotatorPath());
     setShowUserMenu(false);
   };
 
