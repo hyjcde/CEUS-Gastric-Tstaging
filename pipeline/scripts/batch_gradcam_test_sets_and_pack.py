@@ -20,7 +20,7 @@ PROJECT_ROOT = PIPELINE_ROOT.parent
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
-from build_gradcam_screening_html import build_unified_html as build_screening_html
+from build_gradcam_screening_html import build_split_screening_html, build_unified_html as build_screening_html
 
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
 
@@ -178,13 +178,15 @@ def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path]) -> No
         "  - gradcam_results.csv",
         "",
         "Unified screening HTML:",
-        "  - ../gradcam_screening.html  (same level as the two gradcam_*_full folders)",
-        "  - gradcam_test_sets_pack/gradcam_screening.html  (copy for distribution)",
+        "  - ../gradcam_screening.html  (external + prospective, same parent folder)",
+        "Per-split screening HTML (open inside each folder):",
+        "  - gradcam_test_external_full/gradcam_screening.html",
+        "  - gradcam_test_prospective_full/gradcam_screening.html",
+        "  (split HTML uses separate local annotations from the unified HTML)",
         "",
         "Doctor workflow:",
-        "  1) Unzip both slim zips into the SAME folder (creates gradcam_test_external_full + gradcam_test_prospective_full)",
-        "  2) Copy gradcam_screening.html into that same folder",
-        "  3) Double-click gradcam_screening.html",
+        "  Option A (recommended for clinical): unzip each slim zip, open gradcam_screening.html inside that folder",
+        "  Option B (both sets together): unzip both zips to same parent, open ../gradcam_screening.html",
         "",
         "Note: external slim pack excludes int/prospective rows duplicated in test_prospective.",
         "",
@@ -330,6 +332,7 @@ def main() -> None:
                 }
             )
     screening_summary = None
+    split_html_summaries: list[dict] = []
     if screening_sources:
         screening_html = exp_dir / "gradcam_screening.html"
         screening_summary = build_screening_html(screening_sources, screening_html)
@@ -338,6 +341,15 @@ def main() -> None:
             f"Unified screening HTML: {screening_html} "
             f"({screening_summary['cases']} cases, splits={screening_summary['split_counts']})"
         )
+        for src in screening_sources:
+            split = str(src["split"])
+            split_html = Path(src["root_dir"]) / "gradcam_screening.html"
+            split_summary = build_split_screening_html(src, split_html)
+            split_html_summaries.append({"split": split, **split_summary})
+            print(
+                f"Split screening HTML: {split_html} "
+                f"({split_summary['cases']} cases, storage={split_summary.get('split_counts', {})})"
+            )
 
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -352,6 +364,8 @@ def main() -> None:
         manifest["screening_html"] = screening_summary["html"]
         manifest["screening_cases"] = screening_summary["cases"]
         manifest["screening_split_counts"] = screening_summary["split_counts"]
+    if split_html_summaries:
+        manifest["split_screening_html"] = split_html_summaries
     manifest_path = pack_root / "gradcam_test_sets_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths)

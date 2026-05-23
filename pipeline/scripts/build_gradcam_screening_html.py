@@ -15,7 +15,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GradCAM 测试集筛图</title>
+  <title>__PAGE_TITLE__</title>
   <style>
     :root {
       --bg: #0b1017;
@@ -232,15 +232,15 @@ HTML_TEMPLATE = r"""<!doctype html>
 <body>
   <div class="layout">
     <aside>
-      <h1>GradCAM 测试集筛图</h1>
-      <div class="sub">将本 HTML 与 <code>gradcam_test_external_full</code>、<code>gradcam_test_prospective_full</code> 放在<strong>同一文件夹</strong>下，双击打开。</div>
+      <h1>__PAGE_TITLE__</h1>
+      <div class="sub" id="page-subtitle">__PAGE_SUBTITLE__</div>
       <div class="stats">
         <div class="stat"><b id="stat-total">0</b><span>当前列表</span></div>
         <div class="stat"><b id="stat-reject">0</b><span>已剔除</span></div>
         <div class="stat"><b id="stat-reviewed">0</b><span>已浏览</span></div>
         <div class="stat"><b id="stat-idx">0/0</b><span>当前位置</span></div>
       </div>
-      <label>数据集</label>
+      <label id="split-filter-label">数据集</label>
       <select id="filter-split">
         <option value="all">全部</option>
         <option value="test_external">外部测试</option>
@@ -299,7 +299,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   <script>
     const META = __META_JSON__;
     const CASES = JSON.parse(document.getElementById("cases-data").textContent);
-    const STORAGE_KEY = "gradcam_screening_unified_v2";
+    const STORAGE_KEY = "gradcam_screening_" + META.storage_key;
     const STAGE_ORDER = ["T1", "T2", "T3", "T4+"];
 
     let reviews = loadReviews();
@@ -322,17 +322,24 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
 
     function pathErrorHtml(panel) {
+      const folder = META.root_folder || "gradcam_test_*_full";
       return `<div class="path-error">
         <h3 style="margin-top:0;">找不到图片，当前 HTML 位置不正确</h3>
         <p>尝试加载：<code>${escHtml(panel)}</code></p>
-        <p>请把 <code>gradcam_screening.html</code> 放在与下面两个文件夹<strong>同级</strong>的目录中：</p>
-        <ul>
-          <li><code>gradcam_test_external_full/</code></li>
-          <li><code>gradcam_test_prospective_full/</code></li>
-        </ul>
-        <p>不要从 <code>gradcam_test_sets_pack/</code> 里的副本直接打开（除非把两个图片文件夹也放在旁边）。</p>
-        <p>若仍不行，请用 Chrome 打开；或用命令在该目录启动本地服务：<code>python3 -m http.server 8765</code>，再访问 <code>http://localhost:8765/gradcam_screening.html</code></p>
+        <p>请把 <code>gradcam_screening.html</code> 放在 <code>${escHtml(folder)}</code> 文件夹内，与 <code>panels/</code> 同级。</p>
+        <p>${escHtml(META.path_help || "")}</p>
+        <p>若仍不行，请用 Chrome 打开；或用命令在该目录启动本地服务：<code>python3 -m http.server 8765</code></p>
       </div>`;
+    }
+
+    function initPageMode() {
+      if (META.mode === "single" && META.fixed_split) {
+        const splitEl = document.getElementById("filter-split");
+        splitEl.value = META.fixed_split;
+        splitEl.disabled = true;
+        document.getElementById("split-filter-label")?.classList.add("hidden");
+        splitEl.classList.add("hidden");
+      }
     }
 
     function verifyPaths(done) {
@@ -743,6 +750,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
     });
 
+    initPageMode();
     verifyPaths(() => renderCurrent());
   </script>
 </body>
@@ -828,15 +836,21 @@ def build_unified_html(
     output_html: Path,
     *,
     title: str = "GradCAM 测试集筛图",
+    subtitle: str | None = None,
+    storage_key: str = "unified_v2",
+    mode: str = "unified",
+    fixed_split: str | None = None,
+    root_folder: str | None = None,
+    path_help: str | None = None,
 ) -> dict:
-    """Build one HTML from multiple gradcam_results.csv sources."""
+    """Build one HTML from one or more gradcam_results.csv sources."""
     all_cases: list[dict] = []
     split_counts: dict[str, int] = {}
     for src in sources:
         csv_path = Path(src["results_csv"]).resolve()
         split = str(src["split"])
         root_dir = Path(src.get("root_dir", csv_path.parent)).resolve()
-        prefix = str(src.get("path_prefix", root_dir.name))
+        prefix = str(src.get("path_prefix", ""))
         cases = build_cases_from_csv(
             csv_path,
             split,
@@ -850,15 +864,31 @@ def build_unified_html(
     if not all_cases:
         raise SystemExit("No cases with valid panel_path found in any source CSV.")
 
+    if subtitle is None:
+        if mode == "single" and root_folder:
+            subtitle = (
+                f"将本 HTML 放在 <code>{root_folder}</code> 文件夹内（与 <code>panels/</code> 同级），双击打开。"
+            )
+        else:
+            subtitle = (
+                "将本 HTML 与 <code>gradcam_test_external_full</code>、"
+                "<code>gradcam_test_prospective_full</code> 放在<strong>同一文件夹</strong>下，双击打开。"
+            )
+
     meta = {
         "title": title,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "total": len(all_cases),
         "split_counts": split_counts,
-        "storage_key": "unified_v2",
+        "storage_key": storage_key,
+        "mode": mode,
+        "fixed_split": fixed_split,
+        "root_folder": root_folder,
+        "path_help": path_help or "",
     }
     html_text = (
-        HTML_TEMPLATE.replace("__SPLIT__", title)
+        HTML_TEMPLATE.replace("__PAGE_TITLE__", title)
+        .replace("__PAGE_SUBTITLE__", subtitle)
         .replace("__CASES_JSON__", json.dumps(all_cases, ensure_ascii=False))
         .replace("__META_JSON__", json.dumps(meta, ensure_ascii=False))
     )
@@ -871,6 +901,36 @@ def build_unified_html(
     }
 
 
+SPLIT_HTML_SPECS = {
+    "test_external": {
+        "title": "GradCAM 外部测试筛图",
+        "storage_key": "test_external_v2",
+        "dir_name": "gradcam_test_external_full",
+    },
+    "test_prospective": {
+        "title": "GradCAM 前瞻测试筛图",
+        "storage_key": "test_prospective_v2",
+        "dir_name": "gradcam_test_prospective_full",
+    },
+}
+
+
+def build_split_screening_html(source: dict, output_html: Path) -> dict:
+    split = str(source["split"])
+    spec = SPLIT_HTML_SPECS.get(split, {})
+    root_dir = Path(source.get("root_dir", Path(source["results_csv"]).parent)).resolve()
+    return build_unified_html(
+        [{**source, "path_prefix": ""}],
+        output_html,
+        title=spec.get("title", f"GradCAM {split} 筛图"),
+        storage_key=spec.get("storage_key", f"{split}_v2"),
+        mode="single",
+        fixed_split=split,
+        root_folder=spec.get("dir_name", root_dir.name),
+        path_help="单数据集 HTML 的标注与统一版分开保存，互不影响。",
+    )
+
+
 def build_html(
     results_csv: Path,
     output_html: Path,
@@ -879,8 +939,8 @@ def build_html(
 ) -> dict:
     """Backward-compatible single-split builder."""
     root = (root_dir or results_csv.parent).resolve()
-    return build_unified_html(
-        [{"results_csv": results_csv, "split": split, "root_dir": root, "path_prefix": root.name}],
+    return build_split_screening_html(
+        {"results_csv": results_csv, "split": split, "root_dir": root},
         output_html,
     )
 
