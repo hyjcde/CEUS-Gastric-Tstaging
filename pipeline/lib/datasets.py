@@ -12,6 +12,7 @@
 import cv2
 import pandas as pd
 import numpy as np
+import re
 import torch
 from PIL import Image
 from pathlib import Path
@@ -100,6 +101,58 @@ def _first_existing_path(row, columns):
     return None
 
 
+def _putian_patient_aliases(*values):
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value is None or pd.isna(value):
+            continue
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        aliases.append(text)
+        match = re.fullmatch(r"pty(\d+)", text, re.I)
+        if match:
+            alias = f"pt{match.group(1)}"
+            if alias not in seen:
+                seen.add(alias)
+                aliases.append(alias)
+    return aliases
+
+
+def _putian_stem_aliases(stem: str):
+    aliases = [stem]
+    match = re.fullmatch(r"pty(\d+)-(\d+)", stem, re.I)
+    if match:
+        aliases.append(f"pt{match.group(1)}-{match.group(2)}")
+    return aliases
+
+
+def _lookup_inventory_match(inventory, dataset_keys, lookup_keys):
+    for dataset_key in dataset_keys:
+        for image_key in lookup_keys:
+            match = inventory.get((dataset_key, image_key))
+            if match is not None:
+                return str(match)
+    return None
+
+
+def _lookup_putian_crop_by_stem(dataset_keys, stem_aliases):
+    for dataset_key in dataset_keys:
+        image_dir = DATASET_IMAGE_DIRS.get(dataset_key)
+        if image_dir is None or not image_dir.exists():
+            continue
+        for stem_alias in stem_aliases:
+            hits = sorted(image_dir.glob(f"*__直接手术__{stem_alias}.jpg"))
+            if hits:
+                return str(hits[0])
+            hits = sorted(image_dir.glob(f"*{stem_alias}.jpg"))
+            if hits:
+                return str(hits[0])
+    return None
+
+
 def remap_legacy_image_path(row, value):
     text = str(value).strip()
     if not text:
@@ -113,20 +166,35 @@ def remap_legacy_image_path(row, value):
 
     inventory = get_image_inventory()
     stem = path.stem
-    image_key = stable_image_key(stem, row.get('patient_id'))
-    source = str(row.get('source', '')).strip()
+    source = str(row.get("source", "")).strip()
     candidates = list(SOURCE_TO_DATASET_CANDIDATES.get(source, ()))
-    if source == 'ext/multicenter' and stem.startswith('pt'):
-        candidates = ['external_putian1', 'external_putian2', *candidates]
+    if source == "ext/multicenter" and stem.startswith("pt"):
+        candidates = ["external_putian1", "external_putian2", *candidates]
 
-    for dataset_key in candidates:
-        match = inventory.get((dataset_key, image_key))
+    lookup_keys = []
+    seen_keys: set[str] = set()
+    stem_aliases = _putian_stem_aliases(stem) if source.startswith("ext/putian") else [stem]
+    patient_aliases = _putian_patient_aliases(row.get("patient_id"), stem.split("-", 1)[0])
+    for stem_alias in stem_aliases:
+        for patient_alias in patient_aliases:
+            image_key = stable_image_key(stem_alias, patient_alias)
+            if image_key not in seen_keys:
+                seen_keys.add(image_key)
+                lookup_keys.append(image_key)
+
+    match = _lookup_inventory_match(inventory, candidates, lookup_keys)
+    if match is not None:
+        return match
+    match = _lookup_inventory_match(inventory, DATASET_IMAGE_DIRS, lookup_keys)
+    if match is not None:
+        return match
+    if source.startswith("ext/putian"):
+        match = _lookup_putian_crop_by_stem(candidates, stem_aliases)
         if match is not None:
-            return str(match)
-    for dataset_key in DATASET_IMAGE_DIRS:
-        match = inventory.get((dataset_key, image_key))
+            return match
+        match = _lookup_putian_crop_by_stem(DATASET_IMAGE_DIRS, stem_aliases)
         if match is not None:
-            return str(match)
+            return match
     return None
 
 

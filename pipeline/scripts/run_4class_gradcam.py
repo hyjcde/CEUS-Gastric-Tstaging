@@ -39,6 +39,11 @@ CLASS_NAMES = ["T1", "T2", "T3", "T4+"]
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = PIPELINE_ROOT.parent
 BASE_DIRS = [PROJECT_ROOT, Path("/data/research/gastric/Tstaging")]
+PREDICTED_ROI_DIRS = [
+    PROJECT_ROOT / "pipeline/data/tstaging_4class_predicted_roi_v2/predicted_roi",
+    PROJECT_ROOT / "pipeline/data/tstaging_4class_predicted_roi_full/predicted_roi",
+    PROJECT_ROOT / "pipeline/data/tstaging_4class_forced_pipeline_20260322/predicted_roi",
+]
 REGION_TABLE_DIRS = [
     PIPELINE_ROOT / "data" / "tstaging_4class_region_contrastive_full" / "regions",
     PIPELINE_ROOT / "data" / "tstaging_4class_anatomic_region_contrastive" / "regions",
@@ -374,6 +379,25 @@ def resolve_crop_ui_path(value: object) -> Path | None:
     return raw
 
 
+def resolve_predicted_roi_path(row) -> str | None:
+    """Fallback global/ROI image when crop_ui is unavailable (e.g. putian_2024 pty* rows)."""
+    image_path = row.get("image_path")
+    if image_path is None or pd.isna(image_path):
+        return None
+    roi_path = row.get("roi_path")
+    if roi_path is not None and not pd.isna(roi_path):
+        resolved = resolve_path(roi_path)
+        if resolved is not None:
+            return str(resolved)
+    stem = Path(str(image_path)).stem
+    for root in PREDICTED_ROI_DIRS:
+        for suffix in (f"{stem}_pred_roi.jpg", f"{stem}_roi.jpg"):
+            candidate = root / suffix
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def resolve_gradcam_image_path(row) -> str | None:
     """Best-effort crop_ui path for GradCAM (dataset resolver + legacy fallbacks)."""
     resolved = resolve_global_image_path(row)
@@ -385,7 +409,7 @@ def resolve_gradcam_image_path(row) -> str | None:
             candidate = resolver(image_path)
             if candidate is not None:
                 return str(candidate)
-    return None
+    return resolve_predicted_roi_path(row)
 
 
 def labelme_lesion_mask(image_path: str, shape: tuple[int, int]) -> np.ndarray:
