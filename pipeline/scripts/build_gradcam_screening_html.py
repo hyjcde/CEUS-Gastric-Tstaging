@@ -15,18 +15,20 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GradCAM 测试集筛图 — __SPLIT__</title>
+  <title>GradCAM 测试集筛图</title>
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a2332;
-      --border: #2d3a4d;
-      --text: #e8eef5;
+      --bg: #0b1017;
+      --panel: #151d2b;
+      --border: #2a364a;
+      --text: #edf2f7;
       --muted: #8fa3b8;
       --ok: #3ecf8e;
       --bad: #ff6b6b;
       --warn: #f0b429;
       --accent: #5b9cf5;
+      --true-color: #22c55e;
+      --wrong-color: #ef4444;
     }
     * { box-sizing: border-box; }
     body {
@@ -39,13 +41,13 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .layout {
       display: grid;
-      grid-template-columns: 280px 1fr;
+      grid-template-columns: 300px 1fr;
       height: 100vh;
     }
     aside {
       background: var(--panel);
       border-right: 1px solid var(--border);
-      padding: 16px;
+      padding: 14px;
       overflow-y: auto;
     }
     main {
@@ -54,77 +56,76 @@ HTML_TEMPLATE = r"""<!doctype html>
       min-width: 0;
       height: 100vh;
     }
-    h1 { font-size: 18px; margin: 0 0 4px; }
-    .sub { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
+    h1 { font-size: 17px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
     label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
     select, input[type="text"], textarea {
       width: 100%;
-      background: #0d1218;
+      background: #0a0f15;
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
       font-size: 13px;
     }
-    textarea { min-height: 72px; resize: vertical; }
+    textarea { min-height: 64px; resize: vertical; }
     .stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px;
-      margin: 12px 0;
+      margin: 10px 0;
     }
     .stat {
-      background: #0d1218;
+      background: #0a0f15;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
     }
-    .stat b { display: block; font-size: 18px; }
+    .stat b { display: block; font-size: 17px; }
     .stat span { font-size: 11px; color: var(--muted); }
     .toolbar {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      padding: 12px 16px;
+      padding: 10px 14px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
       align-items: center;
     }
-    button {
+    button, .seg-btn {
       border: 1px solid var(--border);
       background: #243044;
       color: var(--text);
       border-radius: 8px;
-      padding: 8px 14px;
+      padding: 8px 12px;
       cursor: pointer;
       font-size: 13px;
     }
-    button:hover { background: #2f3f57; }
-    button.primary { background: #2563eb; border-color: #2563eb; }
+    button:hover, .seg-btn:hover { background: #2f3f57; }
+    button.primary, .seg-btn.active { background: #2563eb; border-color: #2563eb; }
     button.danger { background: #b42318; border-color: #b42318; }
     button.success { background: #067647; border-color: #067647; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .seg-group { display: flex; gap: 6px; flex-wrap: wrap; }
     .viewer {
       flex: 1;
       overflow: auto;
-      padding: 12px 16px 20px;
+      padding: 10px 14px 16px;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
     .info {
-      width: min(100%, 1400px);
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 12px 16px;
+      padding: 10px 14px;
       display: flex;
       flex-wrap: wrap;
-      gap: 12px 24px;
-      font-size: 14px;
+      gap: 10px 20px;
+      font-size: 13px;
+      align-items: center;
     }
-    .info .tag {
+    .tag {
       padding: 2px 8px;
       border-radius: 999px;
       font-size: 12px;
@@ -133,22 +134,10 @@ HTML_TEMPLATE = r"""<!doctype html>
     .tag.ok { background: rgba(62, 207, 142, 0.15); color: var(--ok); }
     .tag.bad { background: rgba(255, 107, 107, 0.15); color: var(--bad); }
     .tag.reject { background: rgba(240, 180, 41, 0.15); color: var(--warn); }
-    .panel-wrap {
-      width: min(100%, 1400px);
-      background: #000;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      overflow: hidden;
-    }
-    .panel-wrap img {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
+    .tag.split { background: rgba(91, 156, 245, 0.15); color: var(--accent); }
     .probs {
-      width: min(100%, 1400px);
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(4, minmax(80px, 1fr));
       gap: 8px;
     }
     .prob {
@@ -160,47 +149,130 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .prob b { display: block; font-size: 16px; margin-top: 4px; }
     .prob.active { outline: 2px solid var(--accent); }
+    .prob.true-hit { box-shadow: inset 0 0 0 1px var(--ok); }
+    .views-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      min-height: 42vh;
+    }
+    .views-grid.single {
+      grid-template-columns: 1fr;
+      min-height: calc(100vh - 320px);
+    }
+    .view-card {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 280px;
+    }
+    .views-grid.single .view-card { min-height: calc(100vh - 320px); }
+    .view-title {
+      padding: 8px 10px;
+      font-size: 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .view-body {
+      flex: 1;
+      position: relative;
+      min-height: 240px;
+      background: #000;
+    }
+    .views-grid.single .view-body { min-height: calc(100vh - 360px); }
+    .sprite {
+      width: 100%;
+      height: 100%;
+      min-height: 240px;
+      background-repeat: no-repeat;
+      background-color: #000;
+    }
+    .views-grid.single .sprite { min-height: calc(100vh - 360px); }
+    .annotate-wrap {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .annotate-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .annotate-canvas-box {
+      position: relative;
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .annotate-canvas-box .sprite {
+      min-height: 360px;
+    }
+    canvas.draw-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+    .legend { font-size: 12px; color: var(--muted); }
+    .legend .g { color: var(--true-color); }
+    .legend .r { color: var(--wrong-color); }
     .list {
-      margin-top: 12px;
-      max-height: 220px;
+      margin-top: 10px;
+      max-height: 180px;
       overflow-y: auto;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: #0d1218;
+      background: #0a0f15;
     }
     .list-item {
-      padding: 8px 10px;
+      padding: 7px 9px;
       border-bottom: 1px solid var(--border);
-      font-size: 12px;
+      font-size: 11px;
       cursor: pointer;
     }
     .list-item:hover { background: #182030; }
     .list-item.active { background: #1f2d44; }
     .list-item.rejected { color: var(--warn); }
-    .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 10px; }
-    .empty {
-      padding: 40px;
-      text-align: center;
-      color: var(--muted);
-    }
-    @media (max-width: 960px) {
+    .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+    .empty { padding: 36px; text-align: center; color: var(--muted); }
+    .hidden { display: none !important; }
+    @media (max-width: 1100px) {
       .layout { grid-template-columns: 1fr; }
-      aside { max-height: 40vh; }
+      aside { max-height: 38vh; }
+      .views-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="layout">
     <aside>
-      <h1>GradCAM 筛图</h1>
-      <div class="sub">解压 zip 后双击本 HTML 即可使用。标记会保存在浏览器本地，可随时导出 CSV。</div>
+      <h1>GradCAM 测试集筛图</h1>
+      <div class="sub">将本 HTML 与 <code>gradcam_test_external_full</code>、<code>gradcam_test_prospective_full</code> 放在<strong>同一文件夹</strong>下，双击打开。</div>
       <div class="stats">
         <div class="stat"><b id="stat-total">0</b><span>当前列表</span></div>
-        <div class="stat"><b id="stat-reject">0</b><span>已标记剔除</span></div>
+        <div class="stat"><b id="stat-reject">0</b><span>已剔除</span></div>
         <div class="stat"><b id="stat-reviewed">0</b><span>已浏览</span></div>
         <div class="stat"><b id="stat-idx">0/0</b><span>当前位置</span></div>
       </div>
-      <label>筛选</label>
+      <label>数据集</label>
+      <select id="filter-split">
+        <option value="all">全部</option>
+        <option value="test_external">外部测试</option>
+        <option value="test_prospective">前瞻测试</option>
+      </select>
+      <label>筛选状态</label>
       <select id="filter-status">
         <option value="all">全部</option>
         <option value="unreviewed">未浏览</option>
@@ -208,6 +280,8 @@ HTML_TEMPLATE = r"""<!doctype html>
         <option value="keep">未剔除</option>
         <option value="wrong">仅分错</option>
         <option value="correct">仅分对</option>
+        <option value="cross">跨级误分 (|ΔT|&gt;1)</option>
+        <option value="adjacent">相邻误分 (|ΔT|=1)</option>
       </select>
       <label>真实 T 分期</label>
       <select id="filter-true">
@@ -219,7 +293,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       </select>
       <label>搜索文件名</label>
       <input id="filter-search" type="text" placeholder="例如 1001916">
-      <label>剔除原因（可选）</label>
+      <label>剔除原因</label>
       <select id="reject-reason">
         <option value="图像质量差-胃壁层次不清">图像质量差-胃壁层次不清</option>
         <option value="图像质量差-伪影/遮挡">图像质量差-伪影/遮挡</option>
@@ -228,11 +302,10 @@ HTML_TEMPLATE = r"""<!doctype html>
       </select>
       <label>备注</label>
       <textarea id="reject-note" placeholder="可选备注"></textarea>
-      <div class="hint">
-        快捷键：← → 切换；X 标记剔除；K 取消剔除；N 下一张未浏览
-      </div>
-      <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
-        <button class="primary" id="btn-export">导出剔除列表 CSV</button>
+      <div class="hint">快捷键：← → 切换；X 剔除；K 保留；N 下一张未浏览；1/2/3 切换视图；G 画真实病灶；R 画模型看错区域</div>
+      <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+        <button class="primary" id="btn-export-reject">导出剔除 CSV</button>
+        <button id="btn-export-all">导出全部评审 CSV</button>
         <button id="btn-clear-storage">清空本地标记</button>
       </div>
       <div class="list" id="thumb-list"></div>
@@ -243,29 +316,56 @@ HTML_TEMPLATE = r"""<!doctype html>
         <button id="btn-next">下一张 →</button>
         <button id="btn-next-unreviewed">下一张未浏览</button>
         <button class="danger" id="btn-reject">标记剔除 (X)</button>
-        <button class="success" id="btn-keep">保留 / 取消剔除 (K)</button>
+        <button class="success" id="btn-keep">保留 (K)</button>
+        <div class="seg-group">
+          <button class="seg-btn active" data-view="triple">三栏</button>
+          <button class="seg-btn" data-view="box">预测框</button>
+          <button class="seg-btn" data-view="seg">分割</button>
+          <button class="seg-btn" data-view="cam">GradCAM</button>
+          <button class="seg-btn" data-view="full">完整面板</button>
+        </div>
       </div>
-      <div class="viewer" id="viewer">
-        <div class="empty">加载中…</div>
-      </div>
+      <div class="viewer" id="viewer"><div class="empty">加载中…</div></div>
     </main>
   </div>
   <script id="cases-data" type="application/json">__CASES_JSON__</script>
   <script>
     const META = __META_JSON__;
     const CASES = JSON.parse(document.getElementById("cases-data").textContent);
-    const STORAGE_KEY = "gradcam_screening_" + META.storage_key;
+    const STORAGE_KEY = "gradcam_screening_unified_v2";
+    const STAGE_ORDER = ["T1", "T2", "T3", "T4+"];
 
     let reviews = loadReviews();
     let filtered = [];
     let currentIndex = 0;
+    let viewMode = "triple";
+    let drawMode = "true";
+    let drawing = false;
+    let dragStart = null;
+    let canvas = null;
+    let ctx = null;
+    let currentItem = null;
 
     function loadReviews() {
-      try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-      } catch (e) {
-        return {};
-      }
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
+      catch (e) { return {}; }
+    }
+
+    function defaultReview() {
+      return {
+        viewed: false,
+        rejected: false,
+        reason: "",
+        note: "",
+        error_note: "",
+        annot_true: [],
+        annot_model: [],
+        updated_at: "",
+      };
+    }
+
+    function getReview(id) {
+      return { ...defaultReview(), ...(reviews[id] || {}) };
     }
 
     function saveReviews() {
@@ -274,60 +374,186 @@ HTML_TEMPLATE = r"""<!doctype html>
       renderList();
     }
 
-    function getReview(id) {
-      return reviews[id] || { viewed: false, rejected: false, reason: "", note: "", updated_at: "" };
+    function stageIndex(name) {
+      const i = STAGE_ORDER.indexOf(name);
+      return i >= 0 ? i : -1;
+    }
+
+    function stageGap(item) {
+      const a = stageIndex(item.true);
+      const b = stageIndex(item.pred);
+      if (a < 0 || b < 0) return 99;
+      return Math.abs(a - b);
     }
 
     function applyFilters() {
+      const split = document.getElementById("filter-split").value;
       const status = document.getElementById("filter-status").value;
       const trueName = document.getElementById("filter-true").value;
       const search = document.getElementById("filter-search").value.trim().toLowerCase();
       filtered = CASES.filter((item) => {
-        const rev = getReview(item.id);
+        const rev = getReview(item.uid);
+        if (split !== "all" && item.split !== split) return false;
         if (trueName !== "all" && item.true !== trueName) return false;
-        if (search && !item.id.toLowerCase().includes(search)) return false;
+        if (search && !item.id.toLowerCase().includes(search) && !item.uid.toLowerCase().includes(search)) return false;
         if (status === "reject" && !rev.rejected) return false;
         if (status === "keep" && rev.rejected) return false;
         if (status === "unreviewed" && rev.viewed) return false;
         if (status === "wrong" && item.correct) return false;
         if (status === "correct" && !item.correct) return false;
+        if (status === "cross" && (item.correct || stageGap(item) <= 1)) return false;
+        if (status === "adjacent" && (item.correct || stageGap(item) !== 1)) return false;
         return true;
       });
       if (currentIndex >= filtered.length) currentIndex = Math.max(0, filtered.length - 1);
     }
 
     function refreshStats() {
-      const rejectCount = CASES.filter((c) => getReview(c.id).rejected).length;
-      const reviewedCount = CASES.filter((c) => getReview(c.id).viewed).length;
+      const rejectCount = CASES.filter((c) => getReview(c.uid).rejected).length;
+      const reviewedCount = CASES.filter((c) => getReview(c.uid).viewed).length;
       document.getElementById("stat-total").textContent = filtered.length;
       document.getElementById("stat-reject").textContent = rejectCount;
       document.getElementById("stat-reviewed").textContent = reviewedCount;
-      document.getElementById("stat-idx").textContent = filtered.length
-        ? (currentIndex + 1) + "/" + filtered.length
-        : "0/0";
+      document.getElementById("stat-idx").textContent = filtered.length ? `${currentIndex + 1}/${filtered.length}` : "0/0";
+    }
+
+    function splitLabel(split) {
+      if (split === "test_external") return "外部";
+      if (split === "test_prospective") return "前瞻";
+      return split;
     }
 
     function renderList() {
       const list = document.getElementById("thumb-list");
-      const current = filtered[currentIndex];
       list.innerHTML = filtered.slice(0, 200).map((item, idx) => {
-        const rev = getReview(item.id);
-        const cls = [
-          "list-item",
-          idx === currentIndex ? "active" : "",
-          rev.rejected ? "rejected" : "",
-        ].filter(Boolean).join(" ");
-        return `<div class="${cls}" data-idx="${idx}">${item.id} | ${item.true}→${item.pred}${rev.rejected ? " [剔除]" : ""}</div>`;
+        const rev = getReview(item.uid);
+        const cls = ["list-item", idx === currentIndex ? "active" : "", rev.rejected ? "rejected" : ""].filter(Boolean).join(" ");
+        return `<div class="${cls}" data-idx="${idx}">[${splitLabel(item.split)}] ${item.id} | ${item.true}→${item.pred}${rev.rejected ? " [剔除]" : ""}</div>`;
       }).join("");
       if (filtered.length > 200) {
-        list.innerHTML += `<div class="list-item">… 还有 ${filtered.length - 200} 条，请用筛选或搜索</div>`;
+        list.innerHTML += `<div class="list-item">… 还有 ${filtered.length - 200} 条</div>`;
       }
       list.querySelectorAll(".list-item[data-idx]").forEach((el) => {
-        el.addEventListener("click", () => {
-          currentIndex = Number(el.dataset.idx);
-          renderCurrent();
-        });
+        el.addEventListener("click", () => { currentIndex = Number(el.dataset.idx); renderCurrent(); });
       });
+    }
+
+    function spriteStyle(panel, col, row, cols, rows) {
+      const x = cols <= 1 ? 0 : (col / (cols - 1)) * 100;
+      const y = rows <= 1 ? 0 : (row / (rows - 1)) * 100;
+      return `background-image:url('${panel}');background-size:${cols * 100}% ${rows * 100}%;background-position:${x}% ${y}%;`;
+    }
+
+    function viewCard(title, panel, col, row, cols, rows, extraClass) {
+      return `
+        <div class="view-card ${extraClass || ""}">
+          <div class="view-title">${title}</div>
+          <div class="view-body"><div class="sprite" style="${spriteStyle(panel, col, row, cols, rows)}"></div></div>
+        </div>`;
+    }
+
+    function buildViewsHtml(item) {
+      const p = item.panel;
+      const cards = {
+        box: viewCard("预测框 (YOLO lesion/lumen + expanded ROI)", p, 2, 1, 3, 4),
+        seg: viewCard("分割 Mask (预测病灶)", p, 2, 0, 3, 4),
+        cam: viewCard("GradCAM (Global @ Pred)", p, 1, 2, 3, 4),
+        full: viewCard("完整分析面板 (12 宫格)", p, 0, 0, 1, 1),
+      };
+      if (viewMode === "triple") {
+        return `<div class="views-grid">${cards.box}${cards.seg}${cards.cam}</div>`;
+      }
+      const singleClass = "single";
+      if (viewMode === "box") return `<div class="views-grid ${singleClass}">${cards.box}</div>`;
+      if (viewMode === "seg") return `<div class="views-grid ${singleClass}">${cards.seg}</div>`;
+      if (viewMode === "cam") return `<div class="views-grid ${singleClass}">${cards.cam}</div>`;
+      return `<div class="views-grid ${singleClass}"><div class="view-card"><div class="view-title">完整分析面板 (12 宫格)</div><div class="view-body"><img src="${p}" alt="panel" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;"></div></div></div>`;
+    }
+
+    function setupCanvas() {
+      canvas = document.getElementById("annot-canvas");
+      if (!canvas) return;
+      const box = canvas.parentElement;
+      const resize = () => {
+        const rect = box.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.floor(rect.width));
+        canvas.height = Math.max(1, Math.floor(rect.height));
+        redrawAnnotations();
+      };
+      resize();
+      window.onresize = resize;
+
+      canvas.onmousedown = (e) => {
+        if (!currentItem) return;
+        drawing = true;
+        dragStart = canvasPoint(e);
+      };
+      canvas.onmousemove = (e) => {
+        if (!drawing || !dragStart) return;
+        redrawAnnotations();
+        const p = canvasPoint(e);
+        ctx.save();
+        ctx.strokeStyle = drawMode === "true" ? "#22c55e" : "#ef4444";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(dragStart.x, dragStart.y, p.x - dragStart.x, p.y - dragStart.y);
+        ctx.restore();
+      };
+      canvas.onmouseup = (e) => {
+        if (!drawing || !dragStart || !currentItem) return;
+        drawing = false;
+        const p = canvasPoint(e);
+        const rect = normalizeRect(dragStart, p);
+        if (rect.w < 0.01 || rect.h < 0.01) { dragStart = null; redrawAnnotations(); return; }
+        const rev = getReview(currentItem.uid);
+        const target = drawMode === "true" ? "annot_true" : "annot_model";
+        rev[target] = [...(rev[target] || []), rect];
+        rev.viewed = true;
+        rev.updated_at = new Date().toISOString();
+        reviews[currentItem.uid] = rev;
+        saveReviews();
+        dragStart = null;
+        redrawAnnotations();
+      };
+    }
+
+    function canvasPoint(e) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (canvas.width / rect.width),
+        y: (e.clientY - rect.top) * (canvas.height / rect.height),
+      };
+    }
+
+    function normalizeRect(a, b) {
+      const x1 = Math.min(a.x, b.x) / canvas.width;
+      const y1 = Math.min(a.y, b.y) / canvas.height;
+      const x2 = Math.max(a.x, b.x) / canvas.width;
+      const y2 = Math.max(a.y, b.y) / canvas.height;
+      return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+
+    function redrawAnnotations() {
+      if (!canvas) return;
+      ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!currentItem) return;
+      const rev = getReview(currentItem.uid);
+      (rev.annot_true || []).forEach((r) => drawRect(r, "#22c55e", "真实"));
+      (rev.annot_model || []).forEach((r) => drawRect(r, "#ef4444", "看错"));
+    }
+
+    function drawRect(r, color, label) {
+      const x = r.x * canvas.width;
+      const y = r.y * canvas.height;
+      const w = r.w * canvas.width;
+      const h = r.h * canvas.height;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = color;
+      ctx.font = "12px sans-serif";
+      ctx.fillText(label, x + 4, y + 14);
     }
 
     function renderCurrent() {
@@ -336,151 +562,205 @@ HTML_TEMPLATE = r"""<!doctype html>
       renderList();
       const viewer = document.getElementById("viewer");
       const item = filtered[currentIndex];
+      currentItem = item || null;
       if (!item) {
         viewer.innerHTML = `<div class="empty">没有符合筛选条件的样本</div>`;
         return;
       }
-      const rev = getReview(item.id);
+      const rev = getReview(item.uid);
       rev.viewed = true;
-      reviews[item.id] = rev;
+      reviews[item.uid] = rev;
       saveReviews();
 
       document.getElementById("reject-note").value = rev.note || "";
       if (rev.reason) document.getElementById("reject-reason").value = rev.reason;
 
-      const statusTag = rev.rejected
-        ? `<span class="tag reject">已标记剔除</span>`
-        : `<span class="tag ok">保留</span>`;
-      const correctTag = item.correct
-        ? `<span class="tag ok">预测正确</span>`
-        : `<span class="tag bad">预测错误</span>`;
+      const gap = stageGap(item);
+      const gapText = item.correct ? "—" : (gap > 1 ? `跨级 Δ=${gap}` : "相邻误分");
+      const statusTag = rev.rejected ? `<span class="tag reject">已剔除</span>` : `<span class="tag ok">保留</span>`;
+      const correctTag = item.correct ? `<span class="tag ok">预测正确</span>` : `<span class="tag bad">预测错误 · ${gapText}</span>`;
 
-      const probs = ["T1", "T2", "T3", "T4+"].map((name) => {
+      const probs = STAGE_ORDER.map((name) => {
         const val = (item.probs && item.probs[name]) ? item.probs[name] : 0;
-        const active = name === item.pred ? " active" : "";
-        return `<div class="prob${active}"><span>${name}</span><b>${(val * 100).toFixed(1)}%</b></div>`;
+        const classes = ["prob"];
+        if (name === item.pred) classes.push("active");
+        if (name === item.true) classes.push("true-hit");
+        return `<div class="${classes.join(" ")}"><span>${name}</span><b>${(val * 100).toFixed(1)}%</b></div>`;
       }).join("");
 
+      const showAnnot = !item.correct && !rev.rejected;
       viewer.innerHTML = `
         <div class="info">
           <div><b>${item.id}</b></div>
-          <div>真实: <b>${item.true}</b></div>
-          <div>预测: <b>${item.pred}</b></div>
-          <div>${statusTag} ${correctTag}</div>
-          <div style="color:var(--muted); font-size:12px;">数据集: ${META.split}</div>
+          <span class="tag split">${splitLabel(item.split)}</span>
+          <div>真实 <b>${item.true}</b> → 预测 <b>${item.pred}</b></div>
+          ${statusTag} ${correctTag}
         </div>
         <div class="probs">${probs}</div>
-        <div class="panel-wrap">
-          <img src="${item.panel}" alt="${item.id}" onerror="this.parentElement.innerHTML='<div class=\\'empty\\'>找不到图片: ${item.panel}</div>'">
+        ${buildViewsHtml(item)}
+        <div class="annotate-wrap ${showAnnot ? "" : "hidden"}">
+          <div class="annotate-head">
+            <b>误分标注（可选）</b>
+            <button id="draw-true" class="${drawMode === "true" ? "primary" : ""}">画真实病灶 (G)</button>
+            <button id="draw-model" class="${drawMode === "model" ? "primary" : ""}">画模型看错区域 (R)</button>
+            <button id="undo-annot">撤销上一框</button>
+            <button id="clear-annot">清空标注</button>
+            <span class="legend"><span class="g">绿色=真实病灶</span> · <span class="r">红色=模型看错</span></span>
+          </div>
+          <div class="annotate-canvas-box">
+            <div class="sprite" style="${spriteStyle(item.panel, 0, 0, 3, 4)}"></div>
+            <canvas id="annot-canvas" class="draw-layer"></canvas>
+          </div>
+          <label style="margin-top:8px;">误分原因备注</label>
+          <textarea id="error-note">${rev.error_note || ""}</textarea>
         </div>
       `;
+
+      document.querySelectorAll(".seg-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.view === viewMode);
+      });
+
+      const errNote = document.getElementById("error-note");
+      if (errNote) {
+        errNote.addEventListener("change", () => {
+          const r = getReview(item.uid);
+          r.error_note = errNote.value.trim();
+          r.updated_at = new Date().toISOString();
+          reviews[item.uid] = r;
+          saveReviews();
+        });
+      }
+      const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+      bind("draw-true", () => { drawMode = "true"; renderCurrent(); });
+      bind("draw-model", () => { drawMode = "model"; renderCurrent(); });
+      bind("undo-annot", () => {
+        const r = getReview(item.uid);
+        const key = drawMode === "true" ? "annot_true" : "annot_model";
+        r[key] = (r[key] || []).slice(0, -1);
+        reviews[item.uid] = r;
+        saveReviews();
+        redrawAnnotations();
+      });
+      bind("clear-annot", () => {
+        if (!confirm("清空当前图的所有标注框？")) return;
+        const r = getReview(item.uid);
+        r.annot_true = [];
+        r.annot_model = [];
+        reviews[item.uid] = r;
+        saveReviews();
+        redrawAnnotations();
+      });
+      setupCanvas();
     }
 
-    function markReject() {
+    function persistSidebarFields(rejected) {
       const item = filtered[currentIndex];
       if (!item) return;
-      reviews[item.id] = {
+      reviews[item.uid] = {
+        ...getReview(item.uid),
         viewed: true,
-        rejected: true,
-        reason: document.getElementById("reject-reason").value,
+        rejected,
+        reason: rejected ? document.getElementById("reject-reason").value : "",
         note: document.getElementById("reject-note").value.trim(),
+        error_note: (document.getElementById("error-note") || {}).value?.trim?.() || getReview(item.uid).error_note || "",
         updated_at: new Date().toISOString(),
       };
       saveReviews();
-      goNext();
     }
 
-    function markKeep() {
-      const item = filtered[currentIndex];
-      if (!item) return;
-      reviews[item.id] = {
-        viewed: true,
-        rejected: false,
-        reason: "",
-        note: document.getElementById("reject-note").value.trim(),
-        updated_at: new Date().toISOString(),
-      };
-      saveReviews();
-      renderCurrent();
-    }
+    function markReject() { persistSidebarFields(true); goNext(); }
+    function markKeep() { persistSidebarFields(false); renderCurrent(); }
 
     function goPrev() {
       if (!filtered.length) return;
       currentIndex = (currentIndex - 1 + filtered.length) % filtered.length;
       renderCurrent();
     }
-
     function goNext() {
       if (!filtered.length) return;
       currentIndex = (currentIndex + 1) % filtered.length;
       renderCurrent();
     }
-
     function goNextUnreviewed() {
       if (!filtered.length) return;
       for (let step = 1; step <= filtered.length; step++) {
         const idx = (currentIndex + step) % filtered.length;
-        if (!getReview(filtered[idx].id).viewed) {
-          currentIndex = idx;
-          renderCurrent();
-          return;
-        }
+        if (!getReview(filtered[idx].uid).viewed) { currentIndex = idx; renderCurrent(); return; }
       }
       goNext();
     }
 
-    function exportCsv() {
-      const rows = [["filename", "true_name", "pred_name", "correct", "rejected", "reason", "note", "panel", "updated_at"]];
-      CASES.forEach((item) => {
-        const rev = getReview(item.id);
-        if (!rev.rejected) return;
-        rows.push([
-          item.id,
-          item.true,
-          item.pred,
-          item.correct ? "1" : "0",
-          "1",
-          rev.reason || "",
-          rev.note || "",
-          item.panel,
-          rev.updated_at || "",
-        ]);
-      });
-      const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    function reviewToRow(item) {
+      const rev = getReview(item.uid);
+      return {
+        uid: item.uid,
+        filename: item.id,
+        split: item.split,
+        true_name: item.true,
+        pred_name: item.pred,
+        correct: item.correct ? "1" : "0",
+        stage_gap: item.correct ? "0" : String(stageGap(item)),
+        rejected: rev.rejected ? "1" : "0",
+        reject_reason: rev.reason || "",
+        note: rev.note || "",
+        error_note: rev.error_note || "",
+        annot_true: JSON.stringify(rev.annot_true || []),
+        annot_model: JSON.stringify(rev.annot_model || []),
+        panel: item.panel,
+        updated_at: rev.updated_at || "",
+      };
+    }
+
+    function downloadCsv(filename, rows) {
+      const header = Object.keys(rows[0] || {});
+      const body = rows.map((row) => header.map((k) => `"${String(row[k] ?? "").replace(/"/g, '""')}"`).join(","));
+      const csv = ["\ufeff" + header.join(",")].concat(body).join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = META.split + "_rejected.csv";
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     }
 
-    document.getElementById("btn-prev").addEventListener("click", goPrev);
-    document.getElementById("btn-next").addEventListener("click", goNext);
-    document.getElementById("btn-next-unreviewed").addEventListener("click", goNextUnreviewed);
-    document.getElementById("btn-reject").addEventListener("click", markReject);
-    document.getElementById("btn-keep").addEventListener("click", markKeep);
-    document.getElementById("btn-export").addEventListener("click", exportCsv);
-    document.getElementById("btn-clear-storage").addEventListener("click", () => {
-      if (confirm("确定清空本数据集的所有本地标记吗？")) {
-        localStorage.removeItem(STORAGE_KEY);
-        reviews = {};
-        renderCurrent();
-      }
+    document.getElementById("btn-prev").onclick = goPrev;
+    document.getElementById("btn-next").onclick = goNext;
+    document.getElementById("btn-next-unreviewed").onclick = goNextUnreviewed;
+    document.getElementById("btn-reject").onclick = markReject;
+    document.getElementById("btn-keep").onclick = markKeep;
+    document.getElementById("btn-export-reject").onclick = () => {
+      const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
+      if (!rows.length) { alert("暂无剔除样本"); return; }
+      downloadCsv("gradcam_rejected.csv", rows);
+    };
+    document.getElementById("btn-export-all").onclick = () => {
+      const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1" || r.error_note || r.annot_true !== "[]" || r.annot_model !== "[]");
+      downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.map(reviewToRow));
+    };
+    document.getElementById("btn-clear-storage").onclick = () => {
+      if (confirm("确定清空所有本地标记？")) { localStorage.removeItem(STORAGE_KEY); reviews = {}; renderCurrent(); }
+    };
+    document.querySelectorAll(".seg-btn").forEach((btn) => {
+      btn.addEventListener("click", () => { viewMode = btn.dataset.view; renderCurrent(); });
     });
-    ["filter-status", "filter-true"].forEach((id) => {
+    ["filter-split", "filter-status", "filter-true"].forEach((id) => {
       document.getElementById(id).addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
     });
     document.getElementById("filter-search").addEventListener("input", () => { currentIndex = 0; renderCurrent(); });
 
     document.addEventListener("keydown", (e) => {
-      if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+      if (e.target.tagName === "TEXTAREA" || (e.target.tagName === "INPUT" && e.target.id === "filter-search")) return;
       if (e.key === "ArrowLeft") goPrev();
       if (e.key === "ArrowRight") goNext();
       if (e.key.toLowerCase() === "x") markReject();
       if (e.key.toLowerCase() === "k") markKeep();
       if (e.key.toLowerCase() === "n") goNextUnreviewed();
+      if (e.key === "1") { viewMode = "triple"; renderCurrent(); }
+      if (e.key === "2") { viewMode = "box"; renderCurrent(); }
+      if (e.key === "3") { viewMode = "cam"; renderCurrent(); }
+      if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
+      if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
     });
 
     renderCurrent();
@@ -490,10 +770,10 @@ HTML_TEMPLATE = r"""<!doctype html>
 """
 
 
-def rel_panel_path(panel_path: object, root_dir: Path) -> str | None:
-    if panel_path is None or (isinstance(panel_path, float) and pd.isna(panel_path)):
+def rel_asset_path(asset_path: object, root_dir: Path) -> str | None:
+    if asset_path is None or (isinstance(asset_path, float) and pd.isna(asset_path)):
         return None
-    raw = str(panel_path).strip()
+    raw = str(asset_path).strip()
     if not raw:
         return None
     path = Path(raw)
@@ -502,34 +782,38 @@ def rel_panel_path(panel_path: object, root_dir: Path) -> str | None:
             return path.relative_to(root_dir.resolve()).as_posix()
         except ValueError:
             pass
+    normalized = raw.replace("\\", "/")
     root_name = root_dir.name
     marker = f"{root_name}/"
-    if marker in raw.replace("\\", "/"):
-        idx = raw.replace("\\", "/").index(marker)
-        return raw.replace("\\", "/")[idx + len(marker) :]
-    marker2 = "panels/"
-    if marker2 in raw.replace("\\", "/"):
-        idx = raw.replace("\\", "/").index(marker2)
-        return raw.replace("\\", "/")[idx:]
-    if path.name.endswith("_panel.png"):
-        return f"panels/{path.name}"
+    if marker in normalized:
+        return normalized.split(marker, 1)[1]
+    if normalized.startswith("panels/"):
+        return normalized
     return path.name
 
 
-def row_to_case(row: pd.Series, root_dir: Path) -> dict | None:
-    panel = rel_panel_path(row.get("panel_path"), root_dir)
+def row_to_case(row: pd.Series, root_dir: Path, split: str, path_prefix: str) -> dict | None:
+    panel_abs = row.get("panel_path")
+    panel = rel_asset_path(panel_abs, root_dir)
     if not panel:
         return None
-    filename = str(row.get("filename") or Path(panel).stem.replace("_panel", ""))
-    probs = {}
+    if path_prefix:
+        panel = f"{path_prefix.rstrip('/')}/{panel}"
+
+    filename = str(row.get("filename") or Path(str(panel_abs)).stem.replace("_panel", ""))
+    probs: dict[str, float] = {}
     for name in ("T1", "T2", "T3", "T4+"):
-        col = f"prob_{name.replace('+', '+')}"
+        col = f"prob_{name}"
         if col in row and pd.notna(row[col]):
             probs[name] = float(row[col])
+
     correct_raw = row.get("correct", False)
     correct = str(correct_raw).strip().lower() in {"1", "true", "t", "yes"}
+    uid = f"{split}::{filename}"
     return {
+        "uid": uid,
         "id": filename,
+        "split": split,
         "panel": panel,
         "true": str(row.get("true_name", "")),
         "pred": str(row.get("pred_name", "")),
@@ -538,13 +822,73 @@ def row_to_case(row: pd.Series, root_dir: Path) -> dict | None:
     }
 
 
-def build_cases_df(df: pd.DataFrame, root_dir: Path) -> list[dict]:
+def build_cases_from_csv(
+    results_csv: Path,
+    split: str,
+    root_dir: Path | None = None,
+    path_prefix: str = "",
+    *,
+    external_holdout_only: bool = False,
+) -> list[dict]:
+    root = (root_dir or results_csv.parent).resolve()
+    df = pd.read_csv(results_csv, low_memory=False)
+    if split == "test_external" and external_holdout_only:
+        mask = ~df["image_path"].astype(str).str.contains("prospective", case=False, na=False)
+        df = df.loc[mask].copy()
     cases: list[dict] = []
     for _, row in df.iterrows():
-        case = row_to_case(row, root_dir)
+        case = row_to_case(row, root, split, path_prefix)
         if case is not None:
             cases.append(case)
     return cases
+
+
+def build_unified_html(
+    sources: list[dict],
+    output_html: Path,
+    *,
+    title: str = "GradCAM 测试集筛图",
+) -> dict:
+    """Build one HTML from multiple gradcam_results.csv sources."""
+    all_cases: list[dict] = []
+    split_counts: dict[str, int] = {}
+    for src in sources:
+        csv_path = Path(src["results_csv"]).resolve()
+        split = str(src["split"])
+        root_dir = Path(src.get("root_dir", csv_path.parent)).resolve()
+        prefix = str(src.get("path_prefix", root_dir.name))
+        cases = build_cases_from_csv(
+            csv_path,
+            split,
+            root_dir,
+            prefix,
+            external_holdout_only=bool(src.get("external_holdout_only", False)),
+        )
+        all_cases.extend(cases)
+        split_counts[split] = len(cases)
+
+    if not all_cases:
+        raise SystemExit("No cases with valid panel_path found in any source CSV.")
+
+    meta = {
+        "title": title,
+        "generated_utc": datetime.now(timezone.utc).isoformat(),
+        "total": len(all_cases),
+        "split_counts": split_counts,
+        "storage_key": "unified_v2",
+    }
+    html_text = (
+        HTML_TEMPLATE.replace("__SPLIT__", title)
+        .replace("__CASES_JSON__", json.dumps(all_cases, ensure_ascii=False))
+        .replace("__META_JSON__", json.dumps(meta, ensure_ascii=False))
+    )
+    output_html.parent.mkdir(parents=True, exist_ok=True)
+    output_html.write_text(html_text, encoding="utf-8")
+    return {
+        "html": str(output_html),
+        "cases": len(all_cases),
+        "split_counts": split_counts,
+    }
 
 
 def build_html(
@@ -553,66 +897,92 @@ def build_html(
     split: str,
     root_dir: Path | None = None,
 ) -> dict:
-    root_dir = (root_dir or results_csv.parent).resolve()
-    df = pd.read_csv(results_csv, low_memory=False)
-    cases = build_cases_df(df, root_dir)
-    if not cases:
-        raise SystemExit(f"No cases with valid panel_path found in {results_csv}")
-
-    meta = {
-        "split": split,
-        "generated_utc": datetime.now(timezone.utc).isoformat(),
-        "total": len(cases),
-        "storage_key": split,
-    }
-    html_text = (
-        HTML_TEMPLATE.replace("__SPLIT__", split)
-        .replace("__CASES_JSON__", json.dumps(cases, ensure_ascii=False))
-        .replace("__META_JSON__", json.dumps(meta, ensure_ascii=False))
+    """Backward-compatible single-split builder."""
+    root = (root_dir or results_csv.parent).resolve()
+    return build_unified_html(
+        [{"results_csv": results_csv, "split": split, "root_dir": root, "path_prefix": root.name}],
+        output_html,
     )
-    output_html.parent.mkdir(parents=True, exist_ok=True)
-    output_html.write_text(html_text, encoding="utf-8")
-    return {
-        "html": str(output_html),
-        "split": split,
-        "cases": len(cases),
-        "results_rows": int(len(df)),
-    }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build offline Grad-CAM screening HTML")
-    parser.add_argument(
-        "--results-csv",
-        type=Path,
-        required=True,
-        help="Path to gradcam_results.csv (inside unpacked zip root)",
-    )
+    parser.add_argument("--results-csv", type=Path, action="append", help="gradcam_results.csv (repeatable)")
+    parser.add_argument("--split", type=str, action="append", help="Split label aligned with --results-csv")
+    parser.add_argument("--root-dir", type=Path, action="append", help="Optional root dir per CSV")
+    parser.add_argument("--path-prefix", type=str, action="append", help="Relative path prefix in HTML, default root dir name")
     parser.add_argument(
         "--output-html",
         type=Path,
         default=None,
-        help="Output HTML path (default: same dir as csv, gradcam_screening.html)",
+        help="Output HTML path (default: gradcam_screening.html beside first csv or --pack-root)",
     )
+    parser.add_argument("--pack-root", type=Path, default=None, help="Write unified HTML to pack_root/gradcam_screening.html")
     parser.add_argument(
-        "--split",
-        type=str,
-        default="test_set",
-        help="Split label shown in UI and export filename",
-    )
-    parser.add_argument(
-        "--root-dir",
+        "--exp-dir",
         type=Path,
         default=None,
-        help="Root directory for resolving relative panel paths (default: csv parent)",
+        help="Experiment dir: auto-load external + prospective gradcam outputs",
     )
     return parser.parse_args()
 
 
+def default_sources_from_exp(exp_dir: Path) -> list[dict]:
+    specs = [
+        ("test_external", "gradcam_test_external_full"),
+        ("test_prospective", "gradcam_test_prospective_full"),
+    ]
+    sources: list[dict] = []
+    for split, dirname in specs:
+        root = exp_dir / dirname
+        csv_path = root / "gradcam_results.csv"
+        if csv_path.is_file():
+            sources.append(
+                {
+                    "results_csv": csv_path,
+                    "split": split,
+                    "root_dir": root,
+                    "path_prefix": dirname,
+                }
+            )
+    return sources
+
+
 def main() -> None:
     args = parse_args()
-    output_html = args.output_html or (args.results_csv.parent / "gradcam_screening.html")
-    summary = build_html(args.results_csv, output_html, args.split, args.root_dir)
+    sources: list[dict] = []
+
+    if args.exp_dir is not None:
+        sources = default_sources_from_exp(args.exp_dir.resolve())
+    elif args.results_csv:
+        splits = args.split or ["test_set"] * len(args.results_csv)
+        roots = args.root_dir or [None] * len(args.results_csv)
+        prefixes = args.path_prefix or [None] * len(args.results_csv)
+        if len(splits) != len(args.results_csv):
+            raise SystemExit("--split count must match --results-csv count")
+        for csv_path, split, root, prefix in zip(args.results_csv, splits, roots, prefixes):
+            root_dir = root or csv_path.parent
+            sources.append(
+                {
+                    "results_csv": csv_path,
+                    "split": split,
+                    "root_dir": root_dir,
+                    "path_prefix": prefix or root_dir.name,
+                }
+            )
+    else:
+        raise SystemExit("Provide --exp-dir or at least one --results-csv")
+
+    if args.output_html is not None:
+        output_html = args.output_html
+    elif args.pack_root is not None:
+        output_html = args.pack_root / "gradcam_screening.html"
+    elif sources:
+        output_html = Path(sources[0]["results_csv"]).parent.parent / "gradcam_test_sets_pack" / "gradcam_screening.html"
+    else:
+        raise SystemExit("Cannot infer output HTML path")
+
+    summary = build_unified_html(sources, output_html)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 

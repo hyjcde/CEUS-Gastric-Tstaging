@@ -20,7 +20,7 @@ PROJECT_ROOT = PIPELINE_ROOT.parent
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
-from build_gradcam_screening_html import build_html as build_screening_html
+from build_gradcam_screening_html import build_unified_html as build_screening_html
 
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
 
@@ -99,7 +99,6 @@ def collect_pack_files(
         files.append((html_path, arc_root / "gradcam_screening.html"))
     return files
 
-
 def zip_pack_files(files: list[tuple[Path, Path]], zip_path: Path) -> int:
     if zip_path.exists():
         zip_path.unlink()
@@ -175,11 +174,17 @@ def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path]) -> No
         f"Generated: {datetime.now(timezone.utc).isoformat()}",
         "",
         "Contents per split (slim zip):",
-        "  - gradcam_screening.html  (offline doctor screening UI)",
         "  - panels/<T*/correct|misclassified...>/*_panel.png",
         "  - gradcam_results.csv",
         "",
-        "Doctor workflow: unzip, double-click gradcam_screening.html, mark bad images, export rejected CSV.",
+        "Unified screening HTML:",
+        "  - ../gradcam_screening.html  (same level as the two gradcam_*_full folders)",
+        "  - gradcam_test_sets_pack/gradcam_screening.html  (copy for distribution)",
+        "",
+        "Doctor workflow:",
+        "  1) Unzip both slim zips into the SAME folder (creates gradcam_test_external_full + gradcam_test_prospective_full)",
+        "  2) Copy gradcam_screening.html into that same folder",
+        "  3) Double-click gradcam_screening.html",
         "",
         "Note: external slim pack excludes int/prospective rows duplicated in test_prospective.",
         "",
@@ -286,19 +291,6 @@ def main() -> None:
         summary = summarize_split(output_dir, split, input_csv, results_df)
         summary["pack_mode"] = args.pack_mode
         summary["external_holdout_only"] = bool(external_holdout_only and split == "test_external")
-
-        screening_html = output_dir / "gradcam_screening.html"
-        if results_csv.is_file():
-            html_summary = build_screening_html(
-                results_csv,
-                screening_html,
-                split=split,
-                root_dir=output_dir,
-            )
-            summary["screening_html"] = html_summary["html"]
-            summary["screening_cases"] = html_summary["cases"]
-            print(f"Screening HTML: {screening_html} ({html_summary['cases']} cases)")
-
         summaries.append(summary)
 
         if not args.no_zip:
@@ -322,6 +314,31 @@ def main() -> None:
             zip_paths.append(zip_path)
             print(f"Packed {split}: {zip_path} ({summary['zip_size_mb']} MB, {n_files} files)")
 
+    screening_sources: list[dict] = []
+    for split in args.splits:
+        spec = SPLIT_SPECS[split]
+        output_dir = exp_dir / spec["output_dir_name"]
+        results_csv = output_dir / "gradcam_results.csv"
+        if results_csv.is_file():
+            screening_sources.append(
+                {
+                    "results_csv": results_csv,
+                    "split": split,
+                    "root_dir": output_dir,
+                    "path_prefix": spec["output_dir_name"],
+                    "external_holdout_only": bool(external_holdout_only and split == "test_external"),
+                }
+            )
+    screening_summary = None
+    if screening_sources:
+        screening_html = exp_dir / "gradcam_screening.html"
+        screening_summary = build_screening_html(screening_sources, screening_html)
+        shutil.copy2(screening_html, pack_root / "gradcam_screening.html")
+        print(
+            f"Unified screening HTML: {screening_html} "
+            f"({screening_summary['cases']} cases, splits={screening_summary['split_counts']})"
+        )
+
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "exp_dir": str(exp_dir),
@@ -331,6 +348,10 @@ def main() -> None:
         "external_holdout_only": external_holdout_only,
         "splits": summaries,
     }
+    if screening_summary:
+        manifest["screening_html"] = screening_summary["html"]
+        manifest["screening_cases"] = screening_summary["cases"]
+        manifest["screening_split_counts"] = screening_summary["split_counts"]
     manifest_path = pack_root / "gradcam_test_sets_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths)
