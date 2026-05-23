@@ -180,18 +180,47 @@ HTML_TEMPLATE = r"""<!doctype html>
     .view-body {
       flex: 1;
       position: relative;
-      min-height: 240px;
+      min-height: 320px;
+      height: 100%;
       background: #000;
+      display: flex;
     }
     .views-grid.single .view-body { min-height: calc(100vh - 360px); }
-    .sprite {
+    .tile-frame {
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      flex: 1;
+      min-height: 320px;
+      background: #000;
+    }
+    .views-grid.single .tile-frame { min-height: calc(100vh - 360px); }
+    .tile-img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      max-width: none;
+      display: block;
+      image-rendering: auto;
+    }
+    .full-img {
       width: 100%;
       height: 100%;
-      min-height: 240px;
-      background-repeat: no-repeat;
-      background-color: #000;
+      object-fit: contain;
+      display: block;
+      background: #000;
     }
-    .views-grid.single .sprite { min-height: calc(100vh - 360px); }
+    .path-error {
+      padding: 24px;
+      line-height: 1.7;
+      color: #ffb4b4;
+      background: #2a1215;
+      border: 1px solid #7f1d1d;
+      border-radius: 10px;
+      max-width: 900px;
+      margin: 24px auto;
+    }
+    .path-error code { color: #fbbf24; }
     .annotate-wrap {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -214,8 +243,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
-    }
-    .annotate-canvas-box .sprite {
       min-height: 360px;
     }
     canvas.draw-layer {
@@ -345,6 +372,44 @@ HTML_TEMPLATE = r"""<!doctype html>
     let canvas = null;
     let ctx = null;
     let currentItem = null;
+    let pathOk = null;
+
+    function escHtml(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    }
+
+    function imgErrorHtml(panel) {
+      return `<div class="empty">图片加载失败<br><code>${escHtml(panel)}</code><br>请确认 HTML 与 gradcam_test_external_full、gradcam_test_prospective_full 在同一文件夹</div>`;
+    }
+
+    function pathErrorHtml(panel) {
+      return `<div class="path-error">
+        <h3 style="margin-top:0;">找不到图片，当前 HTML 位置不正确</h3>
+        <p>尝试加载：<code>${escHtml(panel)}</code></p>
+        <p>请把 <code>gradcam_screening.html</code> 放在与下面两个文件夹<strong>同级</strong>的目录中：</p>
+        <ul>
+          <li><code>gradcam_test_external_full/</code></li>
+          <li><code>gradcam_test_prospective_full/</code></li>
+        </ul>
+        <p>不要从 <code>gradcam_test_sets_pack/</code> 里的副本直接打开（除非把两个图片文件夹也放在旁边）。</p>
+        <p>若仍不行，请用 Chrome 打开；或用命令在该目录启动本地服务：<code>python3 -m http.server 8765</code>，再访问 <code>http://localhost:8765/gradcam_screening.html</code></p>
+      </div>`;
+    }
+
+    function verifyPaths(done) {
+      if (pathOk === true) { done(); return; }
+      if (!CASES.length) {
+        document.getElementById("viewer").innerHTML = `<div class="empty">没有可显示的样本</div>`;
+        return;
+      }
+      const probe = new Image();
+      probe.onload = () => { pathOk = true; done(); };
+      probe.onerror = () => {
+        pathOk = false;
+        document.getElementById("viewer").innerHTML = pathErrorHtml(CASES[0].panel);
+      };
+      probe.src = CASES[0].panel;
+    }
 
     function loadReviews() {
       try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
@@ -438,17 +503,22 @@ HTML_TEMPLATE = r"""<!doctype html>
       });
     }
 
-    function spriteStyle(panel, col, row, cols, rows) {
-      const x = cols <= 1 ? 0 : (col / (cols - 1)) * 100;
-      const y = rows <= 1 ? 0 : (row / (rows - 1)) * 100;
-      return `background-image:url('${panel}');background-size:${cols * 100}% ${rows * 100}%;background-position:${x}% ${y}%;`;
+    function tileImg(panel, col, row, cols, rows, alt) {
+      const src = encodeURI(panel).replace(/#/g, "%23");
+      return `<div class="tile-frame">
+        <img class="tile-img" src="${src}" alt="${escHtml(alt)}"
+          style="width:calc(${cols} * 100%);height:calc(${rows} * 100%);left:calc(-100% * ${col});top:calc(-100% * ${row});"
+          onerror="this.closest('.view-body').innerHTML=window.__imgErr('${panel.replace(/'/g, "\\'")}')">
+      </div>`;
     }
 
-    function viewCard(title, panel, col, row, cols, rows, extraClass) {
+    window.__imgErr = imgErrorHtml;
+
+    function viewCard(title, panel, col, row, cols, rows) {
       return `
-        <div class="view-card ${extraClass || ""}">
+        <div class="view-card">
           <div class="view-title">${title}</div>
-          <div class="view-body"><div class="sprite" style="${spriteStyle(panel, col, row, cols, rows)}"></div></div>
+          <div class="view-body">${tileImg(panel, col, row, cols, rows, title)}</div>
         </div>`;
     }
 
@@ -458,7 +528,6 @@ HTML_TEMPLATE = r"""<!doctype html>
         box: viewCard("预测框 (YOLO lesion/lumen + expanded ROI)", p, 2, 1, 3, 4),
         seg: viewCard("分割 Mask (预测病灶)", p, 2, 0, 3, 4),
         cam: viewCard("GradCAM (Global @ Pred)", p, 1, 2, 3, 4),
-        full: viewCard("完整分析面板 (12 宫格)", p, 0, 0, 1, 1),
       };
       if (viewMode === "triple") {
         return `<div class="views-grid">${cards.box}${cards.seg}${cards.cam}</div>`;
@@ -467,7 +536,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (viewMode === "box") return `<div class="views-grid ${singleClass}">${cards.box}</div>`;
       if (viewMode === "seg") return `<div class="views-grid ${singleClass}">${cards.seg}</div>`;
       if (viewMode === "cam") return `<div class="views-grid ${singleClass}">${cards.cam}</div>`;
-      return `<div class="views-grid ${singleClass}"><div class="view-card"><div class="view-title">完整分析面板 (12 宫格)</div><div class="view-body"><img src="${p}" alt="panel" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;"></div></div></div>`;
+      const src = encodeURI(p).replace(/#/g, "%23");
+      return `<div class="views-grid ${singleClass}"><div class="view-card"><div class="view-title">完整分析面板 (12 宫格)</div><div class="view-body"><img class="full-img" src="${src}" alt="panel" onerror="this.outerHTML=window.__imgErr('${p.replace(/'/g, "\\'")}')"></div></div></div>`;
     }
 
     function setupCanvas() {
@@ -608,7 +678,7 @@ HTML_TEMPLATE = r"""<!doctype html>
             <span class="legend"><span class="g">绿色=真实病灶</span> · <span class="r">红色=模型看错</span></span>
           </div>
           <div class="annotate-canvas-box">
-            <div class="sprite" style="${spriteStyle(item.panel, 0, 0, 3, 4)}"></div>
+            ${tileImg(item.panel, 0, 0, 3, 4, "annotate")}
             <canvas id="annot-canvas" class="draw-layer"></canvas>
           </div>
           <label style="margin-top:8px;">误分原因备注</label>
@@ -763,7 +833,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
     });
 
-    renderCurrent();
+    verifyPaths(() => renderCurrent());
   </script>
 </body>
 </html>
