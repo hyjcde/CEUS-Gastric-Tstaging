@@ -344,7 +344,8 @@ def main() -> None:
         for src in screening_sources:
             split = str(src["split"])
             split_html = Path(src["root_dir"]) / "gradcam_screening.html"
-            split_summary = build_split_screening_html(src, split_html)
+            split_src = {**src, "external_holdout_only": False}
+            split_summary = build_split_screening_html(split_src, split_html)
             split_html_summaries.append({"split": split, **split_summary})
             print(
                 f"Split screening HTML: {split_html} "
