@@ -17,6 +17,11 @@ import pandas as pd
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = PIPELINE_ROOT.parent
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+from build_gradcam_screening_html import build_html as build_screening_html
+
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
 
 DEFAULT_EXP = (
@@ -89,6 +94,9 @@ def collect_pack_files(
         slim_csv = (tmp_dir or output_dir) / "gradcam_results.csv"
         results_df.to_csv(slim_csv, index=False)
         files.append((slim_csv, arc_root / "gradcam_results.csv"))
+    html_path = output_dir / "gradcam_screening.html"
+    if html_path.is_file():
+        files.append((html_path, arc_root / "gradcam_screening.html"))
     return files
 
 
@@ -167,8 +175,11 @@ def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path]) -> No
         f"Generated: {datetime.now(timezone.utc).isoformat()}",
         "",
         "Contents per split (slim zip):",
+        "  - gradcam_screening.html  (offline doctor screening UI)",
         "  - panels/<T*/correct|misclassified...>/*_panel.png",
         "  - gradcam_results.csv",
+        "",
+        "Doctor workflow: unzip, double-click gradcam_screening.html, mark bad images, export rejected CSV.",
         "",
         "Note: external slim pack excludes int/prospective rows duplicated in test_prospective.",
         "",
@@ -275,6 +286,19 @@ def main() -> None:
         summary = summarize_split(output_dir, split, input_csv, results_df)
         summary["pack_mode"] = args.pack_mode
         summary["external_holdout_only"] = bool(external_holdout_only and split == "test_external")
+
+        screening_html = output_dir / "gradcam_screening.html"
+        if results_csv.is_file():
+            html_summary = build_screening_html(
+                results_csv,
+                screening_html,
+                split=split,
+                root_dir=output_dir,
+            )
+            summary["screening_html"] = html_summary["html"]
+            summary["screening_cases"] = html_summary["cases"]
+            print(f"Screening HTML: {screening_html} ({html_summary['cases']} cases)")
+
         summaries.append(summary)
 
         if not args.no_zip:
