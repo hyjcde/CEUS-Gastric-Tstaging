@@ -101,11 +101,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       cursor: pointer;
       font-size: 13px;
     }
-    button:hover, .seg-btn:hover { background: #2f3f57; }
-    button.primary, .seg-btn.active { background: #2563eb; border-color: #2563eb; }
+    button:hover { background: #2f3f57; }
+    button.primary { background: #2563eb; border-color: #2563eb; }
     button.danger { background: #b42318; border-color: #b42318; }
     button.success { background: #067647; border-color: #067647; }
-    .seg-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
     .viewer {
       flex: 1;
       overflow: auto;
@@ -150,65 +150,36 @@ HTML_TEMPLATE = r"""<!doctype html>
     .prob b { display: block; font-size: 16px; margin-top: 4px; }
     .prob.active { outline: 2px solid var(--accent); }
     .prob.true-hit { box-shadow: inset 0 0 0 1px var(--ok); }
-    .views-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      min-height: 42vh;
-    }
-    .views-grid.single {
-      grid-template-columns: 1fr;
-      min-height: calc(100vh - 320px);
-    }
-    .view-card {
+    .panel-stage {
+      position: relative;
+      width: 100%;
+      max-width: 1680px;
+      margin: 0 auto;
       background: #000;
       border: 1px solid var(--border);
       border-radius: 10px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      min-height: 280px;
+      overflow: auto;
+      min-height: calc(100vh - 280px);
+      max-height: calc(100vh - 220px);
     }
-    .views-grid.single .view-card { min-height: calc(100vh - 320px); }
-    .view-title {
-      padding: 8px 10px;
-      font-size: 12px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--border);
-      color: var(--muted);
-    }
-    .view-body {
-      flex: 1;
-      position: relative;
-      min-height: 320px;
-      height: 100%;
-      background: #000;
-      display: flex;
-    }
-    .views-grid.single .view-body { min-height: calc(100vh - 360px); }
-    .tile-frame {
-      position: relative;
-      overflow: hidden;
+    .panel-img {
+      display: block;
       width: 100%;
-      flex: 1;
-      min-height: 320px;
-      background: #000;
+      height: auto;
+      min-width: 720px;
     }
-    .views-grid.single .tile-frame { min-height: calc(100vh - 360px); }
-    .tile-img {
+    .panel-stage canvas.draw-layer {
       position: absolute;
-      top: 0;
-      left: 0;
-      max-width: none;
-      display: block;
-      image-rendering: auto;
-    }
-    .full-img {
+      inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: contain;
-      display: block;
-      background: #000;
+      cursor: crosshair;
+      pointer-events: auto;
+    }
+    .panel-inner {
+      position: relative;
+      width: 100%;
+      line-height: 0;
     }
     .path-error {
       padding: 24px;
@@ -221,36 +192,12 @@ HTML_TEMPLATE = r"""<!doctype html>
       margin: 24px auto;
     }
     .path-error code { color: #fbbf24; }
-    .annotate-wrap {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-    }
     .annotate-head {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
-      margin-bottom: 8px;
-    }
-    .annotate-canvas-box {
-      position: relative;
-      width: 100%;
-      max-width: 1200px;
-      margin: 0 auto;
-      background: #000;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      min-height: 360px;
-    }
-    canvas.draw-layer {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      cursor: crosshair;
+      margin: 8px 0;
     }
     .legend { font-size: 12px; color: var(--muted); }
     .legend .g { color: var(--true-color); }
@@ -278,7 +225,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     @media (max-width: 1100px) {
       .layout { grid-template-columns: 1fr; }
       aside { max-height: 38vh; }
-      .views-grid { grid-template-columns: 1fr; }
+      .panel-img { min-width: 0; }
     }
   </style>
 </head>
@@ -329,7 +276,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       </select>
       <label>备注</label>
       <textarea id="reject-note" placeholder="可选备注"></textarea>
-      <div class="hint">快捷键：← → 切换；X 剔除；K 保留；N 下一张未浏览；1/2/3 切换视图；G 画真实病灶；R 画模型看错区域</div>
+      <div class="hint">快捷键：← → 切换；X 剔除；K 保留；N 下一张未浏览；G 画真实病灶；R 画模型看错区域</div>
       <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
         <button class="primary" id="btn-export-reject">导出剔除 CSV</button>
         <button id="btn-export-all">导出全部评审 CSV</button>
@@ -344,13 +291,6 @@ HTML_TEMPLATE = r"""<!doctype html>
         <button id="btn-next-unreviewed">下一张未浏览</button>
         <button class="danger" id="btn-reject">标记剔除 (X)</button>
         <button class="success" id="btn-keep">保留 (K)</button>
-        <div class="seg-group">
-          <button class="seg-btn active" data-view="triple">三栏</button>
-          <button class="seg-btn" data-view="box">预测框</button>
-          <button class="seg-btn" data-view="seg">分割</button>
-          <button class="seg-btn" data-view="cam">GradCAM</button>
-          <button class="seg-btn" data-view="full">完整面板</button>
-        </div>
       </div>
       <div class="viewer" id="viewer"><div class="empty">加载中…</div></div>
     </main>
@@ -365,7 +305,6 @@ HTML_TEMPLATE = r"""<!doctype html>
     let reviews = loadReviews();
     let filtered = [];
     let currentIndex = 0;
-    let viewMode = "triple";
     let drawMode = "true";
     let drawing = false;
     let dragStart = null;
@@ -503,53 +442,50 @@ HTML_TEMPLATE = r"""<!doctype html>
       });
     }
 
-    function tileImg(panel, col, row, cols, rows, alt) {
-      const src = encodeURI(panel).replace(/#/g, "%23");
-      return `<div class="tile-frame">
-        <img class="tile-img" src="${src}" alt="${escHtml(alt)}"
-          style="width:calc(${cols} * 100%);height:calc(${rows} * 100%);left:calc(-100% * ${col});top:calc(-100% * ${row});"
-          onerror="this.closest('.view-body').innerHTML=window.__imgErr('${panel.replace(/'/g, "\\'")}')">
-      </div>`;
-    }
-
     window.__imgErr = imgErrorHtml;
 
-    function viewCard(title, panel, col, row, cols, rows) {
-      return `
-        <div class="view-card">
-          <div class="view-title">${title}</div>
-          <div class="view-body">${tileImg(panel, col, row, cols, rows, title)}</div>
-        </div>`;
+    function panelSrc(panel) {
+      return encodeURI(panel).replace(/#/g, "%23");
     }
 
-    function buildViewsHtml(item) {
-      const p = item.panel;
-      const cards = {
-        box: viewCard("预测框 (YOLO lesion/lumen + expanded ROI)", p, 2, 1, 3, 4),
-        seg: viewCard("分割 Mask (预测病灶)", p, 2, 0, 3, 4),
-        cam: viewCard("GradCAM (Global @ Pred)", p, 1, 2, 3, 4),
-      };
-      if (viewMode === "triple") {
-        return `<div class="views-grid">${cards.box}${cards.seg}${cards.cam}</div>`;
-      }
-      const singleClass = "single";
-      if (viewMode === "box") return `<div class="views-grid ${singleClass}">${cards.box}</div>`;
-      if (viewMode === "seg") return `<div class="views-grid ${singleClass}">${cards.seg}</div>`;
-      if (viewMode === "cam") return `<div class="views-grid ${singleClass}">${cards.cam}</div>`;
-      const src = encodeURI(p).replace(/#/g, "%23");
-      return `<div class="views-grid ${singleClass}"><div class="view-card"><div class="view-title">完整分析面板 (12 宫格)</div><div class="view-body"><img class="full-img" src="${src}" alt="panel" onerror="this.outerHTML=window.__imgErr('${p.replace(/'/g, "\\'")}')"></div></div></div>`;
+    function buildPanelHtml(item, showAnnot) {
+      const src = panelSrc(item.panel);
+      const err = item.panel.replace(/'/g, "\\'");
+      return `
+        ${showAnnot ? `
+        <div class="annotate-head">
+          <b>误分标注（可选，直接在下方大图上画框）</b>
+          <button id="draw-true" class="${drawMode === "true" ? "primary" : ""}">画真实病灶 (G)</button>
+          <button id="draw-model" class="${drawMode === "model" ? "primary" : ""}">画模型看错区域 (R)</button>
+          <button id="undo-annot">撤销上一框</button>
+          <button id="clear-annot">清空标注</button>
+          <span class="legend"><span class="g">绿色=真实病灶</span> · <span class="r">红色=模型看错</span></span>
+        </div>` : ""}
+        <div class="panel-stage" id="panel-stage">
+          <div class="panel-inner">
+            <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}"
+              onerror="document.getElementById('panel-stage').innerHTML=window.__imgErr('${err}')">
+            ${showAnnot ? `<canvas id="annot-canvas" class="draw-layer"></canvas>` : ""}
+          </div>
+        </div>
+        ${showAnnot ? `<label style="margin-top:8px;display:block;">误分原因备注</label><textarea id="error-note">${escHtml(getReview(item.uid).error_note || "")}</textarea>` : ""}
+      `;
     }
 
     function setupCanvas() {
       canvas = document.getElementById("annot-canvas");
       if (!canvas) return;
-      const box = canvas.parentElement;
+      const box = document.querySelector("#panel-stage .panel-inner") || document.getElementById("panel-stage");
       const resize = () => {
         const rect = box.getBoundingClientRect();
         canvas.width = Math.max(1, Math.floor(rect.width));
         canvas.height = Math.max(1, Math.floor(rect.height));
+        canvas.style.width = rect.width + "px";
+        canvas.style.height = rect.height + "px";
         redrawAnnotations();
       };
+      const img = document.getElementById("panel-img");
+      if (img && !img.complete) img.onload = resize;
       resize();
       window.onresize = resize;
 
@@ -667,28 +603,8 @@ HTML_TEMPLATE = r"""<!doctype html>
           ${statusTag} ${correctTag}
         </div>
         <div class="probs">${probs}</div>
-        ${buildViewsHtml(item)}
-        <div class="annotate-wrap ${showAnnot ? "" : "hidden"}">
-          <div class="annotate-head">
-            <b>误分标注（可选）</b>
-            <button id="draw-true" class="${drawMode === "true" ? "primary" : ""}">画真实病灶 (G)</button>
-            <button id="draw-model" class="${drawMode === "model" ? "primary" : ""}">画模型看错区域 (R)</button>
-            <button id="undo-annot">撤销上一框</button>
-            <button id="clear-annot">清空标注</button>
-            <span class="legend"><span class="g">绿色=真实病灶</span> · <span class="r">红色=模型看错</span></span>
-          </div>
-          <div class="annotate-canvas-box">
-            ${tileImg(item.panel, 0, 0, 3, 4, "annotate")}
-            <canvas id="annot-canvas" class="draw-layer"></canvas>
-          </div>
-          <label style="margin-top:8px;">误分原因备注</label>
-          <textarea id="error-note">${rev.error_note || ""}</textarea>
-        </div>
+        ${buildPanelHtml(item, showAnnot)}
       `;
-
-      document.querySelectorAll(".seg-btn").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.view === viewMode);
-      });
 
       const errNote = document.getElementById("error-note");
       if (errNote) {
@@ -811,9 +727,6 @@ HTML_TEMPLATE = r"""<!doctype html>
     document.getElementById("btn-clear-storage").onclick = () => {
       if (confirm("确定清空所有本地标记？")) { localStorage.removeItem(STORAGE_KEY); reviews = {}; renderCurrent(); }
     };
-    document.querySelectorAll(".seg-btn").forEach((btn) => {
-      btn.addEventListener("click", () => { viewMode = btn.dataset.view; renderCurrent(); });
-    });
     ["filter-split", "filter-status", "filter-true"].forEach((id) => {
       document.getElementById(id).addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
     });
@@ -826,9 +739,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (e.key.toLowerCase() === "x") markReject();
       if (e.key.toLowerCase() === "k") markKeep();
       if (e.key.toLowerCase() === "n") goNextUnreviewed();
-      if (e.key === "1") { viewMode = "triple"; renderCurrent(); }
-      if (e.key === "2") { viewMode = "box"; renderCurrent(); }
-      if (e.key === "3") { viewMode = "cam"; renderCurrent(); }
       if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
       if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
     });
