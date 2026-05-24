@@ -82,12 +82,20 @@ def collect_pack_files(
 ) -> list[tuple[Path, Path]]:
     """Return (absolute_path, archive_relative_path) pairs to include in zip."""
     files: list[tuple[Path, Path]] = []
+    seen_arc: set[str] = set()
     arc_root = Path(output_dir.name)
+
+    def add_file(src: Path, arc: Path) -> None:
+        key = str(arc).replace("\\", "/")
+        if key in seen_arc:
+            return
+        seen_arc.add(key)
+        files.append((src, arc))
 
     if pack_mode == "full":
         for path in sorted(output_dir.rglob("*")):
             if path.is_file():
-                files.append((path, arc_root / path.relative_to(output_dir)))
+                add_file(path, arc_root / path.relative_to(output_dir))
         return files
 
     for _, row in results_df.iterrows():
@@ -98,16 +106,16 @@ def collect_pack_files(
             rel = panel.relative_to(output_dir)
         except ValueError:
             rel = Path("panels") / panel.name
-        files.append((panel, arc_root / rel))
+        add_file(panel, arc_root / rel)
 
     csv_path = output_dir / "gradcam_results.csv"
     if csv_path.is_file():
         slim_csv = (tmp_dir or output_dir) / "gradcam_results.csv"
         results_df.to_csv(slim_csv, index=False)
-        files.append((slim_csv, arc_root / "gradcam_results.csv"))
+        add_file(slim_csv, arc_root / "gradcam_results.csv")
     html_path = output_dir / "gradcam_screening.html"
     if html_path.is_file():
-        files.append((html_path, arc_root / "gradcam_screening.html"))
+        add_file(html_path, arc_root / "gradcam_screening.html")
     return files
 
 def zip_pack_files(files: list[tuple[Path, Path]], zip_path: Path) -> int:
@@ -182,47 +190,105 @@ def run_gradcam_split(
     subprocess.run(cmd, check=True, cwd=str(PROJECT_ROOT))
 
 
-def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path]) -> None:
+def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path], bundle_path: Path | None = None) -> None:
     lines = [
-        "Grad-CAM full test-set batch",
-        "===========================",
-        f"Generated: {datetime.now(timezone.utc).isoformat()}",
+        "Grad-CAM 测试集筛图包",
+        "====================",
+        f"生成时间: {datetime.now(timezone.utc).isoformat()}",
         "",
-        "Contents per split (slim zip):",
-        "  - panels/<T*/correct|misclassified...>/*_panel.png",
-        "  - gradcam_results.csv",
+        "【医生用法 — 推荐】",
+        "  1. 解压对应 zip（外部 / 前瞻 分开筛，标注互不影响）",
+        "  2. 进入文件夹，双击 gradcam_screening.html",
+        "  3. 只需标记质量差的图：按 X 或点「标记剔除」",
+        "  4. 图质量好：直接翻下一张，不用点保留",
+        "  5. 筛完后点「导出剔除 CSV」，发回算法组",
         "",
-        "Unified screening HTML:",
-        "  - ../gradcam_screening.html  (external + prospective, same parent folder)",
-        "Per-split screening HTML (open inside each folder):",
-        "  - gradcam_test_external_full/gradcam_screening.html",
-        "  - gradcam_test_prospective_full/gradcam_screening.html",
-        "  (split HTML uses separate local annotations from the unified HTML)",
+        "【每个 slim zip 内含】",
+        "  - gradcam_screening.html  （离线筛图网页，双击即用）",
+        "  - gradcam_results.csv     （预测结果与 panel 路径）",
+        "  - panels/.../*_panel.png  （Grad-CAM 可视化大图）",
         "",
-        "Doctor workflow:",
-        "  Option A (recommended for clinical): unzip each slim zip, open gradcam_screening.html inside that folder",
-        "  Option B (both sets together): unzip both zips to same parent, open ../gradcam_screening.html",
+        "【合并包 gradcam_test_clinical_bundle.zip】",
+        "  含外部 + 前瞻两个文件夹 + 统一 gradcam_screening.html + 本说明",
+        "  若两个数据集一起筛，解压后打开根目录 gradcam_screening.html",
         "",
-        "Note: external slim pack excludes int/prospective rows duplicated in test_prospective.",
+        "【样本量说明】",
+        "  - test_external: 2430 张（含内部前瞻 253 张重复行，纯外部 holdout 2177 张）",
+        "  - test_prospective: 253 张（前瞻，与 external 中 int/prospective 重叠）",
+        "  - 统一 HTML 展示 2430 张不重复测试图",
         "",
     ]
     for summary in summaries:
         lines.extend(
             [
                 f"Split: {summary['split']}",
-                f"  generated panels: {summary['panel_png_count']}",
-                f"  packed panels: {summary.get('packed_panel_count', summary['panel_png_count'])}",
-                f"  gradcam_results rows: {summary['gradcam_results_rows']}",
-                f"  correct / misclassified: {summary['correct']} / {summary['misclassified']}",
+                f"  gradcam_results 行数: {summary['gradcam_results_rows']}",
+                f"  panel PNG 文件数: {summary['panel_png_count']}",
+                f"  打包 panel 数: {summary.get('packed_panel_count', summary['panel_png_count'])}",
+                f"  正确 / 分错: {summary['correct']} / {summary['misclassified']}",
                 f"  pack_mode: {summary.get('pack_mode', 'slim')}",
                 "",
             ]
         )
-    lines.append("ZIP files:")
+    lines.append("ZIP 文件:")
     for zp in zip_paths:
         size_mb = zp.stat().st_size / (1024 * 1024) if zp.is_file() else 0
         lines.append(f"  - {zp.name} ({size_mb:.1f} MB)")
+    if bundle_path and bundle_path.is_file():
+        size_mb = bundle_path.stat().st_size / (1024 * 1024)
+        lines.append(f"  - {bundle_path.name} ({size_mb:.1f} MB) [合并包]")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_bundle_readme(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "Grad-CAM 测试集筛图 — 合并包",
+                "========================",
+                "",
+                "文件夹说明:",
+                "  gradcam_test_external_full/   外部测试 2430 张 → 打开内层 gradcam_screening.html",
+                "  gradcam_test_prospective_full/ 前瞻测试 253 张 → 打开内层 gradcam_screening.html",
+                "  gradcam_screening.html         统一视图 2430 张不重复（与分文件夹标注分开保存）",
+                "",
+                "操作建议:",
+                "  • 临床筛图优先用分文件夹 HTML（外部、前瞻分开，localStorage 不冲突）",
+                "  • 默认保留；仅对质量差的图按 X 剔除",
+                "  • 筛完务必导出 gradcam_rejected.csv",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def build_clinical_bundle(
+    pack_root: Path,
+    exp_dir: Path,
+    split_output_dirs: list[Path],
+    unified_html: Path | None,
+) -> Path | None:
+    bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
+    if bundle_path.exists():
+        bundle_path.unlink()
+    with tempfile.TemporaryDirectory(prefix="gradcam_bundle_") as tmp:
+        tmp_dir = Path(tmp)
+        readme = tmp_dir / "README_筛图说明.txt"
+        write_bundle_readme(readme)
+        with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+            zf.write(readme, arcname="README_筛图说明.txt")
+            if unified_html and unified_html.is_file():
+                zf.write(unified_html, arcname="gradcam_screening.html")
+            for output_dir in split_output_dirs:
+                if not output_dir.is_dir():
+                    continue
+                arc_root = output_dir.name
+                for path in sorted(output_dir.rglob("*")):
+                    if path.is_file():
+                        zf.write(path, arcname=str(Path(arc_root) / path.relative_to(output_dir)))
+    return bundle_path if bundle_path.is_file() else None
 
 
 def main() -> None:
@@ -289,6 +355,7 @@ def main() -> None:
 
     summaries: list[dict] = []
     zip_paths: list[Path] = []
+    split_output_dirs: list[Path] = []
 
     for split in args.splits:
         spec = SPLIT_SPECS[split]
@@ -303,6 +370,8 @@ def main() -> None:
         if not output_dir.is_dir():
             print(f"Warning: missing output dir for {split}: {output_dir}")
             continue
+
+        split_output_dirs.append(output_dir)
 
         results_df = None
         results_csv = output_dir / "gradcam_results.csv"
@@ -353,12 +422,20 @@ def main() -> None:
                 }
             )
     screening_summary = None
+    screening_html: Path | None = None
     split_html_summaries: list[dict] = []
     if screening_sources:
         unified_sources = [src for src in screening_sources if src.get("include_in_unified")]
         if unified_sources:
             screening_html = exp_dir / "gradcam_screening.html"
-            screening_summary = build_screening_html(unified_sources, screening_html)
+            # Unified view: 2430 unique test images (external holdout + prospective).
+            unified_for_html = []
+            for src in unified_sources:
+                u = dict(src)
+                if u.get("split") == "test_external":
+                    u["external_holdout_only"] = True
+                unified_for_html.append(u)
+            screening_summary = build_screening_html(unified_for_html, screening_html)
             shutil.copy2(screening_html, pack_root / "gradcam_screening.html")
             print(
                 f"Unified screening HTML: {screening_html} "
@@ -392,7 +469,23 @@ def main() -> None:
         manifest["split_screening_html"] = split_html_summaries
     manifest_path = pack_root / "gradcam_test_sets_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths)
+
+    bundle_path = None
+    if not args.no_zip and split_output_dirs:
+        bundle_path = build_clinical_bundle(
+            pack_root,
+            exp_dir,
+            split_output_dirs,
+            screening_html if screening_summary else None,
+        )
+        if bundle_path:
+            size_mb = round(bundle_path.stat().st_size / (1024 * 1024), 2)
+            print(f"Clinical bundle: {bundle_path} ({size_mb} MB)")
+            manifest["clinical_bundle_zip"] = str(bundle_path)
+            manifest["clinical_bundle_size_mb"] = size_mb
+            manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths, bundle_path)
     print(f"\nManifest: {manifest_path}")
 
 
