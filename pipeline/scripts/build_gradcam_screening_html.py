@@ -22,17 +22,22 @@ HTML_TEMPLATE = r"""<!doctype html>
   <title>__PAGE_TITLE__</title>
   <style>
     :root {
-      --bg: #0b1017;
-      --panel: #151d2b;
-      --border: #2a364a;
-      --text: #edf2f7;
-      --muted: #8fa3b8;
-      --ok: #3ecf8e;
-      --bad: #ff6b6b;
-      --warn: #f0b429;
-      --accent: #5b9cf5;
+      --bg: #0a0e14;
+      --panel: #121a24;
+      --panel2: #1a2433;
+      --border: #2d3a4d;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --ok: #34d399;
+      --bad: #f87171;
+      --warn: #fbbf24;
+      --accent: #60a5fa;
+      --accent2: #818cf8;
       --true-color: #22c55e;
       --wrong-color: #ef4444;
+      --sidebar-w: 320px;
+      --topbar-h: 56px;
+      --shadow: 0 4px 24px rgba(0,0,0,.35);
     }
     * { box-sizing: border-box; }
     body {
@@ -43,26 +48,107 @@ HTML_TEMPLATE = r"""<!doctype html>
       height: 100vh;
       overflow: hidden;
     }
-    .layout {
-      display: grid;
-      grid-template-columns: 300px 1fr;
-      height: 100vh;
+    .app { display: flex; flex-direction: column; height: 100vh; }
+    .topbar {
+      height: var(--topbar-h);
+      min-height: var(--topbar-h);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 16px;
+      background: linear-gradient(180deg, #141c28 0%, #101820 100%);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      z-index: 100;
     }
-    aside {
+    .brand { min-width: 160px; }
+    .brand h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .02em; }
+    .brand .sub { color: var(--muted); font-size: 11px; display: none; }
+    .dataset-tabs {
+      flex: 1;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+    .dataset-tab {
+      flex: 1;
+      min-width: 140px;
+      max-width: 220px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .15s, background .15s;
+    }
+    .dataset-tab:hover { background: var(--panel2); border-color: #3d4f66; }
+    .dataset-tab.active {
+      border-color: var(--accent);
+      background: rgba(96,165,250,.12);
+      box-shadow: inset 0 0 0 1px rgba(96,165,250,.25);
+    }
+    .dataset-tab .tab-title { font-size: 13px; font-weight: 600; display: block; }
+    .dataset-tab .tab-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .dataset-tab .tab-bar {
+      height: 4px; background: #0a0f15; border-radius: 99px; margin-top: 6px; overflow: hidden;
+    }
+    .dataset-tab .tab-bar i {
+      display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--ok));
+      transition: width .3s;
+    }
+    .topbar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .topbar-actions button, .seg-btn {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 11px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .topbar-actions button:hover { background: var(--panel2); }
+    .topbar-actions button.active { outline: 2px solid var(--accent); background: rgba(96,165,250,.15); }
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      min-height: 0;
+    }
+    .workspace.sidebar-collapsed { grid-template-columns: 0 1fr; }
+    aside.sidebar {
       background: var(--panel);
       border-right: 1px solid var(--border);
-      padding: 14px;
       overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px;
+      min-width: 0;
     }
+    .workspace.sidebar-collapsed aside { padding: 0; border: none; overflow: hidden; }
     main {
       display: flex;
       flex-direction: column;
       min-width: 0;
-      height: 100vh;
+      min-height: 0;
+      background: #0c1118;
     }
-    h1 { font-size: 17px; margin: 0 0 4px; }
-    .sub { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    .section-card {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .section-card h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
     select, input[type="text"], input[type="number"], textarea {
       width: 100%;
       background: #0a0f15;
@@ -72,12 +158,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       padding: 8px 10px;
       font-size: 13px;
     }
-    textarea { min-height: 64px; resize: vertical; }
+    textarea { min-height: 56px; resize: vertical; }
     .stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin: 10px 0;
+      gap: 6px;
     }
     .stat {
       background: #0a0f15;
@@ -85,18 +170,33 @@ HTML_TEMPLATE = r"""<!doctype html>
       border-radius: 8px;
       padding: 8px 10px;
     }
-    .stat b { display: block; font-size: 17px; }
-    .stat span { font-size: 11px; color: var(--muted); }
+    .stat b { display: block; font-size: 18px; font-weight: 700; }
+    .stat span { font-size: 10px; color: var(--muted); }
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .filter-chips button {
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 999px;
+    }
+    .filter-chips button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
     .toolbar {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      padding: 10px 14px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
       align-items: center;
     }
-    button, .seg-btn {
+    button {
       border: 1px solid var(--border);
       background: #243044;
       color: var(--text);
@@ -113,7 +213,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     .viewer {
       flex: 1;
       overflow: auto;
-      padding: 10px 14px 16px;
+      padding: 12px 16px 20px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -157,15 +257,19 @@ HTML_TEMPLATE = r"""<!doctype html>
     .panel-stage {
       position: relative;
       width: 100%;
-      max-width: 1680px;
+      max-width: 100%;
       margin: 0 auto;
       background: #000;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       overflow: auto;
-      min-height: calc(100vh - 280px);
-      max-height: calc(100vh - 220px);
+      min-height: calc(100vh - 240px);
+      max-height: calc(100vh - 200px);
+      box-shadow: var(--shadow);
     }
+    .panel-stage.zoom-fit .panel-img { min-width: 0; width: 100%; }
+    .panel-stage.zoom-150 .panel-inner { transform: scale(1.5); transform-origin: top center; }
+    .panel-stage.zoom-200 .panel-inner { transform: scale(2); transform-origin: top center; }
     .panel-img {
       display: block;
       width: 100%;
@@ -225,22 +329,30 @@ HTML_TEMPLATE = r"""<!doctype html>
     .legend .g { color: var(--true-color); }
     .legend .r { color: var(--wrong-color); }
     .list {
-      margin-top: 10px;
-      max-height: 180px;
+      max-height: 220px;
       overflow-y: auto;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #0a0f15;
     }
     .list-item {
-      padding: 7px 9px;
+      padding: 8px 10px;
       border-bottom: 1px solid var(--border);
-      font-size: 11px;
+      font-size: 12px;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
+    .list-item .dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      background: #475569;
+    }
+    .list-item .dot.reject { background: var(--warn); }
+    .list-item .dot.done { background: var(--ok); }
     .list-item:hover { background: #182030; }
-    .list-item.active { background: #1f2d44; }
-    .list-item.rejected { color: var(--warn); }
+    .list-item.active { background: #1e3a5f; border-left: 3px solid var(--accent); }
+    .list-item.rejected { color: #fcd34d; }
     .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
     .empty { padding: 36px; text-align: center; color: var(--muted); }
     .hidden { display: none !important; }
@@ -344,109 +456,193 @@ HTML_TEMPLATE = r"""<!doctype html>
       color: var(--muted);
       user-select: none;
     }
-    .mode-toggle {
-      display: flex;
-      gap: 8px;
-      margin: 8px 0;
+    .mode-toggle { display: none; }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      z-index: 10000; display: flex; align-items: center; justify-content: center;
+      padding: 20px;
     }
-    .mode-toggle button.active { outline: 2px solid var(--accent); }
+    .modal-overlay.hidden { display: none; }
+    .modal-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 24px;
+      max-width: 520px;
+      width: 100%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+    }
+    .modal-box h2 { margin: 0 0 12px; font-size: 18px; }
+    .modal-box kbd {
+      background: #0a0f15; border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 6px; font-size: 12px;
+    }
+    .modal-box table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .modal-box td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+    .folder-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(96,165,250,.12); border: 1px solid rgba(96,165,250,.3);
+      color: var(--accent); padding: 4px 10px; border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+    }
+    .main-progress {
+      padding: 10px 16px 0;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
     @media (max-width: 1100px) {
-      .layout { grid-template-columns: 1fr; }
-      aside { max-height: 38vh; }
+      .workspace { grid-template-columns: 1fr; }
+      .workspace:not(.sidebar-collapsed) aside {
+        position: fixed; left: 0; top: var(--topbar-h); bottom: 0;
+        width: min(320px, 88vw); z-index: 200; box-shadow: var(--shadow);
+      }
       .panel-img { min-width: 0; }
+      .dataset-tab { min-width: 120px; }
     }
   </style>
 </head>
 <body>
-  <div class="layout">
-    <aside>
-      <h1>超声图像质量筛图</h1>
-      <div class="sub" id="page-subtitle">__PAGE_SUBTITLE__</div>
-      <div class="stats">
-        <div class="stat"><b id="stat-reviewed-pct">0%</b><span>总进度</span></div>
-        <div class="stat"><b id="stat-reject">0</b><span>已剔除</span></div>
-        <div class="stat"><b id="stat-remaining">0</b><span>未浏览</span></div>
-        <div class="stat"><b id="stat-idx">0/0</b><span>当前位置</span></div>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>超声图像质量筛图</h1>
+        <div class="sub" id="page-subtitle">__PAGE_SUBTITLE__</div>
       </div>
-      <div class="mode-toggle">
-        <button id="btn-doctor-mode" class="active" title="只关注图像质量">简易模式</button>
-        <button id="btn-expert-mode" title="显示 AI 预测与误分标注">专家模式</button>
+      <nav class="dataset-tabs" id="dataset-tabs" aria-label="数据集切换"></nav>
+      <div class="topbar-actions">
+        <button id="btn-doctor-mode" class="active" title="简易模式">简易</button>
+        <button id="btn-expert-mode" title="专家模式">专家</button>
+        <button id="btn-help" title="快捷键帮助">?</button>
+        <button id="btn-toggle-sidebar" title="显示/隐藏侧栏">☰</button>
       </div>
-      <label>搜索患者号 / 文件名</label>
-      <input id="filter-search" type="text" placeholder="输入患者号，回车跳转">
-      <label>跳转到第几张（当前列表）</label>
-      <input id="jump-index" type="number" min="1" placeholder="例如 1200">
-      <label>剔除原因（按 X 前选好）</label>
-      <select id="reject-reason">
-        <option value="图像质量差-胃壁层次不清">胃壁层次不清</option>
-        <option value="图像质量差-伪影/遮挡">伪影 / 遮挡</option>
-        <option value="图像质量差-其他">其他质量问题</option>
-        <option value="暂不确定">暂不确定</option>
-      </select>
-      <label>备注（可选）</label>
-      <textarea id="reject-note" placeholder="可选备注"></textarea>
-      <details class="advanced">
-        <summary>高级筛选（算法组）</summary>
-        <label id="split-filter-label">数据集</label>
-        <select id="filter-split">
-          <option value="all">全部</option>
-          <option value="test_external">外部测试</option>
-          <option value="test_prospective">前瞻测试</option>
-        </select>
-        <label>筛选状态</label>
-        <select id="filter-status">
-          <option value="unreviewed" selected>未浏览（推荐）</option>
-          <option value="all">全部</option>
-          <option value="reject">已标记剔除</option>
-          <option value="keep">未剔除</option>
-          <option value="wrong">仅分错</option>
-          <option value="correct">仅分对</option>
-          <option value="cross">跨级误分</option>
-          <option value="adjacent">相邻误分</option>
-        </select>
-        <label>真实 T 分期</label>
-        <select id="filter-true">
-          <option value="all">全部</option>
-          <option value="T1">T1</option>
-          <option value="T2">T2</option>
-          <option value="T3">T3</option>
-          <option value="T4+">T4+</option>
-        </select>
-      </details>
-      <div class="hint">快捷键：<b>→</b> 下一张 · <b>X</b> 剔除 · <b>K</b> 保留 · <b>Z</b> 撤销 · <b>F</b> 全屏 · <b>1/2/3</b> 快选剔除原因</div>
-      <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
-        <button class="primary" id="btn-export-reject">导出剔除 CSV（发回算法组）</button>
-        <button id="btn-export-all">导出全部记录</button>
-        <button id="btn-clear-storage">清空本地标记</button>
-      </div>
-      <div class="list" id="thumb-list"></div>
-    </aside>
-    <main>
-      <div class="progress-wrap">
-        <div class="progress-label">
-          <span id="progress-text">加载中…</span>
-          <span id="progress-count">0 / 0</span>
+    </header>
+    <div class="workspace" id="workspace">
+      <aside class="sidebar" id="sidebar">
+        <div class="section-card">
+          <h2>当前进度</h2>
+          <div class="stats">
+            <div class="stat"><b id="stat-reviewed-pct">0%</b><span>已浏览</span></div>
+            <div class="stat"><b id="stat-reject">0</b><span>已剔除</span></div>
+            <div class="stat"><b id="stat-remaining">0</b><span>未浏览</span></div>
+            <div class="stat"><b id="stat-idx">0/0</b><span>当前位置</span></div>
+          </div>
         </div>
-        <div class="progress-bar"><i id="progress-fill" style="width:0%"></i></div>
-      </div>
-      <div class="toolbar toolbar-large">
-        <button id="btn-prev">← 上一张</button>
-        <button class="danger btn-reject" id="btn-reject">✕ 质量差，剔除</button>
-        <button class="success" id="btn-keep">✓ 质量可，保留</button>
-        <button id="btn-next">下一张 →</button>
-        <button id="btn-undo" title="撤销上一张剔除 (Z)">撤销</button>
-        <button id="btn-fullscreen" title="全屏 (F)">全屏</button>
-      </div>
-      <div class="quick-reasons">
-        <span style="font-size:12px;color:var(--muted);align-self:center">快选剔除原因：</span>
-        <button data-reason="图像质量差-胃壁层次不清">1 层次不清</button>
-        <button data-reason="图像质量差-伪影/遮挡">2 伪影遮挡</button>
-        <button data-reason="图像质量差-其他">3 其他</button>
-      </div>
-      <div class="viewer" id="viewer"><div class="load-box">正在加载索引…</div></div>
-    </main>
+        <div class="section-card">
+          <h2>筛选</h2>
+          <div class="filter-chips" id="filter-chips">
+            <button data-status="unreviewed" class="active">未浏览</button>
+            <button data-status="all">全部</button>
+            <button data-status="reject">已剔除</button>
+            <button data-status="keep">已保留</button>
+          </div>
+          <label>搜索患者号 / 文件名</label>
+          <input id="filter-search" type="text" placeholder="输入后回车跳转">
+          <label>跳转到序号（当前列表）</label>
+          <input id="jump-index" type="number" min="1" placeholder="例如 1200">
+        </div>
+        <div class="section-card">
+          <h2>剔除原因</h2>
+          <select id="reject-reason">
+            <option value="图像质量差-胃壁层次不清">胃壁层次不清</option>
+            <option value="图像质量差-伪影/遮挡">伪影 / 遮挡</option>
+            <option value="图像质量差-其他">其他质量问题</option>
+            <option value="暂不确定">暂不确定</option>
+          </select>
+          <label>备注（可选）</label>
+          <textarea id="reject-note" placeholder="可选备注"></textarea>
+        </div>
+        <details class="advanced">
+          <summary>高级筛选（算法组）</summary>
+          <select id="filter-split" class="hidden">
+            <option value="all">全部</option>
+            <option value="test_external">外部测试</option>
+            <option value="test_prospective">前瞻测试</option>
+          </select>
+          <select id="filter-status" class="hidden">
+            <option value="unreviewed" selected>未浏览</option>
+            <option value="all">全部</option>
+            <option value="reject">已标记剔除</option>
+            <option value="keep">未剔除</option>
+            <option value="wrong">仅分错</option>
+            <option value="correct">仅分对</option>
+            <option value="cross">跨级误分</option>
+            <option value="adjacent">相邻误分</option>
+          </select>
+          <label>真实 T 分期</label>
+          <select id="filter-true">
+            <option value="all">全部</option>
+            <option value="T1">T1</option>
+            <option value="T2">T2</option>
+            <option value="T3">T3</option>
+            <option value="T4+">T4+</option>
+          </select>
+        </details>
+        <div class="section-card">
+          <h2>导出</h2>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="primary" id="btn-export-reject">导出剔除 CSV</button>
+            <button id="btn-export-split">导出当前数据集 CSV</button>
+            <button id="btn-export-all">导出全部记录</button>
+            <button id="btn-clear-storage">清空本地标记</button>
+          </div>
+        </div>
+        <div class="section-card">
+          <h2>样本列表</h2>
+          <div class="list" id="thumb-list"></div>
+        </div>
+      </aside>
+      <main>
+        <div class="main-progress">
+          <div class="progress-label">
+            <span id="progress-text">加载中…</span>
+            <span id="progress-count">0 / 0</span>
+          </div>
+          <div class="progress-bar"><i id="progress-fill" style="width:0%"></i></div>
+        </div>
+        <div class="toolbar toolbar-large">
+          <button id="btn-first-unreviewed" title="跳到第一张未浏览 (Home)">⏮ 未浏览</button>
+          <button id="btn-prev">← 上一张</button>
+          <button class="danger btn-reject" id="btn-reject">✕ 剔除</button>
+          <button class="success" id="btn-keep">✓ 保留</button>
+          <button id="btn-next">下一张 →</button>
+          <button id="btn-undo" title="撤销 (Z)">撤销</button>
+          <button id="btn-zoom-out" title="缩小 (-)">−</button>
+          <button id="btn-zoom-reset" title="100%">100%</button>
+          <button id="btn-zoom-in" title="放大 (+)">+</button>
+          <button id="btn-fullscreen" title="全屏 (F)">全屏</button>
+        </div>
+        <div class="quick-reasons">
+          <span style="font-size:12px;color:var(--muted);align-self:center">快选原因：</span>
+          <button data-reason="图像质量差-胃壁层次不清">1 层次不清</button>
+          <button data-reason="图像质量差-伪影/遮挡">2 伪影遮挡</button>
+          <button data-reason="图像质量差-其他">3 其他</button>
+        </div>
+        <div class="viewer" id="viewer"><div class="load-box">正在加载索引…</div></div>
+      </main>
+    </div>
   </div>
   <div class="toast" id="toast"></div>
+  <div class="modal-overlay hidden" id="help-modal">
+    <div class="modal-box">
+      <h2>操作说明</h2>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 12px">顶部标签可切换数据集文件夹；默认只筛图像质量。</p>
+      <table>
+        <tr><td><kbd>→</kbd></td><td>下一张</td></tr>
+        <tr><td><kbd>←</kbd></td><td>上一张</td></tr>
+        <tr><td><kbd>X</kbd></td><td>标记剔除</td></tr>
+        <tr><td><kbd>K</kbd></td><td>标记保留</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>撤销剔除</td></tr>
+        <tr><td><kbd>F</kbd></td><td>全屏看图</td></tr>
+        <tr><td><kbd>Home</kbd></td><td>跳到未浏览</td></tr>
+        <tr><td><kbd>1/2/3</kbd></td><td>快选剔除原因</td></tr>
+        <tr><td><kbd>+ / −</kbd></td><td>放大 / 缩小</td></tr>
+        <tr><td><kbd>?</kbd></td><td>显示本帮助</td></tr>
+      </table>
+      <button class="primary" id="btn-close-help" style="margin-top:14px;width:100%">知道了</button>
+    </div>
+  </div>
   <script src="__DATA_PREFIX__manifest.js"></script>
   <script>
     const META = window.__GRADCAM_META__ || {};
@@ -471,6 +667,139 @@ HTML_TEMPLATE = r"""<!doctype html>
     let doctorMode = true;
     let lastRejectedUid = null;
     let toastTimer = null;
+    let activeSplit = "all";
+    let zoomLevel = 100;
+    let splitPositions = {};
+    let sidebarCollapsed = false;
+
+    const SPLIT_DEFS = [
+      { id: "all", label: "全部合集", folder: null },
+      { id: "test_external", label: "外部测试", folder: "gradcam_test_external_full" },
+      { id: "test_prospective", label: "2025 前瞻", folder: "gradcam_test_prospective_full" },
+    ];
+
+    function splitCount(id) {
+      if (id === "all") return CASES.length;
+      return (META.split_counts && META.split_counts[id]) || CASES.filter((c) => c.split === id).length;
+    }
+
+    function scopeCases(split) {
+      const s = split || activeSplit;
+      if (s === "all") return CASES;
+      return CASES.filter((c) => c.split === s);
+    }
+
+    function splitStats(split) {
+      const items = scopeCases(split);
+      const reviewed = items.filter((c) => getReview(c.uid).viewed).length;
+      const rejected = items.filter((c) => getReview(c.uid).rejected).length;
+      const total = items.length;
+      const pct = total ? Math.round((reviewed / total) * 100) : 0;
+      return { total, reviewed, rejected, remaining: total - reviewed, pct };
+    }
+
+    function renderDatasetTabs() {
+      const nav = document.getElementById("dataset-tabs");
+      if (!nav) return;
+      if (META.mode === "single" && META.fixed_split) {
+        nav.classList.add("hidden");
+        return;
+      }
+      nav.innerHTML = SPLIT_DEFS.map((def) => {
+        const st = splitStats(def.id);
+        const active = def.id === activeSplit ? " active" : "";
+        const folderHint = def.folder ? def.folder.replace("gradcam_test_", "").replace("_full", "") : "all";
+        return `<button class="dataset-tab${active}" data-split="${def.id}" type="button">
+          <span class="tab-title">${escHtml(def.label)}</span>
+          <span class="tab-meta">${st.reviewed}/${st.total} 已浏览 · ${st.rejected} 剔除</span>
+          <span class="tab-bar"><i style="width:${st.pct}%"></i></span>
+        </button>`;
+      }).join("");
+      nav.querySelectorAll(".dataset-tab").forEach((btn) => {
+        btn.onclick = () => setActiveSplit(btn.dataset.split);
+      });
+    }
+
+    function setActiveSplit(split) {
+      if (split === activeSplit) return;
+      splitPositions[activeSplit] = currentIndex;
+      activeSplit = split;
+      const splitEl = document.getElementById("filter-split");
+      if (splitEl) splitEl.value = split;
+      currentIndex = splitPositions[split] || 0;
+      try {
+        localStorage.setItem(STORAGE_KEY + "_split", split);
+      } catch (e) {}
+      renderDatasetTabs();
+      renderCurrent();
+      toast("已切换到：" + (SPLIT_DEFS.find((d) => d.id === split)?.label || split));
+    }
+
+    function loadActiveSplit() {
+      try {
+        const v = localStorage.getItem(STORAGE_KEY + "_split");
+        if (v && SPLIT_DEFS.some((d) => d.id === v)) activeSplit = v;
+        splitPositions = JSON.parse(localStorage.getItem(STORAGE_KEY + "_pos") || "{}");
+        sidebarCollapsed = localStorage.getItem(STORAGE_KEY + "_sidebar") === "1";
+      } catch (e) {}
+    }
+
+    function saveSplitPositions() {
+      splitPositions[activeSplit] = currentIndex;
+      try {
+        localStorage.setItem(STORAGE_KEY + "_pos", JSON.stringify(splitPositions));
+        localStorage.setItem(STORAGE_KEY + "_sidebar", sidebarCollapsed ? "1" : "0");
+      } catch (e) {}
+    }
+
+    function setFilterStatus(status) {
+      const sel = document.getElementById("filter-status");
+      if (sel) sel.value = status;
+      document.querySelectorAll("#filter-chips button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.status === status);
+      });
+      currentIndex = 0;
+      renderCurrent();
+    }
+
+    function setZoom(level) {
+      zoomLevel = Math.max(75, Math.min(200, level));
+      const stage = document.getElementById("panel-stage");
+      if (!stage) return;
+      stage.classList.remove("zoom-fit", "zoom-150", "zoom-200");
+      if (zoomLevel <= 100) stage.classList.add("zoom-fit");
+      else if (zoomLevel <= 150) stage.classList.add("zoom-150");
+      else stage.classList.add("zoom-200");
+    }
+
+    function toggleSidebar() {
+      sidebarCollapsed = !sidebarCollapsed;
+      document.getElementById("workspace")?.classList.toggle("sidebar-collapsed", sidebarCollapsed);
+      saveSplitPositions();
+    }
+
+    function showHelp(show) {
+      document.getElementById("help-modal")?.classList.toggle("hidden", !show);
+    }
+
+    function goFirstUnreviewed() {
+      applyFilters();
+      for (let i = 0; i < filtered.length; i++) {
+        if (!getReview(filtered[i].uid).viewed) {
+          currentIndex = i;
+          renderCurrent();
+          toast("已跳到第一张未浏览");
+          return;
+        }
+      }
+      toast("当前列表已全部浏览");
+    }
+
+    function folderLabel(item) {
+      if (item.split === "test_external") return "gradcam_test_external_full";
+      if (item.split === "test_prospective") return "gradcam_test_prospective_full";
+      return item.panel.split("/")[0] || "";
+    }
 
     function toast(msg, ms) {
       const el = document.getElementById("toast");
@@ -554,11 +883,9 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function initPageMode() {
       if (META.mode === "single" && META.fixed_split) {
+        activeSplit = META.fixed_split;
         const splitEl = document.getElementById("filter-split");
-        splitEl.value = META.fixed_split;
-        splitEl.disabled = true;
-        document.getElementById("split-filter-label")?.classList.add("hidden");
-        splitEl.classList.add("hidden");
+        if (splitEl) splitEl.value = META.fixed_split;
       }
     }
 
@@ -627,8 +954,8 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
 
     function applyFilters() {
-      const split = document.getElementById("filter-split").value;
-      const status = document.getElementById("filter-status").value;
+      const split = document.getElementById("filter-split")?.value || activeSplit;
+      const status = document.getElementById("filter-status")?.value || "unreviewed";
       const trueName = document.getElementById("filter-true").value;
       const search = document.getElementById("filter-search").value.trim().toLowerCase();
       filtered = CASES.filter((item) => {
@@ -647,12 +974,14 @@ HTML_TEMPLATE = r"""<!doctype html>
         return true;
       });
       if (currentIndex >= filtered.length) currentIndex = Math.max(0, filtered.length - 1);
+      saveSplitPositions();
     }
 
     function refreshStats() {
-      const rejectCount = CASES.filter((c) => getReview(c.uid).rejected).length;
-      const reviewedCount = CASES.filter((c) => getReview(c.uid).viewed).length;
-      const total = CASES.length;
+      const scope = scopeCases(activeSplit);
+      const rejectCount = scope.filter((c) => getReview(c.uid).rejected).length;
+      const reviewedCount = scope.filter((c) => getReview(c.uid).viewed).length;
+      const total = scope.length;
       const remaining = total - reviewedCount;
       const pct = total ? Math.round((reviewedCount / total) * 100) : 0;
       document.getElementById("stat-reviewed-pct").textContent = pct + "%";
@@ -662,9 +991,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       const fill = document.getElementById("progress-fill");
       const pText = document.getElementById("progress-text");
       const pCount = document.getElementById("progress-count");
+      const splitName = SPLIT_DEFS.find((d) => d.id === activeSplit)?.label || "全部";
       if (fill) fill.style.width = pct + "%";
-      if (pText) pText.textContent = remaining > 0 ? `还剩 ${remaining} 张未浏览` : "全部浏览完成";
+      if (pText) pText.textContent = remaining > 0 ? `【${splitName}】还剩 ${remaining} 张未浏览` : `【${splitName}】已全部浏览完成`;
       if (pCount) pCount.textContent = `${reviewedCount} / ${total}`;
+      renderDatasetTabs();
     }
 
     function splitLabel(split) {
@@ -681,7 +1012,11 @@ HTML_TEMPLATE = r"""<!doctype html>
         const idx = start + offset;
         const rev = getReview(item.uid);
         const cls = ["list-item", idx === currentIndex ? "active" : "", rev.rejected ? "rejected" : ""].filter(Boolean).join(" ");
-        return `<div class="${cls}" data-idx="${idx}">#${idx + 1} [${splitLabel(item.split)}] ${extractPatientId(item.id)}${rev.rejected ? " ✕" : rev.viewed ? " ✓" : ""}</div>`;
+        const dotCls = rev.rejected ? "reject" : rev.viewed ? "done" : "";
+        return `<div class="${cls}" data-idx="${idx}">
+          <span class="dot ${dotCls}"></span>
+          <span>#${idx + 1} ${extractPatientId(item.id)}</span>
+        </div>`;
       }).join("");
       let head = "";
       if (start > 0) head = `<div class="list-item">… 前 ${start} 条（用搜索或跳转序号）</div>`;
@@ -859,9 +1194,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (doctorMode) {
         infoHtml = `
           <div class="doctor-banner">
-            第 <b>${currentIndex + 1}</b> / ${filtered.length} 张 · 患者号 <b>${escHtml(patientId)}</b>
-            · ${splitLabel(item.split)}测试集
-            ${rev.rejected ? " · <span style='color:#f87171'>已标记剔除</span>" : ""}
+            <span class="folder-badge">📁 ${escHtml(folderLabel(item))}</span>
+            第 <b>${currentIndex + 1}</b> / ${filtered.length} · 患者号 <b>${escHtml(patientId)}</b>
+            ${rev.rejected ? " · <span style='color:#f87171'>已剔除</span>" : rev.viewed ? " · <span style='color:#34d399'>已浏览</span>" : ""}
           </div>
           <div class="panel-toolbar">
             <button id="btn-zoom-fit">适应窗口</button>
@@ -912,13 +1247,13 @@ HTML_TEMPLATE = r"""<!doctype html>
         saveReviewsNow();
         redrawAnnotations();
       });
-      bind("btn-zoom-fit", () => {
-        document.getElementById("panel-stage")?.classList.add("zoom-fit");
-      });
+      bind("btn-zoom-fit", () => { setZoom(100); });
       bind("btn-zoom-100", () => {
+        setZoom(100);
         document.getElementById("panel-stage")?.classList.remove("zoom-fit");
       });
       setupCanvas();
+      setZoom(zoomLevel);
       prefetchAdjacent();
     }
 
@@ -1064,16 +1399,36 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("btn-keep").onclick = markKeep;
       document.getElementById("btn-undo").onclick = undoReject;
       document.getElementById("btn-fullscreen").onclick = toggleFullscreen;
+      document.getElementById("btn-first-unreviewed").onclick = goFirstUnreviewed;
       document.getElementById("btn-doctor-mode").onclick = () => setDoctorMode(true);
       document.getElementById("btn-expert-mode").onclick = () => setDoctorMode(false);
+      document.getElementById("btn-toggle-sidebar").onclick = toggleSidebar;
+      document.getElementById("btn-help").onclick = () => showHelp(true);
+      document.getElementById("btn-close-help").onclick = () => showHelp(false);
+      document.getElementById("help-modal").onclick = (e) => {
+        if (e.target.id === "help-modal") showHelp(false);
+      };
+      document.getElementById("btn-zoom-in").onclick = () => { setZoom(zoomLevel + 25); toast("缩放 " + zoomLevel + "%"); };
+      document.getElementById("btn-zoom-out").onclick = () => { setZoom(zoomLevel - 25); toast("缩放 " + zoomLevel + "%"); };
+      document.getElementById("btn-zoom-reset").onclick = () => { setZoom(100); toast("100%"); };
       document.querySelectorAll(".quick-reasons button[data-reason]").forEach((btn) => {
         btn.onclick = () => setQuickReason(btn.dataset.reason);
+      });
+      document.querySelectorAll("#filter-chips button").forEach((btn) => {
+        btn.onclick = () => setFilterStatus(btn.dataset.status);
       });
       document.getElementById("btn-export-reject").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
         if (!rows.length) { alert("暂无剔除样本"); return; }
         downloadCsv("gradcam_rejected.csv", rows);
         toast("已导出 " + rows.length + " 条剔除记录");
+      };
+      document.getElementById("btn-export-split").onclick = () => {
+        const rows = scopeCases(activeSplit).map(reviewToRow).filter((r) => r.rejected === "1");
+        const name = activeSplit === "all" ? "gradcam_rejected_all.csv" : `gradcam_rejected_${activeSplit}.csv`;
+        if (!rows.length) { alert("当前数据集暂无剔除样本"); return; }
+        downloadCsv(name, rows);
+        toast("已导出当前数据集 " + rows.length + " 条");
       };
       document.getElementById("btn-export-all").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1" || r.error_note || r.annot_true !== "[]" || r.annot_model !== "[]");
@@ -1084,15 +1439,16 @@ HTML_TEMPLATE = r"""<!doctype html>
         if (confirm("确定清空所有本地标记？")) {
           localStorage.removeItem(STORAGE_KEY);
           localStorage.removeItem(STORAGE_KEY + "_mode");
+          localStorage.removeItem(STORAGE_KEY + "_split");
+          localStorage.removeItem(STORAGE_KEY + "_pos");
           reviews = {};
           lastRejectedUid = null;
+          splitPositions = {};
           renderCurrent();
           toast("已清空");
         }
       };
-      ["filter-split", "filter-status", "filter-true"].forEach((id) => {
-        document.getElementById(id).addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
-      });
+      document.getElementById("filter-true").addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
       document.getElementById("filter-search").addEventListener("input", () => { currentIndex = 0; renderCurrent(); });
       document.getElementById("filter-search").addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); searchAndJump(); }
@@ -1104,10 +1460,14 @@ HTML_TEMPLATE = r"""<!doctype html>
 
       document.addEventListener("keydown", (e) => {
         if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+        if (!document.getElementById("help-modal")?.classList.contains("hidden") && e.key === "Escape") {
+          showHelp(false); return;
+        }
         if (document.getElementById("panel-stage")?.classList.contains("is-fullscreen") && e.key === "Escape") {
           document.getElementById("panel-stage").classList.remove("is-fullscreen");
           return;
         }
+        if (e.key === "?") { showHelp(true); return; }
         if (e.key === "ArrowLeft") goPrev();
         if (e.key === "ArrowRight") goNext();
         if (e.key.toLowerCase() === "x") markReject();
@@ -1115,9 +1475,12 @@ HTML_TEMPLATE = r"""<!doctype html>
         if (e.key.toLowerCase() === "z") undoReject();
         if (e.key.toLowerCase() === "f") toggleFullscreen();
         if (e.key.toLowerCase() === "n") goNextUnreviewed();
+        if (e.key === "Home") goFirstUnreviewed();
         if (e.key === "1") setQuickReason("图像质量差-胃壁层次不清");
         if (e.key === "2") setQuickReason("图像质量差-伪影/遮挡");
         if (e.key === "3") setQuickReason("图像质量差-其他");
+        if (e.key === "+" || e.key === "=") { setZoom(zoomLevel + 25); toast("缩放 " + zoomLevel + "%"); }
+        if (e.key === "-") { setZoom(zoomLevel - 25); toast("缩放 " + zoomLevel + "%"); }
         if (!doctorMode && e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
         if (!doctorMode && e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
       });
@@ -1126,12 +1489,17 @@ HTML_TEMPLATE = r"""<!doctype html>
     async function boot() {
       initPageMode();
       loadDoctorMode();
+      loadActiveSplit();
       bindUi();
+      const splitEl = document.getElementById("filter-split");
+      if (splitEl) splitEl.value = activeSplit;
+      document.getElementById("workspace")?.classList.toggle("sidebar-collapsed", sidebarCollapsed);
       setDoctorMode(doctorMode);
       try {
         showLoading("正在加载样本索引…", 5);
         CASES = await loadAllCases();
         reviews = loadReviews();
+        renderDatasetTabs();
         showLoading(`已加载 ${CASES.length} 条，校验图片路径…`, 100);
         verifyPaths(() => renderCurrent());
       } catch (err) {
@@ -1306,7 +1674,7 @@ def build_unified_html(
     *,
     title: str = "GradCAM 测试集筛图",
     subtitle: str | None = None,
-    storage_key: str = "unified_v4",
+    storage_key: str = "unified_v5",
     mode: str = "unified",
     fixed_split: str | None = None,
     root_folder: str | None = None,
@@ -1361,12 +1729,12 @@ def build_unified_html(
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "gradcam_screening_test_external_v4",
+        "storage_key": "gradcam_screening_test_external_v5",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 2025前瞻全量筛图",
-        "storage_key": "gradcam_screening_test_prospective_2025_full_v4",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v5",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
@@ -1380,7 +1748,7 @@ def build_split_screening_html(source: dict, output_html: Path, *, chunk_size: i
         [{**source, "path_prefix": ""}],
         output_html,
         title=spec.get("title", f"GradCAM {split} 筛图"),
-        storage_key=spec.get("storage_key", f"{split}_v4"),
+        storage_key=spec.get("storage_key", f"{split}_v5"),
         mode="single",
         fixed_split=split,
         root_folder=spec.get("dir_name", root_dir.name),
