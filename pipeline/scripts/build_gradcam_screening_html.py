@@ -492,6 +492,96 @@ HTML_TEMPLATE = r"""<!doctype html>
       background: var(--panel);
       border-bottom: 1px solid var(--border);
     }
+    .save-indicator {
+      font-size: 11px;
+      color: var(--ok);
+      opacity: 0;
+      transition: opacity .3s;
+    }
+    .save-indicator.show { opacity: 1; }
+    .patient-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .patient-id {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      color: var(--text);
+    }
+    .stage-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .stage-chips button {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .stage-chips button.active { background: var(--accent2); border-color: var(--accent2); }
+    .panel-overlay {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 5;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .overlay-badge {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      backdrop-filter: blur(6px);
+    }
+    .overlay-badge.reject { background: rgba(180,35,24,.85); color: #fff; }
+    .overlay-badge.keep { background: rgba(6,118,71,.85); color: #fff; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .summary-card {
+      background: #0a0f15;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .summary-card h3 { margin: 0 0 8px; font-size: 14px; }
+    .summary-card .num { font-size: 24px; font-weight: 700; }
+    body.theme-light {
+      --bg: #eef2f7;
+      --panel: #ffffff;
+      --panel2: #f8fafc;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #64748b;
+      --shadow: 0 4px 20px rgba(15,23,42,.08);
+    }
+    body.theme-light .topbar { background: linear-gradient(180deg, #fff 0%, #f8fafc 100%); }
+    body.theme-light select,
+    body.theme-light input,
+    body.theme-light textarea,
+    body.theme-light .stat,
+    body.theme-light .list,
+    body.theme-light .summary-card { background: #f1f5f9; }
+    body.theme-light .panel-stage { border-color: #94a3b8; }
+    .welcome-banner {
+      background: rgba(96,165,250,.1);
+      border: 1px solid rgba(96,165,250,.35);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .welcome-banner button {
+      float: right;
+      font-size: 11px;
+      padding: 4px 8px;
+    }
     @media (max-width: 1100px) {
       .workspace { grid-template-columns: 1fr; }
       .workspace:not(.sidebar-collapsed) aside {
@@ -512,6 +602,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       </div>
       <nav class="dataset-tabs" id="dataset-tabs" aria-label="数据集切换"></nav>
       <div class="topbar-actions">
+        <span class="save-indicator" id="save-indicator">✓ 已保存</span>
+        <button id="btn-summary" title="进度总览">📊</button>
+        <button id="btn-theme" title="切换浅色/深色">🌓</button>
         <button id="btn-doctor-mode" class="active" title="简易模式">简易</button>
         <button id="btn-expert-mode" title="专家模式">专家</button>
         <button id="btn-help" title="快捷键帮助">?</button>
@@ -520,6 +613,11 @@ HTML_TEMPLATE = r"""<!doctype html>
     </header>
     <div class="workspace" id="workspace">
       <aside class="sidebar" id="sidebar">
+        <div class="welcome-banner hidden" id="welcome-banner">
+          <button id="btn-dismiss-welcome">知道了</button>
+          请打开<strong>本文件夹根目录</strong>的 <code>gradcam_screening.html</code>（不是子文件夹里的旧版）。
+          顶部标签可切换「外部测试 / 2025前瞻」，按 <kbd>X</kbd> 剔除、<kbd>K</kbd> 保留。
+        </div>
         <div class="section-card">
           <h2>当前进度</h2>
           <div class="stats">
@@ -536,6 +634,14 @@ HTML_TEMPLATE = r"""<!doctype html>
             <button data-status="all">全部</button>
             <button data-status="reject">已剔除</button>
             <button data-status="keep">已保留</button>
+          </div>
+          <label>T 分期（可选）</label>
+          <div class="stage-chips" id="stage-chips">
+            <button data-stage="all" class="active">全部</button>
+            <button data-stage="T1">T1</button>
+            <button data-stage="T2">T2</button>
+            <button data-stage="T3">T3</button>
+            <button data-stage="T4+">T4+</button>
           </div>
           <label>搜索患者号 / 文件名</label>
           <input id="filter-search" type="text" placeholder="输入后回车跳转">
@@ -638,9 +744,19 @@ HTML_TEMPLATE = r"""<!doctype html>
         <tr><td><kbd>Home</kbd></td><td>跳到未浏览</td></tr>
         <tr><td><kbd>1/2/3</kbd></td><td>快选剔除原因</td></tr>
         <tr><td><kbd>+ / −</kbd></td><td>放大 / 缩小</td></tr>
+        <tr><td><kbd>[ / ]</kbd></td><td>切换数据集标签</td></tr>
+        <tr><td><kbd>C</kbd></td><td>复制患者号</td></tr>
         <tr><td><kbd>?</kbd></td><td>显示本帮助</td></tr>
       </table>
       <button class="primary" id="btn-close-help" style="margin-top:14px;width:100%">知道了</button>
+    </div>
+  </div>
+  <div class="modal-overlay hidden" id="summary-modal">
+    <div class="modal-box" style="max-width:640px">
+      <h2>筛图进度总览</h2>
+      <div class="summary-grid" id="summary-grid"></div>
+      <p style="font-size:12px;color:var(--muted);margin:0">数据保存在浏览器本地，换电脑需重新筛或导入 CSV。</p>
+      <button class="primary" id="btn-close-summary" style="margin-top:14px;width:100%">关闭</button>
     </div>
   </div>
   <script src="__DATA_PREFIX__manifest.js"></script>
@@ -671,6 +787,103 @@ HTML_TEMPLATE = r"""<!doctype html>
     let zoomLevel = 100;
     let splitPositions = {};
     let sidebarCollapsed = false;
+    let lightTheme = false;
+
+    function showSaveIndicator() {
+      const el = document.getElementById("save-indicator");
+      if (!el) return;
+      el.classList.add("show");
+      clearTimeout(showSaveIndicator._t);
+      showSaveIndicator._t = setTimeout(() => el.classList.remove("show"), 1200);
+    }
+
+    function toggleTheme() {
+      lightTheme = !lightTheme;
+      document.body.classList.toggle("theme-light", lightTheme);
+      try { localStorage.setItem(STORAGE_KEY + "_theme", lightTheme ? "light" : "dark"); } catch (e) {}
+      toast(lightTheme ? "已切换浅色模式" : "已切换深色模式");
+    }
+
+    function loadTheme() {
+      try {
+        lightTheme = localStorage.getItem(STORAGE_KEY + "_theme") === "light";
+        document.body.classList.toggle("theme-light", lightTheme);
+      } catch (e) {}
+    }
+
+    function showSummary(show) {
+      const modal = document.getElementById("summary-modal");
+      const grid = document.getElementById("summary-grid");
+      if (!modal || !grid) return;
+      if (show) {
+        grid.innerHTML = SPLIT_DEFS.map((def) => {
+          const st = splitStats(def.id);
+          return `<div class="summary-card">
+            <h3>${escHtml(def.label)}</h3>
+            <div class="num">${st.pct}%</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">
+              已浏览 ${st.reviewed}/${st.total}<br>
+              剔除 ${st.rejected} · 未浏览 ${st.remaining}
+            </div>
+            <div class="progress-bar" style="margin-top:8px"><i style="width:${st.pct}%"></i></div>
+          </div>`;
+        }).join("");
+      }
+      modal.classList.toggle("hidden", !show);
+    }
+
+    function setStageFilter(stage) {
+      const sel = document.getElementById("filter-true");
+      if (sel) sel.value = stage;
+      document.querySelectorAll("#stage-chips button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.stage === stage);
+      });
+      currentIndex = 0;
+      renderCurrent();
+    }
+
+    function copyPatientId() {
+      const item = filtered[currentIndex];
+      if (!item) return;
+      const pid = extractPatientId(item.id);
+      navigator.clipboard.writeText(pid).then(
+        () => toast("已复制患者号：" + pid),
+        () => toast("复制失败，患者号：" + pid)
+      );
+    }
+
+    function cycleSplit(dir) {
+      if (META.mode === "single") return;
+      const ids = SPLIT_DEFS.map((d) => d.id);
+      const idx = ids.indexOf(activeSplit);
+      const next = ids[(idx + dir + ids.length) % ids.length];
+      setActiveSplit(next);
+    }
+
+    function advanceAfterMark() {
+      const status = document.getElementById("filter-status")?.value || "unreviewed";
+      if (status === "unreviewed") {
+        applyFilters();
+        if (currentIndex >= filtered.length) currentIndex = Math.max(0, filtered.length - 1);
+        renderCurrent();
+        toast(filtered.length ? "已保存" : "本列表已全部浏览完成 🎉");
+        return;
+      }
+      goNextUnreviewed();
+    }
+
+    function dismissWelcome() {
+      document.getElementById("welcome-banner")?.classList.add("hidden");
+      try { localStorage.setItem(STORAGE_KEY + "_welcome", "1"); } catch (e) {}
+    }
+
+    function maybeShowWelcome() {
+      try {
+        if (localStorage.getItem(STORAGE_KEY + "_welcome") !== "1") {
+          document.getElementById("welcome-banner")?.classList.remove("hidden");
+        }
+      } catch (e) {}
+    }
 
     const SPLIT_DEFS = [
       { id: "all", label: "全部合集", folder: null },
@@ -737,8 +950,12 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function loadActiveSplit() {
       try {
-        const v = localStorage.getItem(STORAGE_KEY + "_split");
-        if (v && SPLIT_DEFS.some((d) => d.id === v)) activeSplit = v;
+        const urlSplit = new URLSearchParams(location.search).get("split");
+        if (urlSplit && SPLIT_DEFS.some((d) => d.id === urlSplit)) activeSplit = urlSplit;
+        else {
+          const v = localStorage.getItem(STORAGE_KEY + "_split");
+          if (v && SPLIT_DEFS.some((d) => d.id === v)) activeSplit = v;
+        }
         splitPositions = JSON.parse(localStorage.getItem(STORAGE_KEY + "_pos") || "{}");
         sidebarCollapsed = localStorage.getItem(STORAGE_KEY + "_sidebar") === "1";
       } catch (e) {}
@@ -932,6 +1149,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       } catch (e) {
         alert("本地保存失败（可能超出浏览器配额）：" + e.message);
       }
+      showSaveIndicator();
       refreshStats();
       renderList();
     }
@@ -1045,6 +1263,12 @@ HTML_TEMPLATE = r"""<!doctype html>
     function buildPanelHtml(item, showAnnot) {
       const src = panelSrc(item.panel);
       const err = item.panel.replace(/'/g, "\\'");
+      const rev = getReview(item.uid);
+      const overlay = rev.rejected
+        ? `<span class="overlay-badge reject">已剔除</span>`
+        : rev.viewed
+          ? `<span class="overlay-badge keep">已浏览</span>`
+          : "";
       return `
         ${showAnnot ? `
         <div class="annotate-head">
@@ -1056,6 +1280,7 @@ HTML_TEMPLATE = r"""<!doctype html>
           <span class="legend"><span class="g">绿色=真实病灶</span> · <span class="r">红色=模型看错</span></span>
         </div>` : ""}
         <div class="panel-stage" id="panel-stage">
+          <div class="panel-overlay">${overlay}</div>
           <div class="panel-inner">
             <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}" loading="lazy" decoding="async"
               onerror="document.getElementById('panel-stage').innerHTML=window.__imgErr('${err}')">
@@ -1195,12 +1420,12 @@ HTML_TEMPLATE = r"""<!doctype html>
         infoHtml = `
           <div class="doctor-banner">
             <span class="folder-badge">📁 ${escHtml(folderLabel(item))}</span>
-            第 <b>${currentIndex + 1}</b> / ${filtered.length} · 患者号 <b>${escHtml(patientId)}</b>
-            ${rev.rejected ? " · <span style='color:#f87171'>已剔除</span>" : rev.viewed ? " · <span style='color:#34d399'>已浏览</span>" : ""}
-          </div>
-          <div class="panel-toolbar">
-            <button id="btn-zoom-fit">适应窗口</button>
-            <button id="btn-zoom-100">原始大小</button>
+            <div class="patient-row">
+              <span class="patient-id">${escHtml(patientId)}</span>
+              <button id="btn-copy-pid" title="复制患者号 (C)">复制</button>
+            </div>
+            第 <b>${currentIndex + 1}</b> / ${filtered.length}
+            ${rev.rejected ? " · <span style='color:#f87171'>已剔除</span>" : ""}
           </div>
         `;
       } else {
@@ -1247,6 +1472,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         saveReviewsNow();
         redrawAnnotations();
       });
+      bind("btn-copy-pid", copyPatientId);
       bind("btn-zoom-fit", () => { setZoom(100); });
       bind("btn-zoom-100", () => {
         setZoom(100);
@@ -1285,13 +1511,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       const item = filtered[currentIndex];
       if (item) lastRejectedUid = item.uid;
       persistSidebarFields(true);
-      toast("已标记剔除，自动跳下一张");
-      goNextUnreviewed();
+      advanceAfterMark();
     }
     function markKeep() {
       persistSidebarFields(false);
-      toast("已保留");
-      goNextUnreviewed();
+      advanceAfterMark();
     }
 
     function undoReject() {
@@ -1399,6 +1623,13 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("btn-keep").onclick = markKeep;
       document.getElementById("btn-undo").onclick = undoReject;
       document.getElementById("btn-fullscreen").onclick = toggleFullscreen;
+      document.getElementById("btn-summary").onclick = () => showSummary(true);
+      document.getElementById("btn-close-summary").onclick = () => showSummary(false);
+      document.getElementById("summary-modal").onclick = (e) => {
+        if (e.target.id === "summary-modal") showSummary(false);
+      };
+      document.getElementById("btn-theme").onclick = toggleTheme;
+      document.getElementById("btn-dismiss-welcome").onclick = dismissWelcome;
       document.getElementById("btn-first-unreviewed").onclick = goFirstUnreviewed;
       document.getElementById("btn-doctor-mode").onclick = () => setDoctorMode(true);
       document.getElementById("btn-expert-mode").onclick = () => setDoctorMode(false);
@@ -1416,6 +1647,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       });
       document.querySelectorAll("#filter-chips button").forEach((btn) => {
         btn.onclick = () => setFilterStatus(btn.dataset.status);
+      });
+      document.querySelectorAll("#stage-chips button").forEach((btn) => {
+        btn.onclick = () => setStageFilter(btn.dataset.stage);
       });
       document.getElementById("btn-export-reject").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
@@ -1468,6 +1702,9 @@ HTML_TEMPLATE = r"""<!doctype html>
           return;
         }
         if (e.key === "?") { showHelp(true); return; }
+        if (e.key.toLowerCase() === "c") copyPatientId();
+        if (e.key === "[") cycleSplit(-1);
+        if (e.key === "]") cycleSplit(1);
         if (e.key === "ArrowLeft") goPrev();
         if (e.key === "ArrowRight") goNext();
         if (e.key.toLowerCase() === "x") markReject();
@@ -1489,6 +1726,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     async function boot() {
       initPageMode();
       loadDoctorMode();
+      loadTheme();
       loadActiveSplit();
       bindUi();
       const splitEl = document.getElementById("filter-split");
@@ -1500,6 +1738,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         CASES = await loadAllCases();
         reviews = loadReviews();
         renderDatasetTabs();
+        maybeShowWelcome();
         showLoading(`已加载 ${CASES.length} 条，校验图片路径…`, 100);
         verifyPaths(() => renderCurrent());
       } catch (err) {
@@ -1674,7 +1913,7 @@ def build_unified_html(
     *,
     title: str = "GradCAM 测试集筛图",
     subtitle: str | None = None,
-    storage_key: str = "unified_v5",
+    storage_key: str = "unified_v6",
     mode: str = "unified",
     fixed_split: str | None = None,
     root_folder: str | None = None,
@@ -1729,12 +1968,12 @@ def build_unified_html(
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "gradcam_screening_test_external_v5",
+        "storage_key": "gradcam_screening_test_external_v6",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 2025前瞻全量筛图",
-        "storage_key": "gradcam_screening_test_prospective_2025_full_v5",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v6",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
@@ -1748,7 +1987,7 @@ def build_split_screening_html(source: dict, output_html: Path, *, chunk_size: i
         [{**source, "path_prefix": ""}],
         output_html,
         title=spec.get("title", f"GradCAM {split} 筛图"),
-        storage_key=spec.get("storage_key", f"{split}_v5"),
+        storage_key=spec.get("storage_key", f"{split}_v6"),
         mode="single",
         fixed_split=split,
         root_folder=spec.get("dir_name", root_dir.name),

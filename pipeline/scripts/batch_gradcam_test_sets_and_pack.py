@@ -324,6 +324,41 @@ def run_gradcam_split(
     subprocess.run(cmd, check=True, cwd=str(PROJECT_ROOT))
 
 
+def write_redirect_stub(html_path: Path, target_href: str, title: str = "请使用根目录筛图工具") -> None:
+    """Replace legacy per-split HTML with auto-redirect to the unified bundle entry."""
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
+        f"""<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0;url={target_href}">
+<title>{title}</title>
+<style>body{{font-family:sans-serif;padding:40px;line-height:1.7}}</style>
+</head><body>
+<p>此文件已弃用。正在跳转到统一筛图入口…</p>
+<p>若未自动跳转，请打开：<a href="{target_href}">{target_href}</a></p>
+</body></html>
+""",
+        encoding="utf-8",
+    )
+
+
+def write_legacy_redirect_stubs(exp_dir: Path, bundle_name: str = "gradcam_clinical_screening") -> None:
+    """Point old experiment subfolder HTML paths to the unified bundle."""
+    targets = {
+        exp_dir / "gradcam_screening.html": f"{bundle_name}/gradcam_screening.html",
+        exp_dir / "gradcam_test_external_full" / "gradcam_screening.html": (
+            f"../{bundle_name}/gradcam_screening.html?split=test_external"
+        ),
+        exp_dir / "gradcam_test_prospective_full" / "gradcam_screening.html": (
+            f"../{bundle_name}/gradcam_screening.html?split=test_prospective"
+        ),
+    }
+    for path, href in targets.items():
+        if path.parent.is_dir() or path.parent == exp_dir:
+            write_redirect_stub(path, href, title="GradCAM 筛图（已迁移）")
+
+
 def write_bundle_readme(path: Path) -> None:
     path.write_text(
         "\n".join(
@@ -529,6 +564,7 @@ def main() -> None:
             pack_mode=args.pack_mode,
             project_root=PROJECT_ROOT,
         )
+        write_legacy_redirect_stubs(exp_dir, bundle_name=bundle_root.name)
         screening_summary = bundle_info.get("screening_summary")
         print(f"Bundle ready: {bundle_root} ({bundle_info['size_mb']} MB)")
         print(f"Open: {bundle_root / 'gradcam_screening.html'}")
