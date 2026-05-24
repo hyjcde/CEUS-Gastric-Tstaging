@@ -244,6 +244,112 @@ HTML_TEMPLATE = r"""<!doctype html>
     .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
     .empty { padding: 36px; text-align: center; color: var(--muted); }
     .hidden { display: none !important; }
+    .progress-wrap {
+      padding: 8px 14px 0;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .progress-bar {
+      height: 10px;
+      background: #0a0f15;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-bar > i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #2563eb, #3ecf8e);
+      transition: width 0.25s ease;
+    }
+    .toolbar-large button {
+      font-size: 15px;
+      padding: 12px 18px;
+      min-width: 110px;
+      font-weight: 600;
+    }
+    .toolbar-large .btn-reject { font-size: 16px; min-width: 140px; }
+    .quick-reasons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 0 14px 10px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .quick-reasons button {
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+    .doctor-banner {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .doctor-banner b { color: var(--accent); }
+    .info-large {
+      font-size: 15px;
+      padding: 12px 16px;
+    }
+    .info-large .filename { font-size: 16px; font-weight: 700; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .panel-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .panel-stage.zoom-fit .panel-img { min-width: 0; width: 100%; }
+    .panel-stage.is-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      max-width: none;
+      max-height: none;
+      min-height: 100vh;
+      border-radius: 0;
+    }
+    details.advanced { margin-top: 8px; }
+    details.advanced summary {
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+    }
+    .mode-toggle {
+      display: flex;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .mode-toggle button.active { outline: 2px solid var(--accent); }
     @media (max-width: 1100px) {
       .layout { grid-template-columns: 1fr; }
       aside { max-height: 38vh; }
@@ -254,71 +360,93 @@ HTML_TEMPLATE = r"""<!doctype html>
 <body>
   <div class="layout">
     <aside>
-      <h1>__PAGE_TITLE__</h1>
+      <h1>超声图像质量筛图</h1>
       <div class="sub" id="page-subtitle">__PAGE_SUBTITLE__</div>
       <div class="stats">
-        <div class="stat"><b id="stat-total">0</b><span>当前列表</span></div>
+        <div class="stat"><b id="stat-reviewed-pct">0%</b><span>总进度</span></div>
         <div class="stat"><b id="stat-reject">0</b><span>已剔除</span></div>
-        <div class="stat"><b id="stat-reviewed">0</b><span>已浏览</span></div>
+        <div class="stat"><b id="stat-remaining">0</b><span>未浏览</span></div>
         <div class="stat"><b id="stat-idx">0/0</b><span>当前位置</span></div>
       </div>
-      <label id="split-filter-label">数据集</label>
-      <select id="filter-split">
-        <option value="all">全部</option>
-        <option value="test_external">外部测试</option>
-        <option value="test_prospective">前瞻测试</option>
-      </select>
-      <label>筛选状态</label>
-      <select id="filter-status">
-        <option value="all">全部</option>
-        <option value="unreviewed">未浏览</option>
-        <option value="reject">已标记剔除</option>
-        <option value="keep">未剔除</option>
-        <option value="wrong">仅分错</option>
-        <option value="correct">仅分对</option>
-        <option value="cross">跨级误分 (|ΔT|&gt;1)</option>
-        <option value="adjacent">相邻误分 (|ΔT|=1)</option>
-      </select>
-      <label>真实 T 分期</label>
-      <select id="filter-true">
-        <option value="all">全部</option>
-        <option value="T1">T1</option>
-        <option value="T2">T2</option>
-        <option value="T3">T3</option>
-        <option value="T4+">T4+</option>
-      </select>
-      <label>搜索文件名</label>
-      <input id="filter-search" type="text" placeholder="例如 1001916">
-      <label>跳转到序号（当前筛选列表内）</label>
+      <div class="mode-toggle">
+        <button id="btn-doctor-mode" class="active" title="只关注图像质量">简易模式</button>
+        <button id="btn-expert-mode" title="显示 AI 预测与误分标注">专家模式</button>
+      </div>
+      <label>搜索患者号 / 文件名</label>
+      <input id="filter-search" type="text" placeholder="输入患者号，回车跳转">
+      <label>跳转到第几张（当前列表）</label>
       <input id="jump-index" type="number" min="1" placeholder="例如 1200">
-      <label>剔除原因</label>
+      <label>剔除原因（按 X 前选好）</label>
       <select id="reject-reason">
-        <option value="图像质量差-胃壁层次不清">图像质量差-胃壁层次不清</option>
-        <option value="图像质量差-伪影/遮挡">图像质量差-伪影/遮挡</option>
-        <option value="图像质量差-其他">图像质量差-其他</option>
+        <option value="图像质量差-胃壁层次不清">胃壁层次不清</option>
+        <option value="图像质量差-伪影/遮挡">伪影 / 遮挡</option>
+        <option value="图像质量差-其他">其他质量问题</option>
         <option value="暂不确定">暂不确定</option>
       </select>
-      <label>备注</label>
+      <label>备注（可选）</label>
       <textarea id="reject-note" placeholder="可选备注"></textarea>
-      <div class="hint">快捷键：← → 切换；X 剔除；K 保留；N 下一张未浏览；G 画真实病灶；R 画模型看错区域</div>
+      <details class="advanced">
+        <summary>高级筛选（算法组）</summary>
+        <label id="split-filter-label">数据集</label>
+        <select id="filter-split">
+          <option value="all">全部</option>
+          <option value="test_external">外部测试</option>
+          <option value="test_prospective">前瞻测试</option>
+        </select>
+        <label>筛选状态</label>
+        <select id="filter-status">
+          <option value="unreviewed" selected>未浏览（推荐）</option>
+          <option value="all">全部</option>
+          <option value="reject">已标记剔除</option>
+          <option value="keep">未剔除</option>
+          <option value="wrong">仅分错</option>
+          <option value="correct">仅分对</option>
+          <option value="cross">跨级误分</option>
+          <option value="adjacent">相邻误分</option>
+        </select>
+        <label>真实 T 分期</label>
+        <select id="filter-true">
+          <option value="all">全部</option>
+          <option value="T1">T1</option>
+          <option value="T2">T2</option>
+          <option value="T3">T3</option>
+          <option value="T4+">T4+</option>
+        </select>
+      </details>
+      <div class="hint">快捷键：<b>→</b> 下一张 · <b>X</b> 剔除 · <b>K</b> 保留 · <b>Z</b> 撤销 · <b>F</b> 全屏 · <b>1/2/3</b> 快选剔除原因</div>
       <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
-        <button class="primary" id="btn-export-reject">导出剔除 CSV</button>
-        <button id="btn-export-all">导出全部评审 CSV</button>
+        <button class="primary" id="btn-export-reject">导出剔除 CSV（发回算法组）</button>
+        <button id="btn-export-all">导出全部记录</button>
         <button id="btn-clear-storage">清空本地标记</button>
       </div>
       <div class="list" id="thumb-list"></div>
     </aside>
     <main>
-      <div class="toolbar">
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span id="progress-text">加载中…</span>
+          <span id="progress-count">0 / 0</span>
+        </div>
+        <div class="progress-bar"><i id="progress-fill" style="width:0%"></i></div>
+      </div>
+      <div class="toolbar toolbar-large">
         <button id="btn-prev">← 上一张</button>
+        <button class="danger btn-reject" id="btn-reject">✕ 质量差，剔除</button>
+        <button class="success" id="btn-keep">✓ 质量可，保留</button>
         <button id="btn-next">下一张 →</button>
-        <button id="btn-next-unreviewed">下一张未浏览</button>
-        <button class="danger" id="btn-reject">标记剔除 (X)</button>
-        <button class="success" id="btn-keep">保留 (K)</button>
+        <button id="btn-undo" title="撤销上一张剔除 (Z)">撤销</button>
+        <button id="btn-fullscreen" title="全屏 (F)">全屏</button>
+      </div>
+      <div class="quick-reasons">
+        <span style="font-size:12px;color:var(--muted);align-self:center">快选剔除原因：</span>
+        <button data-reason="图像质量差-胃壁层次不清">1 层次不清</button>
+        <button data-reason="图像质量差-伪影/遮挡">2 伪影遮挡</button>
+        <button data-reason="图像质量差-其他">3 其他</button>
       </div>
       <div class="viewer" id="viewer"><div class="load-box">正在加载索引…</div></div>
     </main>
   </div>
+  <div class="toast" id="toast"></div>
   <script src="__DATA_PREFIX__manifest.js"></script>
   <script>
     const META = window.__GRADCAM_META__ || {};
@@ -340,6 +468,38 @@ HTML_TEMPLATE = r"""<!doctype html>
     let pathOk = null;
     let saveTimer = null;
     let prefetchImg = null;
+    let doctorMode = true;
+    let lastRejectedUid = null;
+    let toastTimer = null;
+
+    function toast(msg, ms) {
+      const el = document.getElementById("toast");
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), ms || 1800);
+    }
+
+    function extractPatientId(id) {
+      const m = String(id).match(/(\d{6,})/);
+      return m ? m[1] : id;
+    }
+
+    function setDoctorMode(on) {
+      doctorMode = !!on;
+      document.getElementById("btn-doctor-mode")?.classList.toggle("active", doctorMode);
+      document.getElementById("btn-expert-mode")?.classList.toggle("active", !doctorMode);
+      try { localStorage.setItem(STORAGE_KEY + "_mode", doctorMode ? "doctor" : "expert"); } catch (e) {}
+      renderCurrent();
+    }
+
+    function loadDoctorMode() {
+      try {
+        const v = localStorage.getItem(STORAGE_KEY + "_mode");
+        if (v === "expert") doctorMode = false;
+      } catch (e) {}
+    }
 
     function escHtml(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
@@ -475,7 +635,8 @@ HTML_TEMPLATE = r"""<!doctype html>
         const rev = getReview(item.uid);
         if (split !== "all" && item.split !== split) return false;
         if (trueName !== "all" && item.true !== trueName) return false;
-        if (search && !item.id.toLowerCase().includes(search) && !item.uid.toLowerCase().includes(search)) return false;
+        if (search && !item.id.toLowerCase().includes(search) && !item.uid.toLowerCase().includes(search)
+            && !extractPatientId(item.id).includes(search)) return false;
         if (status === "reject" && !rev.rejected) return false;
         if (status === "keep" && rev.rejected) return false;
         if (status === "unreviewed" && rev.viewed) return false;
@@ -491,10 +652,19 @@ HTML_TEMPLATE = r"""<!doctype html>
     function refreshStats() {
       const rejectCount = CASES.filter((c) => getReview(c.uid).rejected).length;
       const reviewedCount = CASES.filter((c) => getReview(c.uid).viewed).length;
-      document.getElementById("stat-total").textContent = filtered.length;
+      const total = CASES.length;
+      const remaining = total - reviewedCount;
+      const pct = total ? Math.round((reviewedCount / total) * 100) : 0;
+      document.getElementById("stat-reviewed-pct").textContent = pct + "%";
       document.getElementById("stat-reject").textContent = rejectCount;
-      document.getElementById("stat-reviewed").textContent = reviewedCount;
+      document.getElementById("stat-remaining").textContent = remaining;
       document.getElementById("stat-idx").textContent = filtered.length ? `${currentIndex + 1}/${filtered.length}` : "0/0";
+      const fill = document.getElementById("progress-fill");
+      const pText = document.getElementById("progress-text");
+      const pCount = document.getElementById("progress-count");
+      if (fill) fill.style.width = pct + "%";
+      if (pText) pText.textContent = remaining > 0 ? `还剩 ${remaining} 张未浏览` : "全部浏览完成";
+      if (pCount) pCount.textContent = `${reviewedCount} / ${total}`;
     }
 
     function splitLabel(split) {
@@ -511,7 +681,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         const idx = start + offset;
         const rev = getReview(item.uid);
         const cls = ["list-item", idx === currentIndex ? "active" : "", rev.rejected ? "rejected" : ""].filter(Boolean).join(" ");
-        return `<div class="${cls}" data-idx="${idx}">#${idx + 1} [${splitLabel(item.split)}] ${item.id}${rev.rejected ? " [剔除]" : ""}</div>`;
+        return `<div class="${cls}" data-idx="${idx}">#${idx + 1} [${splitLabel(item.split)}] ${extractPatientId(item.id)}${rev.rejected ? " ✕" : rev.viewed ? " ✓" : ""}</div>`;
       }).join("");
       let head = "";
       if (start > 0) head = `<div class="list-item">… 前 ${start} 条（用搜索或跳转序号）</div>`;
@@ -659,7 +829,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       const item = filtered[currentIndex];
       currentItem = item || null;
       if (!item) {
-        viewer.innerHTML = `<div class="empty">没有符合筛选条件的样本</div>`;
+        viewer.innerHTML = `<div class="empty">${CASES.length ? "当前筛选条件下没有样本，可切换「全部」或清空搜索" : "没有可显示的样本"}</div>`;
         return;
       }
       const rev = getReview(item.uid);
@@ -670,6 +840,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("reject-note").value = rev.note || "";
       if (rev.reason) document.getElementById("reject-reason").value = rev.reason;
 
+      const patientId = extractPatientId(item.id);
       const gap = stageGap(item);
       const gapText = item.correct ? "—" : (gap > 1 ? `跨级 Δ=${gap}` : "相邻误分");
       const statusTag = rev.rejected ? `<span class="tag reject">已剔除</span>` : `<span class="tag ok">保留</span>`;
@@ -683,17 +854,33 @@ HTML_TEMPLATE = r"""<!doctype html>
         return `<div class="${classes.join(" ")}"><span>${name}</span><b>${(val * 100).toFixed(1)}%</b></div>`;
       }).join("");
 
-      const showAnnot = !item.correct && !rev.rejected;
-      viewer.innerHTML = `
-        <div class="info">
-          <div><b>#${currentIndex + 1} · ${item.id}</b></div>
-          <span class="tag split">${splitLabel(item.split)}</span>
-          <div>真实 <b>${item.true}</b> → 预测 <b>${item.pred}</b></div>
-          ${statusTag} ${correctTag}
-        </div>
-        <div class="probs">${probs}</div>
-        ${buildPanelHtml(item, showAnnot)}
-      `;
+      const showAnnot = !doctorMode && !item.correct && !rev.rejected;
+      let infoHtml;
+      if (doctorMode) {
+        infoHtml = `
+          <div class="doctor-banner">
+            第 <b>${currentIndex + 1}</b> / ${filtered.length} 张 · 患者号 <b>${escHtml(patientId)}</b>
+            · ${splitLabel(item.split)}测试集
+            ${rev.rejected ? " · <span style='color:#f87171'>已标记剔除</span>" : ""}
+          </div>
+          <div class="panel-toolbar">
+            <button id="btn-zoom-fit">适应窗口</button>
+            <button id="btn-zoom-100">原始大小</button>
+          </div>
+        `;
+      } else {
+        infoHtml = `
+          <div class="info info-large">
+            <div class="filename">#${currentIndex + 1} · ${escHtml(item.id)}</div>
+            <span class="tag split">${splitLabel(item.split)}</span>
+            <div>真实 <b>${item.true}</b> → 预测 <b>${item.pred}</b></div>
+            ${statusTag} ${correctTag}
+          </div>
+          <div class="probs">${probs}</div>
+        `;
+      }
+
+      viewer.innerHTML = infoHtml + buildPanelHtml(item, showAnnot);
 
       const errNote = document.getElementById("error-note");
       if (errNote) {
@@ -725,8 +912,23 @@ HTML_TEMPLATE = r"""<!doctype html>
         saveReviewsNow();
         redrawAnnotations();
       });
+      bind("btn-zoom-fit", () => {
+        document.getElementById("panel-stage")?.classList.add("zoom-fit");
+      });
+      bind("btn-zoom-100", () => {
+        document.getElementById("panel-stage")?.classList.remove("zoom-fit");
+      });
       setupCanvas();
       prefetchAdjacent();
+    }
+
+    function toggleFullscreen() {
+      const stage = document.getElementById("panel-stage");
+      if (!stage) return;
+      stage.classList.toggle("is-fullscreen");
+      if (stage.classList.contains("is-fullscreen")) {
+        toast("按 Esc 或再点「全屏」退出");
+      }
     }
 
     function persistSidebarFields(rejected) {
@@ -744,8 +946,37 @@ HTML_TEMPLATE = r"""<!doctype html>
       saveReviewsNow();
     }
 
-    function markReject() { persistSidebarFields(true); goNext(); }
-    function markKeep() { persistSidebarFields(false); renderCurrent(); }
+    function markReject() {
+      const item = filtered[currentIndex];
+      if (item) lastRejectedUid = item.uid;
+      persistSidebarFields(true);
+      toast("已标记剔除，自动跳下一张");
+      goNextUnreviewed();
+    }
+    function markKeep() {
+      persistSidebarFields(false);
+      toast("已保留");
+      goNextUnreviewed();
+    }
+
+    function undoReject() {
+      const uid = lastRejectedUid;
+      if (!uid || !reviews[uid] || !reviews[uid].rejected) {
+        toast("没有可撤销的剔除");
+        return;
+      }
+      reviews[uid] = { ...getReview(uid), rejected: false, reason: "", updated_at: new Date().toISOString() };
+      lastRejectedUid = null;
+      saveReviewsNow();
+      toast("已撤销剔除");
+      renderCurrent();
+    }
+
+    function setQuickReason(reason) {
+      const sel = document.getElementById("reject-reason");
+      if (sel) sel.value = reason;
+      toast("已选择：" + reason.replace("图像质量差-", ""));
+    }
 
     function goPrev() {
       if (!filtered.length) return;
@@ -772,6 +1003,24 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (!n || n < 1 || !filtered.length) return;
       currentIndex = Math.min(filtered.length - 1, n - 1);
       renderCurrent();
+    }
+
+    function searchAndJump() {
+      const q = document.getElementById("filter-search").value.trim();
+      if (!q) { currentIndex = 0; renderCurrent(); return; }
+      applyFilters();
+      const exact = filtered.findIndex((item) =>
+        item.id.toLowerCase().includes(q.toLowerCase()) || extractPatientId(item.id) === q
+      );
+      if (exact >= 0) {
+        currentIndex = exact;
+        renderCurrent();
+        toast("已跳转到匹配样本");
+      } else {
+        currentIndex = 0;
+        renderCurrent();
+        toast("未找到，显示当前筛选结果");
+      }
     }
 
     function reviewToRow(item) {
@@ -811,25 +1060,43 @@ HTML_TEMPLATE = r"""<!doctype html>
     function bindUi() {
       document.getElementById("btn-prev").onclick = goPrev;
       document.getElementById("btn-next").onclick = goNext;
-      document.getElementById("btn-next-unreviewed").onclick = goNextUnreviewed;
       document.getElementById("btn-reject").onclick = markReject;
       document.getElementById("btn-keep").onclick = markKeep;
+      document.getElementById("btn-undo").onclick = undoReject;
+      document.getElementById("btn-fullscreen").onclick = toggleFullscreen;
+      document.getElementById("btn-doctor-mode").onclick = () => setDoctorMode(true);
+      document.getElementById("btn-expert-mode").onclick = () => setDoctorMode(false);
+      document.querySelectorAll(".quick-reasons button[data-reason]").forEach((btn) => {
+        btn.onclick = () => setQuickReason(btn.dataset.reason);
+      });
       document.getElementById("btn-export-reject").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
         if (!rows.length) { alert("暂无剔除样本"); return; }
         downloadCsv("gradcam_rejected.csv", rows);
+        toast("已导出 " + rows.length + " 条剔除记录");
       };
       document.getElementById("btn-export-all").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1" || r.error_note || r.annot_true !== "[]" || r.annot_model !== "[]");
         downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.map(reviewToRow));
+        toast("已导出 CSV");
       };
       document.getElementById("btn-clear-storage").onclick = () => {
-        if (confirm("确定清空所有本地标记？")) { localStorage.removeItem(STORAGE_KEY); reviews = {}; renderCurrent(); }
+        if (confirm("确定清空所有本地标记？")) {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(STORAGE_KEY + "_mode");
+          reviews = {};
+          lastRejectedUid = null;
+          renderCurrent();
+          toast("已清空");
+        }
       };
       ["filter-split", "filter-status", "filter-true"].forEach((id) => {
         document.getElementById(id).addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
       });
       document.getElementById("filter-search").addEventListener("input", () => { currentIndex = 0; renderCurrent(); });
+      document.getElementById("filter-search").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); searchAndJump(); }
+      });
       document.getElementById("jump-index").addEventListener("change", jumpToIndex);
       document.getElementById("jump-index").addEventListener("keydown", (e) => {
         if (e.key === "Enter") jumpToIndex();
@@ -837,19 +1104,30 @@ HTML_TEMPLATE = r"""<!doctype html>
 
       document.addEventListener("keydown", (e) => {
         if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+        if (document.getElementById("panel-stage")?.classList.contains("is-fullscreen") && e.key === "Escape") {
+          document.getElementById("panel-stage").classList.remove("is-fullscreen");
+          return;
+        }
         if (e.key === "ArrowLeft") goPrev();
         if (e.key === "ArrowRight") goNext();
         if (e.key.toLowerCase() === "x") markReject();
         if (e.key.toLowerCase() === "k") markKeep();
+        if (e.key.toLowerCase() === "z") undoReject();
+        if (e.key.toLowerCase() === "f") toggleFullscreen();
         if (e.key.toLowerCase() === "n") goNextUnreviewed();
-        if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
-        if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
+        if (e.key === "1") setQuickReason("图像质量差-胃壁层次不清");
+        if (e.key === "2") setQuickReason("图像质量差-伪影/遮挡");
+        if (e.key === "3") setQuickReason("图像质量差-其他");
+        if (!doctorMode && e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
+        if (!doctorMode && e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
       });
     }
 
     async function boot() {
       initPageMode();
+      loadDoctorMode();
       bindUi();
+      setDoctorMode(doctorMode);
       try {
         showLoading("正在加载样本索引…", 5);
         CASES = await loadAllCases();
@@ -1028,7 +1306,7 @@ def build_unified_html(
     *,
     title: str = "GradCAM 测试集筛图",
     subtitle: str | None = None,
-    storage_key: str = "unified_v3",
+    storage_key: str = "unified_v4",
     mode: str = "unified",
     fixed_split: str | None = None,
     root_folder: str | None = None,
@@ -1083,12 +1361,12 @@ def build_unified_html(
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "gradcam_screening_test_external_v3",
+        "storage_key": "gradcam_screening_test_external_v4",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 2025前瞻全量筛图",
-        "storage_key": "gradcam_screening_test_prospective_2025_full_v3",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v4",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
@@ -1102,7 +1380,7 @@ def build_split_screening_html(source: dict, output_html: Path, *, chunk_size: i
         [{**source, "path_prefix": ""}],
         output_html,
         title=spec.get("title", f"GradCAM {split} 筛图"),
-        storage_key=spec.get("storage_key", f"{split}_v3"),
+        storage_key=spec.get("storage_key", f"{split}_v4"),
         mode="single",
         fixed_split=split,
         root_folder=spec.get("dir_name", root_dir.name),
