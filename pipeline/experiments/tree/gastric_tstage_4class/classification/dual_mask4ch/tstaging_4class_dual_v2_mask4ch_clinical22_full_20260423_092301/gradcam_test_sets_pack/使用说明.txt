@@ -1,0 +1,32 @@
+Grad-CAM 测试集筛图 — 临床使用说明
+================================
+
+【推荐：分开筛，互不影响】
+
+1. 解压 gradcam_test_external_slim.zip（外部 2430 张）
+   或 gradcam_test_prospective_slim.zip（前瞻 253 张）
+
+2. 进入解压后的文件夹，双击 gradcam_screening.html
+
+3. 操作：
+   - ← / →  翻页
+   - X      标记剔除（质量差，如胃壁不清）
+   - K      取消剔除（误点时）
+   - 默认保留，好图不用点任何键
+
+4. 全部看完后，点击「导出剔除 CSV」，发回算法组
+
+【样本量】
+  - 外部测试：2430 张（CSV 行数）
+  - 前瞻测试：253 张（已含在外部 CSV 的 int/prospective 子集中）
+  - 两个 zip 的标注保存在浏览器本地，互不影响
+
+【合并包】gradcam_test_clinical_bundle.zip
+  含上述两个文件夹 + 统一 gradcam_screening.html（2430 不重复）
+  若两个数据集由同一人筛，可解压合并包后使用根目录统一 HTML
+
+【问题排查】
+  - 图片不显示：确认 HTML 与 panels/ 在同一文件夹内
+  - 标注丢失：换浏览器/换电脑会丢，务必导出 CSV
+
+生成时间：2026-05-24

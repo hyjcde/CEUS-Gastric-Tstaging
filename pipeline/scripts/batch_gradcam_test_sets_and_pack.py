@@ -118,6 +118,30 @@ def collect_pack_files(
         add_file(html_path, arc_root / "gradcam_screening.html")
     return files
 
+def update_files_in_zip(zip_path: Path, updates: list[tuple[Path, str]]) -> None:
+    """Replace or add small files in an existing zip without repacking panels."""
+    if not zip_path.is_file():
+        return
+    with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED) as zf:
+        for src, arc in updates:
+            if src.is_file():
+                zf.write(src, arcname=arc)
+
+
+def attach_existing_zip_stats(summaries: list[dict], pack_root: Path) -> list[Path]:
+    zip_paths: list[Path] = []
+    for summary in summaries:
+        split = summary.get("split", "")
+        spec = SPLIT_SPECS.get(split, {})
+        zip_name = spec.get("slim_zip_name") or f"{spec.get('output_dir_name', split)}.zip"
+        zip_path = pack_root / zip_name
+        if zip_path.is_file():
+            summary["zip_path"] = str(zip_path)
+            summary["zip_size_mb"] = round(zip_path.stat().st_size / (1024 * 1024), 2)
+            zip_paths.append(zip_path)
+    return zip_paths
+
+
 def zip_pack_files(files: list[tuple[Path, Path]], zip_path: Path) -> int:
     if zip_path.exists():
         zip_path.unlink()
@@ -331,6 +355,11 @@ def main() -> None:
         action="store_true",
         help="Resume Grad-CAM runs from existing gradcam_results.csv (do not wipe output dirs)",
     )
+    parser.add_argument(
+        "--refresh-pack",
+        action="store_true",
+        help="Regenerate HTML and update HTML/README inside existing zips (no panel repack)",
+    )
     args, unknown = parser.parse_known_args()
 
     exp_dir = Path(args.exp_dir)
@@ -471,7 +500,39 @@ def main() -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     bundle_path = None
-    if not args.no_zip and split_output_dirs:
+    if args.refresh_pack:
+        readme_tmp = pack_root / "README_筛图说明.txt"
+        write_bundle_readme(readme_tmp)
+        for split in args.splits:
+            spec = SPLIT_SPECS[split]
+            output_dir = exp_dir / spec["output_dir_name"]
+            split_html = output_dir / "gradcam_screening.html"
+            zip_path = pack_root / spec["slim_zip_name"]
+            if split_html.is_file() and zip_path.is_file():
+                update_files_in_zip(
+                    zip_path,
+                    [(split_html, f"{output_dir.name}/gradcam_screening.html")],
+                )
+                print(f"Updated HTML in {zip_path.name}")
+        bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
+        if bundle_path.is_file() and screening_html and screening_html.is_file():
+            bundle_updates = [(screening_html, "gradcam_screening.html")]
+            if readme_tmp.is_file():
+                bundle_updates.append((readme_tmp, "README_筛图说明.txt"))
+            for split in args.splits:
+                spec = SPLIT_SPECS[split]
+                output_dir = exp_dir / spec["output_dir_name"]
+                split_html = output_dir / "gradcam_screening.html"
+                if split_html.is_file():
+                    bundle_updates.append((split_html, f"{output_dir.name}/gradcam_screening.html"))
+            update_files_in_zip(bundle_path, bundle_updates)
+            print(f"Updated HTML in {bundle_path.name}")
+        zip_paths = attach_existing_zip_stats(summaries, pack_root)
+        if bundle_path.is_file():
+            manifest["clinical_bundle_zip"] = str(bundle_path)
+            manifest["clinical_bundle_size_mb"] = round(bundle_path.stat().st_size / (1024 * 1024), 2)
+            manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    elif not args.no_zip and split_output_dirs:
         bundle_path = build_clinical_bundle(
             pack_root,
             exp_dir,
@@ -485,7 +546,15 @@ def main() -> None:
             manifest["clinical_bundle_size_mb"] = size_mb
             manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths, bundle_path)
+    if args.no_zip and not args.refresh_pack:
+        zip_paths = attach_existing_zip_stats(summaries, pack_root)
+        bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
+        if bundle_path.is_file():
+            manifest["clinical_bundle_zip"] = str(bundle_path)
+            manifest["clinical_bundle_size_mb"] = round(bundle_path.stat().st_size / (1024 * 1024), 2)
+            manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths, bundle_path if bundle_path and Path(bundle_path).is_file() else None)
     print(f"\nManifest: {manifest_path}")
 
 
