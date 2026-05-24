@@ -354,7 +354,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       return `<div class="path-error">
         <h3 style="margin-top:0;">找不到图片，当前 HTML 位置不正确</h3>
         <p>尝试加载：<code>${escHtml(panel)}</code></p>
-        <p>请解压整个 zip，双击根目录 <code>gradcam_screening.html</code>（不要只拷贝 HTML）。</p>
+        <p>请将整个文件夹一起拷贝，双击根目录 <code>gradcam_screening.html</code>。</p>
         <p>目录应含 <code>${escHtml(folder)}</code> 与 <code>screening_data/</code>。</p>
         <p>${escHtml(META.path_help || "")}</p>
       </div>`;
@@ -860,7 +860,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         document.getElementById("viewer").innerHTML = `<div class="path-error">
           <h3 style="margin-top:0;">数据加载失败</h3>
           <p>${escHtml(err.message || String(err))}</p>
-          <p>请确认已完整解压 zip，且 <code>screening_data/</code> 与 HTML 在同一文件夹。</p>
+          <p>请确认已完整拷贝文件夹，且 <code>screening_data/</code> 与 HTML 在同一目录。</p>
         </div>`;
       }
     }
@@ -1056,15 +1056,14 @@ def build_unified_html(
     if subtitle is None:
         if mode == "single" and root_folder:
             subtitle = (
-                f"解压 zip 后双击本 HTML。图片在 <code>{root_folder}/panels/</code>，"
+                f"双击本 HTML。图片在 <code>{root_folder}/panels/</code>，"
                 f"索引在 <code>{SCREENING_DATA_DIR}/</code>。"
             )
         else:
             subtitle = (
-                "解压整个 zip 后双击本 HTML。"
-                "需与 <code>gradcam_test_external_full</code>、"
-                "<code>gradcam_test_prospective_full</code>、"
-                f"<code>{SCREENING_DATA_DIR}/</code> 在同一文件夹。"
+                "将整个文件夹拷贝到本地，双击本 HTML。"
+                "图片在子文件夹 <code>gradcam_test_*_full/panels/</code>，"
+                f"索引在 <code>{SCREENING_DATA_DIR}/</code>。"
             )
 
     meta = {

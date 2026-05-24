@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Grad-CAM on test_external / test_prospective and zip outputs."""
+"""Run Grad-CAM on test splits and assemble a folder bundle for clinical screening."""
 
 from __future__ import annotations
 
@@ -22,11 +22,11 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 from build_gradcam_screening_html import (
     SCREENING_DATA_DIR,
-    build_split_screening_html,
     build_unified_html as build_screening_html,
 )
 
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
+DEFAULT_BUNDLE_NAME = "gradcam_clinical_screening"
 
 DEFAULT_EXP = (
     "pipeline/experiments/tree/gastric_tstage_4class/classification/"
@@ -37,14 +37,11 @@ SPLIT_SPECS = {
     "test_external": {
         "input_csv_suffix": "eval/test_external/test_predictions.csv",
         "output_dir_name": "gradcam_test_external_full",
-        "slim_zip_name": "gradcam_test_external_slim.zip",
         "include_in_unified": True,
     },
     "test_prospective": {
-        # 2025 前瞻全部为测试集：磁盘 crop_ui 2430 张（含 145 张无 pT，占位标签）
         "input_csv": "pipeline/data/tstaging_4class_prospective_full/test_prospective_full_clinical.csv",
         "output_dir_name": "gradcam_test_prospective_full",
-        "slim_zip_name": "gradcam_test_prospective_slim.zip",
         "include_in_unified": True,
     },
 }
@@ -78,20 +75,8 @@ def filter_results_df(df: pd.DataFrame, split: str, external_holdout_only: bool)
     return df.loc[mask].copy()
 
 
-def collect_screening_data_files(bundle_root: Path, arc_prefix: Path | None = None) -> list[tuple[Path, Path]]:
-    """Collect screening_data/*.js beside an HTML bundle root."""
-    data_dir = bundle_root / SCREENING_DATA_DIR
-    if not data_dir.is_dir():
-        return []
-    files: list[tuple[Path, Path]] = []
-    prefix = arc_prefix or Path(".")
-    for path in sorted(data_dir.glob("*.js")):
-        files.append((path, prefix / SCREENING_DATA_DIR / path.name))
-    return files
-
-
 def copy_screening_bundle(src_root: Path, dst_root: Path) -> None:
-    """Copy gradcam_screening.html + screening_data/ to dst_root."""
+    """Copy gradcam_screening.html + screening_data/ to bundle root."""
     html_src = src_root / "gradcam_screening.html"
     if html_src.is_file():
         shutil.copy2(html_src, dst_root / "gradcam_screening.html")
@@ -103,75 +88,106 @@ def copy_screening_bundle(src_root: Path, dst_root: Path) -> None:
         shutil.copytree(data_src, data_dst)
 
 
-def collect_pack_files(
+def materialize_split_folder(
     output_dir: Path,
+    bundle_root: Path,
+    split_name: str,
     results_df: pd.DataFrame,
     pack_mode: str,
     project_root: Path,
-    tmp_dir: Path | None = None,
-) -> list[tuple[Path, Path]]:
-    """Return (absolute_path, archive_relative_path) pairs to include in zip."""
-    files: list[tuple[Path, Path]] = []
-    seen_arc: set[str] = set()
-    arc_root = Path(output_dir.name)
+) -> dict:
+    """Copy split panels (+ csv) into bundle_root/split_name/."""
+    dst = bundle_root / split_name
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.mkdir(parents=True)
 
-    def add_file(src: Path, arc: Path) -> None:
-        key = str(arc).replace("\\", "/")
-        if key in seen_arc:
-            return
-        seen_arc.add(key)
-        files.append((src, arc))
+    copied_panels = 0
+    seen: set[str] = set()
 
     if pack_mode == "full":
         for path in sorted(output_dir.rglob("*")):
-            if path.is_file():
-                add_file(path, arc_root / path.relative_to(output_dir))
-        return files
+            if not path.is_file():
+                continue
+            rel = path.relative_to(output_dir)
+            if rel.name == "gradcam_screening.html" or rel.parts[:1] == (SCREENING_DATA_DIR,):
+                continue
+            target = dst / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            if path.name.endswith("_panel.png"):
+                copied_panels += 1
+    else:
+        for _, row in results_df.iterrows():
+            panel = resolve_panel_path(row.get("panel_path"), project_root)
+            if panel is None:
+                continue
+            try:
+                rel = panel.relative_to(output_dir)
+            except ValueError:
+                rel = Path("panels") / panel.name
+            key = str(rel).replace("\\", "/")
+            if key in seen:
+                continue
+            seen.add(key)
+            target = dst / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(panel, target)
+            copied_panels += 1
 
-    for _, row in results_df.iterrows():
-        panel = resolve_panel_path(row.get("panel_path"), project_root)
-        if panel is None:
-            continue
-        try:
-            rel = panel.relative_to(output_dir)
-        except ValueError:
-            rel = Path("panels") / panel.name
-        add_file(panel, arc_root / rel)
-
-    csv_path = output_dir / "gradcam_results.csv"
-    if csv_path.is_file():
-        slim_csv = (tmp_dir or output_dir) / "gradcam_results.csv"
-        results_df.to_csv(slim_csv, index=False)
-        add_file(slim_csv, arc_root / "gradcam_results.csv")
-    html_path = output_dir / "gradcam_screening.html"
-    if html_path.is_file():
-        add_file(html_path, arc_root / "gradcam_screening.html")
-    for src, arc in collect_screening_data_files(output_dir, arc_root):
-        add_file(src, arc)
-    return files
-
-def update_files_in_zip(zip_path: Path, updates: list[tuple[Path, str]]) -> None:
-    """Replace or add small files in an existing zip without repacking panels."""
-    if not zip_path.is_file():
-        return
-    with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED) as zf:
-        for src, arc in updates:
-            if src.is_file():
-                zf.write(src, arcname=arc)
+    results_df.to_csv(dst / "gradcam_results.csv", index=False)
+    return {
+        "split_dir": str(dst),
+        "copied_panels": copied_panels,
+        "results_rows": int(len(results_df)),
+    }
 
 
-def attach_existing_zip_stats(summaries: list[dict], pack_root: Path) -> list[Path]:
-    zip_paths: list[Path] = []
-    for summary in summaries:
-        split = summary.get("split", "")
-        spec = SPLIT_SPECS.get(split, {})
-        zip_name = spec.get("slim_zip_name") or f"{spec.get('output_dir_name', split)}.zip"
-        zip_path = pack_root / zip_name
-        if zip_path.is_file():
-            summary["zip_path"] = str(zip_path)
-            summary["zip_size_mb"] = round(zip_path.stat().st_size / (1024 * 1024), 2)
-            zip_paths.append(zip_path)
-    return zip_paths
+def build_clinical_folder_bundle(
+    bundle_root: Path,
+    exp_dir: Path,
+    split_jobs: list[dict],
+    unified_html: Path | None,
+    *,
+    pack_mode: str,
+    project_root: Path,
+) -> dict:
+    """Assemble one self-contained folder: HTML at root, images in subfolders."""
+    if bundle_root.exists():
+        shutil.rmtree(bundle_root)
+    bundle_root.mkdir(parents=True)
+
+    readme = bundle_root / "README_筛图说明.txt"
+    write_bundle_readme(readme)
+
+    if unified_html and unified_html.is_file():
+        copy_screening_bundle(unified_html.parent, bundle_root)
+    elif (exp_dir / "gradcam_screening.html").is_file():
+        copy_screening_bundle(exp_dir, bundle_root)
+
+    split_stats: list[dict] = []
+    for job in split_jobs:
+        stats = materialize_split_folder(
+            job["output_dir"],
+            bundle_root,
+            job["split_name"],
+            job["results_df"],
+            pack_mode,
+            project_root,
+        )
+        stats["split"] = job["split"]
+        split_stats.append(stats)
+        print(
+            f"  {job['split_name']}: {stats['copied_panels']} panels, "
+            f"{stats['results_rows']} csv rows"
+        )
+
+    total_bytes = sum(f.stat().st_size for f in bundle_root.rglob("*") if f.is_file())
+    return {
+        "bundle_root": str(bundle_root.resolve()),
+        "size_mb": round(total_bytes / (1024 * 1024), 2),
+        "splits": split_stats,
+    }
 
 
 def zip_pack_files(files: list[tuple[Path, Path]], zip_path: Path) -> int:
@@ -181,6 +197,18 @@ def zip_pack_files(files: list[tuple[Path, Path]], zip_path: Path) -> int:
         for src, arc in files:
             zf.write(src, arcname=str(arc))
     return len(files)
+
+
+def zip_folder(folder: Path, zip_path: Path) -> int:
+    if zip_path.exists():
+        zip_path.unlink()
+    count = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for path in sorted(folder.rglob("*")):
+            if path.is_file():
+                zf.write(path, arcname=str(path.relative_to(folder)))
+                count += 1
+    return count
 
 
 def summarize_split(
@@ -246,74 +274,27 @@ def run_gradcam_split(
     subprocess.run(cmd, check=True, cwd=str(PROJECT_ROOT))
 
 
-def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path], bundle_path: Path | None = None) -> None:
-    lines = [
-        "Grad-CAM 测试集筛图包",
-        "====================",
-        f"生成时间: {datetime.now(timezone.utc).isoformat()}",
-        "",
-        "【医生用法 — 推荐】",
-        "  1. 解压对应 zip（外部 / 前瞻 分开筛，标注互不影响）",
-        "  2. 进入文件夹，双击 gradcam_screening.html",
-        "  3. 只需标记质量差的图：按 X 或点「标记剔除」",
-        "  4. 图质量好：直接翻下一张，不用点保留",
-        "  5. 筛完后点「导出剔除 CSV」，发回算法组",
-        "",
-        "【每个 slim zip 内含】",
-        "  - gradcam_screening.html      （唯一入口，双击打开）",
-        "  - screening_data/             （分片索引，自动加载，勿删）",
-        "  - gradcam_results.csv         （预测结果与 panel 路径）",
-        "  - panels/.../*_panel.png      （Grad-CAM 可视化大图）",
-        "",
-        "【合并包 gradcam_test_clinical_bundle.zip】",
-        "  解压后只打开根目录 gradcam_screening.html（含 screening_data/ + 两个图片文件夹）",
-        "",
-        "【样本量说明】",
-        "  - test_external: 2430 张（含内部前瞻 253 张重复行，纯外部 holdout 2177 张）",
-        "  - test_prospective: 2430 张（2025 前瞻全部为测试集，crop_ui 全量）",
-        "  - 旧 test_prospective.csv 253 张为历史 holdout，不用于 2025 筛图",
-        "  - 统一 HTML = 外部 holdout 2177 + 前瞻 2430",
-        "",
-    ]
-    for summary in summaries:
-        lines.extend(
-            [
-                f"Split: {summary['split']}",
-                f"  gradcam_results 行数: {summary['gradcam_results_rows']}",
-                f"  panel PNG 文件数: {summary['panel_png_count']}",
-                f"  打包 panel 数: {summary.get('packed_panel_count', summary['panel_png_count'])}",
-                f"  正确 / 分错: {summary['correct']} / {summary['misclassified']}",
-                f"  pack_mode: {summary.get('pack_mode', 'slim')}",
-                "",
-            ]
-        )
-    lines.append("ZIP 文件:")
-    for zp in zip_paths:
-        size_mb = zp.stat().st_size / (1024 * 1024) if zp.is_file() else 0
-        lines.append(f"  - {zp.name} ({size_mb:.1f} MB)")
-    if bundle_path and bundle_path.is_file():
-        size_mb = bundle_path.stat().st_size / (1024 * 1024)
-        lines.append(f"  - {bundle_path.name} ({size_mb:.1f} MB) [合并包]")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def write_bundle_readme(path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                "Grad-CAM 测试集筛图 — 合并包",
+                "Grad-CAM 测试集筛图 — 使用说明",
                 "========================",
                 "",
-                "文件夹说明:",
-                "  gradcam_screening.html           ← 只打开这个（统一筛图入口）",
-                "  screening_data/                  索引分片（自动加载）",
-                "  gradcam_test_external_full/      外部 panel 图片",
+                "【文件夹结构】",
+                "  gradcam_screening.html           ← 双击打开（唯一入口）",
+                "  screening_data/                  索引分片（自动加载，勿删）",
+                "  gradcam_test_external_full/      外部测试 panel 图片",
                 "  gradcam_test_prospective_full/   2025 前瞻 panel 图片",
                 "",
-                "操作建议:",
-                "  • 必须完整解压 zip，不要只拷贝 HTML",
-                "  • 默认保留；仅对质量差的图按 X 剔除",
-                "  • 筛完务必导出 gradcam_rejected.csv",
+                "【操作步骤】",
+                "  1. 将整个文件夹拷贝到本地（不要只拷 HTML）",
+                "  2. 双击 gradcam_screening.html",
+                "  3. 质量差的图按 X 剔除；质量好的直接翻下一张",
+                "  4. 筛完后点「导出剔除 CSV」，发回算法组",
+                "",
+                "【快捷键】",
+                "  ← → 切换   X 剔除   K 保留   N 下一张未浏览",
                 "",
             ]
         )
@@ -322,37 +303,40 @@ def write_bundle_readme(path: Path) -> None:
     )
 
 
-def build_clinical_bundle(
-    pack_root: Path,
-    exp_dir: Path,
-    split_output_dirs: list[Path],
-    unified_html: Path | None,
-) -> Path | None:
-    bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
-    if bundle_path.exists():
-        bundle_path.unlink()
-    with tempfile.TemporaryDirectory(prefix="gradcam_bundle_") as tmp:
-        tmp_dir = Path(tmp)
-        readme = tmp_dir / "README_筛图说明.txt"
-        write_bundle_readme(readme)
-        with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-            zf.write(readme, arcname="README_筛图说明.txt")
-            if unified_html and unified_html.is_file():
-                zf.write(unified_html, arcname="gradcam_screening.html")
-                for src, arc in collect_screening_data_files(unified_html.parent, Path(".")):
-                    zf.write(src, arcname=str(arc))
-            for output_dir in split_output_dirs:
-                if not output_dir.is_dir():
-                    continue
-                arc_root = output_dir.name
-                for path in sorted(output_dir.rglob("*")):
-                    if path.is_file():
-                        zf.write(path, arcname=str(Path(arc_root) / path.relative_to(output_dir)))
-    return bundle_path if bundle_path.is_file() else None
+def write_readme(path: Path, bundle_info: dict, summaries: list[dict]) -> None:
+    lines = [
+        "Grad-CAM 临床筛图文件夹",
+        "====================",
+        f"生成时间: {datetime.now(timezone.utc).isoformat()}",
+        "",
+        f"交付文件夹: {bundle_info.get('bundle_root', '')}",
+        f"总大小: {bundle_info.get('size_mb', 0)} MB",
+        "",
+        "打开方式: 进入文件夹，双击 gradcam_screening.html",
+        "",
+        "目录结构:",
+        "  gradcam_screening.html",
+        "  screening_data/",
+        "  gradcam_test_external_full/panels/...",
+        "  gradcam_test_prospective_full/panels/...",
+        "  README_筛图说明.txt",
+        "",
+    ]
+    for summary in summaries:
+        lines.extend(
+            [
+                f"Split: {summary['split']}",
+                f"  gradcam_results 行数: {summary['gradcam_results_rows']}",
+                f"  panel PNG 文件数: {summary['panel_png_count']}",
+                f"  正确 / 分错: {summary['correct']} / {summary['misclassified']}",
+                "",
+            ]
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Batch Grad-CAM on test splits + zip")
+    parser = argparse.ArgumentParser(description="Batch Grad-CAM + assemble clinical screening folder")
     parser.add_argument("--exp-dir", type=str, default=DEFAULT_EXP)
     parser.add_argument(
         "--splits",
@@ -361,23 +345,27 @@ def main() -> None:
         default=["test_external", "test_prospective"],
     )
     parser.add_argument("--skip-run", action="store_true", help="Only package existing outputs")
-    parser.add_argument("--no-zip", action="store_true")
+    parser.add_argument(
+        "--zip",
+        action="store_true",
+        help="Also create a zip archive of the folder bundle (optional)",
+    )
     parser.add_argument(
         "--pack-mode",
         choices=("slim", "full"),
         default="slim",
-        help="slim: panel PNG + gradcam_results.csv only; full: entire output dir",
+        help="slim: panel PNG + gradcam_results.csv only; full: entire split output dir",
     )
     parser.add_argument(
         "--include-prospective-in-external",
         action="store_true",
-        help="Keep int/prospective rows in external pack (default: excluded as duplicate)",
+        help="Keep int/prospective rows in external unified view (default: excluded as duplicate)",
     )
     parser.add_argument(
-        "--pack-root",
+        "--bundle-root",
         type=str,
         default=None,
-        help="Directory for zip files (default: exp_dir/gradcam_test_sets_pack)",
+        help=f"Output folder (default: exp_dir/{DEFAULT_BUNDLE_NAME})",
     )
     parser.add_argument("--layout", choices=("panel", "simple"), default="panel")
     parser.add_argument(
@@ -389,12 +377,12 @@ def main() -> None:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Resume Grad-CAM runs from existing gradcam_results.csv (do not wipe output dirs)",
+        help="Resume Grad-CAM runs from existing gradcam_results.csv",
     )
     parser.add_argument(
         "--refresh-pack",
         action="store_true",
-        help="Regenerate HTML and update HTML/README inside existing zips (no panel repack)",
+        help="Rebuild folder bundle (HTML + panels) from existing Grad-CAM outputs",
     )
     args, unknown = parser.parse_known_args()
 
@@ -404,30 +392,23 @@ def main() -> None:
     if not exp_dir.is_dir():
         raise SystemExit(f"Experiment dir not found: {exp_dir}")
 
-    gradcam_extra = [
-        "--layout",
-        args.layout,
-        "--cam-focus",
-        args.cam_focus,
-    ]
+    gradcam_extra = ["--layout", args.layout, "--cam-focus", args.cam_focus]
     if args.max_samples is not None:
         gradcam_extra.extend(["--max-samples", str(args.max_samples)])
     gradcam_extra.extend(unknown)
 
-    pack_root = Path(args.pack_root) if args.pack_root else exp_dir / "gradcam_test_sets_pack"
-    pack_root.mkdir(parents=True, exist_ok=True)
+    bundle_root = Path(args.bundle_root) if args.bundle_root else exp_dir / DEFAULT_BUNDLE_NAME
     external_holdout_only = not args.include_prospective_in_external
 
     summaries: list[dict] = []
-    zip_paths: list[Path] = []
-    split_output_dirs: list[Path] = []
+    split_jobs: list[dict] = []
 
     for split in args.splits:
         spec = SPLIT_SPECS[split]
         output_dir = exp_dir / spec["output_dir_name"]
         input_csv = resolve_split_input_csv(exp_dir, spec)
 
-        if not args.skip_run:
+        if not args.skip_run and not args.refresh_pack:
             if output_dir.exists() and args.max_samples is None and not args.resume:
                 shutil.rmtree(output_dir)
             run_gradcam_split(exp_dir, split, output_dir, gradcam_extra, resume=args.resume)
@@ -436,39 +417,26 @@ def main() -> None:
             print(f"Warning: missing output dir for {split}: {output_dir}")
             continue
 
-        split_output_dirs.append(output_dir)
-
-        results_df = None
         results_csv = output_dir / "gradcam_results.csv"
         if results_csv.is_file():
             results_df = pd.read_csv(results_csv)
-            results_df = filter_results_df(results_df, split, external_holdout_only)
+            pack_df = filter_results_df(results_df, split, external_holdout_only)
+        else:
+            pack_df = None
 
-        summary = summarize_split(output_dir, split, input_csv, results_df)
+        summary = summarize_split(output_dir, split, input_csv, pack_df)
         summary["pack_mode"] = args.pack_mode
-        summary["external_holdout_only"] = bool(external_holdout_only and split == "test_external")
         summaries.append(summary)
 
-        if not args.no_zip:
-            if args.pack_mode == "slim":
-                zip_name = spec["slim_zip_name"]
-            else:
-                zip_name = f"{output_dir.name}.zip"
-            zip_path = pack_root / zip_name
-            with tempfile.TemporaryDirectory(prefix="gradcam_pack_") as tmp:
-                pack_files = collect_pack_files(
-                    output_dir,
-                    results_df if results_df is not None else pd.DataFrame(),
-                    args.pack_mode,
-                    PROJECT_ROOT,
-                    tmp_dir=Path(tmp),
-                )
-                n_files = zip_pack_files(pack_files, zip_path)
-            summary["zip_path"] = str(zip_path)
-            summary["zip_file_count"] = n_files
-            summary["zip_size_mb"] = round(zip_path.stat().st_size / (1024 * 1024), 2)
-            zip_paths.append(zip_path)
-            print(f"Packed {split}: {zip_path} ({summary['zip_size_mb']} MB, {n_files} files)")
+        if pack_df is not None and len(pack_df):
+            split_jobs.append(
+                {
+                    "split": split,
+                    "split_name": spec["output_dir_name"],
+                    "output_dir": output_dir,
+                    "results_df": pack_df,
+                }
+            )
 
     screening_sources: list[dict] = []
     for split in args.splits:
@@ -486,14 +454,13 @@ def main() -> None:
                     "include_in_unified": bool(spec.get("include_in_unified", False)),
                 }
             )
+
     screening_summary = None
     screening_html: Path | None = None
-    split_html_summaries: list[dict] = []
     if screening_sources:
         unified_sources = [src for src in screening_sources if src.get("include_in_unified")]
         if unified_sources:
             screening_html = exp_dir / "gradcam_screening.html"
-            # Unified view: 2430 unique test images (external holdout + prospective).
             unified_for_html = []
             for src in unified_sources:
                 u = dict(src)
@@ -501,27 +468,37 @@ def main() -> None:
                     u["external_holdout_only"] = True
                 unified_for_html.append(u)
             screening_summary = build_screening_html(unified_for_html, screening_html)
-            copy_screening_bundle(exp_dir, pack_root)
             print(
-                f"Unified screening HTML: {screening_html} "
+                f"Screening HTML: {screening_html} "
                 f"({screening_summary['cases']} cases, "
-                f"chunks={screening_summary.get('chunk_count')}, "
-                f"splits={screening_summary['split_counts']})"
+                f"chunks={screening_summary.get('chunk_count')})"
             )
-        for src in screening_sources:
-            split = str(src["split"])
-            split_html = Path(src["root_dir"]) / "gradcam_screening.html"
-            split_src = {**src, "external_holdout_only": False}
-            split_summary = build_split_screening_html(split_src, split_html)
-            split_html_summaries.append({"split": split, **split_summary})
-            print(
-                f"Split screening HTML: {split_html} "
-                f"({split_summary['cases']} cases, storage={split_summary.get('split_counts', {})})"
-            )
+
+    bundle_info: dict = {}
+    if split_jobs and (args.skip_run or args.refresh_pack or not args.skip_run):
+        print(f"\n=== Assembling folder bundle: {bundle_root} ===")
+        bundle_info = build_clinical_folder_bundle(
+            bundle_root,
+            exp_dir,
+            split_jobs,
+            screening_html,
+            pack_mode=args.pack_mode,
+            project_root=PROJECT_ROOT,
+        )
+        print(f"Bundle ready: {bundle_root} ({bundle_info['size_mb']} MB)")
+
+    zip_path = None
+    if args.zip and bundle_root.is_dir():
+        zip_path = bundle_root.parent / f"{bundle_root.name}.zip"
+        n = zip_folder(bundle_root, zip_path)
+        size_mb = round(zip_path.stat().st_size / (1024 * 1024), 2)
+        print(f"Optional zip: {zip_path} ({size_mb} MB, {n} files)")
 
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "exp_dir": str(exp_dir),
+        "bundle_root": str(bundle_root.resolve()),
+        "bundle_size_mb": bundle_info.get("size_mb"),
         "layout": args.layout,
         "cam_focus": args.cam_focus,
         "pack_mode": args.pack_mode,
@@ -532,73 +509,18 @@ def main() -> None:
         manifest["screening_html"] = screening_summary["html"]
         manifest["screening_cases"] = screening_summary["cases"]
         manifest["screening_split_counts"] = screening_summary["split_counts"]
-    if split_html_summaries:
-        manifest["split_screening_html"] = split_html_summaries
-    manifest_path = pack_root / "gradcam_test_sets_manifest.json"
+        manifest["screening_chunks"] = screening_summary.get("chunk_count")
+    if bundle_info:
+        manifest["bundle_splits"] = bundle_info.get("splits")
+    if zip_path and zip_path.is_file():
+        manifest["zip_path"] = str(zip_path)
+        manifest["zip_size_mb"] = round(zip_path.stat().st_size / (1024 * 1024), 2)
+
+    manifest_path = bundle_root.parent / "gradcam_test_sets_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    bundle_path = None
-    if args.refresh_pack:
-        readme_tmp = pack_root / "README_筛图说明.txt"
-        write_bundle_readme(readme_tmp)
-        for split in args.splits:
-            spec = SPLIT_SPECS[split]
-            output_dir = exp_dir / spec["output_dir_name"]
-            split_html = output_dir / "gradcam_screening.html"
-            zip_path = pack_root / spec["slim_zip_name"]
-            if split_html.is_file() and zip_path.is_file():
-                updates = [(split_html, f"{output_dir.name}/gradcam_screening.html")]
-                updates.extend(
-                    (src, str(arc))
-                    for src, arc in collect_screening_data_files(output_dir, Path(output_dir.name))
-                )
-                update_files_in_zip(zip_path, updates)
-                print(f"Updated HTML in {zip_path.name}")
-        bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
-        if bundle_path.is_file() and screening_html and screening_html.is_file():
-            bundle_updates = [(screening_html, "gradcam_screening.html")]
-            bundle_updates.extend(
-                (src, str(arc)) for src, arc in collect_screening_data_files(screening_html.parent, Path("."))
-            )
-            if readme_tmp.is_file():
-                bundle_updates.append((readme_tmp, "README_筛图说明.txt"))
-            for split in args.splits:
-                spec = SPLIT_SPECS[split]
-                output_dir = exp_dir / spec["output_dir_name"]
-                split_html = output_dir / "gradcam_screening.html"
-                if split_html.is_file():
-                    bundle_updates.append((split_html, f"{output_dir.name}/gradcam_screening.html"))
-            update_files_in_zip(bundle_path, bundle_updates)
-            print(f"Updated HTML in {bundle_path.name}")
-        zip_paths = attach_existing_zip_stats(summaries, pack_root)
-        if bundle_path.is_file():
-            manifest["clinical_bundle_zip"] = str(bundle_path)
-            manifest["clinical_bundle_size_mb"] = round(bundle_path.stat().st_size / (1024 * 1024), 2)
-            manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    elif not args.no_zip and split_output_dirs:
-        bundle_path = build_clinical_bundle(
-            pack_root,
-            exp_dir,
-            split_output_dirs,
-            screening_html if screening_summary else None,
-        )
-        if bundle_path:
-            size_mb = round(bundle_path.stat().st_size / (1024 * 1024), 2)
-            print(f"Clinical bundle: {bundle_path} ({size_mb} MB)")
-            manifest["clinical_bundle_zip"] = str(bundle_path)
-            manifest["clinical_bundle_size_mb"] = size_mb
-            manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    if args.no_zip and not args.refresh_pack:
-        zip_paths = attach_existing_zip_stats(summaries, pack_root)
-        bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
-        if bundle_path.is_file():
-            manifest["clinical_bundle_zip"] = str(bundle_path)
-            manifest["clinical_bundle_size_mb"] = round(bundle_path.stat().st_size / (1024 * 1024), 2)
-            manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    write_readme(pack_root / "README_gradcam_test_sets.txt", summaries, zip_paths, bundle_path if bundle_path and Path(bundle_path).is_file() else None)
+    write_readme(bundle_root.parent / "README_gradcam_test_sets.txt", bundle_info, summaries)
     print(f"\nManifest: {manifest_path}")
+    print(f"Open: {bundle_root / 'gradcam_screening.html'}")
 
 
 if __name__ == "__main__":
