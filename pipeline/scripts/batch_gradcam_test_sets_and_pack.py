@@ -42,18 +42,6 @@ SPLIT_SPECS = {
         "slim_zip_name": "gradcam_test_prospective_slim.zip",
         "include_in_unified": True,
     },
-    "train": {
-        "input_csv": "pipeline/data/tstaging_4class/train_clinical.csv",
-        "output_dir_name": "gradcam_train_full",
-        "slim_zip_name": "gradcam_train_slim.zip",
-        "include_in_unified": False,
-    },
-    "val": {
-        "input_csv": "pipeline/data/tstaging_4class/val_clinical.csv",
-        "output_dir_name": "gradcam_val_full",
-        "slim_zip_name": "gradcam_val_slim.zip",
-        "include_in_unified": False,
-    },
 }
 
 

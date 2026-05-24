@@ -912,16 +912,6 @@ SPLIT_HTML_SPECS = {
         "storage_key": "gradcam_screening_test_prospective_v2",
         "dir_name": "gradcam_test_prospective_full",
     },
-    "train": {
-        "title": "GradCAM 训练集筛图",
-        "storage_key": "gradcam_screening_train_v2",
-        "dir_name": "gradcam_train_full",
-    },
-    "val": {
-        "title": "GradCAM 验证集筛图",
-        "storage_key": "gradcam_screening_val_v2",
-        "dir_name": "gradcam_val_full",
-    },
 }
 
 
