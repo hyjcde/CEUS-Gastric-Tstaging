@@ -29,4 +29,7 @@ python3 pipeline/scripts/batch_gradcam_test_sets_and_pack.py \
   2>&1 | tee -a "$LOG"
 
 n=$(($(wc -l < "$CSV") - 1))
-echo "[$(date -Is)] done. prospective rows=$n bundle=$EXP/gradcam_clinical_screening" | tee -a "$LOG"
+echo "[$(date -Is)] done. prospective rows=$n" | tee -a "$LOG"
+echo "[$(date -Is)] deliverable folder: $EXP/gradcam_clinical_screening" | tee -a "$LOG"
+echo "[$(date -Is)] open: $EXP/gradcam_clinical_screening/gradcam_screening.html" | tee -a "$LOG"
+ls -la "$EXP/gradcam_clinical_screening/" | tee -a "$LOG"

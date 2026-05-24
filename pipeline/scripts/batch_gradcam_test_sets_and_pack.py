@@ -143,27 +143,62 @@ def materialize_split_folder(
     }
 
 
+def verify_bundle_layout(bundle_root: Path) -> dict:
+    """Ensure deliverable is one folder with HTML at root."""
+    bundle_root = bundle_root.resolve()
+    html = bundle_root / "gradcam_screening.html"
+    data_dir = bundle_root / SCREENING_DATA_DIR
+    manifest = data_dir / "manifest.js"
+    checks = {
+        "bundle_root": str(bundle_root),
+        "html_at_root": html.is_file(),
+        "screening_data": data_dir.is_dir(),
+        "manifest_js": manifest.is_file(),
+        "chunk_files": len(list(data_dir.glob("chunk_*.js"))),
+        "split_dirs": [],
+        "errors": [],
+    }
+    if not checks["html_at_root"]:
+        checks["errors"].append("缺少根目录 gradcam_screening.html")
+    if not checks["screening_data"]:
+        checks["errors"].append("缺少 screening_data/ 目录")
+    if not checks["manifest_js"]:
+        checks["errors"].append("缺少 screening_data/manifest.js")
+
+    for name in ("gradcam_test_external_full", "gradcam_test_prospective_full"):
+        split_dir = bundle_root / name
+        if split_dir.is_dir():
+            n_panels = sum(1 for _ in split_dir.rglob("*_panel.png"))
+            checks["split_dirs"].append({"name": name, "panels": n_panels})
+            if n_panels == 0:
+                checks["errors"].append(f"{name}/ 下没有 panel 图片")
+        nested_html = split_dir / "gradcam_screening.html"
+        if nested_html.is_file():
+            checks["errors"].append(f"{name}/ 内不应有 gradcam_screening.html（唯一入口在根目录）")
+
+    checks["ok"] = len(checks["errors"]) == 0
+    return checks
+
+
 def build_clinical_folder_bundle(
     bundle_root: Path,
-    exp_dir: Path,
     split_jobs: list[dict],
-    unified_html: Path | None,
+    unified_html_sources: list[dict],
     *,
     pack_mode: str,
     project_root: Path,
 ) -> dict:
-    """Assemble one self-contained folder: HTML at root, images in subfolders."""
+    """Assemble one self-contained folder: HTML + screening_data at root, images in subfolders."""
     if bundle_root.exists():
         shutil.rmtree(bundle_root)
     bundle_root.mkdir(parents=True)
 
-    readme = bundle_root / "README_筛图说明.txt"
-    write_bundle_readme(readme)
-
-    if unified_html and unified_html.is_file():
-        copy_screening_bundle(unified_html.parent, bundle_root)
-    elif (exp_dir / "gradcam_screening.html").is_file():
-        copy_screening_bundle(exp_dir, bundle_root)
+    write_bundle_readme(bundle_root / "README_筛图说明.txt")
+    (bundle_root / "打开请双击_gradcam_screening.html.txt").write_text(
+        "请双击同目录下的 gradcam_screening.html 开始筛图。\n"
+        "请勿只拷贝 HTML，整个文件夹需一起拷贝。\n",
+        encoding="utf-8",
+    )
 
     split_stats: list[dict] = []
     for job in split_jobs:
@@ -182,11 +217,26 @@ def build_clinical_folder_bundle(
             f"{stats['results_rows']} csv rows"
         )
 
+    screening_summary = build_screening_html(
+        unified_html_sources,
+        bundle_root / "gradcam_screening.html",
+    )
+    print(
+        f"  HTML at root: {bundle_root / 'gradcam_screening.html'} "
+        f"({screening_summary['cases']} cases, chunks={screening_summary.get('chunk_count')})"
+    )
+
+    layout = verify_bundle_layout(bundle_root)
+    if not layout["ok"]:
+        raise RuntimeError("Bundle layout invalid: " + "; ".join(layout["errors"]))
+
     total_bytes = sum(f.stat().st_size for f in bundle_root.rglob("*") if f.is_file())
     return {
         "bundle_root": str(bundle_root.resolve()),
         "size_mb": round(total_bytes / (1024 * 1024), 2),
         "splits": split_stats,
+        "screening_summary": screening_summary,
+        "layout": layout,
     }
 
 
@@ -456,36 +506,30 @@ def main() -> None:
             )
 
     screening_summary = None
-    screening_html: Path | None = None
+    unified_for_html: list[dict] = []
     if screening_sources:
-        unified_sources = [src for src in screening_sources if src.get("include_in_unified")]
-        if unified_sources:
-            screening_html = exp_dir / "gradcam_screening.html"
-            unified_for_html = []
-            for src in unified_sources:
-                u = dict(src)
-                if u.get("split") == "test_external":
-                    u["external_holdout_only"] = True
-                unified_for_html.append(u)
-            screening_summary = build_screening_html(unified_for_html, screening_html)
-            print(
-                f"Screening HTML: {screening_html} "
-                f"({screening_summary['cases']} cases, "
-                f"chunks={screening_summary.get('chunk_count')})"
-            )
+        unified_for_html = []
+        for src in screening_sources:
+            if not src.get("include_in_unified"):
+                continue
+            u = dict(src)
+            if u.get("split") == "test_external":
+                u["external_holdout_only"] = True
+            unified_for_html.append(u)
 
     bundle_info: dict = {}
-    if split_jobs and (args.skip_run or args.refresh_pack or not args.skip_run):
+    if split_jobs and unified_for_html and (args.skip_run or args.refresh_pack or not args.skip_run):
         print(f"\n=== Assembling folder bundle: {bundle_root} ===")
         bundle_info = build_clinical_folder_bundle(
             bundle_root,
-            exp_dir,
             split_jobs,
-            screening_html,
+            unified_for_html,
             pack_mode=args.pack_mode,
             project_root=PROJECT_ROOT,
         )
+        screening_summary = bundle_info.get("screening_summary")
         print(f"Bundle ready: {bundle_root} ({bundle_info['size_mb']} MB)")
+        print(f"Open: {bundle_root / 'gradcam_screening.html'}")
 
     zip_path = None
     if args.zip and bundle_root.is_dir():
@@ -506,21 +550,23 @@ def main() -> None:
         "splits": summaries,
     }
     if screening_summary:
-        manifest["screening_html"] = screening_summary["html"]
+        manifest["screening_html"] = str((bundle_root / "gradcam_screening.html").resolve())
         manifest["screening_cases"] = screening_summary["cases"]
         manifest["screening_split_counts"] = screening_summary["split_counts"]
         manifest["screening_chunks"] = screening_summary.get("chunk_count")
     if bundle_info:
         manifest["bundle_splits"] = bundle_info.get("splits")
+        manifest["bundle_layout"] = bundle_info.get("layout")
     if zip_path and zip_path.is_file():
         manifest["zip_path"] = str(zip_path)
         manifest["zip_size_mb"] = round(zip_path.stat().st_size / (1024 * 1024), 2)
 
-    manifest_path = bundle_root.parent / "gradcam_test_sets_manifest.json"
+    manifest_path = bundle_root / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    write_readme(bundle_root.parent / "README_gradcam_test_sets.txt", bundle_info, summaries)
-    print(f"\nManifest: {manifest_path}")
-    print(f"Open: {bundle_root / 'gradcam_screening.html'}")
+    write_readme(bundle_root / "README_交付说明.txt", bundle_info, summaries)
+    print(f"\nDeliverable folder: {bundle_root.resolve()}")
+    print(f"  gradcam_screening.html  ← 根目录唯一入口")
+    print(f"  manifest.json           ← 包内清单")
 
 
 if __name__ == "__main__":
