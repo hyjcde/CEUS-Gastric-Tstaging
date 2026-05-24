@@ -1841,7 +1841,7 @@ def process_samples(
             input_tensors = (g_tensor,)
 
         if use_clinical:
-            cli_vals = [float(row[col]) for col in clinical_cols]
+            cli_vals = [float(row[col]) if pd.notna(row.get(col)) else -1.0 for col in clinical_cols]
             cli_tensor = torch.tensor([cli_vals], dtype=torch.float32, device=device)
             if is_dual:
                 input_tensors = (g_tensor, l_tensor, cli_tensor)

@@ -1,0 +1,45 @@
+{
+  "image_rows_scanned": 2430,
+  "rows_with_clinical_pt_and_mask": 2285,
+  "rows_without_pt_placeholder_label": 145,
+  "rows_written": 2430,
+  "unique_patients_with_rows": 506,
+  "missing_patient_id_images": 0,
+  "missing_clinical_or_pt_images": 145,
+  "missing_mask_images": 0,
+  "missing_roi_image_rows": 0,
+  "examples": {
+    "missing_patient_id_images": [],
+    "missing_clinical_or_pt_images": [
+      "2025直接手术__1449431_(1).jpg",
+      "2025直接手术__1449431_(2).jpg",
+      "2025直接手术__1449431_(3).jpg",
+      "2025直接手术__1449431_(4).jpg",
+      "2025直接手术__1450605_(1).jpg",
+      "2025直接手术__1450605_(2).jpg",
+      "2025直接手术__1450605_(3).jpg",
+      "2025直接手术__1450605_(4).jpg",
+      "2025直接手术__1450605_(5).jpg",
+      "2025直接手术__1450605_(6).jpg",
+      "2025直接手术__1471516_(1).jpg",
+      "2025直接手术__1471516_(2).jpg",
+      "2025直接手术__1471516_(3).jpg",
+      "2025直接手术__1471516_(4).jpg",
+      "2025直接手术__1474600_(1).jpg",
+      "2025直接手术__1474600_(2).jpg",
+      "2025直接手术__1474600_(3).jpg",
+      "2025直接手术__1475715_(1).jpg",
+      "2025直接手术__1475715_(2).jpg",
+      "2025直接手术__1475715_(3).jpg"
+    ],
+    "missing_mask_images": [],
+    "missing_roi_image_rows": []
+  },
+  "output_csv": "pipeline/data/tstaging_4class_prospective_full/test_prospective_full.csv",
+  "clinical_generation_summary": {
+    "rows": 2430,
+    "matched_rows": 2287,
+    "ambiguous_rows": 0,
+    "missing_rows": 143
+  }
+}

@@ -37,7 +37,7 @@ SPLIT_SPECS = {
         "include_in_unified": True,
     },
     "test_prospective": {
-        # 2025 前瞻全量（crop_ui + 临床22维），非 test 集 holdout 253 张
+        # 2025 前瞻全部为测试集：磁盘 crop_ui 2430 张（含 145 张无 pT，占位标签）
         "input_csv": "pipeline/data/tstaging_4class_prospective_full/test_prospective_full_clinical.csv",
         "output_dir_name": "gradcam_test_prospective_full",
         "slim_zip_name": "gradcam_test_prospective_slim.zip",
@@ -239,9 +239,9 @@ def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path], bundl
         "",
         "【样本量说明】",
         "  - test_external: 2430 张（含内部前瞻 253 张重复行，纯外部 holdout 2177 张）",
-        "  - test_prospective: 2285 张（2025 前瞻全量 crop_ui，含临床；磁盘共 2430，缺临床 145）",
-        "  - test holdout 253 张仅用于模型 benchmark，临床筛图请用前瞻全量包",
-        "  - 统一 HTML = 外部 holdout 2177 + 前瞻全量 2285（可能有 filename 重叠）",
+        "  - test_prospective: 2430 张（2025 前瞻全部为测试集，crop_ui 全量）",
+        "  - 旧 test_prospective.csv 253 张为历史 holdout，不用于 2025 筛图",
+        "  - 统一 HTML = 外部 holdout 2177 + 前瞻 2430",
         "",
     ]
     for summary in summaries:
@@ -275,7 +275,7 @@ def write_bundle_readme(path: Path) -> None:
                 "",
                 "文件夹说明:",
                 "  gradcam_test_external_full/   外部测试 2430 张 → 打开内层 gradcam_screening.html",
-                "  gradcam_test_prospective_full/ 2025 前瞻全量 2285 张 → 打开内层 gradcam_screening.html",
+                "  gradcam_test_prospective_full/ 2025 前瞻测试 2430 张 → 打开内层 gradcam_screening.html",
                 "  gradcam_screening.html         统一视图（外部 holdout + 前瞻全量，与分文件夹标注分开保存）",
                 "",
                 "操作建议:",
