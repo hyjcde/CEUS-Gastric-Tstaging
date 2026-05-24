@@ -904,13 +904,23 @@ def build_unified_html(
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "test_external_v2",
+        "storage_key": "gradcam_screening_test_external_v2",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 前瞻测试筛图",
-        "storage_key": "test_prospective_v2",
+        "storage_key": "gradcam_screening_test_prospective_v2",
         "dir_name": "gradcam_test_prospective_full",
+    },
+    "train": {
+        "title": "GradCAM 训练集筛图",
+        "storage_key": "gradcam_screening_train_v2",
+        "dir_name": "gradcam_train_full",
+    },
+    "val": {
+        "title": "GradCAM 验证集筛图",
+        "storage_key": "gradcam_screening_val_v2",
+        "dir_name": "gradcam_val_full",
     },
 }
 

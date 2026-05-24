@@ -1618,6 +1618,29 @@ def _load_mask_for_image(img_path, row, mask_dir, global_size):
     return mask_tensor.unsqueeze(0)
 
 
+def _row_resume_key(row, img_path: str) -> str:
+    raw = row.get("image_path")
+    if raw is not None and not pd.isna(raw) and str(raw).strip():
+        return str(raw).strip()
+    return str(img_path)
+
+
+def _load_resume_state(output_dir: Path) -> tuple[list[dict], set[str]]:
+    results: list[dict] = []
+    done_keys: set[str] = set()
+    csv_path = output_dir / "gradcam_results.csv"
+    if not csv_path.is_file():
+        return results, done_keys
+    prev = pd.read_csv(csv_path)
+    results = prev.to_dict("records")
+    for _, row in prev.iterrows():
+        for col in ("image_path", "crop_ui_path"):
+            value = row.get(col)
+            if value is not None and not pd.isna(value) and str(value).strip():
+                done_keys.add(str(value).strip())
+    return results, done_keys
+
+
 def process_samples(
     model,
     cfg,
@@ -1625,6 +1648,7 @@ def process_samples(
     device,
     output_dir,
     max_samples=None,
+    resume: bool = False,
     dual_cam_on_misclass: bool = True,
     mask_cam_to_det_box: bool = True,
     det_box_pad: float = 0.12,
@@ -1727,12 +1751,19 @@ def process_samples(
     if max_samples and len(df) > max_samples:
         df = df.sample(max_samples, random_state=42)
 
+    results, done_keys = _load_resume_state(output_dir) if resume else ([], set())
+    if resume and done_keys:
+        print(f"Resume: {len(done_keys)} rows already in {output_dir / 'gradcam_results.csv'}")
+
     for idx, (_, row) in enumerate(df.iterrows()):
         img_resolved = resolve_gradcam_image_path(row)
         if img_resolved is None:
             print(f"  Skip missing crop_ui image: {row['image_path']}")
             continue
         img_path = str(Path(img_resolved))
+        resume_key = _row_resume_key(row, img_path)
+        if resume and resume_key in done_keys:
+            continue
         if "crop_ui" not in img_path.replace("\\", "/"):
             print(f"  Warning: not crop_ui path: {img_path}")
 
@@ -2044,9 +2075,11 @@ def process_samples(
             **{f"prob_{CLASS_NAMES[i]}": float(probs[i]) for i in range(4)},
         }
         results.append(row_out)
+        done_keys.add(resume_key)
 
         if (idx + 1) % 50 == 0:
             print(f"  Processed {idx + 1}/{len(df)} images")
+            pd.DataFrame(results).to_csv(output_dir / "gradcam_results.csv", index=False)
 
     gradcam_global.remove_hooks()
     if gradcam_local is not None:
@@ -2087,6 +2120,11 @@ def main():
                         help="Output directory (default: exp_dir/gradcam_analysis)")
     parser.add_argument("--max-samples", type=int, default=None,
                         help="Max samples to process (None = all)")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip rows already present in output gradcam_results.csv",
+    )
     parser.add_argument("--t2-only", action="store_true",
                         help="Only process T2 samples (for focused analysis)")
     parser.add_argument(
@@ -2232,6 +2270,7 @@ def main():
         device,
         output_dir,
         args.max_samples,
+        resume=args.resume,
         dual_cam_on_misclass=not args.no_dual_cam,
         mask_cam_to_det_box=not args.no_det_box_mask,
         det_box_pad=args.det_box_pad,

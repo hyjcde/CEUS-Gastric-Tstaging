@@ -34,13 +34,36 @@ SPLIT_SPECS = {
         "input_csv_suffix": "eval/test_external/test_predictions.csv",
         "output_dir_name": "gradcam_test_external_full",
         "slim_zip_name": "gradcam_test_external_slim.zip",
+        "include_in_unified": True,
     },
     "test_prospective": {
         "input_csv_suffix": "eval/test_prospective/test_predictions.csv",
         "output_dir_name": "gradcam_test_prospective_full",
         "slim_zip_name": "gradcam_test_prospective_slim.zip",
+        "include_in_unified": True,
+    },
+    "train": {
+        "input_csv": "pipeline/data/tstaging_4class/train_clinical.csv",
+        "output_dir_name": "gradcam_train_full",
+        "slim_zip_name": "gradcam_train_slim.zip",
+        "include_in_unified": False,
+    },
+    "val": {
+        "input_csv": "pipeline/data/tstaging_4class/val_clinical.csv",
+        "output_dir_name": "gradcam_val_full",
+        "slim_zip_name": "gradcam_val_slim.zip",
+        "include_in_unified": False,
     },
 }
+
+
+def resolve_split_input_csv(exp_dir: Path, spec: dict) -> Path:
+    if spec.get("input_csv"):
+        path = Path(spec["input_csv"])
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        return path
+    return exp_dir / spec["input_csv_suffix"]
 
 
 def resolve_panel_path(panel_path: object, project_root: Path) -> Path | None:
@@ -145,9 +168,11 @@ def run_gradcam_split(
     split: str,
     output_dir: Path,
     extra_args: list[str],
+    *,
+    resume: bool = False,
 ) -> None:
     spec = SPLIT_SPECS[split]
-    input_csv = exp_dir / spec["input_csv_suffix"]
+    input_csv = resolve_split_input_csv(exp_dir, spec)
     if not input_csv.is_file():
         raise FileNotFoundError(f"Missing input CSV: {input_csv}")
 
@@ -162,6 +187,8 @@ def run_gradcam_split(
         str(output_dir),
         *extra_args,
     ]
+    if resume:
+        cmd.append("--resume")
     print(f"\n=== Grad-CAM: {split} ===")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True, cwd=str(PROJECT_ROOT))
@@ -245,6 +272,11 @@ def main() -> None:
         default="roi_expand_px",
     )
     parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume Grad-CAM runs from existing gradcam_results.csv (do not wipe output dirs)",
+    )
     args, unknown = parser.parse_known_args()
 
     exp_dir = Path(args.exp_dir)
@@ -273,12 +305,12 @@ def main() -> None:
     for split in args.splits:
         spec = SPLIT_SPECS[split]
         output_dir = exp_dir / spec["output_dir_name"]
-        input_csv = exp_dir / spec["input_csv_suffix"]
+        input_csv = resolve_split_input_csv(exp_dir, spec)
 
         if not args.skip_run:
-            if output_dir.exists() and args.max_samples is None:
+            if output_dir.exists() and args.max_samples is None and not args.resume:
                 shutil.rmtree(output_dir)
-            run_gradcam_split(exp_dir, split, output_dir, gradcam_extra)
+            run_gradcam_split(exp_dir, split, output_dir, gradcam_extra, resume=args.resume)
 
         if not output_dir.is_dir():
             print(f"Warning: missing output dir for {split}: {output_dir}")
@@ -329,18 +361,21 @@ def main() -> None:
                     "root_dir": output_dir,
                     "path_prefix": spec["output_dir_name"],
                     "external_holdout_only": bool(external_holdout_only and split == "test_external"),
+                    "include_in_unified": bool(spec.get("include_in_unified", False)),
                 }
             )
     screening_summary = None
     split_html_summaries: list[dict] = []
     if screening_sources:
-        screening_html = exp_dir / "gradcam_screening.html"
-        screening_summary = build_screening_html(screening_sources, screening_html)
-        shutil.copy2(screening_html, pack_root / "gradcam_screening.html")
-        print(
-            f"Unified screening HTML: {screening_html} "
-            f"({screening_summary['cases']} cases, splits={screening_summary['split_counts']})"
-        )
+        unified_sources = [src for src in screening_sources if src.get("include_in_unified")]
+        if unified_sources:
+            screening_html = exp_dir / "gradcam_screening.html"
+            screening_summary = build_screening_html(unified_sources, screening_html)
+            shutil.copy2(screening_html, pack_root / "gradcam_screening.html")
+            print(
+                f"Unified screening HTML: {screening_html} "
+                f"({screening_summary['cases']} cases, splits={screening_summary['split_counts']})"
+            )
         for src in screening_sources:
             split = str(src["split"])
             split_html = Path(src["root_dir"]) / "gradcam_screening.html"
