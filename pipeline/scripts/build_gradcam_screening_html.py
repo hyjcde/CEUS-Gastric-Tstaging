@@ -908,8 +908,8 @@ SPLIT_HTML_SPECS = {
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
-        "title": "GradCAM 前瞻测试筛图",
-        "storage_key": "gradcam_screening_test_prospective_v2",
+        "title": "GradCAM 2025前瞻全量筛图",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v1",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
