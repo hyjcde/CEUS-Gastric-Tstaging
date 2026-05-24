@@ -5,10 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+
+DEFAULT_CHUNK_SIZE = 350
+SCREENING_DATA_DIR = "screening_data"
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html lang="zh-CN">
@@ -59,7 +63,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     h1 { font-size: 17px; margin: 0 0 4px; }
     .sub { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
     label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
-    select, input[type="text"], textarea {
+    select, input[type="text"], input[type="number"], textarea {
       width: 100%;
       background: #0a0f15;
       color: var(--text);
@@ -181,15 +185,33 @@ HTML_TEMPLATE = r"""<!doctype html>
       width: 100%;
       line-height: 0;
     }
-    .path-error {
+    .path-error, .load-box {
       padding: 24px;
       line-height: 1.7;
-      color: #ffb4b4;
       background: #2a1215;
       border: 1px solid #7f1d1d;
       border-radius: 10px;
       max-width: 900px;
       margin: 24px auto;
+    }
+    .load-box {
+      background: var(--panel);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .load-bar {
+      height: 8px;
+      background: #0a0f15;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .load-bar > i {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.2s ease;
     }
     .path-error code { color: #fbbf24; }
     .annotate-head {
@@ -267,6 +289,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       </select>
       <label>搜索文件名</label>
       <input id="filter-search" type="text" placeholder="例如 1001916">
+      <label>跳转到序号（当前筛选列表内）</label>
+      <input id="jump-index" type="number" min="1" placeholder="例如 1200">
       <label>剔除原因</label>
       <select id="reject-reason">
         <option value="图像质量差-胃壁层次不清">图像质量差-胃壁层次不清</option>
@@ -292,17 +316,19 @@ HTML_TEMPLATE = r"""<!doctype html>
         <button class="danger" id="btn-reject">标记剔除 (X)</button>
         <button class="success" id="btn-keep">保留 (K)</button>
       </div>
-      <div class="viewer" id="viewer"><div class="empty">加载中…</div></div>
+      <div class="viewer" id="viewer"><div class="load-box">正在加载索引…</div></div>
     </main>
   </div>
-  <script id="cases-data" type="application/json">__CASES_JSON__</script>
+  <script src="__DATA_PREFIX__manifest.js"></script>
   <script>
-    const META = __META_JSON__;
-    const CASES = JSON.parse(document.getElementById("cases-data").textContent);
-    const STORAGE_KEY = "gradcam_screening_" + META.storage_key;
+    const META = window.__GRADCAM_META__ || {};
+    const CHUNK_FILES = window.__GRADCAM_CHUNK_FILES__ || [];
+    const DATA_PREFIX = __DATA_PREFIX_JSON__;
+    const STORAGE_KEY = "gradcam_screening_" + (META.storage_key || "default");
     const STAGE_ORDER = ["T1", "T2", "T3", "T4+"];
 
-    let reviews = loadReviews();
+    let CASES = [];
+    let reviews = {};
     let filtered = [];
     let currentIndex = 0;
     let drawMode = "true";
@@ -312,13 +338,15 @@ HTML_TEMPLATE = r"""<!doctype html>
     let ctx = null;
     let currentItem = null;
     let pathOk = null;
+    let saveTimer = null;
+    let prefetchImg = null;
 
     function escHtml(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
     }
 
     function imgErrorHtml(panel) {
-      return `<div class="empty">图片加载失败<br><code>${escHtml(panel)}</code><br>请确认 HTML 与 gradcam_test_external_full、gradcam_test_prospective_full 在同一文件夹</div>`;
+      return `<div class="empty">图片加载失败<br><code>${escHtml(panel)}</code><br>请确认已完整解压，且 HTML 与图片文件夹在同一目录下</div>`;
     }
 
     function pathErrorHtml(panel) {
@@ -326,10 +354,42 @@ HTML_TEMPLATE = r"""<!doctype html>
       return `<div class="path-error">
         <h3 style="margin-top:0;">找不到图片，当前 HTML 位置不正确</h3>
         <p>尝试加载：<code>${escHtml(panel)}</code></p>
-        <p>请把 <code>gradcam_screening.html</code> 放在 <code>${escHtml(folder)}</code> 文件夹内，与 <code>panels/</code> 同级。</p>
+        <p>请解压整个 zip，双击根目录 <code>gradcam_screening.html</code>（不要只拷贝 HTML）。</p>
+        <p>目录应含 <code>${escHtml(folder)}</code> 与 <code>screening_data/</code>。</p>
         <p>${escHtml(META.path_help || "")}</p>
-        <p>若仍不行，请用 Chrome 打开；或用命令在该目录启动本地服务：<code>python3 -m http.server 8765</code></p>
       </div>`;
+    }
+
+    function showLoading(msg, pct) {
+      const viewer = document.getElementById("viewer");
+      const width = Math.max(0, Math.min(100, pct || 0));
+      viewer.innerHTML = `<div class="load-box">
+        <div>${escHtml(msg)}</div>
+        <div class="load-bar"><i style="width:${width}%"></i></div>
+      </div>`;
+    }
+
+    function loadChunkScript(file) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = DATA_PREFIX + file;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error("无法加载 " + file));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function loadAllCases() {
+      if (!CHUNK_FILES.length) return [];
+      window.__GRADCAM_CHUNKS__ = [];
+      let loaded = 0;
+      for (const file of CHUNK_FILES) {
+        await loadChunkScript(file);
+        loaded += 1;
+        showLoading(`加载数据分片 ${loaded}/${CHUNK_FILES.length}…`, (loaded / CHUNK_FILES.length) * 100);
+      }
+      return (window.__GRADCAM_CHUNKS__ || []).flat();
     }
 
     function initPageMode() {
@@ -354,7 +414,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         pathOk = false;
         document.getElementById("viewer").innerHTML = pathErrorHtml(CASES[0].panel);
       };
-      probe.src = CASES[0].panel;
+      probe.src = panelSrc(CASES[0].panel);
     }
 
     function loadReviews() {
@@ -379,10 +439,19 @@ HTML_TEMPLATE = r"""<!doctype html>
       return { ...defaultReview(), ...(reviews[id] || {}) };
     }
 
-    function saveReviews() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews));
+    function saveReviewsNow() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews));
+      } catch (e) {
+        alert("本地保存失败（可能超出浏览器配额）：" + e.message);
+      }
       refreshStats();
       renderList();
+    }
+
+    function saveReviews() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveReviewsNow, 250);
     }
 
     function stageIndex(name) {
@@ -436,14 +505,19 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function renderList() {
       const list = document.getElementById("thumb-list");
-      list.innerHTML = filtered.slice(0, 200).map((item, idx) => {
+      const start = Math.max(0, currentIndex - 80);
+      const end = Math.min(filtered.length, start + 160);
+      const items = filtered.slice(start, end).map((item, offset) => {
+        const idx = start + offset;
         const rev = getReview(item.uid);
         const cls = ["list-item", idx === currentIndex ? "active" : "", rev.rejected ? "rejected" : ""].filter(Boolean).join(" ");
-        return `<div class="${cls}" data-idx="${idx}">[${splitLabel(item.split)}] ${item.id} | ${item.true}→${item.pred}${rev.rejected ? " [剔除]" : ""}</div>`;
+        return `<div class="${cls}" data-idx="${idx}">#${idx + 1} [${splitLabel(item.split)}] ${item.id}${rev.rejected ? " [剔除]" : ""}</div>`;
       }).join("");
-      if (filtered.length > 200) {
-        list.innerHTML += `<div class="list-item">… 还有 ${filtered.length - 200} 条</div>`;
-      }
+      let head = "";
+      if (start > 0) head = `<div class="list-item">… 前 ${start} 条（用搜索或跳转序号）</div>`;
+      let tail = "";
+      if (end < filtered.length) tail = `<div class="list-item">… 后 ${filtered.length - end} 条</div>`;
+      list.innerHTML = head + items + tail;
       list.querySelectorAll(".list-item[data-idx]").forEach((el) => {
         el.addEventListener("click", () => { currentIndex = Number(el.dataset.idx); renderCurrent(); });
       });
@@ -453,6 +527,14 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function panelSrc(panel) {
       return encodeURI(panel).replace(/#/g, "%23");
+    }
+
+    function prefetchAdjacent() {
+      if (!filtered.length) return;
+      const next = filtered[(currentIndex + 1) % filtered.length];
+      if (!next) return;
+      prefetchImg = new Image();
+      prefetchImg.src = panelSrc(next.panel);
     }
 
     function buildPanelHtml(item, showAnnot) {
@@ -470,7 +552,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         </div>` : ""}
         <div class="panel-stage" id="panel-stage">
           <div class="panel-inner">
-            <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}"
+            <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}" loading="lazy" decoding="async"
               onerror="document.getElementById('panel-stage').innerHTML=window.__imgErr('${err}')">
             ${showAnnot ? `<canvas id="annot-canvas" class="draw-layer"></canvas>` : ""}
           </div>
@@ -524,7 +606,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         rev.viewed = true;
         rev.updated_at = new Date().toISOString();
         reviews[currentItem.uid] = rev;
-        saveReviews();
+        saveReviewsNow();
         dragStart = null;
         redrawAnnotations();
       };
@@ -604,7 +686,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       const showAnnot = !item.correct && !rev.rejected;
       viewer.innerHTML = `
         <div class="info">
-          <div><b>${item.id}</b></div>
+          <div><b>#${currentIndex + 1} · ${item.id}</b></div>
           <span class="tag split">${splitLabel(item.split)}</span>
           <div>真实 <b>${item.true}</b> → 预测 <b>${item.pred}</b></div>
           ${statusTag} ${correctTag}
@@ -620,7 +702,7 @@ HTML_TEMPLATE = r"""<!doctype html>
           r.error_note = errNote.value.trim();
           r.updated_at = new Date().toISOString();
           reviews[item.uid] = r;
-          saveReviews();
+          saveReviewsNow();
         });
       }
       const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
@@ -631,7 +713,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         const key = drawMode === "true" ? "annot_true" : "annot_model";
         r[key] = (r[key] || []).slice(0, -1);
         reviews[item.uid] = r;
-        saveReviews();
+        saveReviewsNow();
         redrawAnnotations();
       });
       bind("clear-annot", () => {
@@ -640,10 +722,11 @@ HTML_TEMPLATE = r"""<!doctype html>
         r.annot_true = [];
         r.annot_model = [];
         reviews[item.uid] = r;
-        saveReviews();
+        saveReviewsNow();
         redrawAnnotations();
       });
       setupCanvas();
+      prefetchAdjacent();
     }
 
     function persistSidebarFields(rejected) {
@@ -658,7 +741,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         error_note: (document.getElementById("error-note") || {}).value?.trim?.() || getReview(item.uid).error_note || "",
         updated_at: new Date().toISOString(),
       };
-      saveReviews();
+      saveReviewsNow();
     }
 
     function markReject() { persistSidebarFields(true); goNext(); }
@@ -681,6 +764,14 @@ HTML_TEMPLATE = r"""<!doctype html>
         if (!getReview(filtered[idx].uid).viewed) { currentIndex = idx; renderCurrent(); return; }
       }
       goNext();
+    }
+
+    function jumpToIndex() {
+      const raw = document.getElementById("jump-index").value;
+      const n = parseInt(raw, 10);
+      if (!n || n < 1 || !filtered.length) return;
+      currentIndex = Math.min(filtered.length - 1, n - 1);
+      renderCurrent();
     }
 
     function reviewToRow(item) {
@@ -717,41 +808,64 @@ HTML_TEMPLATE = r"""<!doctype html>
       URL.revokeObjectURL(url);
     }
 
-    document.getElementById("btn-prev").onclick = goPrev;
-    document.getElementById("btn-next").onclick = goNext;
-    document.getElementById("btn-next-unreviewed").onclick = goNextUnreviewed;
-    document.getElementById("btn-reject").onclick = markReject;
-    document.getElementById("btn-keep").onclick = markKeep;
-    document.getElementById("btn-export-reject").onclick = () => {
-      const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
-      if (!rows.length) { alert("暂无剔除样本"); return; }
-      downloadCsv("gradcam_rejected.csv", rows);
-    };
-    document.getElementById("btn-export-all").onclick = () => {
-      const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1" || r.error_note || r.annot_true !== "[]" || r.annot_model !== "[]");
-      downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.map(reviewToRow));
-    };
-    document.getElementById("btn-clear-storage").onclick = () => {
-      if (confirm("确定清空所有本地标记？")) { localStorage.removeItem(STORAGE_KEY); reviews = {}; renderCurrent(); }
-    };
-    ["filter-split", "filter-status", "filter-true"].forEach((id) => {
-      document.getElementById(id).addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
-    });
-    document.getElementById("filter-search").addEventListener("input", () => { currentIndex = 0; renderCurrent(); });
+    function bindUi() {
+      document.getElementById("btn-prev").onclick = goPrev;
+      document.getElementById("btn-next").onclick = goNext;
+      document.getElementById("btn-next-unreviewed").onclick = goNextUnreviewed;
+      document.getElementById("btn-reject").onclick = markReject;
+      document.getElementById("btn-keep").onclick = markKeep;
+      document.getElementById("btn-export-reject").onclick = () => {
+        const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
+        if (!rows.length) { alert("暂无剔除样本"); return; }
+        downloadCsv("gradcam_rejected.csv", rows);
+      };
+      document.getElementById("btn-export-all").onclick = () => {
+        const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1" || r.error_note || r.annot_true !== "[]" || r.annot_model !== "[]");
+        downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.map(reviewToRow));
+      };
+      document.getElementById("btn-clear-storage").onclick = () => {
+        if (confirm("确定清空所有本地标记？")) { localStorage.removeItem(STORAGE_KEY); reviews = {}; renderCurrent(); }
+      };
+      ["filter-split", "filter-status", "filter-true"].forEach((id) => {
+        document.getElementById(id).addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
+      });
+      document.getElementById("filter-search").addEventListener("input", () => { currentIndex = 0; renderCurrent(); });
+      document.getElementById("jump-index").addEventListener("change", jumpToIndex);
+      document.getElementById("jump-index").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") jumpToIndex();
+      });
 
-    document.addEventListener("keydown", (e) => {
-      if (e.target.tagName === "TEXTAREA" || (e.target.tagName === "INPUT" && e.target.id === "filter-search")) return;
-      if (e.key === "ArrowLeft") goPrev();
-      if (e.key === "ArrowRight") goNext();
-      if (e.key.toLowerCase() === "x") markReject();
-      if (e.key.toLowerCase() === "k") markKeep();
-      if (e.key.toLowerCase() === "n") goNextUnreviewed();
-      if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
-      if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
-    });
+      document.addEventListener("keydown", (e) => {
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+        if (e.key === "ArrowLeft") goPrev();
+        if (e.key === "ArrowRight") goNext();
+        if (e.key.toLowerCase() === "x") markReject();
+        if (e.key.toLowerCase() === "k") markKeep();
+        if (e.key.toLowerCase() === "n") goNextUnreviewed();
+        if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
+        if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
+      });
+    }
 
-    initPageMode();
-    verifyPaths(() => renderCurrent());
+    async function boot() {
+      initPageMode();
+      bindUi();
+      try {
+        showLoading("正在加载样本索引…", 5);
+        CASES = await loadAllCases();
+        reviews = loadReviews();
+        showLoading(`已加载 ${CASES.length} 条，校验图片路径…`, 100);
+        verifyPaths(() => renderCurrent());
+      } catch (err) {
+        document.getElementById("viewer").innerHTML = `<div class="path-error">
+          <h3 style="margin-top:0;">数据加载失败</h3>
+          <p>${escHtml(err.message || String(err))}</p>
+          <p>请确认已完整解压 zip，且 <code>screening_data/</code> 与 HTML 在同一文件夹。</p>
+        </div>`;
+      }
+    }
+
+    boot();
   </script>
 </body>
 </html>
@@ -831,19 +945,97 @@ def build_cases_from_csv(
     return cases
 
 
+def write_chunk_js(chunk_path: Path, cases: list[dict]) -> None:
+    payload = json.dumps(cases, ensure_ascii=False, separators=(",", ":"))
+    chunk_path.write_text(
+        "window.__GRADCAM_CHUNKS__=window.__GRADCAM_CHUNKS__||[];"
+        f"window.__GRADCAM_CHUNKS__.push({payload});",
+        encoding="utf-8",
+    )
+
+
+def write_manifest_js(
+    manifest_path: Path,
+    meta: dict,
+    chunk_files: list[str],
+) -> None:
+    meta_json = json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
+    files_json = json.dumps(chunk_files, ensure_ascii=False, separators=(",", ":"))
+    manifest_path.write_text(
+        f"window.__GRADCAM_META__={meta_json};"
+        f"window.__GRADCAM_CHUNK_FILES__={files_json};",
+        encoding="utf-8",
+    )
+
+
+def write_screening_bundle(
+    output_html: Path,
+    all_cases: list[dict],
+    meta: dict,
+    *,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+) -> dict:
+    """Write HTML + screening_data/*.js chunks (file:// friendly via script tags)."""
+    if not all_cases:
+        raise SystemExit("No cases with valid panel_path found.")
+
+    bundle_root = output_html.parent.resolve()
+    data_dir = bundle_root / SCREENING_DATA_DIR
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    chunk_files: list[str] = []
+    n_chunks = max(1, math.ceil(len(all_cases) / chunk_size))
+    for idx in range(n_chunks):
+        start = idx * chunk_size
+        end = min(len(all_cases), start + chunk_size)
+        chunk_name = f"chunk_{idx:03d}.js"
+        write_chunk_js(data_dir / chunk_name, all_cases[start:end])
+        chunk_files.append(chunk_name)
+
+    meta = {
+        **meta,
+        "total": len(all_cases),
+        "chunk_size": chunk_size,
+        "chunk_count": len(chunk_files),
+        "data_dir": SCREENING_DATA_DIR,
+    }
+    write_manifest_js(data_dir / "manifest.js", meta, chunk_files)
+
+    data_prefix = f"{SCREENING_DATA_DIR}/"
+    subtitle = meta.get("subtitle") or ""
+    html_text = (
+        HTML_TEMPLATE.replace("__PAGE_TITLE__", meta.get("title", "GradCAM 测试集筛图"))
+        .replace("__PAGE_SUBTITLE__", subtitle)
+        .replace("__DATA_PREFIX__", data_prefix)
+        .replace("__DATA_PREFIX_JSON__", json.dumps(data_prefix))
+    )
+    output_html.parent.mkdir(parents=True, exist_ok=True)
+    output_html.write_text(html_text, encoding="utf-8")
+
+    return {
+        "html": str(output_html),
+        "data_dir": str(data_dir),
+        "cases": len(all_cases),
+        "chunk_count": len(chunk_files),
+        "chunk_size": chunk_size,
+        "split_counts": meta.get("split_counts", {}),
+    }
+
+
 def build_unified_html(
     sources: list[dict],
     output_html: Path,
     *,
     title: str = "GradCAM 测试集筛图",
     subtitle: str | None = None,
-    storage_key: str = "unified_v2",
+    storage_key: str = "unified_v3",
     mode: str = "unified",
     fixed_split: str | None = None,
     root_folder: str | None = None,
     path_help: str | None = None,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
 ) -> dict:
-    """Build one HTML from one or more gradcam_results.csv sources."""
+    """Build one HTML entry + external data chunks from gradcam_results.csv sources."""
     all_cases: list[dict] = []
     split_counts: dict[str, int] = {}
     for src in sources:
@@ -861,24 +1053,24 @@ def build_unified_html(
         all_cases.extend(cases)
         split_counts[split] = len(cases)
 
-    if not all_cases:
-        raise SystemExit("No cases with valid panel_path found in any source CSV.")
-
     if subtitle is None:
         if mode == "single" and root_folder:
             subtitle = (
-                f"将本 HTML 放在 <code>{root_folder}</code> 文件夹内（与 <code>panels/</code> 同级），双击打开。"
+                f"解压 zip 后双击本 HTML。图片在 <code>{root_folder}/panels/</code>，"
+                f"索引在 <code>{SCREENING_DATA_DIR}/</code>。"
             )
         else:
             subtitle = (
-                "将本 HTML 与 <code>gradcam_test_external_full</code>、"
-                "<code>gradcam_test_prospective_full</code> 放在<strong>同一文件夹</strong>下，双击打开。"
+                "解压整个 zip 后双击本 HTML。"
+                "需与 <code>gradcam_test_external_full</code>、"
+                "<code>gradcam_test_prospective_full</code>、"
+                f"<code>{SCREENING_DATA_DIR}/</code> 在同一文件夹。"
             )
 
     meta = {
         "title": title,
+        "subtitle": subtitle,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
-        "total": len(all_cases),
         "split_counts": split_counts,
         "storage_key": storage_key,
         "mode": mode,
@@ -886,36 +1078,24 @@ def build_unified_html(
         "root_folder": root_folder,
         "path_help": path_help or "",
     }
-    html_text = (
-        HTML_TEMPLATE.replace("__PAGE_TITLE__", title)
-        .replace("__PAGE_SUBTITLE__", subtitle)
-        .replace("__CASES_JSON__", json.dumps(all_cases, ensure_ascii=False))
-        .replace("__META_JSON__", json.dumps(meta, ensure_ascii=False))
-    )
-    output_html.parent.mkdir(parents=True, exist_ok=True)
-    output_html.write_text(html_text, encoding="utf-8")
-    return {
-        "html": str(output_html),
-        "cases": len(all_cases),
-        "split_counts": split_counts,
-    }
+    return write_screening_bundle(output_html, all_cases, meta, chunk_size=chunk_size)
 
 
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "gradcam_screening_test_external_v2",
+        "storage_key": "gradcam_screening_test_external_v3",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 2025前瞻全量筛图",
-        "storage_key": "gradcam_screening_test_prospective_2025_full_v1",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v3",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
 
 
-def build_split_screening_html(source: dict, output_html: Path) -> dict:
+def build_split_screening_html(source: dict, output_html: Path, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> dict:
     split = str(source["split"])
     spec = SPLIT_HTML_SPECS.get(split, {})
     root_dir = Path(source.get("root_dir", Path(source["results_csv"]).parent)).resolve()
@@ -923,11 +1103,12 @@ def build_split_screening_html(source: dict, output_html: Path) -> dict:
         [{**source, "path_prefix": ""}],
         output_html,
         title=spec.get("title", f"GradCAM {split} 筛图"),
-        storage_key=spec.get("storage_key", f"{split}_v2"),
+        storage_key=spec.get("storage_key", f"{split}_v3"),
         mode="single",
         fixed_split=split,
         root_folder=spec.get("dir_name", root_dir.name),
-        path_help="单数据集 HTML 的标注与统一版分开保存，互不影响。",
+        path_help="单数据集包：HTML 与 panels/、screening_data/ 在同一文件夹。",
+        chunk_size=chunk_size,
     )
 
 
@@ -964,6 +1145,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Experiment dir: auto-load external + prospective gradcam outputs",
     )
+    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE, help="Cases per screening_data chunk")
     return parser.parse_args()
 
 
@@ -1022,7 +1204,7 @@ def main() -> None:
     else:
         raise SystemExit("Cannot infer output HTML path")
 
-    summary = build_unified_html(sources, output_html)
+    summary = build_unified_html(sources, output_html, chunk_size=args.chunk_size)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 

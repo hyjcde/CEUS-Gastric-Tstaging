@@ -20,7 +20,11 @@ PROJECT_ROOT = PIPELINE_ROOT.parent
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
-from build_gradcam_screening_html import build_split_screening_html, build_unified_html as build_screening_html
+from build_gradcam_screening_html import (
+    SCREENING_DATA_DIR,
+    build_split_screening_html,
+    build_unified_html as build_screening_html,
+)
 
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
 
@@ -74,6 +78,31 @@ def filter_results_df(df: pd.DataFrame, split: str, external_holdout_only: bool)
     return df.loc[mask].copy()
 
 
+def collect_screening_data_files(bundle_root: Path, arc_prefix: Path | None = None) -> list[tuple[Path, Path]]:
+    """Collect screening_data/*.js beside an HTML bundle root."""
+    data_dir = bundle_root / SCREENING_DATA_DIR
+    if not data_dir.is_dir():
+        return []
+    files: list[tuple[Path, Path]] = []
+    prefix = arc_prefix or Path(".")
+    for path in sorted(data_dir.glob("*.js")):
+        files.append((path, prefix / SCREENING_DATA_DIR / path.name))
+    return files
+
+
+def copy_screening_bundle(src_root: Path, dst_root: Path) -> None:
+    """Copy gradcam_screening.html + screening_data/ to dst_root."""
+    html_src = src_root / "gradcam_screening.html"
+    if html_src.is_file():
+        shutil.copy2(html_src, dst_root / "gradcam_screening.html")
+    data_src = src_root / SCREENING_DATA_DIR
+    data_dst = dst_root / SCREENING_DATA_DIR
+    if data_src.is_dir():
+        if data_dst.exists():
+            shutil.rmtree(data_dst)
+        shutil.copytree(data_src, data_dst)
+
+
 def collect_pack_files(
     output_dir: Path,
     results_df: pd.DataFrame,
@@ -117,6 +146,8 @@ def collect_pack_files(
     html_path = output_dir / "gradcam_screening.html"
     if html_path.is_file():
         add_file(html_path, arc_root / "gradcam_screening.html")
+    for src, arc in collect_screening_data_files(output_dir, arc_root):
+        add_file(src, arc)
     return files
 
 def update_files_in_zip(zip_path: Path, updates: list[tuple[Path, str]]) -> None:
@@ -229,13 +260,13 @@ def write_readme(path: Path, summaries: list[dict], zip_paths: list[Path], bundl
         "  5. 筛完后点「导出剔除 CSV」，发回算法组",
         "",
         "【每个 slim zip 内含】",
-        "  - gradcam_screening.html  （离线筛图网页，双击即用）",
-        "  - gradcam_results.csv     （预测结果与 panel 路径）",
-        "  - panels/.../*_panel.png  （Grad-CAM 可视化大图）",
+        "  - gradcam_screening.html      （唯一入口，双击打开）",
+        "  - screening_data/             （分片索引，自动加载，勿删）",
+        "  - gradcam_results.csv         （预测结果与 panel 路径）",
+        "  - panels/.../*_panel.png      （Grad-CAM 可视化大图）",
         "",
         "【合并包 gradcam_test_clinical_bundle.zip】",
-        "  含外部 + 前瞻两个文件夹 + 统一 gradcam_screening.html + 本说明",
-        "  若两个数据集一起筛，解压后打开根目录 gradcam_screening.html",
+        "  解压后只打开根目录 gradcam_screening.html（含 screening_data/ + 两个图片文件夹）",
         "",
         "【样本量说明】",
         "  - test_external: 2430 张（含内部前瞻 253 张重复行，纯外部 holdout 2177 张）",
@@ -274,12 +305,13 @@ def write_bundle_readme(path: Path) -> None:
                 "========================",
                 "",
                 "文件夹说明:",
-                "  gradcam_test_external_full/   外部测试 2430 张 → 打开内层 gradcam_screening.html",
-                "  gradcam_test_prospective_full/ 2025 前瞻测试 2430 张 → 打开内层 gradcam_screening.html",
-                "  gradcam_screening.html         统一视图（外部 holdout + 前瞻全量，与分文件夹标注分开保存）",
+                "  gradcam_screening.html           ← 只打开这个（统一筛图入口）",
+                "  screening_data/                  索引分片（自动加载）",
+                "  gradcam_test_external_full/      外部 panel 图片",
+                "  gradcam_test_prospective_full/   2025 前瞻 panel 图片",
                 "",
                 "操作建议:",
-                "  • 临床筛图优先用分文件夹 HTML（外部、前瞻分开，localStorage 不冲突）",
+                "  • 必须完整解压 zip，不要只拷贝 HTML",
                 "  • 默认保留；仅对质量差的图按 X 剔除",
                 "  • 筛完务必导出 gradcam_rejected.csv",
                 "",
@@ -307,6 +339,8 @@ def build_clinical_bundle(
             zf.write(readme, arcname="README_筛图说明.txt")
             if unified_html and unified_html.is_file():
                 zf.write(unified_html, arcname="gradcam_screening.html")
+                for src, arc in collect_screening_data_files(unified_html.parent, Path(".")):
+                    zf.write(src, arcname=str(arc))
             for output_dir in split_output_dirs:
                 if not output_dir.is_dir():
                     continue
@@ -467,10 +501,12 @@ def main() -> None:
                     u["external_holdout_only"] = True
                 unified_for_html.append(u)
             screening_summary = build_screening_html(unified_for_html, screening_html)
-            shutil.copy2(screening_html, pack_root / "gradcam_screening.html")
+            copy_screening_bundle(exp_dir, pack_root)
             print(
                 f"Unified screening HTML: {screening_html} "
-                f"({screening_summary['cases']} cases, splits={screening_summary['split_counts']})"
+                f"({screening_summary['cases']} cases, "
+                f"chunks={screening_summary.get('chunk_count')}, "
+                f"splits={screening_summary['split_counts']})"
             )
         for src in screening_sources:
             split = str(src["split"])
@@ -511,14 +547,19 @@ def main() -> None:
             split_html = output_dir / "gradcam_screening.html"
             zip_path = pack_root / spec["slim_zip_name"]
             if split_html.is_file() and zip_path.is_file():
-                update_files_in_zip(
-                    zip_path,
-                    [(split_html, f"{output_dir.name}/gradcam_screening.html")],
+                updates = [(split_html, f"{output_dir.name}/gradcam_screening.html")]
+                updates.extend(
+                    (src, str(arc))
+                    for src, arc in collect_screening_data_files(output_dir, Path(output_dir.name))
                 )
+                update_files_in_zip(zip_path, updates)
                 print(f"Updated HTML in {zip_path.name}")
         bundle_path = pack_root / "gradcam_test_clinical_bundle.zip"
         if bundle_path.is_file() and screening_html and screening_html.is_file():
             bundle_updates = [(screening_html, "gradcam_screening.html")]
+            bundle_updates.extend(
+                (src, str(arc)) for src, arc in collect_screening_data_files(screening_html.parent, Path("."))
+            )
             if readme_tmp.is_file():
                 bundle_updates.append((readme_tmp, "README_筛图说明.txt"))
             for split in args.splits:
