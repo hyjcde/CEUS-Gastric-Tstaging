@@ -8,21 +8,28 @@
 - 验证协议：`docs/evaluation/validation_protocol.md`
 - 历史结果与实验矩阵：`docs/archive_refs/legacy_selected/`
 
+## 文件结构
+
+| 路径 | 说明 |
+|------|------|
+| `main.tex` | 主文稿（含 TikZ 图 1–2） |
+| `supplementary_appendix.tex` | 附录（扩展实验表、报告清单） |
+| `figures/*.tex` | TikZ 图源文件 |
+| `tables/*.tex` | 可复用表格 |
+| `MANUSCRIPT_GUIDE_zh.md` | 中文定稿指南 |
+| `authors_template.tex` | 作者/单位模板 |
+| `scripts/wordcount.sh` | 词数核对脚本 |
+
 ## 编译
 
 ```bash
 cd manuscript/lancet_digital_health
-pdflatex main.tex
-bibtex main
-pdflatex main.tex
-pdflatex main.tex
-```
-
-或使用 `latexmk`：
-
-```bash
 latexmk -pdf main.tex
+latexmk -pdf supplementary_appendix.tex
+bash scripts/wordcount.sh
 ```
+
+依赖：`texlive-latex-base`, `texlive-pictures`（TikZ）, `texlive-extra-utils`（texcount，可选）。
 
 ## 投稿前待填项
 

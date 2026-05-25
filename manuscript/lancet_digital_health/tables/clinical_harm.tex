@@ -1,0 +1,16 @@
+% Table: Asymmetric clinical harm motivating cost-sensitive evaluation
+\begin{table}[htbp]
+\centering
+\caption{Clinical consequences of T-category misclassification (simplified framing for model evaluation)}
+\label{tab:clinical_harm}
+\begin{tabular}{p{2.2cm}p{4.8cm}p{5.5cm}}
+\toprule
+True category & Common high-risk error & Clinical concern \\
+\midrule
+T2 & Called T1 & Under-treatment; missed surgery indication \\
+T2 & Called T3 & Overtreatment (e.g., unnecessary neoadjuvant pathway) \\
+T3 & Called T2 & Under-treatment; missed neoadjuvant indication \\
+T1 & Called T2 & Overtreatment relative to endoscopic therapy potential \\
+\bottomrule
+\end{tabular}
+\end{table}

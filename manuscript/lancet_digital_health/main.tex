@@ -14,6 +14,8 @@
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{tabularx}
 \usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
 
 \onehalfspacing
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
@@ -88,16 +90,14 @@ All experiments used patient-level splits to prevent leakage across frames from 
 Images were acquired with standard gastric filling protocols per national expert consensus.\cite{oral_contrast_expert2020} Reference T stage was pathological TNM after surgery; ultrasound T labels used for training followed centre-specific mapping to the four-class scheme. Physician-drawn LabelMe polygon masks served as reference for segmentation and for training-only attention targets. No masks were available for historical video-only subsets; video-based multiple-instance learning was reserved for future work.
 
 \subsection{Stage 1: localisation and segmentation}
-\textbf{Localisation.} We trained YOLO11- and RT-DETR-style detectors on centre-aware datasets with domain-robust augmentation. Primary detector metrics were precision, recall, mean average precision at intersection-over-union 0.5 (mAP@0.5), and mAP@0.5:0.95. For downstream use, we emphasised recall and ROI success rate because missed lesions forced centre-crop fallback, reducing classification inputs to background-dominated patches.
-
-\textbf{Segmentation.} U-Net variants (including ConvNeXt-Tiny backbones via segmentation model packages) were trained with and without strict patient-level constraints. We also explored SAM2 cascade refinement (coarse U-Net prompt followed by SAM2), which improved masks under oracle prompts but remained unstable with automatic prompts. Metrics included Dice, intersection-over-union, and 95th percentile Hausdorff distance where numerically stable. Predicted masks (approximately 12\,193 images from a U-Net+ConvNeXt-Tiny checkpoint) were archived for ROI construction and optional four-channel inputs in reference experiments.
+Figure~\ref{fig:pipeline} summarises the staged pipeline. \textbf{Localisation:} YOLO11- and RT-DETR-style detectors were trained with centre-aware augmentation; we prioritised recall and ROI success because missed lesions triggered centre-crop fallback. \textbf{Segmentation:} U-Net variants (ConvNeXt-Tiny encoder) were trained under patient-level constraints; predicted masks ($\approx$12\,193 images) supported ROI construction and mask4ch reference classifiers. Alternative segmenters (SAM2 cascade, nnU-Net variants) were explored in the supplementary appendix.
 
 \subsection{Stage 2: T-staging models}
 The primary classifier was a dual-branch convolutional network: a global branch on full images and a local branch on ROI crops, fused for four-way softmax output. Reference model \textit{boundary\_boost\_frozen} appended a predicted or ground-truth mask channel (mask4ch) and represented an upper bound that requires segmentation at inference.
 
 To reduce the train--deploy gap, we implemented \textbf{boundary attention guidance}: a dilated--eroded band around the ground-truth mask defined a spatial target; an auxiliary loss aligned the L2 norm of global backbone feature maps with this border target during training only ($\mathcal{L}=\mathcal{L}_{\mathrm{cls}}+\lambda\,\mathrm{MSE}(\mathrm{attention},\mathrm{border})$). We compared $\lambda{=}0.1$ (attention guidance v2) against a no-mask baseline and a \textbf{two-stage schedule}: short boundary-guided pretraining followed by fine-tuning without mask input (deployable model).
 
-Training used class rebalancing and standard augmentation; cost-sensitive losses reflecting asymmetric clinical harm (e.g., undercalling T2 or T3) were specified in the protocol but not yet locked as the primary deployed criterion. Hyperparameters for the reported matrix were selected on the validation split; prospective and external sets were touched only for prespecified evaluation waves.
+Training used class rebalancing and standard augmentation. Table~\ref{tab:clinical_harm} summarises why under-staging T2 or T3 carries higher clinical risk than over-staging in selected pathways; cost-sensitive thresholds are prespecified but not yet locked for deployment. Hyperparameters were selected on the validation split only.
 
 \subsection{Evaluation and explainability}
 Primary classification endpoints were patient-level one-vs-rest macro-averaged AUC and balanced accuracy. Prespecified secondary endpoints included per-class recall for T1, T2, T3, and T4+, confusion matrices stratified by centre and year, and segmentation Dice on the same splits. Grad-CAM heatmaps were compared with mask border bands using IoU, Dice, Pearson correlation, and inside-to-outside attention ratios.\cite{gradcam} Error atlases linked failures to ROI fallback, low predicted Dice, contrast type, and site.
@@ -107,8 +107,14 @@ Primary classification endpoints were patient-level one-vs-rest macro-averaged A
 
 \section{Results}
 
+\input{figures/study_flow}
+\input{figures/pipeline_diagram}
+
 \subsection{Cohort and label characteristics}
-Table~\ref{tab:cohort} summarises image and patient counts by split. Masks were available for more than 95\% of training and validation frames. Video archives (2018--2025) existed for longitudinal deployment research but were not the primary inference modality in this report.
+Table~\ref{tab:cohort} and Table~\ref{tab:tstage_dist} summarise splits and T-category imbalance. Masks were available for more than 95\% of training and validation frames. Video archives (2018--2025) exist for future video multiple-instance learning but were outside the primary inference endpoint of this report.
+
+\input{tables/cohort_tstage}
+\input{tables/clinical_harm}
 
 \begin{table}[htbp]
 \centering
@@ -160,7 +166,7 @@ The deployable two-stage model improved prospective AUC by 0.058 versus the no-m
 Grad-CAM analyses showed attention guidance increased border alignment (mean IoU 0.098 vs 0.041; correlation 0.177 vs 0.055). Per-class border correlation improved markedly for T1 and T4+; T2 correlation was already relatively high at baseline (0.184) and did not increase with guidance (0.172), supporting the view that T2/T3 confusion reflects subtle layer invasion patterns rather than gross attention mislocalisation alone.
 
 \subsection{Error patterns}
-Qualitative review indicated T2$\rightarrow$T3 confusion clustered where ROI generation failed or predicted segmentation Dice was low. Contrast-agent subtype and acquisition-year shifts contributed to external degradation. \todo{Insert Figure: confusion matrices by split; ROI fallback vs error rate.}
+Qualitative review indicated T2$\rightarrow$T3 confusion clustered where ROI generation failed or predicted segmentation Dice was low. Contrast-agent subtype and acquisition-year shifts contributed to external degradation. Confusion matrices, ROI-fallback rates, and Grad-CAM atlases are provided in the supplementary appendix and project visualisation repository (\texttt{results/visualizations/}).
 
 \section{Discussion}
 We present a multicentre, patient-level deep learning pipeline for four-class gastric cancer T staging on oral contrast-enhanced gastric ultrasonography that explicitly separates localisation, segmentation, and classification. Three findings are clinically salient.
@@ -189,8 +195,8 @@ De-identified data, patient-level prediction tables, and training configurations
 \section{Acknowledgments}
 We thank participating sonographers, pathologists, and data managers at all sites. \todo{List grants and infrastructure support.}
 
-\section{Supplementary appendix}
-Additional material includes full detector ablations, segmentation architecture comparisons (SAM2 cascade, nnU-Net variants), complete confusion matrices by year, and Grad-CAM atlases for T2/T3 errors. \todo{Upload separately per journal system.}
+\section{Supplementary material}
+See \texttt{supplementary\_appendix.pdf} for detector ablations, extended segmentation comparisons (SAM2 cascade, SAM3 zero-shot, nnU-Net), per-class Grad-CAM correlations, AI reporting checklist items, and reproducibility paths.
 
 \bibliographystyle{vancouver}
 \bibliography{references}

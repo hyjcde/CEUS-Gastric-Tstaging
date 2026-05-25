@@ -1,0 +1,33 @@
+% Figure 1: Study flow — \input inside main document (requires tikz)
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=0.5cm and 0.35cm,
+  box/.style={rectangle, draw=black, rounded corners=2pt, align=center,
+              minimum width=3.6cm, minimum height=0.85cm, font=\small},
+  splitbox/.style={rectangle, draw=black, align=center,
+                   minimum width=2.8cm, minimum height=0.75cm, font=\footnotesize},
+  arr/.style={-{Stealth[length=2mm]}, thick}
+]
+  \node[box] (src) {Multicentre oral contrast-enhanced\\gastric ultrasonography images\\($N{=}12{,}675$ images; patient-level registry)};
+  \node[box, below=of src] (qc) {QC, deduplication,\\patient-level split};
+  \node[splitbox, below left=1.0cm and 1.4cm of qc] (train) {Train\\9\,138 / 1\,441};
+  \node[splitbox, below=1.0cm of qc] (val) {Validation\\1\,117 / 167};
+  \node[splitbox, below right=1.0cm and 1.4cm of qc] (test) {Test pools\\Internal + external};
+  \node[box, below=2.2cm of qc] (s1) {Stage 1: localisation \& segmentation};
+  \node[box, below=of s1] (s2) {Stage 2: four-class T staging\\(deployable: no mask at inference)};
+  \node[box, below=of s2] (out) {Patient-level AUC, BalAcc,\\per-class recall, Grad-CAM audit};
+
+  \draw[arr] (src) -- (qc);
+  \draw[arr] (qc) -- (train);
+  \draw[arr] (qc) -- (val);
+  \draw[arr] (qc) -- (test);
+  \draw[arr] (train) -- (s1);
+  \draw[arr] (val) -- (s1);
+  \draw[arr] (test) -- (s1);
+  \draw[arr] (s1) -- (s2);
+  \draw[arr] (s2) -- (out);
+\end{tikzpicture}
+\caption{Study flow for multicentre development and validation. All splits were defined at the patient level. Stage~1 outputs (detector boxes, predicted regions of interest, and optional masks) fed Stage~2 classifiers; the primary deployable model used a two-stage train schedule without mask input at inference.}
+\label{fig:study_flow}
+\end{figure}
