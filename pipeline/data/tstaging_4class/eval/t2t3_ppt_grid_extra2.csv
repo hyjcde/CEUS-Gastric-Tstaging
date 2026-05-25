@@ -1,0 +1,3 @@
+image_path,roi_path,patient_id,label,T_stage,class_label,source,split,pred,dataset_key,dataset_display,review_group
+/data/research/gastric/GastricTstaging/dataset/external/莆田学院附属医院/crop_ui/images/莆田学院附属医院__直接手术__pt105-1.jpg,dataset/external/putian/roi/pt105-1_roi.jpg,pt105,2,T3,2,ext/putian,test_external,2,putian,Putian (legacy),ok_T2T3
+/data/research/gastric/GastricTstaging/dataset/external/莆田学院附属医院/crop_ui/images/莆田学院附属医院__直接手术__pt189-1.jpg,dataset/external/putian_2024/roi/pt189-1_roi.jpg,pt189,1,T2,1,ext/putian_2024,test_external,1,putian_2024,Putian 2024,ok_T2T3

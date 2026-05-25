@@ -98,6 +98,32 @@ backends:
       mask_type: predicted_lesion_mask_4ch
       clinical_type: true_clinical_22d
 
+  tstage_mask4ch_antioverstage_v3_20260522:
+    model_task: t_staging_4class
+    model_family: dual_branch
+    architecture_notes:
+      inference_inputs: [global_image_4ch, roi_image, clinical_vector]
+      finetune_line: anti T2/T3->T4+ overstaging (v2 boundary loss -> v3 frozen-backbone head)
+      cls_head_default_hidden: 256
+    stage_id: t2t3_antioverstage_v3_head
+    scoreboard_decision: PromoteForT2T3Boundary
+    config_path: pipeline/configs/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v3_head_finetune.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v3_head_finetune_20260522_200526
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v3_head_finetune_20260522_200526/best_model.pth
+    baseline_registry_id: structure_mask4ch_clinical22
+    metrics:
+      test_external_auc: 0.6975
+      test_prospective_auc: 0.7052
+      t2t3_overstage_rate_external: 0.186
+      t3_recall_external: 0.632
+    adapter: pipeline.agent.tools.classification_tool.ClassificationTool
+    adapter_status: ready
+    inputs:
+      roi_type: doctor_roi
+      mask_type: predicted_lesion_mask_4ch
+      clinical_type: true_clinical_22d
+    notes: "Prefer over frozen 20260423 for T2/T3 boundary and Grad-CAM; lower T4+ over-call"
+
   tstage_regionaware_clinical22_20260426:
     model_task: t_staging_4class
     model_family: contrastive_dual

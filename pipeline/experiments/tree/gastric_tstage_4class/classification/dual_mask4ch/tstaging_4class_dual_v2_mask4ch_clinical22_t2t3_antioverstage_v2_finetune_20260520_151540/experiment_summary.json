@@ -1,0 +1,310 @@
+{
+  "config": {
+    "experiment_name": "tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v2_finetune",
+    "description": "Round2 anti T2/T3->T4+ finetune; AUC-overstage early stop; stronger asym cost",
+    "project_os": "pipeline/experiments/mainlines/tstaging_4class/project_os.yaml",
+    "mainline_name": "optimization_mainline",
+    "stage_name": "t2t3_antioverstage_v2_finetune",
+    "baseline_parent": "structure_mask4ch_clinical22",
+    "roi_type": "doctor_roi",
+    "mask_type": "predicted_lesion_mask_4ch",
+    "clinical_type": "true_clinical_22d",
+    "breakthrough_type": "t2t3_antioverstage_v2",
+    "contrastive_type": "none",
+    "deploy_realism_level": "mask_augmented_reference",
+    "asset_profile": "full_data_mask4ch",
+    "model_type": "dual_branch",
+    "global_backbone": "convnext_base.fb_in22k_ft_in1k_384",
+    "local_backbone": "convnext_small.in12k_ft_in1k",
+    "global_in_channels": 4,
+    "num_classes": 4,
+    "class_names": [
+      "T1",
+      "T2",
+      "T3",
+      "T4+"
+    ],
+    "fusion_type": "cross_attention",
+    "fusion_hidden": 512,
+    "pretrained_checkpoint": "pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/best_model.pth",
+    "clinical_cols": [
+      "age_norm",
+      "age_missing",
+      "sex_norm",
+      "sex_missing",
+      "lauren_type_norm",
+      "lauren_type_missing",
+      "differentiation_norm",
+      "differentiation_missing",
+      "tumor_length_cm_norm",
+      "tumor_length_cm_missing",
+      "tumor_thickness_cm_norm",
+      "tumor_thickness_cm_missing",
+      "tumor_location_norm",
+      "tumor_location_missing",
+      "cea_value_norm",
+      "cea_value_missing",
+      "cea_binary_norm",
+      "cea_binary_missing",
+      "ca199_value_norm",
+      "ca199_value_missing",
+      "ca199_binary_norm",
+      "ca199_binary_missing"
+    ],
+    "clinical_dim": 22,
+    "clinical_hidden": 64,
+    "data_dir": "pipeline/data/tstaging_4class",
+    "eval_splits": [
+      "test_external",
+      "test_prospective"
+    ],
+    "use_mask_channel": true,
+    "mask_augment_align": true,
+    "mask_dir": "/data/research/gastric/Tstaging/pipeline/data/tstaging_4class_forced_pipeline_20260322/predicted_mask",
+    "global_size": 384,
+    "local_size": 224,
+    "image_size": 224,
+    "aug_level": "strong",
+    "patient_sampling": true,
+    "max_frames_per_patient": 3,
+    "class_balanced_sampling": true,
+    "class_weights": [
+      0.7,
+      1.35,
+      1.5,
+      0.75
+    ],
+    "batch_size": 10,
+    "lr": 5e-06,
+    "weight_decay": 0.02,
+    "dropout": 0.4,
+    "label_smoothing": 0.1,
+    "epochs": 45,
+    "early_stopping": 15,
+    "early_stopping_metric": "auc_minus_overstage",
+    "overstage_penalty": 0.45,
+    "head_hidden": 512,
+    "warmup_epochs": 2,
+    "scheduler": "cosine",
+    "loss": "ordinal",
+    "lambda_ord": 0.24,
+    "boundary_aware_loss": true,
+    "lambda_boundary": 0.32,
+    "boundary_weights": [
+      0.5,
+      1.5,
+      1.65
+    ],
+    "asymmetric_cost_aux": true,
+    "lambda_asym_cost": 0.5,
+    "cost_matrix": [
+      [
+        0.0,
+        2.0,
+        1.2,
+        1.8
+      ],
+      [
+        5.0,
+        0.0,
+        1.5,
+        5.5
+      ],
+      [
+        2.0,
+        3.0,
+        0.0,
+        5.0
+      ],
+      [
+        2.0,
+        2.0,
+        2.0,
+        0.0
+      ]
+    ],
+    "mixup": 0.0,
+    "ema": true,
+    "ema_decay": 0.998,
+    "grad_clip": 1.0,
+    "amp": true,
+    "gradient_accumulation": 3,
+    "num_workers": 8,
+    "seed": 42,
+    "_config_path": "pipeline/configs/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v2_finetune.yaml",
+    "output_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v2_finetune_20260520_151540"
+  },
+  "training": {
+    "total_epochs": 29,
+    "best_epoch": 1,
+    "best_val_auc": 0.7313945823689783,
+    "final_train_loss": 0.9128606413715872,
+    "converged": "still_decreasing"
+  },
+  "test_results": {
+    "test_prospective": {
+      "accuracy": 0.4743083003952569,
+      "f1_macro": 0.410671309082301,
+      "auc": 0.713475906041614,
+      "recall_c0": 0.5,
+      "recall_c1": 0.09375,
+      "recall_c2": 0.64,
+      "recall_c3": 0.4074074074074074,
+      "confusion_matrix": [
+        [
+          20,
+          4,
+          14,
+          2
+        ],
+        [
+          8,
+          3,
+          14,
+          7
+        ],
+        [
+          4,
+          3,
+          64,
+          29
+        ],
+        [
+          4,
+          4,
+          40,
+          33
+        ]
+      ],
+      "t2t3_overstage_rate": 0.2727272727272727,
+      "balanced_accuracy": 0.4102893518518519,
+      "precision_c0": 0.5555555555555556,
+      "precision_c1": 0.21428571428571427,
+      "precision_c2": 0.48484848484848486,
+      "precision_c3": 0.4647887323943662,
+      "auc_c0": 0.830868544600939,
+      "auc_c1": 0.7097002262443439,
+      "auc_c2": 0.6356862745098039,
+      "auc_c3": 0.6776485788113694,
+      "per_source": {
+        "int/prospective": {
+          "n": 253,
+          "accuracy": 0.4743083003952569,
+          "balanced_acc": 0.4102893518518519
+        }
+      },
+      "patient_level": {
+        "n_patients": 54,
+        "accuracy": 0.5185185185185185,
+        "balanced_accuracy": 0.4539512774806892
+      }
+    },
+    "test_external": {
+      "accuracy": 0.40411522633744856,
+      "f1_macro": 0.35841010819868624,
+      "auc": 0.7048023681118989,
+      "recall_c0": 0.1464968152866242,
+      "recall_c1": 0.46919431279620855,
+      "recall_c2": 0.4836244541484716,
+      "recall_c3": 0.44591346153846156,
+      "confusion_matrix": [
+        [
+          69,
+          292,
+          104,
+          6
+        ],
+        [
+          17,
+          99,
+          73,
+          22
+        ],
+        [
+          20,
+          272,
+          443,
+          181
+        ],
+        [
+          12,
+          112,
+          337,
+          371
+        ]
+      ],
+      "t2t3_overstage_rate": 0.18012422360248448,
+      "balanced_accuracy": 0.3863072609424415,
+      "precision_c0": 0.5847457627118644,
+      "precision_c1": 0.12774193548387097,
+      "precision_c2": 0.46290491118077326,
+      "precision_c3": 0.6396551724137931,
+      "auc_c0": 0.838165405678403,
+      "auc_c1": 0.6080446979874372,
+      "auc_c2": 0.625766499570241,
+      "auc_c3": 0.7472328692115144,
+      "per_source": {
+        "ext/multicenter": {
+          "n": 10,
+          "accuracy": 1.0,
+          "balanced_acc": 1.0
+        },
+        "ext/putian": {
+          "n": 168,
+          "accuracy": 0.25595238095238093,
+          "balanced_acc": 0.17497868712702475
+        },
+        "ext/putian_2024": {
+          "n": 461,
+          "accuracy": 0.2668112798264642,
+          "balanced_acc": 0.2822692662940508
+        },
+        "ext/putian_2024_new": {
+          "n": 57,
+          "accuracy": 0.21052631578947367,
+          "balanced_acc": 0.10714285714285714
+        },
+        "ext/putian_2025_07_09": {
+          "n": 469,
+          "accuracy": 0.3006396588486141,
+          "balanced_acc": 0.34908650606157104
+        },
+        "ext/zhongliu": {
+          "n": 229,
+          "accuracy": 0.5676855895196506,
+          "balanced_acc": 0.4101751207729469
+        },
+        "int/2018": {
+          "n": 286,
+          "accuracy": 0.5384615384615384,
+          "balanced_acc": 0.45008768025500306
+        },
+        "int/2019": {
+          "n": 234,
+          "accuracy": 0.44017094017094016,
+          "balanced_acc": 0.37260871114872485
+        },
+        "int/2020_2023": {
+          "n": 14,
+          "accuracy": 0.6428571428571429,
+          "balanced_acc": 0.32142857142857145
+        },
+        "int/2024": {
+          "n": 249,
+          "accuracy": 0.5461847389558233,
+          "balanced_acc": 0.37663690476190476
+        },
+        "int/prospective": {
+          "n": 253,
+          "accuracy": 0.4782608695652174,
+          "balanced_acc": 0.4107986111111111
+        }
+      },
+      "patient_level": {
+        "n_patients": 405,
+        "accuracy": 0.41728395061728396,
+        "balanced_accuracy": 0.4010231057094792
+      }
+    }
+  }
+}

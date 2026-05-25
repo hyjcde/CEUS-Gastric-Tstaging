@@ -1,0 +1,306 @@
+{
+  "config": {
+    "experiment_name": "tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_finetune",
+    "description": "Anti T2/T3->T4+ finetune from mask4ch full baseline (boundary+asym cost+label smooth)",
+    "project_os": "pipeline/experiments/mainlines/tstaging_4class/project_os.yaml",
+    "mainline_name": "optimization_mainline",
+    "stage_name": "t2t3_antioverstage_finetune",
+    "baseline_parent": "structure_mask4ch_clinical22",
+    "roi_type": "doctor_roi",
+    "mask_type": "predicted_lesion_mask_4ch",
+    "clinical_type": "true_clinical_22d",
+    "breakthrough_type": "t2t3_antioverstage_finetune",
+    "contrastive_type": "none",
+    "deploy_realism_level": "mask_augmented_reference",
+    "asset_profile": "full_data_mask4ch",
+    "model_type": "dual_branch",
+    "global_backbone": "convnext_base.fb_in22k_ft_in1k_384",
+    "local_backbone": "convnext_small.in12k_ft_in1k",
+    "global_in_channels": 4,
+    "num_classes": 4,
+    "class_names": [
+      "T1",
+      "T2",
+      "T3",
+      "T4+"
+    ],
+    "fusion_type": "cross_attention",
+    "fusion_hidden": 512,
+    "pretrained_checkpoint": "pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/best_model.pth",
+    "clinical_cols": [
+      "age_norm",
+      "age_missing",
+      "sex_norm",
+      "sex_missing",
+      "lauren_type_norm",
+      "lauren_type_missing",
+      "differentiation_norm",
+      "differentiation_missing",
+      "tumor_length_cm_norm",
+      "tumor_length_cm_missing",
+      "tumor_thickness_cm_norm",
+      "tumor_thickness_cm_missing",
+      "tumor_location_norm",
+      "tumor_location_missing",
+      "cea_value_norm",
+      "cea_value_missing",
+      "cea_binary_norm",
+      "cea_binary_missing",
+      "ca199_value_norm",
+      "ca199_value_missing",
+      "ca199_binary_norm",
+      "ca199_binary_missing"
+    ],
+    "clinical_dim": 22,
+    "clinical_hidden": 64,
+    "data_dir": "pipeline/data/tstaging_4class",
+    "eval_splits": [
+      "test_external",
+      "test_prospective"
+    ],
+    "use_mask_channel": true,
+    "mask_augment_align": true,
+    "mask_dir": "/data/research/gastric/Tstaging/pipeline/data/tstaging_4class_forced_pipeline_20260322/predicted_mask",
+    "global_size": 384,
+    "local_size": 224,
+    "image_size": 224,
+    "aug_level": "strong",
+    "patient_sampling": true,
+    "max_frames_per_patient": 3,
+    "class_balanced_sampling": true,
+    "class_weights": [
+      0.75,
+      1.3,
+      1.45,
+      0.8
+    ],
+    "batch_size": 10,
+    "lr": 8e-06,
+    "weight_decay": 0.02,
+    "dropout": 0.4,
+    "label_smoothing": 0.08,
+    "epochs": 50,
+    "early_stopping": 12,
+    "head_hidden": 512,
+    "warmup_epochs": 2,
+    "scheduler": "cosine",
+    "loss": "ordinal",
+    "lambda_ord": 0.22,
+    "boundary_aware_loss": true,
+    "lambda_boundary": 0.28,
+    "boundary_weights": [
+      0.55,
+      1.45,
+      1.55
+    ],
+    "asymmetric_cost_aux": true,
+    "lambda_asym_cost": 0.35,
+    "cost_matrix": [
+      [
+        0.0,
+        2.0,
+        1.2,
+        1.5
+      ],
+      [
+        5.0,
+        0.0,
+        1.5,
+        4.5
+      ],
+      [
+        2.0,
+        3.0,
+        0.0,
+        4.0
+      ],
+      [
+        2.0,
+        2.0,
+        2.0,
+        0.0
+      ]
+    ],
+    "mixup": 0.0,
+    "ema": true,
+    "ema_decay": 0.998,
+    "grad_clip": 1.0,
+    "amp": true,
+    "gradient_accumulation": 3,
+    "num_workers": 8,
+    "seed": 42,
+    "_config_path": "pipeline/configs/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_finetune.yaml",
+    "output_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_finetune_20260520_143727"
+  },
+  "training": {
+    "total_epochs": 14,
+    "best_epoch": 2,
+    "best_val_auc": 0.7305154340948772,
+    "final_train_loss": 0.8653079363678036,
+    "converged": ""
+  },
+  "test_results": {
+    "test_prospective": {
+      "accuracy": 0.49407114624505927,
+      "f1_macro": 0.43090301297856776,
+      "auc": 0.7456485123919537,
+      "recall_c0": 0.55,
+      "recall_c1": 0.09375,
+      "recall_c2": 0.6,
+      "recall_c3": 0.49382716049382713,
+      "confusion_matrix": [
+        [
+          22,
+          5,
+          11,
+          2
+        ],
+        [
+          10,
+          3,
+          10,
+          9
+        ],
+        [
+          3,
+          2,
+          60,
+          35
+        ],
+        [
+          5,
+          9,
+          27,
+          40
+        ]
+      ],
+      "balanced_accuracy": 0.43439429012345676,
+      "precision_c0": 0.55,
+      "precision_c1": 0.15789473684210525,
+      "precision_c2": 0.5555555555555556,
+      "precision_c3": 0.46511627906976744,
+      "auc_c0": 0.888262910798122,
+      "auc_c1": 0.6890554298642534,
+      "auc_c2": 0.6956862745098039,
+      "auc_c3": 0.7095894343956358,
+      "per_source": {
+        "int/prospective": {
+          "n": 253,
+          "accuracy": 0.49407114624505927,
+          "balanced_acc": 0.43439429012345676
+        }
+      },
+      "patient_level": {
+        "n_patients": 54,
+        "accuracy": 0.5185185185185185,
+        "balanced_accuracy": 0.4737076648841355
+      }
+    },
+    "test_external": {
+      "accuracy": 0.3888888888888889,
+      "f1_macro": 0.3595794279258463,
+      "auc": 0.7187361766237261,
+      "recall_c0": 0.18259023354564755,
+      "recall_c1": 0.5402843601895735,
+      "recall_c2": 0.3329694323144105,
+      "recall_c3": 0.5288461538461539,
+      "confusion_matrix": [
+        [
+          86,
+          309,
+          64,
+          12
+        ],
+        [
+          21,
+          114,
+          52,
+          24
+        ],
+        [
+          14,
+          333,
+          305,
+          264
+        ],
+        [
+          11,
+          152,
+          229,
+          440
+        ]
+      ],
+      "balanced_accuracy": 0.3961725449739464,
+      "precision_c0": 0.6515151515151515,
+      "precision_c1": 0.12555066079295155,
+      "precision_c2": 0.46923076923076923,
+      "precision_c3": 0.5945945945945946,
+      "auc_c0": 0.8651083951363894,
+      "auc_c1": 0.6150736102894221,
+      "auc_c2": 0.6262878346495302,
+      "auc_c3": 0.7684748664195629,
+      "per_source": {
+        "ext/multicenter": {
+          "n": 10,
+          "accuracy": 1.0,
+          "balanced_acc": 1.0
+        },
+        "ext/putian": {
+          "n": 168,
+          "accuracy": 0.35714285714285715,
+          "balanced_acc": 0.22567668371696506
+        },
+        "ext/putian_2024": {
+          "n": 461,
+          "accuracy": 0.20607375271149675,
+          "balanced_acc": 0.26191565572392056
+        },
+        "ext/putian_2024_new": {
+          "n": 57,
+          "accuracy": 0.19298245614035087,
+          "balanced_acc": 0.13214285714285715
+        },
+        "ext/putian_2025_07_09": {
+          "n": 469,
+          "accuracy": 0.24733475479744135,
+          "balanced_acc": 0.3681227120064638
+        },
+        "ext/zhongliu": {
+          "n": 229,
+          "accuracy": 0.5021834061135371,
+          "balanced_acc": 0.3630736714975845
+        },
+        "int/2018": {
+          "n": 286,
+          "accuracy": 0.5244755244755245,
+          "balanced_acc": 0.478656415762715
+        },
+        "int/2019": {
+          "n": 234,
+          "accuracy": 0.5,
+          "balanced_acc": 0.4309033974852625
+        },
+        "int/2020_2023": {
+          "n": 14,
+          "accuracy": 0.5,
+          "balanced_acc": 0.125
+        },
+        "int/2024": {
+          "n": 249,
+          "accuracy": 0.5421686746987951,
+          "balanced_acc": 0.35126488095238095
+        },
+        "int/prospective": {
+          "n": 253,
+          "accuracy": 0.5098814229249012,
+          "balanced_acc": 0.4461535493827161
+        }
+      },
+      "patient_level": {
+        "n_patients": 405,
+        "accuracy": 0.41728395061728396,
+        "balanced_accuracy": 0.4317511816069855
+      }
+    }
+  }
+}

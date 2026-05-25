@@ -1,0 +1,105 @@
+experiment_name: tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v3_head_finetune
+description: "Round-3 from v2: freeze ConvNeXt backbones, boost T2/T3 sampling, lighter cost to recover AUC while keeping low overstaging"
+project_os: pipeline/experiments/mainlines/tstaging_4class/project_os.yaml
+mainline_name: optimization_mainline
+stage_name: t2t3_antioverstage_v3_head
+baseline_parent: t2t3_antioverstage_v2_finetune
+roi_type: doctor_roi
+mask_type: predicted_lesion_mask_4ch
+clinical_type: true_clinical_22d
+breakthrough_type: t2t3_head_finetune_v3
+contrastive_type: none
+deploy_realism_level: mask_augmented_reference
+asset_profile: full_data_mask4ch
+
+model_type: dual_branch
+global_backbone: convnext_base.fb_in22k_ft_in1k_384
+local_backbone: convnext_small.in12k_ft_in1k
+global_in_channels: 4
+num_classes: 4
+class_names: [T1, T2, T3, T4+]
+fusion_type: cross_attention
+fusion_hidden: 512
+
+pretrained_checkpoint: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v2_finetune_20260520_151540/best_model.pth
+freeze_backbones: true
+
+clinical_cols:
+  - age_norm
+  - age_missing
+  - sex_norm
+  - sex_missing
+  - lauren_type_norm
+  - lauren_type_missing
+  - differentiation_norm
+  - differentiation_missing
+  - tumor_length_cm_norm
+  - tumor_length_cm_missing
+  - tumor_thickness_cm_norm
+  - tumor_thickness_cm_missing
+  - tumor_location_norm
+  - tumor_location_missing
+  - cea_value_norm
+  - cea_value_missing
+  - cea_binary_norm
+  - cea_binary_missing
+  - ca199_value_norm
+  - ca199_value_missing
+  - ca199_binary_norm
+  - ca199_binary_missing
+clinical_dim: 22
+clinical_hidden: 64
+
+data_dir: pipeline/data/tstaging_4class
+eval_splits: [test_external, test_prospective]
+use_mask_channel: true
+mask_augment_align: true
+mask_dir: /data/research/gastric/Tstaging/pipeline/data/tstaging_4class_forced_pipeline_20260322/predicted_mask
+
+global_size: 384
+local_size: 224
+image_size: 224
+aug_level: strong
+patient_sampling: true
+max_frames_per_patient: 3
+class_balanced_sampling: true
+class_boost:
+  1: 1.45
+  2: 1.45
+class_weights: [0.8, 1.25, 1.4, 0.85]
+
+batch_size: 12
+lr: 0.00003
+weight_decay: 0.01
+dropout: 0.35
+label_smoothing: 0.06
+epochs: 35
+early_stopping: 12
+early_stopping_metric: auc_minus_overstage
+overstage_penalty: 0.32
+head_hidden: 512
+warmup_epochs: 2
+scheduler: cosine
+
+loss: ordinal
+lambda_ord: 0.2
+boundary_aware_loss: true
+lambda_boundary: 0.22
+boundary_weights: [0.55, 1.35, 1.45]
+
+asymmetric_cost_aux: true
+lambda_asym_cost: 0.22
+cost_matrix:
+  - [0.0, 2.0, 1.2, 1.5]
+  - [5.0, 0.0, 1.5, 4.0]
+  - [2.0, 3.0, 0.0, 4.2]
+  - [2.0, 2.0, 2.0, 0.0]
+
+mixup: 0.0
+ema: true
+ema_decay: 0.998
+grad_clip: 1.0
+amp: true
+gradient_accumulation: 2
+num_workers: 8
+seed: 42

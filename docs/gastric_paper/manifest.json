@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-05-25T01:20:40.758384+00:00",
+  "max_file_bytes": 1048576,
+  "figures": [
+    "fig_results_auc_comparison.png",
+    "metric_comprehensive_panel.png",
+    "metric_auc_comparison.png",
+    "metric_cm_external.png",
+    "metric_cm_prospective.png",
+    "metric_recall_heatmap.png",
+    "metric_confusion_dual.png",
+    "dinov3_classification_auc_summary.png",
+    "dinov3_classification_auc_multimetric.png",
+    "framelevel_prosp_frame_vs_patient_metrics.png",
+    "t2t3_gradcam_ppt_case_pt105_T3correct.png",
+    "t2t3_gradcam_ppt_case_pt189_T2correct.png",
+    "t2t3_gradcam_ok_T3_pt105-4.png",
+    "t2t3_gradcam_err_T2_to_T3_pt189-3.png",
+    "t2t3_gradcam_panel_err_T3_to_T4.png"
+  ],
+  "note": "Large raw PNGs (>1MB) stay on server; use preview or metrics JSON here."
+}

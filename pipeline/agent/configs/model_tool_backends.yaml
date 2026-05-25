@@ -89,6 +89,25 @@ backends:
       - single_case_t_stage_prior
       - agent_final_classification_evidence
 
+  - backend_id: tstage_4class_antioverstage_v3_20260522
+    tool_name: classification
+    model_task: t_staging_4class
+    adapter_target: pipeline.agent.tools.classification_tool.ClassificationTool
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_t2t3_antioverstage_v3_head_finetune_20260522_200526/best_model.pth
+    registry_ref: pipeline/agent/config/agent_backend_registry.yaml#tstage_mask4ch_antioverstage_v3_20260522
+    trust_label: trusted
+    validation_summary:
+      test_external_auc: 0.6975
+      test_prospective_auc: 0.7052
+      t2t3_overstage_rate_external: 0.186
+      t3_recall_external: 0.632
+    use_for:
+      - single_case_t_stage_prior
+      - t2_t3_boundary_review
+      - gradcam_t2t3_panels
+    known_limits:
+      - External macro-AUC below frozen 20260423; use 30/70 ensemble if AUC priority.
+
   - backend_id: tstage_4class_legacy_dual_branch_mask4ch
     tool_name: classification
     model_task: t_staging_4class

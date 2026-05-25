@@ -1,0 +1,5 @@
+{
+  "frozen_run": "pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301",
+  "scoreboard_rows": 6,
+  "source": "pipeline scoreboard + eval/test_results.json"
+}

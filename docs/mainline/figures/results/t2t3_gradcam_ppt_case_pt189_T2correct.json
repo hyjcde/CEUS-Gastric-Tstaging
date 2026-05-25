@@ -1,0 +1,16 @@
+{
+  "cases_csv": "pipeline/data/tstaging_4class/eval/t2t3_ppt_extra_pt189.csv",
+  "gradcam_dir": "pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_t2t3_ppt_extra2",
+  "output": "docs/mainline/figures/results/t2t3_gradcam_ppt_case_pt189_T2correct.png",
+  "datasets": [
+    "Putian 2024"
+  ],
+  "row_keys": [
+    "original",
+    "pred_lesion",
+    "gt_lesion",
+    "global_gradcam",
+    "roi_gradcam"
+  ],
+  "font": "Times New Roman Bold"
+}
