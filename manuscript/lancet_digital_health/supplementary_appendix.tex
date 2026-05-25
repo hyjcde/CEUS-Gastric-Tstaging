@@ -1,0 +1,78 @@
+% Supplementary appendix — compile separately or merge before submission
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Supplementary appendix\\Deep learning pipeline for gastric T-staging on oral contrast-enhanced ultrasonography}
+\author{CEUS-Gastric-Tstaging Collaborative Group}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Extended cohort counts by T category}
+\begin{table}[h]
+\centering
+\caption{Training set class distribution (images)}
+\begin{tabular}{lrrrrr}
+\toprule
+Split & T1 & T2 & T3 & T4+ & Total \\
+\midrule
+Training & 1\,543 & 1\,076 & 3\,292 & 3\,227 & 9\,138 \\
+Validation & 211 & 83 & 416 & 407 & 1\,117 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Attention guidance experiment matrix}
+Full lambda grid and epoch-level metrics are archived under project experiment directories (see \texttt{docs/archive\_refs/legacy\_selected/T分期数据利用综合方案\_20260325.md}, Appendix C).
+
+\section{Grad-CAM--border alignment metrics}
+\begin{table}[h]
+\centering
+\caption{Grad-CAM alignment with mask-derived border band}
+\begin{tabular}{lcc}
+\toprule
+Metric & Attention guidance v2 & No-mask baseline \\
+\midrule
+Mean IoU & 0.098 & 0.041 \\
+Mean Dice & 0.168 & 0.073 \\
+Mean correlation & 0.177 & 0.055 \\
+Specificity ratio & 4.28 & 1.83 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Segmentation summary}
+\begin{itemize}
+  \item Internal comprehensive mean Dice $\approx$ 0.65
+  \item Strict protocol: prospective Dice 0.713; Putian external Dice 0.433
+  \item SAM3 text zero-shot: ineffective on this modality
+\end{itemize}
+
+\section{Localisation benchmark snapshot}
+\begin{table}[h]
+\centering
+\caption{Representative detector (v9 grand overnight training)}
+\begin{tabular}{lc}
+\toprule
+Metric & Value \\
+\midrule
+Precision & 81.2\% \\
+Recall & 76.8\% \\
+mAP@0.5 & 78.5\% \\
+mAP@0.5:0.95 & 52.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reproducibility checklist}
+\begin{itemize}
+  \item Patient-level split manifests: \texttt{data/registry/}
+  \item Validation protocol: \texttt{docs/evaluation/validation\_protocol.md}
+  \item Baseline experiment entry points: \texttt{experiments/baselines/}
+\end{itemize}
+
+\end{document}
