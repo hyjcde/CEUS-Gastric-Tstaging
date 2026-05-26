@@ -1,6 +1,6 @@
 {
   "meta": {
-    "created_utc": "2026-05-26 12:36 UTC",
+    "created_utc": "2026-05-26 12:39 UTC",
     "exp_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301",
     "rejected_csv_name": "gradcam_rejected.csv",
     "rejected_rows": 1355,
@@ -88,25 +88,33 @@
             "n": 471,
             "precision": 0.6417445482866043,
             "recall": 0.43736730360934184,
-            "f1": 0.5202020202020202
+            "f1": 0.5202020202020202,
+            "specificity": 0.9412965798876978,
+            "auc": 0.861728057882992
           },
           "T2": {
             "n": 211,
             "precision": 0.15,
             "recall": 0.08530805687203792,
-            "f1": 0.10876132930513595
+            "f1": 0.10876132930513595,
+            "specificity": 0.9540333483551149,
+            "auc": 0.6438299989961749
           },
           "T3": {
             "n": 916,
             "precision": 0.4905335628227194,
             "recall": 0.3111353711790393,
-            "f1": 0.3807615230460922
+            "f1": 0.3807615230460922,
+            "specificity": 0.8044914134742405,
+            "auc": 0.6126415464399232
           },
           "T4+": {
             "n": 832,
             "precision": 0.4666193181818182,
             "recall": 0.7896634615384616,
-            "f1": 0.5866071428571429
+            "f1": 0.5866071428571429,
+            "specificity": 0.5300375469336671,
+            "auc": 0.7403703246847021
           }
         }
       },
@@ -152,25 +160,33 @@
             "n": 300,
             "precision": 0.8232931726907631,
             "recall": 0.6833333333333333,
-            "f1": 0.7468123861566485
+            "f1": 0.7468123861566485,
+            "specificity": 0.970310391363023,
+            "auc": 0.9321412505623032
           },
           "T2": {
             "n": 119,
             "precision": 0.22666666666666666,
             "recall": 0.14285714285714285,
-            "f1": 0.1752577319587629
+            "f1": 0.1752577319587629,
+            "specificity": 0.9651232711966325,
+            "auc": 0.6595501700379489
           },
           "T3": {
             "n": 583,
             "precision": 0.5889830508474576,
             "recall": 0.47684391080617494,
-            "f1": 0.5270142180094786
+            "f1": 0.5270142180094786,
+            "specificity": 0.8381984987489575,
+            "auc": 0.7160269349672468
           },
           "T4+": {
             "n": 780,
             "precision": 0.6632860040567952,
             "recall": 0.8384615384615385,
-            "f1": 0.7406568516421291
+            "f1": 0.7406568516421291,
+            "specificity": 0.6686626746506986,
+            "auc": 0.8210630022007267
           }
         }
       },
@@ -230,25 +246,33 @@
             "n": 596,
             "precision": 0.7380952380952381,
             "recall": 0.46812080536912754,
-            "f1": 0.5728952772073923
+            "f1": 0.5728952772073923,
+            "specificity": 0.9460196292257361,
+            "auc": 0.8316512116399406
           },
           "T2": {
             "n": 242,
             "precision": 0.6923076923076923,
             "recall": 0.1859504132231405,
-            "f1": 0.29315960912052114
+            "f1": 0.29315960912052114,
+            "specificity": 0.9908592321755028,
+            "auc": 0.7644892501548644
           },
           "T3": {
             "n": 660,
             "precision": 0.4861407249466951,
             "recall": 0.34545454545454546,
-            "f1": 0.4038972542072631
+            "f1": 0.4038972542072631,
+            "specificity": 0.8638418079096045,
+            "auc": 0.7073138161273754
           },
           "T4+": {
             "n": 932,
             "precision": 0.5217391304347826,
             "recall": 0.8497854077253219,
-            "f1": 0.6465306122448979
+            "f1": 0.6465306122448979,
+            "specificity": 0.5153538050734312,
+            "auc": 0.8010816997770991
           }
         }
       },
@@ -294,25 +318,33 @@
             "n": 332,
             "precision": 0.8637770897832817,
             "recall": 0.8403614457831325,
-            "f1": 0.851908396946565
+            "f1": 0.851908396946565,
+            "specificity": 0.9683680805176133,
+            "auc": 0.9436047569140689
           },
           "T2": {
             "n": 109,
             "precision": 0.9,
             "recall": 0.41284403669724773,
-            "f1": 0.5660377358490566
+            "f1": 0.5660377358490566,
+            "specificity": 0.9969021065675341,
+            "auc": 0.8431215397382991
           },
           "T3": {
             "n": 404,
             "precision": 0.6608187134502924,
             "recall": 0.5594059405940595,
-            "f1": 0.6058981233243967
+            "f1": 0.6058981233243967,
+            "specificity": 0.9120545868081881,
+            "auc": 0.8309813164788807
           },
           "T4+": {
             "n": 878,
             "precision": 0.7847222222222222,
             "recall": 0.9009111617312073,
-            "f1": 0.8388123011664899
+            "f1": 0.8388123011664899,
+            "specificity": 0.7431952662721893,
+            "auc": 0.9017158415441227
           }
         }
       },
@@ -373,25 +405,33 @@
           "n": 1067,
           "precision": 0.6938483547925608,
           "recall": 0.45454545454545453,
-          "f1": 0.549263873159683
+          "f1": 0.549263873159683,
+          "specificity": 0.9435802794621672,
+          "auc": 0.8465646404823565
         },
         "T2": {
           "n": 453,
           "precision": 0.34054054054054056,
           "recall": 0.1390728476821192,
-          "f1": 0.1974921630094044
+          "f1": 0.1974921630094044,
+          "specificity": 0.9723167687769457,
+          "auc": 0.7080362317424967
         },
         "T3": {
           "n": 1576,
           "precision": 0.48857142857142855,
           "recall": 0.32550761421319796,
-          "f1": 0.39070830159939074
+          "f1": 0.39070830159939074,
+          "specificity": 0.8364799025578563,
+          "auc": 0.657789536407872
         },
         "T4+": {
           "n": 1764,
           "precision": 0.49521531100478466,
           "recall": 0.8214285714285714,
-          "f1": 0.617910447761194
+          "f1": 0.617910447761194,
+          "specificity": 0.5229328165374677,
+          "auc": 0.7712865184833623
         }
       }
     },
@@ -437,25 +477,33 @@
           "n": 632,
           "precision": 0.8461538461538461,
           "recall": 0.7658227848101266,
-          "f1": 0.8039867109634551
+          "f1": 0.8039867109634551,
+          "specificity": 0.9693699965193178,
+          "auc": 0.9387713852674617
         },
         "T2": {
           "n": 228,
           "precision": 0.496,
           "recall": 0.2719298245614035,
-          "f1": 0.3512747875354108
+          "f1": 0.3512747875354108,
+          "specificity": 0.9807750991760756,
+          "auc": 0.7592484032785657
         },
         "T3": {
           "n": 987,
           "precision": 0.6191646191646192,
           "recall": 0.5106382978723404,
-          "f1": 0.5596890616324265
+          "f1": 0.5596890616324265,
+          "specificity": 0.8768864177918984,
+          "auc": 0.7702310336197412
         },
         "T4+": {
           "n": 1658,
           "precision": 0.7246740220661986,
           "recall": 0.8715319662243667,
-          "f1": 0.7913472070098575
+          "f1": 0.7913472070098575,
+          "specificity": 0.7027612344342177,
+          "auc": 0.8615343369713087
         }
       }
     },
@@ -591,5 +639,119 @@
         "count": 1
       }
     ]
-  }
+  },
+  "representative_panels": [
+    {
+      "label": "a",
+      "tag": "A1",
+      "rel_path": "representative_panels/A1_panel.png",
+      "caption": "External · retained · correct T3",
+      "split": "External",
+      "status": "kept",
+      "true_name": "T3",
+      "pred_name": "T3",
+      "correct": true,
+      "filename": "20-23直接手术__20-23直接手术__1090057-3",
+      "prob_line": "P(T1)=0.8% · P(T2)=0.3% · P(T3)=72.5% · P(T4+)=26.5%",
+      "pred_conf": 0.7245442271232605
+    },
+    {
+      "label": "b",
+      "tag": "A2",
+      "rel_path": "representative_panels/A2_panel.png",
+      "caption": "External · retained · T3→T4+ error",
+      "split": "External",
+      "status": "kept",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "filename": "莆田学院附属医院__直接手术__pt170-1",
+      "prob_line": "P(T1)=30.6% · P(T2)=0.9% · P(T3)=32.5% · P(T4+)=36.1%",
+      "pred_conf": 0.3608790040016174
+    },
+    {
+      "label": "c",
+      "tag": "A3",
+      "rel_path": "representative_panels/A3_panel.png",
+      "caption": "External · retained · T2→T4+ overstaging",
+      "split": "External",
+      "status": "kept",
+      "true_name": "T2",
+      "pred_name": "T4+",
+      "correct": false,
+      "filename": "莆田学院附属医院__直接手术__pt211-3",
+      "prob_line": "P(T1)=8.6% · P(T2)=15.4% · P(T3)=34.1% · P(T4+)=41.8%",
+      "pred_conf": 0.4181573092937469
+    },
+    {
+      "label": "d",
+      "tag": "A4",
+      "rel_path": "representative_panels/A4_panel.png",
+      "caption": "External · excluded · poor wall-layer visibility",
+      "split": "External",
+      "status": "excluded",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "filename": "20-23直接手术__20-23直接手术__1090057-1",
+      "prob_line": "P(T1)=0.4% · P(T2)=4.9% · P(T3)=20.8% · P(T4+)=73.9%",
+      "pred_conf": 0.7389751076698303
+    },
+    {
+      "label": "e",
+      "tag": "B1",
+      "rel_path": "representative_panels/B1_panel.png",
+      "caption": "Prospective · retained · correct T3",
+      "split": "Prospective",
+      "status": "kept",
+      "true_name": "T3",
+      "pred_name": "T3",
+      "correct": true,
+      "filename": "2025直接手术__10837913_(1)",
+      "prob_line": "P(T1)=5.0% · P(T2)=0.8% · P(T3)=70.9% · P(T4+)=23.2%",
+      "pred_conf": 0.7094388008117676
+    },
+    {
+      "label": "f",
+      "tag": "B2",
+      "rel_path": "representative_panels/B2_panel.png",
+      "caption": "Prospective · retained · T3→T4+ error",
+      "split": "Prospective",
+      "status": "kept",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "filename": "2025直接手术__1495653_(10)",
+      "prob_line": "P(T1)=31.4% · P(T2)=0.6% · P(T3)=33.6% · P(T4+)=34.5%",
+      "pred_conf": 0.3453654646873474
+    },
+    {
+      "label": "g",
+      "tag": "B3",
+      "rel_path": "representative_panels/B3_panel.png",
+      "caption": "Prospective · retained · correct T4+",
+      "split": "Prospective",
+      "status": "kept",
+      "true_name": "T4+",
+      "pred_name": "T4+",
+      "correct": true,
+      "filename": "2025直接手术__Z0239353-9",
+      "prob_line": "P(T1)=27.2% · P(T2)=0.4% · P(T3)=36.0% · P(T4+)=36.4%",
+      "pred_conf": 0.3644953370094299
+    },
+    {
+      "label": "h",
+      "tag": "B4",
+      "rel_path": "representative_panels/B4_panel.png",
+      "caption": "Prospective · excluded · poor wall-layer visibility",
+      "split": "Prospective",
+      "status": "excluded",
+      "true_name": "T2",
+      "pred_name": "T4+",
+      "correct": false,
+      "filename": "2025直接手术__1000937_(1)",
+      "prob_line": "P(T1)=0.6% · P(T2)=42.2% · P(T3)=1.1% · P(T4+)=56.1%",
+      "pred_conf": 0.5614347457885742
+    }
+  ]
 }

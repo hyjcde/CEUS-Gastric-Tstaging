@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -102,13 +103,104 @@ def compute_metrics(df: pd.DataFrame) -> dict:
         tp = int(((preds == lab) & mask).sum())
         fp = int(((preds == lab) & ~mask).sum())
         fn = int(((preds != lab) & mask).sum())
+        tn = int(((preds != lab) & ~mask).sum())
         prec = tp / max(tp + fp, 1)
         rec = tp / max(tp + fn, 1)
         f1 = 2 * prec * rec / max(prec + rec, 1e-12)
-        per_class[name] = {"n": sup, "precision": float(prec), "recall": float(rec), "f1": float(f1)}
+        spec = tn / max(tn + fp, 1)
+        y_bin = mask.astype(int)
+        try:
+            auc_c = float(roc_auc_score(y_bin, probs[:, lab])) if 0 < y_bin.sum() < len(y_bin) else None
+        except ValueError:
+            auc_c = None
+        per_class[name] = {
+            "n": sup,
+            "precision": float(prec),
+            "recall": float(rec),
+            "f1": float(f1),
+            "specificity": float(spec),
+            "auc": auc_c,
+        }
 
     out["per_class"] = per_class
     return out
+
+
+REPRESENTATIVE_SPECS = [
+    ("test_external", "kept", True, "T3", "T3", "A1", "External · retained · correct T3"),
+    ("test_external", "kept", False, "T3", "T4+", "A2", "External · retained · T3→T4+ error"),
+    ("test_external", "kept", False, "T2", "T4+", "A3", "External · retained · T2→T4+ overstaging"),
+    ("test_external", "excluded", None, None, None, "A4", "External · excluded · poor wall-layer visibility"),
+    ("test_prospective", "kept", True, "T3", "T3", "B1", "Prospective · retained · correct T3"),
+    ("test_prospective", "kept", False, "T3", "T4+", "B2", "Prospective · retained · T3→T4+ error"),
+    ("test_prospective", "kept", True, "T4+", "T4+", "B3", "Prospective · retained · correct T4+"),
+    ("test_prospective", "excluded", None, None, None, "B4", "Prospective · excluded · poor wall-layer visibility"),
+]
+
+
+def pick_row(df: pd.DataFrame) -> pd.Series | None:
+    if df.empty:
+        return None
+    return df.iloc[0]
+
+
+def select_representative_panels(
+    exp_dir: Path,
+    rejected_map: dict[str, set[str]],
+    out_dir: Path,
+    *,
+    external_holdout_only: bool,
+) -> list[dict]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    panels: list[dict] = []
+    labels = "abcdefgh"
+
+    for i, (split, status, correct, true_name, pred_name, tag, caption) in enumerate(REPRESENTATIVE_SPECS):
+        df = load_gradcam(exp_dir, split, external_holdout_only=external_holdout_only)
+        rej = rejected_map.get(split, set())
+        if status == "kept":
+            pool = df[~df["filename"].astype(str).isin(rej)].copy()
+            if correct is True:
+                pool = pool[pool["correct"].astype(str).str.lower().isin({"1", "true", "t", "yes"})]
+            elif correct is False:
+                pool = pool[~pool["correct"].astype(str).str.lower().isin({"1", "true", "t", "yes"})]
+            if true_name:
+                pool = pool[pool["true_name"].astype(str) == true_name]
+            if pred_name:
+                pool = pool[pool["pred_name"].astype(str) == pred_name]
+        else:
+            pool = df[df["filename"].astype(str).isin(rej)].copy()
+
+        pool = pool[pool["panel_path"].notna()]
+        pool = pool.sort_values("prob_T4+" if pred_name == "T4+" else "filename")
+        row = pick_row(pool)
+        if row is None:
+            continue
+
+        src = Path(str(row["panel_path"]))
+        if not src.is_file():
+            continue
+        dst = out_dir / f"{tag}_panel.png"
+        shutil.copy2(src, dst)
+        probs = {c: float(row[f"prob_{c}"]) for c in CLASS_NAMES}
+        pred_p = probs.get(str(row["pred_name"]), max(probs.values()))
+        panels.append(
+            {
+                "label": labels[i] if i < len(labels) else str(i + 1),
+                "tag": tag,
+                "rel_path": f"representative_panels/{dst.name}",
+                "caption": caption,
+                "split": COHORT_NAMES[split],
+                "status": status,
+                "true_name": str(row["true_name"]),
+                "pred_name": str(row["pred_name"]),
+                "correct": is_correct(row),
+                "filename": str(row["filename"])[:48],
+                "prob_line": " · ".join(f"P({k})={v*100:.1f}%" for k, v in probs.items()),
+                "pred_conf": pred_p,
+            }
+        )
+    return panels
 
 
 def random_removal_baseline(df: pd.DataFrame, remove_n: int, seeds: int = 500) -> dict:
@@ -295,47 +387,113 @@ def build_tables(payload: dict) -> str:
         "All metrics recomputed from frozen Grad-CAM inference probabilities; no model retraining.",
     ))
 
-    # Table 3 — per-class P/R/F1
-    t3 = []
+    # Table 3 — macro & per-class AUC (OvR)
+    t_auc = []
+    for sk, block in splits.items():
+        bmac, amac = block["before"].get("auc"), block["after"].get("auc")
+        t_auc.append([
+            COHORT_NAMES[sk],
+            "Macro OVR",
+            str(block["before"]["n"]),
+            fp(bmac) + "%" if bmac is not None else "—",
+            fp(amac) + "%" if amac is not None else "—",
+            delta_cell(bmac, amac) if bmac is not None and amac is not None else "—",
+        ])
+        for cls in CLASS_NAMES:
+            bc = block["before"]["per_class"].get(cls, {})
+            ac = block["after"]["per_class"].get(cls, {})
+            if not bc and not ac:
+                continue
+            bau, aau = bc.get("auc"), ac.get("auc")
+            t_auc.append([
+                COHORT_NAMES[sk],
+                cls,
+                str(bc.get("n", "—")),
+                fp(bau) + "%" if bau is not None else "—",
+                fp(aau) + "%" if aau is not None else "—",
+                delta_cell(bau, aau) if bau is not None and aau is not None else "—",
+            ])
+    t_auc.append([
+        "Combined",
+        "Macro OVR",
+        str(cb["n"]),
+        fp(cb.get("auc")) + "%",
+        fp(ca.get("auc")) + "%",
+        delta_cell(cb.get("auc"), ca.get("auc")),
+    ])
+    parts.append(pub_table(
+        ["Cohort", "Class", "N (pre)", "AUC pre", "AUC post", "Δ AUC"],
+        t_auc,
+        "Table 3. Macro and per-class one-vs-rest AUC.",
+        "Per-class AUC uses binary OvR labels; macro AUC uses full 4-class probability vectors.",
+    ))
+
+    # Table 4 — per-class P/R/F1/specificity
+    t4 = []
     for sk, block in splits.items():
         for cls in CLASS_NAMES:
             bc = block["before"]["per_class"].get(cls, {})
             ac = block["after"]["per_class"].get(cls, {})
             if not bc:
                 continue
-            t3.append([
+            t4.append([
                 COHORT_NAMES[sk],
                 cls,
-                str(bc["n"]),
-                str(ac["n"]),
-                fp(bc["precision"]) + "%", fp(ac["precision"]) + "%", delta_cell(bc["precision"], ac["precision"]),
-                fp(bc["recall"]) + "%", fp(ac["recall"]) + "%", delta_cell(bc["recall"], ac["recall"]),
-                fp(bc["f1"]) + "%", fp(ac["f1"]) + "%", delta_cell(bc["f1"], ac["f1"]),
+                str(bc.get("n", "—")),
+                str(ac.get("n", "—")),
+                fp(bc.get("precision")) + "%", fp(ac.get("precision")) + "%", delta_cell(bc.get("precision"), ac.get("precision")),
+                fp(bc.get("recall")) + "%", fp(ac.get("recall")) + "%", delta_cell(bc.get("recall"), ac.get("recall")),
+                fp(bc.get("f1")) + "%", fp(ac.get("f1")) + "%", delta_cell(bc.get("f1"), ac.get("f1")),
+                fp(bc.get("specificity")) + "%", fp(ac.get("specificity")) + "%", delta_cell(bc.get("specificity"), ac.get("specificity")),
             ])
     parts.append(pub_table(
         ["Cohort", "Class", "N pre", "N post",
-         "Prec pre", "Prec post", "Δ Prec",
-         "Rec pre", "Rec post", "Δ Rec",
-         "F1 pre", "F1 post", "Δ F1"],
-        t3,
-        "Table 3. Per-class precision, recall, and F1-score.",
+         "Prec pre", "Prec post", "Δ",
+         "Rec pre", "Rec post", "Δ",
+         "F1 pre", "F1 post", "Δ",
+         "Spec pre", "Spec post", "Δ"],
+        t4,
+        "Table 4. Per-class precision, recall, F1, and specificity.",
     ))
 
-    # Table 4 — confusion matrices (external post as main; all four in subtables)
+    # Table 5 — post-screening summary (compact, one row per cohort × class)
+    t5sum = []
     for sk, block in splits.items():
-        parts.append(f'<p class="cap"><strong>Table 4{ "a" if sk=="test_external" else "b"}. Confusion matrix — {COHORT_NAMES[sk]} (post-screening, n={block["after"]["n"]})</strong></p>')
+        for cls in CLASS_NAMES:
+            ac = block["after"]["per_class"].get(cls, {})
+            if not ac:
+                continue
+            t5sum.append([
+                COHORT_NAMES[sk],
+                cls,
+                str(ac.get("n", "—")),
+                fp(ac.get("precision")) + "%",
+                fp(ac.get("recall")) + "%",
+                fp(ac.get("f1")) + "%",
+                fp(ac.get("specificity")) + "%",
+                fp(ac.get("auc")) + "%" if ac.get("auc") is not None else "—",
+            ])
+    parts.append(pub_table(
+        ["Cohort", "Class", "N", "Precision", "Recall", "F1", "Specificity", "AUC (OvR)"],
+        t5sum,
+        "Table 5. Post-screening per-class performance summary (readable cohort).",
+    ))
+
+    # Table 6 — confusion matrices
+    for sk, block in splits.items():
+        parts.append(f'<p class="cap"><strong>Table 6{ "a" if sk=="test_external" else "b"}. Confusion matrix — {COHORT_NAMES[sk]} (post-screening, n={block["after"]["n"]})</strong></p>')
         parts.append(f'<div class="tbl-scroll">{cm_table(block["after"]["confusion"])}</div>')
         parts.append(
-            f'<p class="cap"><strong>Table 4{ "a′" if sk=="test_external" else "b′"}. Confusion matrix — {COHORT_NAMES[sk]} (pre-screening, n={block["before"]["n"]})</strong></p>'
+            f'<p class="cap"><strong>Table 6{ "a′" if sk=="test_external" else "b′"}. Confusion matrix — {COHORT_NAMES[sk]} (pre-screening, n={block["before"]["n"]})</strong></p>'
         )
         parts.append(f'<div class="tbl-scroll">{cm_table(block["before"]["confusion"])}</div>')
 
-    # Table 5 — exclusion & anti-cheat
-    t5 = []
+    # Table 7 — exclusion & anti-cheat
+    t7 = []
     for sk, block in splits.items():
         rs = block["rejection_stats"]
         rn = block["removed_n"]
-        t5.append([
+        t7.append([
             COHORT_NAMES[sk],
             str(rn),
             f"{100*rn/block['before']['n']:.1f}%",
@@ -345,7 +503,7 @@ def build_tables(payload: dict) -> str:
             "; ".join(f"{k}:{v}" for k, v in sorted(rs["by_true_class"].items())),
         ])
     rand = payload["random_baseline"]
-    t5.append([
+    t7.append([
         "Combined (random baseline)",
         str(payload["combined"]["removed_n"]),
         "—",
@@ -356,17 +514,17 @@ def build_tables(payload: dict) -> str:
     ])
     parts.append(pub_table(
         ["Cohort", "Excluded n", "Excl. rate", "Model correct", "Model incorrect", "Incorrect share", "Notes"],
-        t5,
-        "Table 5. Profile of excluded frames and random-removal baseline (combined).",
+        t7,
+        "Table 7. Profile of excluded frames and random-removal baseline (combined).",
     ))
 
-    # Table 6 — integrity
-    t6 = [[("Pass" if c["pass"] else "Fail"), c["title"], c["detail"]] for c in payload["audit_checks"]]
-    t6 = [[f'<span class="{"ok" if c["pass"] else "bad"}">{r[0]}</span>', r[1], r[2]] for c, r in zip(payload["audit_checks"], t6)]
+    # Table 8 — integrity
+    t8 = [[("Pass" if c["pass"] else "Fail"), c["title"], c["detail"]] for c in payload["audit_checks"]]
+    t8 = [[f'<span class="{"ok" if c["pass"] else "bad"}">{r[0]}</span>', r[1], r[2]] for c, r in zip(payload["audit_checks"], t8)]
     parts.append(pub_table(
         ["Status", "Integrity check", "Evidence"],
-        t6,
-        "Table 6. Anti-leakage audit checklist.",
+        t8,
+        "Table 8. Anti-leakage audit checklist.",
     ))
 
     return "\n".join(parts)
@@ -394,9 +552,15 @@ def build_chart_data(payload: dict) -> dict:
     f1_pre, f1_post = trio("f1_macro")
 
     recall = {"labels": CLASS_NAMES}
+    precision = {"labels": CLASS_NAMES}
+    auc_pc = {"labels": CLASS_NAMES}
     for sk, lab in [("test_external", "ext"), ("test_prospective", "pro")]:
         recall[f"{lab}_pre"] = [sp[sk]["before"]["per_class"].get(c, {}).get("recall", 0) for c in CLASS_NAMES]
         recall[f"{lab}_post"] = [sp[sk]["after"]["per_class"].get(c, {}).get("recall", 0) for c in CLASS_NAMES]
+        precision[f"{lab}_pre"] = [sp[sk]["before"]["per_class"].get(c, {}).get("precision", 0) for c in CLASS_NAMES]
+        precision[f"{lab}_post"] = [sp[sk]["after"]["per_class"].get(c, {}).get("precision", 0) for c in CLASS_NAMES]
+        auc_pc[f"{lab}_pre"] = [sp[sk]["before"]["per_class"].get(c, {}).get("auc") or 0 for c in CLASS_NAMES]
+        auc_pc[f"{lab}_post"] = [sp[sk]["after"]["per_class"].get(c, {}).get("auc") or 0 for c in CLASS_NAMES]
 
     rej = payload["splits"]
     ex_rej = rej["test_external"]["rejection_stats"]["by_true_class"]
@@ -412,6 +576,8 @@ def build_chart_data(payload: dict) -> dict:
         "f1_pre": f1_pre,
         "f1_post": f1_post,
         "recall": recall,
+        "precision": precision,
+        "auc_pc": auc_pc,
         "excl_ext": [ex_rej.get(c, 0) for c in CLASS_NAMES],
         "excl_pro": [pro_rej.get(c, 0) for c in CLASS_NAMES],
         "anticheat": {
@@ -434,10 +600,37 @@ def build_chart_data(payload: dict) -> dict:
     }
 
 
+def build_panels_figure(panels: list[dict]) -> str:
+    if not panels:
+        return ""
+    cells = []
+    for p in panels:
+        status_cls = "excl" if p["status"] == "excluded" else ("ok" if p["correct"] else "err")
+        badge = "Excluded" if p["status"] == "excluded" else ("Correct" if p["correct"] else "Error")
+        cells.append(
+            f"""<div class="gc-cell">
+  <span class="gc-label">{html.escape(p['label'])}</span>
+  <img src="{html.escape(p['rel_path'])}" alt="{html.escape(p['tag'])}">
+  <div class="gc-meta">
+    <span class="gc-badge {status_cls}">{badge}</span>
+    <span class="gc-split">{html.escape(p['split'])}</span>
+  </div>
+  <p class="gc-cap"><b>{html.escape(p['caption'])}</b></p>
+  <p class="gc-cap">True {html.escape(p['true_name'])} · Pred {html.escape(p['pred_name'])} · conf {100*p['pred_conf']:.1f}%</p>
+  <p class="gc-cap sm">{html.escape(p['prob_line'])}</p>
+</div>"""
+        )
+    return f"""<figure class="comp">
+<figcaption>Figure 3. Representative Grad-CAM panels (external and prospective cohorts).</figcaption>
+<div class="gc-grid">{"".join(cells)}</div>
+<p class="note">Panels a–d: external cohort (retained correct/error cases and one quality-excluded frame).
+Panels e–h: prospective cohort. Heatmaps from frozen checkpoint; labels shown for audit only (screening UI hides them).</p>
+</figure>"""
 def build_html(payload: dict) -> str:
     meta = payload["meta"]
     cb, ca = payload["combined"]["before"], payload["combined"]["after"]
     tables_html = build_tables(payload)
+    panels_html = build_panels_figure(payload.get("representative_panels", []))
     chart_json = json.dumps(build_chart_data(payload))
 
     return f"""<!doctype html>
@@ -486,12 +679,25 @@ table.t3 .sm {{ font-size:8pt; color:var(--muted); }}
 figure.comp {{ margin:24px 0; border:1px solid #bbb; padding:14px 12px 10px; background:#fefefe; }}
 figure.comp figcaption {{ font-size:10pt; font-weight:bold; margin-bottom:10px; text-align:left; }}
 .grid2x2 {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+.grid3x2 {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }}
 .panel {{ position:relative; border:1px solid #ddd; padding:8px 6px 4px; min-height:220px; background:#fff; }}
 .panel-label {{ position:absolute; top:4px; left:8px; font-weight:bold; font-size:11pt; z-index:2; }}
 .panel canvas {{ width:100% !important; height:200px !important; }}
+.gc-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }}
+.gc-cell {{ border:1px solid #ccc; padding:8px; background:#fff; position:relative; }}
+.gc-label {{ position:absolute; top:6px; left:10px; font-weight:bold; font-size:12pt; background:rgba(255,255,255,0.85); padding:0 4px; }}
+.gc-cell img {{ width:100%; height:auto; display:block; border:1px solid #eee; }}
+.gc-meta {{ display:flex; gap:8px; align-items:center; margin:6px 0 2px; font-size:9pt; }}
+.gc-badge {{ padding:1px 6px; border-radius:2px; font-weight:bold; }}
+.gc-badge.ok {{ background:#dce8f8; color:#1e40af; }}
+.gc-badge.err {{ background:#fde8e8; color:#8b0000; }}
+.gc-badge.excl {{ background:#e8f5e9; color:#047857; }}
+.gc-split {{ color:var(--muted); }}
+.gc-cap {{ font-size:8.5pt; margin:2px 0; line-height:1.35; }}
+.gc-cap.sm {{ font-size:7.5pt; color:var(--muted); }}
 .callout {{ border-left:3px solid #666; padding:10px 14px; margin:20px 0; font-size:10pt; background:#f5f5f5; }}
 .mono {{ font-family:"Courier New", monospace; font-size:8.5pt; }}
-@media (max-width:720px) {{ .grid2x2, .kpi {{ grid-template-columns:1fr; }} }}
+@media (max-width:720px) {{ .grid2x2, .grid3x2, .gc-grid, .kpi {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body>
@@ -523,26 +729,42 @@ substantially exceeds random removal at matched exclusion count ({fp(payload['ra
 
 <figure class="comp">
 <figcaption>Figure 1. Performance before and after image-quality screening (composite).</figcaption>
-<div class="grid2x2">
+<div class="grid3x2">
   <div class="panel"><span class="panel-label">a</span><canvas id="f1a"></canvas></div>
   <div class="panel"><span class="panel-label">b</span><canvas id="f1b"></canvas></div>
   <div class="panel"><span class="panel-label">c</span><canvas id="f1c"></canvas></div>
   <div class="panel"><span class="panel-label">d</span><canvas id="f1d"></canvas></div>
+  <div class="panel"><span class="panel-label">e</span><canvas id="f1e"></canvas></div>
+  <div class="panel"><span class="panel-label">f</span><canvas id="f1f"></canvas></div>
 </div>
-<p class="note">(a) Accuracy; (b) macro AUC; (c) external per-class recall; (d) prospective per-class recall. Light bars = pre-screening; dark bars = post-screening.</p>
+<p class="note">(a) Accuracy; (b) macro AUC; (c) external per-class recall; (d) prospective per-class recall;
+(e) external per-class precision; (f) prospective per-class precision. Light bars = pre-screening; dark bars = post-screening.</p>
 </figure>
 
 <figure class="comp">
-<figcaption>Figure 2. Integrity analysis and exclusion profile (composite).</figcaption>
+<figcaption>Figure 2. Per-class AUC (one-vs-rest) before and after screening.</figcaption>
 <div class="grid2x2">
   <div class="panel"><span class="panel-label">a</span><canvas id="f2a"></canvas></div>
   <div class="panel"><span class="panel-label">b</span><canvas id="f2b"></canvas></div>
   <div class="panel"><span class="panel-label">c</span><canvas id="f2c"></canvas></div>
   <div class="panel"><span class="panel-label">d</span><canvas id="f2d"></canvas></div>
 </div>
+<p class="note">(a) External AUC pre; (b) external AUC post; (c) prospective AUC pre; (d) prospective AUC post.</p>
+</figure>
+
+<figure class="comp">
+<figcaption>Figure 4. Integrity analysis and exclusion profile (composite).</figcaption>
+<div class="grid2x2">
+  <div class="panel"><span class="panel-label">a</span><canvas id="f4a"></canvas></div>
+  <div class="panel"><span class="panel-label">b</span><canvas id="f4b"></canvas></div>
+  <div class="panel"><span class="panel-label">c</span><canvas id="f4c"></canvas></div>
+  <div class="panel"><span class="panel-label">d</span><canvas id="f4d"></canvas></div>
+</div>
 <p class="note">(a) Anti-cheat accuracy comparison (combined); (b) random-removal ACC distribution ({payload['random_baseline']['seeds']} seeds);
 (c) excluded frames by true T stage; (d) model correctness among excluded frames.</p>
 </figure>
+
+{panels_html}
 
 <div class="callout">
 <b>Interpretation.</b> Among {payload['combined']['removed_n']} excluded frames, the model was incorrect on
@@ -614,8 +836,48 @@ new Chart(document.getElementById('f1d'), {{
   }},
   options:baseOpts('Prospective recall')
 }});
+new Chart(document.getElementById('f1e'), {{
+  type:'bar',
+  data:{{
+    labels:D.precision.labels,
+    datasets:[
+      {{ label:'Pre', data:D.precision.ext_pre, backgroundColor:C.pre }},
+      {{ label:'Post', data:D.precision.ext_post, backgroundColor:C.post }}
+    ]
+  }},
+  options:baseOpts('External precision')
+}});
+new Chart(document.getElementById('f1f'), {{
+  type:'bar',
+  data:{{
+    labels:D.precision.labels,
+    datasets:[
+      {{ label:'Pre', data:D.precision.pro_pre, backgroundColor:C.pre }},
+      {{ label:'Post', data:D.precision.pro_post, backgroundColor:C.post }}
+    ]
+  }},
+  options:baseOpts('Prospective precision')
+}});
 
-new Chart(document.getElementById('f2a'), {{
+function singleAuc(id, title, data, color) {{
+  new Chart(document.getElementById(id), {{
+    type:'bar',
+    data:{{
+      labels:D.auc_pc.labels,
+      datasets:[{{ label:title, data:data, backgroundColor:color }}]
+    }},
+    options:{{
+      ...baseOpts(title),
+      plugins:{{ legend:{{display:false}}, title:{{display:true,text:title,font:{{...FONT,size:10,weight:'bold'}}}} }}
+    }}
+  }});
+}}
+singleAuc('f2a','External AUC (pre)', D.auc_pc.ext_pre, C.pre);
+singleAuc('f2b','External AUC (post)', D.auc_pc.ext_post, C.post);
+singleAuc('f2c','Prospective AUC (pre)', D.auc_pc.pro_pre, C.pre);
+singleAuc('f2d','Prospective AUC (post)', D.auc_pc.pro_post, C.post);
+
+new Chart(document.getElementById('f4a'), {{
   type:'bar',
   data:{{
     labels:D.anticheat.labels,
@@ -624,7 +886,7 @@ new Chart(document.getElementById('f2a'), {{
   options:{{ ...baseOpts('Combined ACC'), plugins:{{ legend:{{display:false}}, title:{{display:true,text:'Combined ACC',font:{{...FONT,size:10,weight:'bold'}}}} }} }}
 }});
 
-new Chart(document.getElementById('f2b'), {{
+new Chart(document.getElementById('f4b'), {{
   type:'bar',
   data:{{
     labels:D.random_hist.labels,
@@ -641,7 +903,7 @@ new Chart(document.getElementById('f2b'), {{
   }}
 }});
 
-new Chart(document.getElementById('f2c'), {{
+new Chart(document.getElementById('f4c'), {{
   type:'bar',
   data:{{
     labels:D.recall.labels,
@@ -653,7 +915,7 @@ new Chart(document.getElementById('f2c'), {{
   options:{{ ...baseOpts('Excluded by true stage', false), scales:{{ x:{{ticks:{{font:FONT}}}}, y:cntY() }} }}
 }});
 
-new Chart(document.getElementById('f2d'), {{
+new Chart(document.getElementById('f4d'), {{
   type:'doughnut',
   data:{{
     labels:['Model correct','Model incorrect'],
@@ -728,9 +990,14 @@ def build_report_payload(*, exp_dir, rejected_csv, rejected_df, external_holdout
 
 def build_audit_html(*, exp_dir, rejected_csv, output_html, external_holdout_only=False) -> Path:
     rejected_df = normalize_rejected_df(pd.read_csv(rejected_csv, low_memory=False))
+    rejected_map = {str(s): set(g["filename"].astype(str)) for s, g in rejected_df.groupby("split")}
     payload = build_report_payload(
         exp_dir=exp_dir, rejected_csv=rejected_csv, rejected_df=rejected_df,
         external_holdout_only=external_holdout_only,
+    )
+    panels_dir = output_html.parent / "representative_panels"
+    payload["representative_panels"] = select_representative_panels(
+        exp_dir, rejected_map, panels_dir, external_holdout_only=external_holdout_only,
     )
     output_html.parent.mkdir(parents=True, exist_ok=True)
     output_html.write_text(build_html(payload), encoding="utf-8")

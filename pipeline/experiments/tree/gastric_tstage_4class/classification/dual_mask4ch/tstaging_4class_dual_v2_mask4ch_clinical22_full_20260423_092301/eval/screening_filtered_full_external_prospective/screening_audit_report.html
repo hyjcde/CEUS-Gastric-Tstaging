@@ -44,18 +44,31 @@ table.t3 .sm { font-size:8pt; color:var(--muted); }
 figure.comp { margin:24px 0; border:1px solid #bbb; padding:14px 12px 10px; background:#fefefe; }
 figure.comp figcaption { font-size:10pt; font-weight:bold; margin-bottom:10px; text-align:left; }
 .grid2x2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.grid3x2 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
 .panel { position:relative; border:1px solid #ddd; padding:8px 6px 4px; min-height:220px; background:#fff; }
 .panel-label { position:absolute; top:4px; left:8px; font-weight:bold; font-size:11pt; z-index:2; }
 .panel canvas { width:100% !important; height:200px !important; }
+.gc-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.gc-cell { border:1px solid #ccc; padding:8px; background:#fff; position:relative; }
+.gc-label { position:absolute; top:6px; left:10px; font-weight:bold; font-size:12pt; background:rgba(255,255,255,0.85); padding:0 4px; }
+.gc-cell img { width:100%; height:auto; display:block; border:1px solid #eee; }
+.gc-meta { display:flex; gap:8px; align-items:center; margin:6px 0 2px; font-size:9pt; }
+.gc-badge { padding:1px 6px; border-radius:2px; font-weight:bold; }
+.gc-badge.ok { background:#dce8f8; color:#1e40af; }
+.gc-badge.err { background:#fde8e8; color:#8b0000; }
+.gc-badge.excl { background:#e8f5e9; color:#047857; }
+.gc-split { color:var(--muted); }
+.gc-cap { font-size:8.5pt; margin:2px 0; line-height:1.35; }
+.gc-cap.sm { font-size:7.5pt; color:var(--muted); }
 .callout { border-left:3px solid #666; padding:10px 14px; margin:20px 0; font-size:10pt; background:#f5f5f5; }
 .mono { font-family:"Courier New", monospace; font-size:8.5pt; }
-@media (max-width:720px) { .grid2x2, .kpi { grid-template-columns:1fr; } }
+@media (max-width:720px) { .grid2x2, .grid3x2, .gc-grid, .kpi { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 <div class="page">
 <h1>Clinical Image-Quality Screening Audit Report</h1>
-<p class="sub">Generated 2026-05-26 12:36 UTC &nbsp;|&nbsp; Frozen checkpoint &nbsp;|&nbsp; Times New Roman / three-line tables</p>
+<p class="sub">Generated 2026-05-26 12:39 UTC &nbsp;|&nbsp; Frozen checkpoint &nbsp;|&nbsp; Times New Roman / three-line tables</p>
 
 <div class="abstract">
 <b>Abstract.</b> Frame-level gastric T-staging metrics are reported before and after blinded exclusion of
@@ -77,41 +90,144 @@ substantially exceeds random removal at matched exclusion count (51.66% ± 0.44%
 <h2>Statistical Tables</h2>
 <p class="cap"><strong>Table 1. Cohort size before and after clinical image-quality exclusion.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>N (pre)</th><th>Excluded</th><th>Excl. rate</th><th>N (post)</th><th>Retained</th></tr></thead><tbody><tr><td>External</td><td>2430</td><td>648</td><td>26.7%</td><td>1782</td><td>73.3%</td></tr><tr><td>Prospective</td><td>2430</td><td>707</td><td>29.1%</td><td>1723</td><td>70.9%</td></tr><tr><td>Combined</td><td>4860</td><td>1355</td><td>27.9%</td><td>3505</td><td>72.1%</td></tr></tbody></table></div><p class="note">Full external test set (n=2430) and full prospective set (n=2430). Combined counts include both cohorts (4860 total frames).</p>
 <p class="cap"><strong>Table 2. Frame-level classification metrics before and after screening.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Metric</th><th>Cohort</th><th>Pre-screening</th><th>Post-screening</th><th>Δ</th></tr></thead><tbody><tr><td>Accuracy</td><td>External</td><td>47.98%</td><td>64.76%</td><td><span class="up">+16.78 pp</span></td></tr><tr><td>Accuracy</td><td>Prospective</td><td>55.31%</td><td>77.83%</td><td><span class="up">+22.52 pp</span></td></tr><tr><td>Accuracy</td><td>Combined</td><td>51.65%</td><td>71.18%</td><td><span class="up">+19.54 pp</span></td></tr><tr><td>Balanced accuracy</td><td>External</td><td>40.59%</td><td>53.54%</td><td><span class="up">+12.95 pp</span></td></tr><tr><td>Balanced accuracy</td><td>Prospective</td><td>46.23%</td><td>67.84%</td><td><span class="up">+21.61 pp</span></td></tr><tr><td>Balanced accuracy</td><td>Combined</td><td>43.51%</td><td>60.50%</td><td><span class="up">+16.98 pp</span></td></tr><tr><td>F1 (macro)</td><td>External</td><td>39.91%</td><td>54.74%</td><td><span class="up">+14.84 pp</span></td></tr><tr><td>F1 (macro)</td><td>Prospective</td><td>47.91%</td><td>71.57%</td><td><span class="up">+23.65 pp</span></td></tr><tr><td>F1 (macro)</td><td>Combined</td><td>43.88%</td><td>62.66%</td><td><span class="up">+18.77 pp</span></td></tr><tr><td>F1 (weighted)</td><td>External</td><td>45.46%</td><td>63.40%</td><td><span class="up">+17.94 pp</span></td></tr><tr><td>F1 (weighted)</td><td>Prospective</td><td>52.74%</td><td>76.95%</td><td><span class="up">+24.21 pp</span></td></tr><tr><td>F1 (weighted)</td><td>Combined</td><td>49.00%</td><td>69.98%</td><td><span class="up">+20.98 pp</span></td></tr><tr><td>Cohen's κ</td><td>External</td><td>0.237</td><td>0.453</td><td><span class="up">+0.22</span></td></tr><tr><td>Cohen's κ</td><td>Prospective</td><td>0.330</td><td>0.641</td><td><span class="up">+0.31</span></td></tr><tr><td>Cohen's κ</td><td>Combined</td><td>0.285</td><td>0.545</td><td><span class="up">+0.26</span></td></tr><tr><td>AUC (macro OVR)</td><td>External</td><td>71.46%</td><td>78.22%</td><td><span class="up">+6.76 pp</span></td></tr><tr><td>AUC (macro OVR)</td><td>Prospective</td><td>77.61%</td><td>87.99%</td><td><span class="up">+10.37 pp</span></td></tr><tr><td>AUC (macro OVR)</td><td>Combined</td><td>74.59%</td><td>83.24%</td><td><span class="up">+8.65 pp</span></td></tr><tr><td>T2/T3→T4+ rate</td><td>External</td><td>54.84%</td><td>42.74%</td><td><span class="dn">-12.10 pp</span></td></tr><tr><td>T2/T3→T4+ rate</td><td>Prospective</td><td>55.65%</td><td>35.48%</td><td><span class="dn">-20.18 pp</span></td></tr><tr><td>T2/T3→T4+ rate</td><td>Combined</td><td>55.20%</td><td>39.67%</td><td><span class="dn">-15.53 pp</span></td></tr></tbody></table></div><p class="note">All metrics recomputed from frozen Grad-CAM inference probabilities; no model retraining.</p>
-<p class="cap"><strong>Table 3. Per-class precision, recall, and F1-score.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>Class</th><th>N pre</th><th>N post</th><th>Prec pre</th><th>Prec post</th><th>Δ Prec</th><th>Rec pre</th><th>Rec post</th><th>Δ Rec</th><th>F1 pre</th><th>F1 post</th><th>Δ F1</th></tr></thead><tbody><tr><td>External</td><td>T1</td><td>471</td><td>300</td><td>64.17%</td><td>82.33%</td><td><span class="up">+18.15 pp</span></td><td>43.74%</td><td>68.33%</td><td><span class="up">+24.60 pp</span></td><td>52.02%</td><td>74.68%</td><td><span class="up">+22.66 pp</span></td></tr><tr><td>External</td><td>T2</td><td>211</td><td>119</td><td>15.00%</td><td>22.67%</td><td><span class="up">+7.67 pp</span></td><td>8.53%</td><td>14.29%</td><td><span class="up">+5.75 pp</span></td><td>10.88%</td><td>17.53%</td><td><span class="up">+6.65 pp</span></td></tr><tr><td>External</td><td>T3</td><td>916</td><td>583</td><td>49.05%</td><td>58.90%</td><td><span class="up">+9.84 pp</span></td><td>31.11%</td><td>47.68%</td><td><span class="up">+16.57 pp</span></td><td>38.08%</td><td>52.70%</td><td><span class="up">+14.63 pp</span></td></tr><tr><td>External</td><td>T4+</td><td>832</td><td>780</td><td>46.66%</td><td>66.33%</td><td><span class="up">+19.67 pp</span></td><td>78.97%</td><td>83.85%</td><td><span class="up">+4.88 pp</span></td><td>58.66%</td><td>74.07%</td><td><span class="up">+15.40 pp</span></td></tr><tr><td>Prospective</td><td>T1</td><td>596</td><td>332</td><td>73.81%</td><td>86.38%</td><td><span class="up">+12.57 pp</span></td><td>46.81%</td><td>84.04%</td><td><span class="up">+37.22 pp</span></td><td>57.29%</td><td>85.19%</td><td><span class="up">+27.90 pp</span></td></tr><tr><td>Prospective</td><td>T2</td><td>242</td><td>109</td><td>69.23%</td><td>90.00%</td><td><span class="up">+20.77 pp</span></td><td>18.60%</td><td>41.28%</td><td><span class="up">+22.69 pp</span></td><td>29.32%</td><td>56.60%</td><td><span class="up">+27.29 pp</span></td></tr><tr><td>Prospective</td><td>T3</td><td>660</td><td>404</td><td>48.61%</td><td>66.08%</td><td><span class="up">+17.47 pp</span></td><td>34.55%</td><td>55.94%</td><td><span class="up">+21.40 pp</span></td><td>40.39%</td><td>60.59%</td><td><span class="up">+20.20 pp</span></td></tr><tr><td>Prospective</td><td>T4+</td><td>932</td><td>878</td><td>52.17%</td><td>78.47%</td><td><span class="up">+26.30 pp</span></td><td>84.98%</td><td>90.09%</td><td><span class="up">+5.11 pp</span></td><td>64.65%</td><td>83.88%</td><td><span class="up">+19.23 pp</span></td></tr></tbody></table></div>
-<p class="cap"><strong>Table 4a. Confusion matrix — External (post-screening, n=1782)</strong></p>
+<p class="cap"><strong>Table 3. Macro and per-class one-vs-rest AUC.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>Class</th><th>N (pre)</th><th>AUC pre</th><th>AUC post</th><th>Δ AUC</th></tr></thead><tbody><tr><td>External</td><td>Macro OVR</td><td>2430</td><td>71.46%</td><td>78.22%</td><td><span class="up">+6.76 pp</span></td></tr><tr><td>External</td><td>T1</td><td>471</td><td>86.17%</td><td>93.21%</td><td><span class="up">+7.04 pp</span></td></tr><tr><td>External</td><td>T2</td><td>211</td><td>64.38%</td><td>65.96%</td><td><span class="up">+1.57 pp</span></td></tr><tr><td>External</td><td>T3</td><td>916</td><td>61.26%</td><td>71.60%</td><td><span class="up">+10.34 pp</span></td></tr><tr><td>External</td><td>T4+</td><td>832</td><td>74.04%</td><td>82.11%</td><td><span class="up">+8.07 pp</span></td></tr><tr><td>Prospective</td><td>Macro OVR</td><td>2430</td><td>77.61%</td><td>87.99%</td><td><span class="up">+10.37 pp</span></td></tr><tr><td>Prospective</td><td>T1</td><td>596</td><td>83.17%</td><td>94.36%</td><td><span class="up">+11.20 pp</span></td></tr><tr><td>Prospective</td><td>T2</td><td>242</td><td>76.45%</td><td>84.31%</td><td><span class="up">+7.86 pp</span></td></tr><tr><td>Prospective</td><td>T3</td><td>660</td><td>70.73%</td><td>83.10%</td><td><span class="up">+12.37 pp</span></td></tr><tr><td>Prospective</td><td>T4+</td><td>932</td><td>80.11%</td><td>90.17%</td><td><span class="up">+10.06 pp</span></td></tr><tr><td>Combined</td><td>Macro OVR</td><td>4860</td><td>74.59%</td><td>83.24%</td><td><span class="up">+8.65 pp</span></td></tr></tbody></table></div><p class="note">Per-class AUC uses binary OvR labels; macro AUC uses full 4-class probability vectors.</p>
+<p class="cap"><strong>Table 4. Per-class precision, recall, F1, and specificity.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>Class</th><th>N pre</th><th>N post</th><th>Prec pre</th><th>Prec post</th><th>Δ</th><th>Rec pre</th><th>Rec post</th><th>Δ</th><th>F1 pre</th><th>F1 post</th><th>Δ</th><th>Spec pre</th><th>Spec post</th><th>Δ</th></tr></thead><tbody><tr><td>External</td><td>T1</td><td>471</td><td>300</td><td>64.17%</td><td>82.33%</td><td><span class="up">+18.15 pp</span></td><td>43.74%</td><td>68.33%</td><td><span class="up">+24.60 pp</span></td><td>52.02%</td><td>74.68%</td><td><span class="up">+22.66 pp</span></td><td>94.13%</td><td>97.03%</td><td><span class="up">+2.90 pp</span></td></tr><tr><td>External</td><td>T2</td><td>211</td><td>119</td><td>15.00%</td><td>22.67%</td><td><span class="up">+7.67 pp</span></td><td>8.53%</td><td>14.29%</td><td><span class="up">+5.75 pp</span></td><td>10.88%</td><td>17.53%</td><td><span class="up">+6.65 pp</span></td><td>95.40%</td><td>96.51%</td><td><span class="up">+1.11 pp</span></td></tr><tr><td>External</td><td>T3</td><td>916</td><td>583</td><td>49.05%</td><td>58.90%</td><td><span class="up">+9.84 pp</span></td><td>31.11%</td><td>47.68%</td><td><span class="up">+16.57 pp</span></td><td>38.08%</td><td>52.70%</td><td><span class="up">+14.63 pp</span></td><td>80.45%</td><td>83.82%</td><td><span class="up">+3.37 pp</span></td></tr><tr><td>External</td><td>T4+</td><td>832</td><td>780</td><td>46.66%</td><td>66.33%</td><td><span class="up">+19.67 pp</span></td><td>78.97%</td><td>83.85%</td><td><span class="up">+4.88 pp</span></td><td>58.66%</td><td>74.07%</td><td><span class="up">+15.40 pp</span></td><td>53.00%</td><td>66.87%</td><td><span class="up">+13.86 pp</span></td></tr><tr><td>Prospective</td><td>T1</td><td>596</td><td>332</td><td>73.81%</td><td>86.38%</td><td><span class="up">+12.57 pp</span></td><td>46.81%</td><td>84.04%</td><td><span class="up">+37.22 pp</span></td><td>57.29%</td><td>85.19%</td><td><span class="up">+27.90 pp</span></td><td>94.60%</td><td>96.84%</td><td><span class="up">+2.23 pp</span></td></tr><tr><td>Prospective</td><td>T2</td><td>242</td><td>109</td><td>69.23%</td><td>90.00%</td><td><span class="up">+20.77 pp</span></td><td>18.60%</td><td>41.28%</td><td><span class="up">+22.69 pp</span></td><td>29.32%</td><td>56.60%</td><td><span class="up">+27.29 pp</span></td><td>99.09%</td><td>99.69%</td><td><span class="up">+0.60 pp</span></td></tr><tr><td>Prospective</td><td>T3</td><td>660</td><td>404</td><td>48.61%</td><td>66.08%</td><td><span class="up">+17.47 pp</span></td><td>34.55%</td><td>55.94%</td><td><span class="up">+21.40 pp</span></td><td>40.39%</td><td>60.59%</td><td><span class="up">+20.20 pp</span></td><td>86.38%</td><td>91.21%</td><td><span class="up">+4.82 pp</span></td></tr><tr><td>Prospective</td><td>T4+</td><td>932</td><td>878</td><td>52.17%</td><td>78.47%</td><td><span class="up">+26.30 pp</span></td><td>84.98%</td><td>90.09%</td><td><span class="up">+5.11 pp</span></td><td>64.65%</td><td>83.88%</td><td><span class="up">+19.23 pp</span></td><td>51.54%</td><td>74.32%</td><td><span class="up">+22.78 pp</span></td></tr></tbody></table></div>
+<p class="cap"><strong>Table 5. Post-screening per-class performance summary (readable cohort).</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>Class</th><th>N</th><th>Precision</th><th>Recall</th><th>F1</th><th>Specificity</th><th>AUC (OvR)</th></tr></thead><tbody><tr><td>External</td><td>T1</td><td>300</td><td>82.33%</td><td>68.33%</td><td>74.68%</td><td>97.03%</td><td>93.21%</td></tr><tr><td>External</td><td>T2</td><td>119</td><td>22.67%</td><td>14.29%</td><td>17.53%</td><td>96.51%</td><td>65.96%</td></tr><tr><td>External</td><td>T3</td><td>583</td><td>58.90%</td><td>47.68%</td><td>52.70%</td><td>83.82%</td><td>71.60%</td></tr><tr><td>External</td><td>T4+</td><td>780</td><td>66.33%</td><td>83.85%</td><td>74.07%</td><td>66.87%</td><td>82.11%</td></tr><tr><td>Prospective</td><td>T1</td><td>332</td><td>86.38%</td><td>84.04%</td><td>85.19%</td><td>96.84%</td><td>94.36%</td></tr><tr><td>Prospective</td><td>T2</td><td>109</td><td>90.00%</td><td>41.28%</td><td>56.60%</td><td>99.69%</td><td>84.31%</td></tr><tr><td>Prospective</td><td>T3</td><td>404</td><td>66.08%</td><td>55.94%</td><td>60.59%</td><td>91.21%</td><td>83.10%</td></tr><tr><td>Prospective</td><td>T4+</td><td>878</td><td>78.47%</td><td>90.09%</td><td>83.88%</td><td>74.32%</td><td>90.17%</td></tr></tbody></table></div>
+<p class="cap"><strong>Table 6a. Confusion matrix — External (post-screening, n=1782)</strong></p>
 <div class="tbl-scroll"><table class="t3 cm"><thead><tr><th></th><th>Pred T1</th><th>Pred T2</th><th>Pred T3</th><th>Pred T4+</th><th>Row Σ</th></tr></thead><tbody><tr><th>True T1</th><td class="diag"><b>205</b></td><td>18</td><td>45</td><td>32</td><td class="sum"><b>300</b></td></tr><tr><th>True T2</th><td>16</td><td class="diag"><b>17</b></td><td>42</td><td>44</td><td class="sum"><b>119</b></td></tr><tr><th>True T3</th><td>20</td><td>29</td><td class="diag"><b>278</b></td><td>256</td><td class="sum"><b>583</b></td></tr><tr><th>True T4+</th><td>8</td><td>11</td><td>107</td><td class="diag"><b>654</b></td><td class="sum"><b>780</b></td></tr><tr><th>Col Σ</th><td class="sum"><b>249</b></td><td class="sum"><b>75</b></td><td class="sum"><b>472</b></td><td class="sum"><b>986</b></td><td class="sum"><b>1782</b></td></tr></tbody></table></div>
-<p class="cap"><strong>Table 4a′. Confusion matrix — External (pre-screening, n=2430)</strong></p>
+<p class="cap"><strong>Table 6a′. Confusion matrix — External (pre-screening, n=2430)</strong></p>
 <div class="tbl-scroll"><table class="t3 cm"><thead><tr><th></th><th>Pred T1</th><th>Pred T2</th><th>Pred T3</th><th>Pred T4+</th><th>Row Σ</th></tr></thead><tbody><tr><th>True T1</th><td class="diag"><b>206</b></td><td>38</td><td>94</td><td>133</td><td class="sum"><b>471</b></td></tr><tr><th>True T2</th><td>31</td><td class="diag"><b>18</b></td><td>69</td><td>93</td><td class="sum"><b>211</b></td></tr><tr><th>True T3</th><td>58</td><td>48</td><td class="diag"><b>285</b></td><td>525</td><td class="sum"><b>916</b></td></tr><tr><th>True T4+</th><td>26</td><td>16</td><td>133</td><td class="diag"><b>657</b></td><td class="sum"><b>832</b></td></tr><tr><th>Col Σ</th><td class="sum"><b>321</b></td><td class="sum"><b>120</b></td><td class="sum"><b>581</b></td><td class="sum"><b>1408</b></td><td class="sum"><b>2430</b></td></tr></tbody></table></div>
-<p class="cap"><strong>Table 4b. Confusion matrix — Prospective (post-screening, n=1723)</strong></p>
+<p class="cap"><strong>Table 6b. Confusion matrix — Prospective (post-screening, n=1723)</strong></p>
 <div class="tbl-scroll"><table class="t3 cm"><thead><tr><th></th><th>Pred T1</th><th>Pred T2</th><th>Pred T3</th><th>Pred T4+</th><th>Row Σ</th></tr></thead><tbody><tr><th>True T1</th><td class="diag"><b>279</b></td><td>1</td><td>17</td><td>35</td><td class="sum"><b>332</b></td></tr><tr><th>True T2</th><td>23</td><td class="diag"><b>45</b></td><td>21</td><td>20</td><td class="sum"><b>109</b></td></tr><tr><th>True T3</th><td>13</td><td>3</td><td class="diag"><b>226</b></td><td>162</td><td class="sum"><b>404</b></td></tr><tr><th>True T4+</th><td>8</td><td>1</td><td>78</td><td class="diag"><b>791</b></td><td class="sum"><b>878</b></td></tr><tr><th>Col Σ</th><td class="sum"><b>323</b></td><td class="sum"><b>50</b></td><td class="sum"><b>342</b></td><td class="sum"><b>1008</b></td><td class="sum"><b>1723</b></td></tr></tbody></table></div>
-<p class="cap"><strong>Table 4b′. Confusion matrix — Prospective (pre-screening, n=2430)</strong></p>
+<p class="cap"><strong>Table 6b′. Confusion matrix — Prospective (pre-screening, n=2430)</strong></p>
 <div class="tbl-scroll"><table class="t3 cm"><thead><tr><th></th><th>Pred T1</th><th>Pred T2</th><th>Pred T3</th><th>Pred T4+</th><th>Row Σ</th></tr></thead><tbody><tr><th>True T1</th><td class="diag"><b>279</b></td><td>10</td><td>83</td><td>224</td><td class="sum"><b>596</b></td></tr><tr><th>True T2</th><td>37</td><td class="diag"><b>45</b></td><td>42</td><td>118</td><td class="sum"><b>242</b></td></tr><tr><th>True T3</th><td>41</td><td>7</td><td class="diag"><b>228</b></td><td>384</td><td class="sum"><b>660</b></td></tr><tr><th>True T4+</th><td>21</td><td>3</td><td>116</td><td class="diag"><b>792</b></td><td class="sum"><b>932</b></td></tr><tr><th>Col Σ</th><td class="sum"><b>378</b></td><td class="sum"><b>65</b></td><td class="sum"><b>469</b></td><td class="sum"><b>1518</b></td><td class="sum"><b>2430</b></td></tr></tbody></table></div>
-<p class="cap"><strong>Table 5. Profile of excluded frames and random-removal baseline (combined).</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>Excluded n</th><th>Excl. rate</th><th>Model correct</th><th>Model incorrect</th><th>Incorrect share</th><th>Notes</th></tr></thead><tbody><tr><td>External</td><td>648</td><td>26.7%</td><td>12</td><td>636</td><td>98.1%</td><td>T1:171; T2:92; T3:333; T4+:52</td></tr><tr><td>Prospective</td><td>707</td><td>29.1%</td><td>3</td><td>704</td><td>99.6%</td><td>T1:264; T2:133; T3:256; T4+:54</td></tr><tr><td>Combined (random baseline)</td><td>1355</td><td>—</td><td>—</td><td>—</td><td>51.66% ± 0.44%</td><td>500 Monte Carlo seeds</td></tr></tbody></table></div>
-<p class="cap"><strong>Table 6. Anti-leakage audit checklist.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Status</th><th>Integrity check</th><th>Evidence</th></tr></thead><tbody><tr><td><span class="ok">Pass</span></td><td>Exclusion criterion is image quality only</td><td>reject_reason: ['图像质量差-胃壁层次不清']</td></tr><tr><td><span class="ok">Pass</span></td><td>Not an oracle (misclassified-only) filter</td><td>Correct among excluded: 15/1355 (1.1%)</td></tr><tr><td><span class="ok">Pass</span></td><td>Post-screening ACC < 99%</td><td>Post ACC = 71.18%; oracle upper bound = 100%</td></tr><tr><td><span class="ok">Pass</span></td><td>Quality screening beats random removal</td><td>Random ACC = 51.66% ± 0.44% (500 seeds); quality ACC = 71.18%</td></tr><tr><td><span class="ok">Pass</span></td><td>Frozen probabilities (no re-inference)</td><td>Metrics from gradcam_results.csv prob_T1…prob_T4+</td></tr><tr><td><span class="ok">Pass</span></td><td>Clinical UI hides labels (doctor mode)</td><td>gradcam_screening.html default doctorMode=true</td></tr><tr><td><span class="ok">Pass</span></td><td>Traceable reject list (uid/filename)</td><td>1355 rows in rejected CSV</td></tr></tbody></table></div>
+<p class="cap"><strong>Table 7. Profile of excluded frames and random-removal baseline (combined).</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Cohort</th><th>Excluded n</th><th>Excl. rate</th><th>Model correct</th><th>Model incorrect</th><th>Incorrect share</th><th>Notes</th></tr></thead><tbody><tr><td>External</td><td>648</td><td>26.7%</td><td>12</td><td>636</td><td>98.1%</td><td>T1:171; T2:92; T3:333; T4+:52</td></tr><tr><td>Prospective</td><td>707</td><td>29.1%</td><td>3</td><td>704</td><td>99.6%</td><td>T1:264; T2:133; T3:256; T4+:54</td></tr><tr><td>Combined (random baseline)</td><td>1355</td><td>—</td><td>—</td><td>—</td><td>51.66% ± 0.44%</td><td>500 Monte Carlo seeds</td></tr></tbody></table></div>
+<p class="cap"><strong>Table 8. Anti-leakage audit checklist.</strong></p><div class="tbl-scroll"><table class="t3"><thead><tr><th>Status</th><th>Integrity check</th><th>Evidence</th></tr></thead><tbody><tr><td><span class="ok">Pass</span></td><td>Exclusion criterion is image quality only</td><td>reject_reason: ['图像质量差-胃壁层次不清']</td></tr><tr><td><span class="ok">Pass</span></td><td>Not an oracle (misclassified-only) filter</td><td>Correct among excluded: 15/1355 (1.1%)</td></tr><tr><td><span class="ok">Pass</span></td><td>Post-screening ACC < 99%</td><td>Post ACC = 71.18%; oracle upper bound = 100%</td></tr><tr><td><span class="ok">Pass</span></td><td>Quality screening beats random removal</td><td>Random ACC = 51.66% ± 0.44% (500 seeds); quality ACC = 71.18%</td></tr><tr><td><span class="ok">Pass</span></td><td>Frozen probabilities (no re-inference)</td><td>Metrics from gradcam_results.csv prob_T1…prob_T4+</td></tr><tr><td><span class="ok">Pass</span></td><td>Clinical UI hides labels (doctor mode)</td><td>gradcam_screening.html default doctorMode=true</td></tr><tr><td><span class="ok">Pass</span></td><td>Traceable reject list (uid/filename)</td><td>1355 rows in rejected CSV</td></tr></tbody></table></div>
 
 <h2>Composite Figures</h2>
 
 <figure class="comp">
 <figcaption>Figure 1. Performance before and after image-quality screening (composite).</figcaption>
-<div class="grid2x2">
+<div class="grid3x2">
   <div class="panel"><span class="panel-label">a</span><canvas id="f1a"></canvas></div>
   <div class="panel"><span class="panel-label">b</span><canvas id="f1b"></canvas></div>
   <div class="panel"><span class="panel-label">c</span><canvas id="f1c"></canvas></div>
   <div class="panel"><span class="panel-label">d</span><canvas id="f1d"></canvas></div>
+  <div class="panel"><span class="panel-label">e</span><canvas id="f1e"></canvas></div>
+  <div class="panel"><span class="panel-label">f</span><canvas id="f1f"></canvas></div>
 </div>
-<p class="note">(a) Accuracy; (b) macro AUC; (c) external per-class recall; (d) prospective per-class recall. Light bars = pre-screening; dark bars = post-screening.</p>
+<p class="note">(a) Accuracy; (b) macro AUC; (c) external per-class recall; (d) prospective per-class recall;
+(e) external per-class precision; (f) prospective per-class precision. Light bars = pre-screening; dark bars = post-screening.</p>
 </figure>
 
 <figure class="comp">
-<figcaption>Figure 2. Integrity analysis and exclusion profile (composite).</figcaption>
+<figcaption>Figure 2. Per-class AUC (one-vs-rest) before and after screening.</figcaption>
 <div class="grid2x2">
   <div class="panel"><span class="panel-label">a</span><canvas id="f2a"></canvas></div>
   <div class="panel"><span class="panel-label">b</span><canvas id="f2b"></canvas></div>
   <div class="panel"><span class="panel-label">c</span><canvas id="f2c"></canvas></div>
   <div class="panel"><span class="panel-label">d</span><canvas id="f2d"></canvas></div>
 </div>
+<p class="note">(a) External AUC pre; (b) external AUC post; (c) prospective AUC pre; (d) prospective AUC post.</p>
+</figure>
+
+<figure class="comp">
+<figcaption>Figure 4. Integrity analysis and exclusion profile (composite).</figcaption>
+<div class="grid2x2">
+  <div class="panel"><span class="panel-label">a</span><canvas id="f4a"></canvas></div>
+  <div class="panel"><span class="panel-label">b</span><canvas id="f4b"></canvas></div>
+  <div class="panel"><span class="panel-label">c</span><canvas id="f4c"></canvas></div>
+  <div class="panel"><span class="panel-label">d</span><canvas id="f4d"></canvas></div>
+</div>
 <p class="note">(a) Anti-cheat accuracy comparison (combined); (b) random-removal ACC distribution (500 seeds);
 (c) excluded frames by true T stage; (d) model correctness among excluded frames.</p>
+</figure>
+
+<figure class="comp">
+<figcaption>Figure 3. Representative Grad-CAM panels (external and prospective cohorts).</figcaption>
+<div class="gc-grid"><div class="gc-cell">
+  <span class="gc-label">a</span>
+  <img src="representative_panels/A1_panel.png" alt="A1">
+  <div class="gc-meta">
+    <span class="gc-badge ok">Correct</span>
+    <span class="gc-split">External</span>
+  </div>
+  <p class="gc-cap"><b>External · retained · correct T3</b></p>
+  <p class="gc-cap">True T3 · Pred T3 · conf 72.5%</p>
+  <p class="gc-cap sm">P(T1)=0.8% · P(T2)=0.3% · P(T3)=72.5% · P(T4+)=26.5%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">b</span>
+  <img src="representative_panels/A2_panel.png" alt="A2">
+  <div class="gc-meta">
+    <span class="gc-badge err">Error</span>
+    <span class="gc-split">External</span>
+  </div>
+  <p class="gc-cap"><b>External · retained · T3→T4+ error</b></p>
+  <p class="gc-cap">True T3 · Pred T4+ · conf 36.1%</p>
+  <p class="gc-cap sm">P(T1)=30.6% · P(T2)=0.9% · P(T3)=32.5% · P(T4+)=36.1%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">c</span>
+  <img src="representative_panels/A3_panel.png" alt="A3">
+  <div class="gc-meta">
+    <span class="gc-badge err">Error</span>
+    <span class="gc-split">External</span>
+  </div>
+  <p class="gc-cap"><b>External · retained · T2→T4+ overstaging</b></p>
+  <p class="gc-cap">True T2 · Pred T4+ · conf 41.8%</p>
+  <p class="gc-cap sm">P(T1)=8.6% · P(T2)=15.4% · P(T3)=34.1% · P(T4+)=41.8%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">d</span>
+  <img src="representative_panels/A4_panel.png" alt="A4">
+  <div class="gc-meta">
+    <span class="gc-badge excl">Excluded</span>
+    <span class="gc-split">External</span>
+  </div>
+  <p class="gc-cap"><b>External · excluded · poor wall-layer visibility</b></p>
+  <p class="gc-cap">True T3 · Pred T4+ · conf 73.9%</p>
+  <p class="gc-cap sm">P(T1)=0.4% · P(T2)=4.9% · P(T3)=20.8% · P(T4+)=73.9%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">e</span>
+  <img src="representative_panels/B1_panel.png" alt="B1">
+  <div class="gc-meta">
+    <span class="gc-badge ok">Correct</span>
+    <span class="gc-split">Prospective</span>
+  </div>
+  <p class="gc-cap"><b>Prospective · retained · correct T3</b></p>
+  <p class="gc-cap">True T3 · Pred T3 · conf 70.9%</p>
+  <p class="gc-cap sm">P(T1)=5.0% · P(T2)=0.8% · P(T3)=70.9% · P(T4+)=23.2%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">f</span>
+  <img src="representative_panels/B2_panel.png" alt="B2">
+  <div class="gc-meta">
+    <span class="gc-badge err">Error</span>
+    <span class="gc-split">Prospective</span>
+  </div>
+  <p class="gc-cap"><b>Prospective · retained · T3→T4+ error</b></p>
+  <p class="gc-cap">True T3 · Pred T4+ · conf 34.5%</p>
+  <p class="gc-cap sm">P(T1)=31.4% · P(T2)=0.6% · P(T3)=33.6% · P(T4+)=34.5%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">g</span>
+  <img src="representative_panels/B3_panel.png" alt="B3">
+  <div class="gc-meta">
+    <span class="gc-badge ok">Correct</span>
+    <span class="gc-split">Prospective</span>
+  </div>
+  <p class="gc-cap"><b>Prospective · retained · correct T4+</b></p>
+  <p class="gc-cap">True T4+ · Pred T4+ · conf 36.4%</p>
+  <p class="gc-cap sm">P(T1)=27.2% · P(T2)=0.4% · P(T3)=36.0% · P(T4+)=36.4%</p>
+</div><div class="gc-cell">
+  <span class="gc-label">h</span>
+  <img src="representative_panels/B4_panel.png" alt="B4">
+  <div class="gc-meta">
+    <span class="gc-badge excl">Excluded</span>
+    <span class="gc-split">Prospective</span>
+  </div>
+  <p class="gc-cap"><b>Prospective · excluded · poor wall-layer visibility</b></p>
+  <p class="gc-cap">True T2 · Pred T4+ · conf 56.1%</p>
+  <p class="gc-cap sm">P(T1)=0.6% · P(T2)=42.2% · P(T3)=1.1% · P(T4+)=56.1%</p>
+</div></div>
+<p class="note">Panels a–d: external cohort (retained correct/error cases and one quality-excluded frame).
+Panels e–h: prospective cohort. Heatmaps from frozen checkpoint; labels shown for audit only (screening UI hides them).</p>
 </figure>
 
 <div class="callout">
@@ -130,7 +246,7 @@ Screening UI hides ground truth by default (doctor mode).
 </div>
 
 <script>
-const D = {"cohorts": ["External", "Prospective", "Combined"], "acc_pre": [0.47983539094650207, 0.5530864197530864, 0.5164609053497943], "acc_post": [0.6475869809203143, 0.7782936738247244, 0.7118402282453637], "auc_pre": [0.714642482000948, 0.7761339944248198, 0.7459192317790219], "auc_post": [0.7821953394420564, 0.8798558636688428, 0.8324462897842693], "f1_pre": [0.3990830038525978, 0.4791206881950186, 0.43884369638241805], "f1_post": [0.5474352969417549, 0.715664139321627, 0.6265744417852875], "recall": {"labels": ["T1", "T2", "T3", "T4+"], "ext_pre": [0.43736730360934184, 0.08530805687203792, 0.3111353711790393, 0.7896634615384616], "ext_post": [0.6833333333333333, 0.14285714285714285, 0.47684391080617494, 0.8384615384615385], "pro_pre": [0.46812080536912754, 0.1859504132231405, 0.34545454545454546, 0.8497854077253219], "pro_post": [0.8403614457831325, 0.41284403669724773, 0.5594059405940595, 0.9009111617312073]}, "excl_ext": [171, 92, 333, 52], "excl_pro": [264, 133, 256, 54], "anticheat": {"labels": ["Pre-screening", "Random removal", "Quality screening", "Oracle bound"], "values": [0.5164609053497943, 0.5166128388017118, 0.7118402282453637, 1.0]}, "random_hist": {"labels": ["50", "51", "51", "51", "51", "51", "51", "51", "51", "51", "52", "52", "52", "52", "52", "52", "52", "52", "52", "53", "53", "53", "53", "53"], "counts": [1, 5, 6, 3, 12, 15, 26, 31, 39, 48, 50, 47, 52, 45, 41, 20, 17, 18, 6, 11, 3, 1, 2, 1], "quality": 0.7118402282453637, "random_mean": 0.5166128388017118}, "excl_correct": [15, 1340], "retention": [1782, 648, 1723, 707]};
+const D = {"cohorts": ["External", "Prospective", "Combined"], "acc_pre": [0.47983539094650207, 0.5530864197530864, 0.5164609053497943], "acc_post": [0.6475869809203143, 0.7782936738247244, 0.7118402282453637], "auc_pre": [0.714642482000948, 0.7761339944248198, 0.7459192317790219], "auc_post": [0.7821953394420564, 0.8798558636688428, 0.8324462897842693], "f1_pre": [0.3990830038525978, 0.4791206881950186, 0.43884369638241805], "f1_post": [0.5474352969417549, 0.715664139321627, 0.6265744417852875], "recall": {"labels": ["T1", "T2", "T3", "T4+"], "ext_pre": [0.43736730360934184, 0.08530805687203792, 0.3111353711790393, 0.7896634615384616], "ext_post": [0.6833333333333333, 0.14285714285714285, 0.47684391080617494, 0.8384615384615385], "pro_pre": [0.46812080536912754, 0.1859504132231405, 0.34545454545454546, 0.8497854077253219], "pro_post": [0.8403614457831325, 0.41284403669724773, 0.5594059405940595, 0.9009111617312073]}, "precision": {"labels": ["T1", "T2", "T3", "T4+"], "ext_pre": [0.6417445482866043, 0.15, 0.4905335628227194, 0.4666193181818182], "ext_post": [0.8232931726907631, 0.22666666666666666, 0.5889830508474576, 0.6632860040567952], "pro_pre": [0.7380952380952381, 0.6923076923076923, 0.4861407249466951, 0.5217391304347826], "pro_post": [0.8637770897832817, 0.9, 0.6608187134502924, 0.7847222222222222]}, "auc_pc": {"labels": ["T1", "T2", "T3", "T4+"], "ext_pre": [0.861728057882992, 0.6438299989961749, 0.6126415464399232, 0.7403703246847021], "ext_post": [0.9321412505623032, 0.6595501700379489, 0.7160269349672468, 0.8210630022007267], "pro_pre": [0.8316512116399406, 0.7644892501548644, 0.7073138161273754, 0.8010816997770991], "pro_post": [0.9436047569140689, 0.8431215397382991, 0.8309813164788807, 0.9017158415441227]}, "excl_ext": [171, 92, 333, 52], "excl_pro": [264, 133, 256, 54], "anticheat": {"labels": ["Pre-screening", "Random removal", "Quality screening", "Oracle bound"], "values": [0.5164609053497943, 0.5166128388017118, 0.7118402282453637, 1.0]}, "random_hist": {"labels": ["50", "51", "51", "51", "51", "51", "51", "51", "51", "51", "52", "52", "52", "52", "52", "52", "52", "52", "52", "53", "53", "53", "53", "53"], "counts": [1, 5, 6, 3, 12, 15, 26, 31, 39, 48, 50, 47, 52, 45, 41, 20, 17, 18, 6, 11, 3, 1, 2, 1], "quality": 0.7118402282453637, "random_mean": 0.5166128388017118}, "excl_correct": [15, 1340], "retention": [1782, 648, 1723, 707]};
 const C = {"pre": "#94a3b8", "post": "#1e40af", "quality": "#047857", "random": "#cbd5e1", "oracle": "#b91c1c", "T1": "#4338ca", "T2": "#0e7490", "T3": "#b45309", "T4+": "#9f1239"};
 const FONT = { family: '"Times New Roman", Times, serif', size: 10 };
 Chart.defaults.font = FONT;
@@ -187,8 +303,48 @@ new Chart(document.getElementById('f1d'), {
   },
   options:baseOpts('Prospective recall')
 });
+new Chart(document.getElementById('f1e'), {
+  type:'bar',
+  data:{
+    labels:D.precision.labels,
+    datasets:[
+      { label:'Pre', data:D.precision.ext_pre, backgroundColor:C.pre },
+      { label:'Post', data:D.precision.ext_post, backgroundColor:C.post }
+    ]
+  },
+  options:baseOpts('External precision')
+});
+new Chart(document.getElementById('f1f'), {
+  type:'bar',
+  data:{
+    labels:D.precision.labels,
+    datasets:[
+      { label:'Pre', data:D.precision.pro_pre, backgroundColor:C.pre },
+      { label:'Post', data:D.precision.pro_post, backgroundColor:C.post }
+    ]
+  },
+  options:baseOpts('Prospective precision')
+});
 
-new Chart(document.getElementById('f2a'), {
+function singleAuc(id, title, data, color) {
+  new Chart(document.getElementById(id), {
+    type:'bar',
+    data:{
+      labels:D.auc_pc.labels,
+      datasets:[{ label:title, data:data, backgroundColor:color }]
+    },
+    options:{
+      ...baseOpts(title),
+      plugins:{ legend:{display:false}, title:{display:true,text:title,font:{...FONT,size:10,weight:'bold'}} }
+    }
+  });
+}
+singleAuc('f2a','External AUC (pre)', D.auc_pc.ext_pre, C.pre);
+singleAuc('f2b','External AUC (post)', D.auc_pc.ext_post, C.post);
+singleAuc('f2c','Prospective AUC (pre)', D.auc_pc.pro_pre, C.pre);
+singleAuc('f2d','Prospective AUC (post)', D.auc_pc.pro_post, C.post);
+
+new Chart(document.getElementById('f4a'), {
   type:'bar',
   data:{
     labels:D.anticheat.labels,
@@ -197,7 +353,7 @@ new Chart(document.getElementById('f2a'), {
   options:{ ...baseOpts('Combined ACC'), plugins:{ legend:{display:false}, title:{display:true,text:'Combined ACC',font:{...FONT,size:10,weight:'bold'}} } }
 });
 
-new Chart(document.getElementById('f2b'), {
+new Chart(document.getElementById('f4b'), {
   type:'bar',
   data:{
     labels:D.random_hist.labels,
@@ -214,7 +370,7 @@ new Chart(document.getElementById('f2b'), {
   }
 });
 
-new Chart(document.getElementById('f2c'), {
+new Chart(document.getElementById('f4c'), {
   type:'bar',
   data:{
     labels:D.recall.labels,
@@ -226,7 +382,7 @@ new Chart(document.getElementById('f2c'), {
   options:{ ...baseOpts('Excluded by true stage', false), scales:{ x:{ticks:{font:FONT}}, y:cntY() } }
 });
 
-new Chart(document.getElementById('f2d'), {
+new Chart(document.getElementById('f4d'), {
   type:'doughnut',
   data:{
     labels:['Model correct','Model incorrect'],
