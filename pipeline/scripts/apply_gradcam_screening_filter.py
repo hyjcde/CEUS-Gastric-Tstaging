@@ -43,13 +43,13 @@ def rejected_by_split(rejected_df: pd.DataFrame) -> dict[str, set[str]]:
     return grouped
 
 
-def load_gradcam_results(exp_dir: Path, split: str) -> pd.DataFrame:
+def load_gradcam_results(exp_dir: Path, split: str, *, external_holdout_only: bool) -> pd.DataFrame:
     gc_dir = exp_dir / SPLIT_GRADCAM_DIRS[split]
     csv_path = gc_dir / "gradcam_results.csv"
     if not csv_path.is_file():
         raise FileNotFoundError(f"Missing Grad-CAM results: {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False)
-    if split == "test_external":
+    if split == "test_external" and external_holdout_only:
         mask = ~df["image_path"].astype(str).str.contains("prospective", case=False, na=False)
         df = df.loc[mask].copy()
     return df
@@ -119,7 +119,13 @@ def main() -> None:
         default=None,
         help="Default: <exp-dir>/eval/screening_filtered_<timestamp>",
     )
+    parser.add_argument(
+        "--full-external",
+        action="store_true",
+        help="Use complete test_external (2430 frames, incl. prospective overlap); default strips duplicate prospective rows",
+    )
     args = parser.parse_args()
+    external_holdout_only = not args.full_external
 
     exp_dir = args.exp_dir
     if not exp_dir.is_absolute():
@@ -146,6 +152,7 @@ def main() -> None:
         "rejected_csv": str(rejected_csv.resolve()),
         "rejected_rows": int(len(rejected_df)),
         "rejected_by_split": {k: len(v) for k, v in rejected_map.items()},
+        "external_holdout_only": external_holdout_only,
         "splits": {},
         "combined": {},
     }
@@ -153,7 +160,7 @@ def main() -> None:
     kept_parts: list[pd.DataFrame] = []
     print(f"Rejected CSV: {rejected_csv} ({len(rejected_df)} rows)")
     for split in ("test_external", "test_prospective"):
-        df = load_gradcam_results(exp_dir, split)
+        df = load_gradcam_results(exp_dir, split, external_holdout_only=external_holdout_only)
         rejected_names = rejected_map.get(split, set())
         kept, removed = filter_split(df, rejected_names)
         kept_parts.append(kept)
@@ -179,7 +186,10 @@ def main() -> None:
         print(f"  removed: {len(removed)}")
 
     combined_before = pd.concat(
-        [load_gradcam_results(exp_dir, s) for s in ("test_external", "test_prospective")],
+        [
+            load_gradcam_results(exp_dir, s, external_holdout_only=external_holdout_only)
+            for s in ("test_external", "test_prospective")
+        ],
         ignore_index=True,
     )
     combined_kept = pd.concat(kept_parts, ignore_index=True)
@@ -218,7 +228,7 @@ def main() -> None:
     summary_lines.extend(
         [
             "",
-            "## 合并（外部 holdout + 前瞻全量）",
+            f"## 合并（{'外部 holdout' if external_holdout_only else '外部全量'} + 前瞻全量）",
             f"- 筛前: n={cb['n']}, ACC={cb['accuracy']:.4f}, AUC={cb['auc_macro_ovr']:.4f}",
             f"- 筛后: n={ca['n']}, ACC={ca['accuracy']:.4f}, AUC={ca['auc_macro_ovr']:.4f}",
             f"- 剔除: {report['combined']['removed_n']} 张",
