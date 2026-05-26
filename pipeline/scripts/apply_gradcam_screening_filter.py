@@ -240,6 +240,20 @@ def main() -> None:
     if rejected_csv.resolve() != shutil_copy.resolve():
         shutil_copy.write_bytes(rejected_csv.read_bytes())
 
+    try:
+        from build_gradcam_screening_audit_html import build_audit_html
+
+        audit_html = out_dir / "screening_audit_report.html"
+        build_audit_html(
+            exp_dir=exp_dir,
+            rejected_csv=rejected_csv,
+            output_html=audit_html,
+            external_holdout_only=external_holdout_only,
+        )
+        print(f"  screening_audit_report.html")
+    except Exception as exc:
+        print(f"Warning: audit HTML not generated: {exc}")
+
     print(f"\nSaved: {out_dir}")
     print(f"  {metrics_path.name}")
     print(f"  SCREENING_FILTER_SUMMARY.md")

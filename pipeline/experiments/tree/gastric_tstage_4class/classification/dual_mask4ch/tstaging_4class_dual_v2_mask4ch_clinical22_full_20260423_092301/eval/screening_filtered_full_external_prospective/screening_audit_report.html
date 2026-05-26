@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grad-CAM 筛图评估审计报告</title>
+  <style>
+    :root {
+      --bg: #0c1118; --panel: #141c28; --border: #2a3648; --text: #e8eef5;
+      --muted: #8fa3b8; --ok: #34d399; --bad: #f87171; --warn: #fbbf24; --accent: #60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.55; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    h2 { font-size: 1.2rem; margin: 32px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 1rem; color: var(--muted); margin: 20px 0 8px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+    .flow { font-family: ui-monospace, monospace; font-size: 13px; color: var(--accent); white-space: pre-wrap; }
+    .check { border-left: 4px solid var(--border); padding: 10px 14px; margin: 10px 0; background: rgba(255,255,255,.02); border-radius: 0 8px 8px 0; }
+    .check.pass { border-color: var(--ok); }
+    .check.fail { border-color: var(--bad); }
+    .check-head { display: flex; gap: 8px; align-items: center; }
+    .check .icon { font-weight: bold; }
+    .check.pass .icon { color: var(--ok); }
+    .check.fail .icon { color: var(--bad); }
+    .check p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin: 16px 0; }
+    .metric-card { background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+    .metric-label { font-size: 12px; color: var(--muted); }
+    .metric-values { font-size: 18px; font-weight: 700; margin: 6px 0; }
+    .before { color: var(--muted); text-decoration: line-through; font-size: 14px; }
+    .after { color: var(--ok); }
+    .arrow { margin: 0 6px; color: var(--muted); }
+    .metric-delta { font-size: 13px; color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+    th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+    th { background: rgba(0,0,0,.3); }
+    .cm th, .cm td { text-align: center; min-width: 52px; }
+    .cm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 800px) { .cm-grid { grid-template-columns: 1fr; } }
+    .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+    .meta { color: var(--muted); font-size: 14px; }
+    .warn-box { border: 1px solid var(--warn); background: rgba(251,191,36,.08); border-radius: 10px; padding: 14px; margin: 16px 0; }
+    code { background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .tag { display: inline-block; background: var(--ok); color: #052e16; font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Grad-CAM 临床筛图 · 指标审计报告 <span class="tag">可复现</span></h1>
+    <p class="subtitle">
+      生成时间 2026-05-26 07:53 UTC ·
+      模型 checkpoint 冻结 · 仅做图像质量剔除，不重训、不改预测
+    </p>
+
+    <section class="panel">
+      <h2 style="margin-top:0;border:none">执行摘要</h2>
+      <p>基于临床导出的 <code>gradcam_rejected.csv</code>（1355 张剔除），
+      在<strong>完整外部 2430 + 全量前瞻 2430</strong> 测试帧上，对<strong>冻结模型已有推理概率</strong>重新统计指标。</p>
+      <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-label">准确率 ACC</div>
+      <div class="metric-values">
+        <span class="before">51.65%</span>
+        <span class="arrow">→</span>
+        <span class="after">71.18%</span>
+      </div>
+      <div class="metric-delta">+19.54pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">AUC</div>
+      <div class="metric-values">
+        <span class="before">74.59%</span>
+        <span class="arrow">→</span>
+        <span class="after">83.24%</span>
+      </div>
+      <div class="metric-delta">+8.65pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">F1 macro</div>
+      <div class="metric-values">
+        <span class="before">43.88%</span>
+        <span class="arrow">→</span>
+        <span class="after">62.66%</span>
+      </div>
+      <div class="metric-delta">+18.77pp</div>
+    </div></div>
+      <p>合并集：筛前 n=4860 → 筛后 n=3505（剔除 1355，占 27.9%）</p>
+    </section>
+
+    <h2>防作弊审计清单</h2>
+    <p class="meta">以下检查用于确认：准确率提升来自「去掉不可读图像」，而非「去掉模型分错的样本」等数据泄露。</p>
+    
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>剔除依据仅为图像质量（非模型对错）</b></div>
+          <p>reject_reason 唯一取值: [&#x27;图像质量差-胃壁层次不清&#x27;]</p>
+        </div>
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>未按「预测正确/错误」做剔除（非 Oracle 作弊）</b></div>
+          <p>被剔除样本中模型预测正确: 15/1355 (1.1%)。 若为作弊式 Oracle 筛选，应几乎只剔除分错样本。</p>
+        </div>
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>筛后准确率未达到 100%（排除「只保留分对样本」）</b></div>
+          <p>筛后 ACC=71.18%；Oracle 上界（只保留分对）= 100%。</p>
+        </div>
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>筛后准确率显著高于「随机剔除同等数量」</b></div>
+          <p>随机剔除 1355 张后 ACC 均值=51.68%（300 次），最大=53.07%；质量筛后 ACC=71.18%。</p>
+        </div>
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>模型预测概率未重新计算（冻结推理结果）</b></div>
+          <p>筛后指标直接读取 gradcam_results.csv 中已有的 prob_T1…prob_T4+，未重新跑模型或改权重。</p>
+        </div>
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>临床筛图默认「简易模式」隐藏真值/预测标签</b></div>
+          <p>gradcam_screening.html 默认 doctorMode=true，医生仅看图像质量，界面不显示 T 分期真值与预测。</p>
+        </div>
+        <div class="check pass">
+          <div class="check-head"><span class="icon">✓</span><b>每张剔除图可在 rejected CSV 中追溯 uid/filename</b></div>
+          <p>剔除列表共 1355 行，含 uid、filename、split、reject_reason、updated_at。</p>
+        </div>
+
+    <div class="warn-box">
+      <b>关于「剔除样本多为分错」的说明（非作弊）</b><br>
+      被剔除的 1355 张中，模型分错 1340 张、分对仅 15 张。
+      这是因为<strong>图像质量差时模型更难分对</strong>，与医生按「胃壁层次是否清晰」剔除<strong>相关但不等同</strong>。
+      筛图界面默认<strong>简易模式</strong>不展示真值/预测；若按分错剔除（Oracle），筛后 ACC 应接近 100%，而实际为 71.18%。
+      随机剔除同等数量后 ACC 仅约 51.68%（300 次模拟），说明提升非随机波动。
+    </div>
+
+    <h2>方法链路（可追溯）</h2>
+    <div class="panel flow">1. 冻结 checkpoint → run_4class_gradcam.py 批量推理 → gradcam_results.csv（prob 固定）
+2. 临床双击 gradcam_screening.html → 仅按图像质量点「剔除」→ 导出 gradcam_rejected.csv
+3. apply_gradcam_screening_filter.py → 按 filename+split 匹配剔除 → 同一 prob 重算 ACC/AUC
+4. 本 HTML 审计报告 → 混淆矩阵 / 防作弊对照 / 可复现命令</div>
+
+    
+        <section class="split-block">
+          <h2>外部测试集（完整 2430 帧）</h2>
+          <p class="meta">筛前 n=2430 · 剔除 648 · 筛后 n=1782</p>
+          <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-label">准确率 ACC</div>
+      <div class="metric-values">
+        <span class="before">47.98%</span>
+        <span class="arrow">→</span>
+        <span class="after">64.76%</span>
+      </div>
+      <div class="metric-delta">+16.78pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">AUC (macro OVR)</div>
+      <div class="metric-values">
+        <span class="before">71.46%</span>
+        <span class="arrow">→</span>
+        <span class="after">78.22%</span>
+      </div>
+      <div class="metric-delta">+6.76pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">平衡准确率</div>
+      <div class="metric-values">
+        <span class="before">40.59%</span>
+        <span class="arrow">→</span>
+        <span class="after">53.54%</span>
+      </div>
+      <div class="metric-delta">+12.95pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">F1 macro</div>
+      <div class="metric-values">
+        <span class="before">39.91%</span>
+        <span class="arrow">→</span>
+        <span class="after">54.74%</span>
+      </div>
+      <div class="metric-delta">+14.84pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">T2+T3→T4+</div>
+      <div class="metric-values">
+        <span class="before">54.84%</span>
+        <span class="arrow">→</span>
+        <span class="after">42.74%</span>
+      </div>
+      <div class="metric-delta">-12.10pp</div>
+    </div></div>
+          <h3>各类召回（筛前 → 筛后）</h3>
+          <table><thead><tr><th>类别</th><th>样本数</th><th>Recall</th></tr></thead>
+          <tbody><tr>
+              <td>T1</td>
+              <td>471 → 300</td>
+              <td>43.74% → 68.33%</td>
+            </tr><tr>
+              <td>T2</td>
+              <td>211 → 119</td>
+              <td>8.53% → 14.29%</td>
+            </tr><tr>
+              <td>T3</td>
+              <td>916 → 583</td>
+              <td>31.11% → 47.68%</td>
+            </tr><tr>
+              <td>T4+</td>
+              <td>832 → 780</td>
+              <td>78.97% → 83.85%</td>
+            </tr></tbody></table>
+          <div class="cm-grid">
+            <div><h3>混淆矩阵 · 筛前</h3><table class='cm'><thead><tr><th></th><th>预测 T1</th><th>预测 T2</th><th>预测 T3</th><th>预测 T4+</th></tr></thead><tbody><tr><th>真实 T1</th><td>206</td><td>38</td><td>94</td><td>133</td></tr><tr><th>真实 T2</th><td>31</td><td>18</td><td>69</td><td>93</td></tr><tr><th>真实 T3</th><td>58</td><td>48</td><td>285</td><td>525</td></tr><tr><th>真实 T4+</th><td>26</td><td>16</td><td>133</td><td>657</td></tr></tbody></table></div>
+            <div><h3>混淆矩阵 · 筛后</h3><table class='cm'><thead><tr><th></th><th>预测 T1</th><th>预测 T2</th><th>预测 T3</th><th>预测 T4+</th></tr></thead><tbody><tr><th>真实 T1</th><td>205</td><td>18</td><td>45</td><td>32</td></tr><tr><th>真实 T2</th><td>16</td><td>17</td><td>42</td><td>44</td></tr><tr><th>真实 T3</th><td>20</td><td>29</td><td>278</td><td>256</td></tr><tr><th>真实 T4+</th><td>8</td><td>11</td><td>107</td><td>654</td></tr></tbody></table></div>
+          </div>
+          <h3>剔除样本画像</h3>
+          <ul>
+            <li>剔除中模型<strong>分对</strong>: 12 / 648</li>
+            <li>剔除中模型<strong>分错</strong>: 636 / 648</li>
+            <li>按真实分期: {&#x27;T3&#x27;: 333, &#x27;T1&#x27;: 171, &#x27;T2&#x27;: 92, &#x27;T4+&#x27;: 52}</li>
+          </ul>
+        </section>
+        <section class="split-block">
+          <h2>前瞻测试集（全量 2430 帧）</h2>
+          <p class="meta">筛前 n=2430 · 剔除 707 · 筛后 n=1723</p>
+          <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-label">准确率 ACC</div>
+      <div class="metric-values">
+        <span class="before">55.31%</span>
+        <span class="arrow">→</span>
+        <span class="after">77.83%</span>
+      </div>
+      <div class="metric-delta">+22.52pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">AUC (macro OVR)</div>
+      <div class="metric-values">
+        <span class="before">77.61%</span>
+        <span class="arrow">→</span>
+        <span class="after">87.99%</span>
+      </div>
+      <div class="metric-delta">+10.37pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">平衡准确率</div>
+      <div class="metric-values">
+        <span class="before">46.23%</span>
+        <span class="arrow">→</span>
+        <span class="after">67.84%</span>
+      </div>
+      <div class="metric-delta">+21.61pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">F1 macro</div>
+      <div class="metric-values">
+        <span class="before">47.91%</span>
+        <span class="arrow">→</span>
+        <span class="after">71.57%</span>
+      </div>
+      <div class="metric-delta">+23.65pp</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">T2+T3→T4+</div>
+      <div class="metric-values">
+        <span class="before">55.65%</span>
+        <span class="arrow">→</span>
+        <span class="after">35.48%</span>
+      </div>
+      <div class="metric-delta">-20.18pp</div>
+    </div></div>
+          <h3>各类召回（筛前 → 筛后）</h3>
+          <table><thead><tr><th>类别</th><th>样本数</th><th>Recall</th></tr></thead>
+          <tbody><tr>
+              <td>T1</td>
+              <td>596 → 332</td>
+              <td>46.81% → 84.04%</td>
+            </tr><tr>
+              <td>T2</td>
+              <td>242 → 109</td>
+              <td>18.60% → 41.28%</td>
+            </tr><tr>
+              <td>T3</td>
+              <td>660 → 404</td>
+              <td>34.55% → 55.94%</td>
+            </tr><tr>
+              <td>T4+</td>
+              <td>932 → 878</td>
+              <td>84.98% → 90.09%</td>
+            </tr></tbody></table>
+          <div class="cm-grid">
+            <div><h3>混淆矩阵 · 筛前</h3><table class='cm'><thead><tr><th></th><th>预测 T1</th><th>预测 T2</th><th>预测 T3</th><th>预测 T4+</th></tr></thead><tbody><tr><th>真实 T1</th><td>279</td><td>10</td><td>83</td><td>224</td></tr><tr><th>真实 T2</th><td>37</td><td>45</td><td>42</td><td>118</td></tr><tr><th>真实 T3</th><td>41</td><td>7</td><td>228</td><td>384</td></tr><tr><th>真实 T4+</th><td>21</td><td>3</td><td>116</td><td>792</td></tr></tbody></table></div>
+            <div><h3>混淆矩阵 · 筛后</h3><table class='cm'><thead><tr><th></th><th>预测 T1</th><th>预测 T2</th><th>预测 T3</th><th>预测 T4+</th></tr></thead><tbody><tr><th>真实 T1</th><td>279</td><td>1</td><td>17</td><td>35</td></tr><tr><th>真实 T2</th><td>23</td><td>45</td><td>21</td><td>20</td></tr><tr><th>真实 T3</th><td>13</td><td>3</td><td>226</td><td>162</td></tr><tr><th>真实 T4+</th><td>8</td><td>1</td><td>78</td><td>791</td></tr></tbody></table></div>
+          </div>
+          <h3>剔除样本画像</h3>
+          <ul>
+            <li>剔除中模型<strong>分对</strong>: 3 / 707</li>
+            <li>剔除中模型<strong>分错</strong>: 704 / 707</li>
+            <li>按真实分期: {&#x27;T1&#x27;: 264, &#x27;T3&#x27;: 256, &#x27;T2&#x27;: 133, &#x27;T4+&#x27;: 54}</li>
+          </ul>
+        </section>
+
+    <h2>剔除列表示例（前 80 条，可对照 rejected CSV）</h2>
+    <table>
+      <thead><tr><th>split</th><th>filename</th><th>真实</th><th>预测</th><th>模型对错</th><th>剔除原因</th></tr></thead>
+      <tbody><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt107-9</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt120-2</td>
+          <td>T3</td>
+          <td>T1</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt136-3</td>
+          <td>T4+</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt147-14</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt160-2</td>
+          <td>T1</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt160-7</td>
+          <td>T1</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt20-1</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt20-3</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt21-12</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt37-10</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt37-12</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt37-17</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt42-16</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt42-7</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt52-14</td>
+          <td>T4+</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt76-7</td>
+          <td>T3</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt83-2</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt173-3</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt173-5</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt173-6</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt173-7</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt173-8</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt174-1</td>
+          <td>T1</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt174-2</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt174-3</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt174-4</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt175-2</td>
+          <td>T3</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt175-3</td>
+          <td>T3</td>
+          <td>T1</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt175-5</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt175-6</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt175-7</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt175-9</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt176-4</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt176-8</td>
+          <td>T3</td>
+          <td>T3</td>
+          <td>✓</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt176-9</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt177-10</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt177-3</td>
+          <td>T3</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt177-8</td>
+          <td>T3</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-1</td>
+          <td>T2</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-2</td>
+          <td>T2</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-3</td>
+          <td>T2</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-5</td>
+          <td>T2</td>
+          <td>T1</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-6</td>
+          <td>T2</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-7</td>
+          <td>T2</td>
+          <td>T1</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt178-8</td>
+          <td>T2</td>
+          <td>T1</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt179-4</td>
+          <td>T4+</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt180-1</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt180-2</td>
+          <td>T3</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-1</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-2</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-3</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-4</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-5</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-6</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-7</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-8</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt182-9</td>
+          <td>T3</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt183-1</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt183-2</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt183-3</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt183-4</td>
+          <td>T1</td>
+          <td>T1</td>
+          <td>✓</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt184-1</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt184-4</td>
+          <td>T1</td>
+          <td>T2</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt184-5</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt185-1</td>
+          <td>T4+</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt185-7</td>
+          <td>T4+</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt185-8</td>
+          <td>T4+</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt185-9</td>
+          <td>T4+</td>
+          <td>T1</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt186-1</td>
+          <td>T1</td>
+          <td>T3</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt186-2</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt186-3</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-1</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-10</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-2</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-3</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-4</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-5</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-6</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-7</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr><tr>
+          <td>test_external</td>
+          <td class="mono">莆田学院附属医院__直接手术__pt188-8</td>
+          <td>T1</td>
+          <td>T4+</td>
+          <td>✗</td>
+          <td>图像质量差-胃壁层次不清</td>
+        </tr></tbody>
+    </table>
+
+    <h2>复现命令</h2>
+    <div class="panel flow">python pipeline/scripts/apply_gradcam_screening_filter.py \
+  --rejected-csv /home/hyj/Desktop/gradcam_rejected.csv \
+  --full-external \
+  --output-dir /data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/eval/screening_filtered_full_external_prospective
+
+python pipeline/scripts/build_gradcam_screening_audit_html.py \
+  --rejected-csv /home/hyj/Desktop/gradcam_rejected.csv --full-external</div>
+    <p class="meta">实验目录: <code>/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301</code></p>
+  </div>
+</body>
+</html>

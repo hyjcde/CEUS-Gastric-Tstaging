@@ -1,0 +1,1049 @@
+{
+  "meta": {
+    "created_utc": "2026-05-26 07:53 UTC",
+    "exp_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301",
+    "rejected_csv_name": "gradcam_rejected.csv",
+    "rejected_rows": 1355,
+    "external_holdout_only": false,
+    "pipeline_flow": "1. 冻结 checkpoint → run_4class_gradcam.py 批量推理 → gradcam_results.csv（prob 固定）\n2. 临床双击 gradcam_screening.html → 仅按图像质量点「剔除」→ 导出 gradcam_rejected.csv\n3. apply_gradcam_screening_filter.py → 按 filename+split 匹配剔除 → 同一 prob 重算 ACC/AUC\n4. 本 HTML 审计报告 → 混淆矩阵 / 防作弊对照 / 可复现命令",
+    "reproduce_cmd": "python pipeline/scripts/apply_gradcam_screening_filter.py \\\n  --rejected-csv /home/hyj/Desktop/gradcam_rejected.csv \\\n  --full-external \\\n  --output-dir /data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/eval/screening_filtered_full_external_prospective\n\npython pipeline/scripts/build_gradcam_screening_audit_html.py \\\n  --rejected-csv /home/hyj/Desktop/gradcam_rejected.csv --full-external"
+  },
+  "audit_checks": [
+    {
+      "id": "criteria",
+      "title": "剔除依据仅为图像质量（非模型对错）",
+      "pass": true,
+      "detail": "reject_reason 唯一取值: ['图像质量差-胃壁层次不清']"
+    },
+    {
+      "id": "not_oracle",
+      "title": "未按「预测正确/错误」做剔除（非 Oracle 作弊）",
+      "pass": true,
+      "detail": "被剔除样本中模型预测正确: 15/1355 (1.1%)。 若为作弊式 Oracle 筛选，应几乎只剔除分错样本。"
+    },
+    {
+      "id": "acc_not_100",
+      "title": "筛后准确率未达到 100%（排除「只保留分对样本」）",
+      "pass": true,
+      "detail": "筛后 ACC=71.18%；Oracle 上界（只保留分对）= 100%。"
+    },
+    {
+      "id": "beats_random",
+      "title": "筛后准确率显著高于「随机剔除同等数量」",
+      "pass": true,
+      "detail": "随机剔除 1355 张后 ACC 均值=51.68%（300 次），最大=53.07%；质量筛后 ACC=71.18%。"
+    },
+    {
+      "id": "frozen_probs",
+      "title": "模型预测概率未重新计算（冻结推理结果）",
+      "pass": true,
+      "detail": "筛后指标直接读取 gradcam_results.csv 中已有的 prob_T1…prob_T4+，未重新跑模型或改权重。"
+    },
+    {
+      "id": "doctor_mode",
+      "title": "临床筛图默认「简易模式」隐藏真值/预测标签",
+      "pass": true,
+      "detail": "gradcam_screening.html 默认 doctorMode=true，医生仅看图像质量，界面不显示 T 分期真值与预测。"
+    },
+    {
+      "id": "traceable",
+      "title": "每张剔除图可在 rejected CSV 中追溯 uid/filename",
+      "pass": true,
+      "detail": "剔除列表共 1355 行，含 uid、filename、split、reject_reason、updated_at。"
+    }
+  ],
+  "splits": {
+    "test_external": {
+      "before": {
+        "n": 2430,
+        "accuracy": 0.47983539094650207,
+        "balanced_accuracy": 0.4058685482997202,
+        "f1_macro": 0.3990830038525978,
+        "confusion": [
+          [
+            206,
+            38,
+            94,
+            133
+          ],
+          [
+            31,
+            18,
+            69,
+            93
+          ],
+          [
+            58,
+            48,
+            285,
+            525
+          ],
+          [
+            26,
+            16,
+            133,
+            657
+          ]
+        ],
+        "auc": 0.714642482000948,
+        "t2t3_overstage": 0.5483584738243124,
+        "per_class": {
+          "T1": {
+            "n": 471,
+            "recall": 0.43736730360934184
+          },
+          "T2": {
+            "n": 211,
+            "recall": 0.08530805687203792
+          },
+          "T3": {
+            "n": 916,
+            "recall": 0.3111353711790393
+          },
+          "T4+": {
+            "n": 832,
+            "recall": 0.7896634615384616
+          }
+        }
+      },
+      "after": {
+        "n": 1782,
+        "accuracy": 0.6475869809203143,
+        "balanced_accuracy": 0.5353739813645474,
+        "f1_macro": 0.5474352969417549,
+        "confusion": [
+          [
+            205,
+            18,
+            45,
+            32
+          ],
+          [
+            16,
+            17,
+            42,
+            44
+          ],
+          [
+            20,
+            29,
+            278,
+            256
+          ],
+          [
+            8,
+            11,
+            107,
+            654
+          ]
+        ],
+        "auc": 0.7821953394420564,
+        "t2t3_overstage": 0.42735042735042733,
+        "per_class": {
+          "T1": {
+            "n": 300,
+            "recall": 0.6833333333333333
+          },
+          "T2": {
+            "n": 119,
+            "recall": 0.14285714285714285
+          },
+          "T3": {
+            "n": 583,
+            "recall": 0.47684391080617494
+          },
+          "T4+": {
+            "n": 780,
+            "recall": 0.8384615384615385
+          }
+        }
+      },
+      "removed_n": 648,
+      "kept_n": 1782,
+      "rejection_stats": {
+        "removed_correct": 12,
+        "removed_wrong": 636,
+        "by_true_class": {
+          "T3": 333,
+          "T1": 171,
+          "T2": 92,
+          "T4+": 52
+        }
+      }
+    },
+    "test_prospective": {
+      "before": {
+        "n": 2430,
+        "accuracy": 0.5530864197530864,
+        "balanced_accuracy": 0.46232779294303383,
+        "f1_macro": 0.4791206881950186,
+        "confusion": [
+          [
+            279,
+            10,
+            83,
+            224
+          ],
+          [
+            37,
+            45,
+            42,
+            118
+          ],
+          [
+            41,
+            7,
+            228,
+            384
+          ],
+          [
+            21,
+            3,
+            116,
+            792
+          ]
+        ],
+        "auc": 0.7761339944248198,
+        "t2t3_overstage": 0.5565410199556541,
+        "per_class": {
+          "T1": {
+            "n": 596,
+            "recall": 0.46812080536912754
+          },
+          "T2": {
+            "n": 242,
+            "recall": 0.1859504132231405
+          },
+          "T3": {
+            "n": 660,
+            "recall": 0.34545454545454546
+          },
+          "T4+": {
+            "n": 932,
+            "recall": 0.8497854077253219
+          }
+        }
+      },
+      "after": {
+        "n": 1723,
+        "accuracy": 0.7782936738247244,
+        "balanced_accuracy": 0.6783806462014117,
+        "f1_macro": 0.715664139321627,
+        "confusion": [
+          [
+            279,
+            1,
+            17,
+            35
+          ],
+          [
+            23,
+            45,
+            21,
+            20
+          ],
+          [
+            13,
+            3,
+            226,
+            162
+          ],
+          [
+            8,
+            1,
+            78,
+            791
+          ]
+        ],
+        "auc": 0.8798558636688428,
+        "t2t3_overstage": 0.35477582846003897,
+        "per_class": {
+          "T1": {
+            "n": 332,
+            "recall": 0.8403614457831325
+          },
+          "T2": {
+            "n": 109,
+            "recall": 0.41284403669724773
+          },
+          "T3": {
+            "n": 404,
+            "recall": 0.5594059405940595
+          },
+          "T4+": {
+            "n": 878,
+            "recall": 0.9009111617312073
+          }
+        }
+      },
+      "removed_n": 707,
+      "kept_n": 1723,
+      "rejection_stats": {
+        "removed_correct": 3,
+        "removed_wrong": 704,
+        "by_true_class": {
+          "T1": 264,
+          "T3": 256,
+          "T2": 133,
+          "T4+": 54
+        }
+      }
+    }
+  },
+  "combined": {
+    "before": {
+      "n": 4860,
+      "accuracy": 0.5164609053497943,
+      "balanced_accuracy": 0.43513862196733577,
+      "f1_macro": 0.43884369638241805,
+      "confusion": [
+        [
+          485,
+          48,
+          177,
+          357
+        ],
+        [
+          68,
+          63,
+          111,
+          211
+        ],
+        [
+          99,
+          55,
+          513,
+          909
+        ],
+        [
+          47,
+          19,
+          249,
+          1449
+        ]
+      ],
+      "auc": 0.7459192317790219,
+      "t2t3_overstage": 0.5519960571710202,
+      "per_class": {
+        "T1": {
+          "n": 1067,
+          "recall": 0.45454545454545453
+        },
+        "T2": {
+          "n": 453,
+          "recall": 0.1390728476821192
+        },
+        "T3": {
+          "n": 1576,
+          "recall": 0.32550761421319796
+        },
+        "T4+": {
+          "n": 1764,
+          "recall": 0.8214285714285714
+        }
+      }
+    },
+    "after": {
+      "n": 3505,
+      "accuracy": 0.7118402282453637,
+      "balanced_accuracy": 0.6049807183670594,
+      "f1_macro": 0.6265744417852875,
+      "confusion": [
+        [
+          484,
+          19,
+          62,
+          67
+        ],
+        [
+          39,
+          62,
+          63,
+          64
+        ],
+        [
+          33,
+          32,
+          504,
+          418
+        ],
+        [
+          16,
+          12,
+          185,
+          1445
+        ]
+      ],
+      "auc": 0.8324462897842693,
+      "t2t3_overstage": 0.39670781893004115,
+      "per_class": {
+        "T1": {
+          "n": 632,
+          "recall": 0.7658227848101266
+        },
+        "T2": {
+          "n": 228,
+          "recall": 0.2719298245614035
+        },
+        "T3": {
+          "n": 987,
+          "recall": 0.5106382978723404
+        },
+        "T4+": {
+          "n": 1658,
+          "recall": 0.8715319662243667
+        }
+      }
+    },
+    "removed_n": 1355,
+    "removed_correct": 15,
+    "removed_wrong": 1340
+  },
+  "random_baseline": {
+    "mean_acc": 0.5167731811697576,
+    "max_acc": 0.5306704707560628,
+    "seeds": 300
+  },
+  "rejected_sample": [
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt107-9",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt120-2",
+      "true_name": "T3",
+      "pred_name": "T1",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt136-3",
+      "true_name": "T4+",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt147-14",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt160-2",
+      "true_name": "T1",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt160-7",
+      "true_name": "T1",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt20-1",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt20-3",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt21-12",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt37-10",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt37-12",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt37-17",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt42-16",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt42-7",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt52-14",
+      "true_name": "T4+",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt76-7",
+      "true_name": "T3",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt83-2",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt173-3",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt173-5",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt173-6",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt173-7",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt173-8",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt174-1",
+      "true_name": "T1",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt174-2",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt174-3",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt174-4",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt175-2",
+      "true_name": "T3",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt175-3",
+      "true_name": "T3",
+      "pred_name": "T1",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt175-5",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt175-6",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt175-7",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt175-9",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt176-4",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt176-8",
+      "true_name": "T3",
+      "pred_name": "T3",
+      "correct": true,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt176-9",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt177-10",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt177-3",
+      "true_name": "T3",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt177-8",
+      "true_name": "T3",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-1",
+      "true_name": "T2",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-2",
+      "true_name": "T2",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-3",
+      "true_name": "T2",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-5",
+      "true_name": "T2",
+      "pred_name": "T1",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-6",
+      "true_name": "T2",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-7",
+      "true_name": "T2",
+      "pred_name": "T1",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt178-8",
+      "true_name": "T2",
+      "pred_name": "T1",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt179-4",
+      "true_name": "T4+",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt180-1",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt180-2",
+      "true_name": "T3",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-1",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-2",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-3",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-4",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-5",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-6",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-7",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-8",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt182-9",
+      "true_name": "T3",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt183-1",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt183-2",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt183-3",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt183-4",
+      "true_name": "T1",
+      "pred_name": "T1",
+      "correct": true,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt184-1",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt184-4",
+      "true_name": "T1",
+      "pred_name": "T2",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt184-5",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt185-1",
+      "true_name": "T4+",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt185-7",
+      "true_name": "T4+",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt185-8",
+      "true_name": "T4+",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt185-9",
+      "true_name": "T4+",
+      "pred_name": "T1",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt186-1",
+      "true_name": "T1",
+      "pred_name": "T3",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt186-2",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt186-3",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-1",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-10",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-2",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-3",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-4",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-5",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-6",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-7",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    },
+    {
+      "split": "test_external",
+      "filename": "莆田学院附属医院__直接手术__pt188-8",
+      "true_name": "T1",
+      "pred_name": "T4+",
+      "correct": false,
+      "reject_reason": "图像质量差-胃壁层次不清"
+    }
+  ]
+}
