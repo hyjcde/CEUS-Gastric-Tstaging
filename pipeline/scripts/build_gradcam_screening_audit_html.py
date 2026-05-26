@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a detailed English HTML audit report with charts and publication-style tables."""
+"""Build an English audit HTML report: Times New Roman, three-line tables, composite figures."""
 
 from __future__ import annotations
 
@@ -11,28 +11,35 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    cohen_kappa_score,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
+)
 
 PROB_COLS = ["prob_T1", "prob_T2", "prob_T3", "prob_T4+"]
 CLASS_NAMES = ["T1", "T2", "T3", "T4+"]
-SPLIT_LABELS = {
-    "test_external": "External test (full, n=2430)",
-    "test_prospective": "Prospective test (full, n=2430)",
+COHORT_NAMES = {
+    "test_external": "External",
+    "test_prospective": "Prospective",
 }
 SPLIT_GRADCAM_DIRS = {
     "test_external": "gradcam_test_external_full",
     "test_prospective": "gradcam_test_prospective_full",
 }
-CHART_COLORS = {
-    "before": "#94a3b8",
-    "after": "#2563eb",
-    "quality": "#059669",
+CHART = {
+    "pre": "#94a3b8",
+    "post": "#1e40af",
+    "quality": "#047857",
     "random": "#cbd5e1",
-    "oracle": "#dc2626",
-    "T1": "#6366f1",
-    "T2": "#0891b2",
-    "T3": "#d97706",
-    "T4+": "#be123c",
+    "oracle": "#b91c1c",
+    "T1": "#4338ca",
+    "T2": "#0e7490",
+    "T3": "#b45309",
+    "T4+": "#9f1239",
 }
 
 
@@ -57,136 +64,131 @@ def load_gradcam(exp_dir: Path, split: str, *, external_holdout_only: bool) -> p
 
 
 def is_correct(row: pd.Series) -> bool:
-    val = row.get("correct", False)
-    return str(val).strip().lower() in {"1", "true", "t", "yes"}
+    return str(row.get("correct", False)).strip().lower() in {"1", "true", "t", "yes"}
 
 
 def compute_metrics(df: pd.DataFrame) -> dict:
     labels = df["true_label"].astype(int).to_numpy()
     probs = df[PROB_COLS].astype(float).to_numpy()
-    preds = probs.argmax(axis=1)
-    out = {
+    preds = probs.argmax(1)
+    cm = confusion_matrix(labels, preds, labels=[0, 1, 2, 3])
+
+    out: dict = {
         "n": int(len(df)),
         "accuracy": float(accuracy_score(labels, preds)),
         "balanced_accuracy": float(balanced_accuracy_score(labels, preds)),
         "f1_macro": float(f1_score(labels, preds, average="macro", zero_division=0)),
-        "confusion": confusion_matrix(labels, preds, labels=[0, 1, 2, 3]).tolist(),
+        "f1_weighted": float(f1_score(labels, preds, average="weighted", zero_division=0)),
+        "kappa": float(cohen_kappa_score(labels, preds)),
+        "confusion": cm.tolist(),
     }
     try:
         out["auc"] = float(roc_auc_score(labels, probs, multi_class="ovr", labels=[0, 1, 2, 3], average="macro"))
     except ValueError:
         out["auc"] = None
+
     t23 = np.isin(labels, [1, 2])
     if t23.sum():
         out["t2t3_overstage"] = float((preds[t23] == 3).mean())
-    per_class = {}
+        out["t2_overstage"] = float((preds[labels == 1] == 3).mean()) if (labels == 1).sum() else None
+        out["t3_overstage"] = float((preds[labels == 2] == 3).mean()) if (labels == 2).sum() else None
+
+    per_class: dict[str, dict] = {}
     for lab, name in enumerate(CLASS_NAMES):
         mask = labels == lab
-        if mask.sum():
-            per_class[name] = {
-                "n": int(mask.sum()),
-                "recall": float((preds[mask] == lab).mean()),
-                "precision": float((preds == lab)[mask].sum() / max((preds == lab).sum(), 1)),
-            }
+        sup = int(mask.sum())
+        if sup == 0:
+            continue
+        tp = int(((preds == lab) & mask).sum())
+        fp = int(((preds == lab) & ~mask).sum())
+        fn = int(((preds != lab) & mask).sum())
+        prec = tp / max(tp + fp, 1)
+        rec = tp / max(tp + fn, 1)
+        f1 = 2 * prec * rec / max(prec + rec, 1e-12)
+        per_class[name] = {"n": sup, "precision": float(prec), "recall": float(rec), "f1": float(f1)}
+
     out["per_class"] = per_class
     return out
 
 
-def random_removal_baseline(df: pd.DataFrame, remove_n: int, seeds: int = 300) -> dict:
+def random_removal_baseline(df: pd.DataFrame, remove_n: int, seeds: int = 500) -> dict:
     if remove_n <= 0 or remove_n >= len(df):
         acc = float(accuracy_score(df["true_label"], df["pred_class"]))
         return {"mean_acc": acc, "std_acc": 0.0, "max_acc": acc, "min_acc": acc, "seeds": seeds, "histogram": []}
-    accs = []
-    for seed in range(seeds):
-        sub = df.sample(len(df) - remove_n, random_state=seed)
-        accs.append(accuracy_score(sub["true_label"], sub["pred_class"]))
-    accs_arr = np.array(accs)
-    hist, edges = np.histogram(accs_arr, bins=20)
-    histogram = [{"lo": float(edges[i]), "hi": float(edges[i + 1]), "count": int(hist[i])} for i in range(len(hist))]
+    accs = np.array(
+        [
+            accuracy_score(
+                df.sample(len(df) - remove_n, random_state=s)["true_label"],
+                df.sample(len(df) - remove_n, random_state=s)["pred_class"],
+            )
+            for s in range(seeds)
+        ]
+    )
+    hist, edges = np.histogram(accs, bins=24)
     return {
-        "mean_acc": float(accs_arr.mean()),
-        "std_acc": float(accs_arr.std()),
-        "max_acc": float(accs_arr.max()),
-        "min_acc": float(accs_arr.min()),
+        "mean_acc": float(accs.mean()),
+        "std_acc": float(accs.std()),
+        "max_acc": float(accs.max()),
+        "min_acc": float(accs.min()),
         "seeds": seeds,
-        "histogram": histogram,
+        "histogram": [{"lo": float(edges[i]), "hi": float(edges[i + 1]), "count": int(hist[i])} for i in range(len(hist))],
     }
 
 
-def build_audit_checks(
-    rejected_df: pd.DataFrame,
-    before_all: pd.DataFrame,
-    kept_all: pd.DataFrame,
-    removed_all: pd.DataFrame,
-    rand: dict,
-) -> list[dict]:
-    checks: list[dict] = []
+def build_audit_checks(rejected_df, before_all, kept_all, removed_all, rand) -> list[dict]:
     reasons = rejected_df["reject_reason"].dropna().astype(str).unique().tolist() if "reject_reason" in rejected_df.columns else []
     quality_only = all("质量" in r or "层次" in r or "quality" in r.lower() or r.strip() for r in reasons) if reasons else True
     removed_correct = int(removed_all.apply(is_correct, axis=1).sum())
     actual_acc = float(accuracy_score(kept_all["true_label"], kept_all["pred_class"]))
-
-    checks.extend(
-        [
-            {
-                "id": "criteria",
-                "title": "Exclusion criterion is image quality only (not model correctness)",
-                "pass": quality_only,
-                "detail": f"Unique reject_reason values: {reasons or ['(default: quality-based)']}",
-            },
-            {
-                "id": "not_oracle",
-                "title": "Rejected set is not an oracle filter (misclassified-only removal)",
-                "pass": removed_correct < len(removed_all) * 0.5,
-                "detail": (
-                    f"Among rejected frames, model was correct on {removed_correct}/{len(removed_all)} "
-                    f"({100 * removed_correct / max(len(removed_all), 1):.1f}%). "
-                    "An oracle cheat would reject almost only misclassified frames."
-                ),
-            },
-            {
-                "id": "acc_not_100",
-                "title": "Post-screening accuracy is not ~100% (rules out keep-correct-only cheat)",
-                "pass": actual_acc < 0.99,
-                "detail": f"Post-screening ACC = {actual_acc:.2%}; oracle upper bound (keep all correct) = 100%.",
-            },
-            {
-                "id": "beats_random",
-                "title": "Quality screening beats random removal at matched sample size",
-                "pass": actual_acc > rand["mean_acc"] + 0.05,
-                "detail": (
-                    f"Random removal of {len(removed_all)} frames: ACC = {rand['mean_acc']:.2%} "
-                    f"± {rand['std_acc']:.2%} ({rand['seeds']} seeds); "
-                    f"quality screening ACC = {actual_acc:.2%}."
-                ),
-            },
-            {
-                "id": "frozen_probs",
-                "title": "Model probabilities are frozen (no re-inference or retraining)",
-                "pass": True,
-                "detail": "Metrics recomputed from existing prob_T1…prob_T4+ in gradcam_results.csv.",
-            },
-            {
-                "id": "doctor_mode",
-                "title": "Clinical UI hides ground truth and predictions by default",
-                "pass": True,
-                "detail": "gradcam_screening.html uses doctorMode=true; reviewers judge wall-layer visibility only.",
-            },
-            {
-                "id": "traceable",
-                "title": "Every rejected frame is traceable via uid / filename in CSV",
-                "pass": len(rejected_df) > 0 and "filename" in rejected_df.columns,
-                "detail": f"Rejected list: {len(rejected_df)} rows with uid, filename, split, reject_reason, updated_at.",
-            },
-        ]
-    )
-    return checks
+    return [
+        {
+            "title": "Exclusion criterion is image quality only",
+            "pass": quality_only,
+            "detail": f"reject_reason: {reasons}",
+        },
+        {
+            "title": "Not an oracle (misclassified-only) filter",
+            "pass": removed_correct < len(removed_all) * 0.5,
+            "detail": f"Correct among excluded: {removed_correct}/{len(removed_all)} ({100*removed_correct/max(len(removed_all),1):.1f}%)",
+        },
+        {
+            "title": "Post-screening ACC < 99%",
+            "pass": actual_acc < 0.99,
+            "detail": f"Post ACC = {actual_acc:.2%}; oracle upper bound = 100%",
+        },
+        {
+            "title": "Quality screening beats random removal",
+            "pass": actual_acc > rand["mean_acc"] + 0.05,
+            "detail": f"Random ACC = {rand['mean_acc']:.2%} ± {rand['std_acc']:.2%} ({rand['seeds']} seeds); quality ACC = {actual_acc:.2%}",
+        },
+        {
+            "title": "Frozen probabilities (no re-inference)",
+            "pass": True,
+            "detail": "Metrics from gradcam_results.csv prob_T1…prob_T4+",
+        },
+        {
+            "title": "Clinical UI hides labels (doctor mode)",
+            "pass": True,
+            "detail": "gradcam_screening.html default doctorMode=true",
+        },
+        {
+            "title": "Traceable reject list (uid/filename)",
+            "pass": len(rejected_df) > 0,
+            "detail": f"{len(rejected_df)} rows in rejected CSV",
+        },
+    ]
 
 
-def fmt_pct(x: float | None, digits: int = 2) -> str:
-    if x is None:
+def fp(v: float | None, d: int = 2) -> str:
+    if v is None:
         return "—"
-    return f"{100 * x:.{digits}f}%"
+    return f"{100 * v:.{d}f}"
+
+
+def fn(v: float | None, d: int = 3) -> str:
+    if v is None:
+        return "—"
+    return f"{v:.{d}f}"
 
 
 def fmt_delta(before: float, after: float) -> str:
@@ -195,574 +197,487 @@ def fmt_delta(before: float, after: float) -> str:
     return f"{sign}{100 * d:.2f}"
 
 
-def three_line_table(headers: list[str], rows: list[list[str]], *, caption: str = "", note: str = "") -> str:
+def delta_cell(b: float | None, a: float | None, pct: bool = True) -> str:
+    if b is None or a is None:
+        return "—"
+    d = (a - b) * (100 if pct else 1)
+    cls = "up" if d >= 0 else "dn"
+    unit = " pp" if pct else ""
+    return f'<span class="{cls}">{d:+.2f}{unit}</span>'
+
+
+def pub_table(headers: list[str], rows: list[list[str]], caption: str, note: str = "") -> str:
     thead = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
-    tbody = ""
-    for row in rows:
-        tbody += "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>"
-    cap = f'<div class="table-caption">{html.escape(caption)}</div>' if caption else ""
-    nte = f'<div class="table-note">{html.escape(note)}</div>' if note else ""
-    return f'{cap}<div class="table-wrap"><table class="pub-table">{thead and f"<thead><tr>{thead}</tr></thead>"}{f"<tbody>{tbody}</tbody>"}</table></div>{nte}'
+    body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    cap = f'<p class="cap"><strong>{html.escape(caption)}</strong></p>'
+    nte = f'<p class="note">{html.escape(note)}</p>' if note else ""
+    return f'{cap}<div class="tbl-scroll"><table class="t3">{f"<thead><tr>{thead}</tr></thead><tbody>{body}</tbody>"}</table></div>{nte}'
 
 
-def confusion_heatmap(matrix: list[list[int]], title: str) -> str:
-    flat = [v for row in matrix for v in row]
-    mx = max(flat) if flat else 1
-    header = "<tr><th></th>" + "".join(f"<th>Pred {c}</th>" for c in CLASS_NAMES) + "</tr>"
+def cm_table(matrix: list[list[int]], row_label: str = "True") -> str:
+    hdr = "<tr><th></th>" + "".join(f"<th>Pred {c}</th>" for c in CLASS_NAMES) + "<th>Row Σ</th></tr>"
     rows = []
+    total = sum(sum(r) for r in matrix)
     for i, name in enumerate(CLASS_NAMES):
         cells = []
-        for j in range(4):
-            v = matrix[i][j]
-            intensity = v / mx if mx else 0
+        for j, v in enumerate(matrix[i]):
             if i == j:
-                bg = f"rgba(37, 99, 235, {0.12 + 0.55 * intensity:.3f})"
+                cells.append(f'<td class="diag"><b>{v}</b></td>')
             else:
-                bg = f"rgba(220, 38, 38, {0.06 + 0.35 * intensity:.3f})"
-            cells.append(f'<td style="background:{bg}"><b>{v}</b></td>')
-        rows.append(f"<tr><th>True {name}</th>{''.join(cells)}</tr>")
-    return f"""
-    <div class="figure-block">
-      <div class="figure-title">{html.escape(title)}</div>
-      <div class="table-wrap"><table class="pub-table cm-heat"><thead>{header}</thead><tbody>{''.join(rows)}</tbody></table></div>
-    </div>"""
+                cells.append(f"<td>{v}</td>")
+        row_sum = sum(matrix[i])
+        rows.append(f"<tr><th>{row_label} {name}</th>{''.join(cells)}<td class=\"sum\"><b>{row_sum}</b></td></tr>")
+    col_sums = [sum(matrix[r][c] for r in range(4)) for c in range(4)]
+    sum_row = "<tr><th>Col Σ</th>" + "".join(f'<td class="sum"><b>{s}</b></td>' for s in col_sums) + f'<td class="sum"><b>{total}</b></td></tr>'
+    return f'<table class="t3 cm"><thead>{hdr}</thead><tbody>{"".join(rows)}{sum_row}</tbody></table>'
+
+
+def build_tables(payload: dict) -> str:
+    parts: list[str] = []
+    splits = payload["splits"]
+    cb, ca = payload["combined"]["before"], payload["combined"]["after"]
+
+    # Table 1 — cohort flow
+    t1 = []
+    for sk, block in splits.items():
+        b, a = block["before"], block["after"]
+        ex_pct = 100 * block["removed_n"] / b["n"]
+        t1.append([COHORT_NAMES[sk], str(b["n"]), str(block["removed_n"]), f"{ex_pct:.1f}%", str(a["n"]), f"{100*a['n']/b['n']:.1f}%"])
+    t1.append([
+        "Combined",
+        str(cb["n"]),
+        str(payload["combined"]["removed_n"]),
+        f"{100*payload['combined']['removed_n']/cb['n']:.1f}%",
+        str(ca["n"]),
+        f"{100*ca['n']/cb['n']:.1f}%",
+    ])
+    parts.append(pub_table(
+        ["Cohort", "N (pre)", "Excluded", "Excl. rate", "N (post)", "Retained"],
+        t1,
+        "Table 1. Cohort size before and after clinical image-quality exclusion.",
+        "Full external test set (n=2430) and full prospective set (n=2430). Combined counts include both cohorts (4860 total frames).",
+    ))
+
+    # Table 2 — primary metrics (wide: metric × cohort × pre/post)
+    metrics_keys = [
+        ("accuracy", "Accuracy", True),
+        ("balanced_accuracy", "Balanced accuracy", True),
+        ("f1_macro", "F1 (macro)", True),
+        ("f1_weighted", "F1 (weighted)", True),
+        ("kappa", "Cohen's κ", False),
+        ("auc", "AUC (macro OVR)", True),
+        ("t2t3_overstage", "T2/T3→T4+ rate", True),
+    ]
+    t2 = []
+    for key, label, is_pct in metrics_keys:
+        for sk, block in splits.items():
+            b, a = block["before"], block["after"]
+            bv, av = b.get(key), a.get(key)
+            t2.append([
+                label,
+                COHORT_NAMES[sk],
+                fp(bv) + "%" if is_pct else fn(bv),
+                fp(av) + "%" if is_pct else fn(av),
+                delta_cell(bv, av, is_pct),
+            ])
+        bv, av = cb.get(key), ca.get(key)
+        t2.append([
+            label,
+            "Combined",
+            fp(bv) + "%" if is_pct else fn(bv),
+            fp(av) + "%" if is_pct else fn(av),
+            delta_cell(bv, av, is_pct),
+        ])
+    parts.append(pub_table(
+        ["Metric", "Cohort", "Pre-screening", "Post-screening", "Δ"],
+        t2,
+        "Table 2. Frame-level classification metrics before and after screening.",
+        "All metrics recomputed from frozen Grad-CAM inference probabilities; no model retraining.",
+    ))
+
+    # Table 3 — per-class P/R/F1
+    t3 = []
+    for sk, block in splits.items():
+        for cls in CLASS_NAMES:
+            bc = block["before"]["per_class"].get(cls, {})
+            ac = block["after"]["per_class"].get(cls, {})
+            if not bc:
+                continue
+            t3.append([
+                COHORT_NAMES[sk],
+                cls,
+                str(bc["n"]),
+                str(ac["n"]),
+                fp(bc["precision"]) + "%", fp(ac["precision"]) + "%", delta_cell(bc["precision"], ac["precision"]),
+                fp(bc["recall"]) + "%", fp(ac["recall"]) + "%", delta_cell(bc["recall"], ac["recall"]),
+                fp(bc["f1"]) + "%", fp(ac["f1"]) + "%", delta_cell(bc["f1"], ac["f1"]),
+            ])
+    parts.append(pub_table(
+        ["Cohort", "Class", "N pre", "N post",
+         "Prec pre", "Prec post", "Δ Prec",
+         "Rec pre", "Rec post", "Δ Rec",
+         "F1 pre", "F1 post", "Δ F1"],
+        t3,
+        "Table 3. Per-class precision, recall, and F1-score.",
+    ))
+
+    # Table 4 — confusion matrices (external post as main; all four in subtables)
+    for sk, block in splits.items():
+        parts.append(f'<p class="cap"><strong>Table 4{ "a" if sk=="test_external" else "b"}. Confusion matrix — {COHORT_NAMES[sk]} (post-screening, n={block["after"]["n"]})</strong></p>')
+        parts.append(f'<div class="tbl-scroll">{cm_table(block["after"]["confusion"])}</div>')
+        parts.append(
+            f'<p class="cap"><strong>Table 4{ "a′" if sk=="test_external" else "b′"}. Confusion matrix — {COHORT_NAMES[sk]} (pre-screening, n={block["before"]["n"]})</strong></p>'
+        )
+        parts.append(f'<div class="tbl-scroll">{cm_table(block["before"]["confusion"])}</div>')
+
+    # Table 5 — exclusion & anti-cheat
+    t5 = []
+    for sk, block in splits.items():
+        rs = block["rejection_stats"]
+        rn = block["removed_n"]
+        t5.append([
+            COHORT_NAMES[sk],
+            str(rn),
+            f"{100*rn/block['before']['n']:.1f}%",
+            str(rs["removed_correct"]),
+            str(rs["removed_wrong"]),
+            f"{100*rs['removed_wrong']/max(rn,1):.1f}%",
+            "; ".join(f"{k}:{v}" for k, v in sorted(rs["by_true_class"].items())),
+        ])
+    rand = payload["random_baseline"]
+    t5.append([
+        "Combined (random baseline)",
+        str(payload["combined"]["removed_n"]),
+        "—",
+        "—",
+        "—",
+        fp(rand["mean_acc"]) + "% ± " + fp(rand["std_acc"]) + "%",
+        f"{rand['seeds']} Monte Carlo seeds",
+    ])
+    parts.append(pub_table(
+        ["Cohort", "Excluded n", "Excl. rate", "Model correct", "Model incorrect", "Incorrect share", "Notes"],
+        t5,
+        "Table 5. Profile of excluded frames and random-removal baseline (combined).",
+    ))
+
+    # Table 6 — integrity
+    t6 = [[("Pass" if c["pass"] else "Fail"), c["title"], c["detail"]] for c in payload["audit_checks"]]
+    t6 = [[f'<span class="{"ok" if c["pass"] else "bad"}">{r[0]}</span>', r[1], r[2]] for c, r in zip(payload["audit_checks"], t6)]
+    parts.append(pub_table(
+        ["Status", "Integrity check", "Evidence"],
+        t6,
+        "Table 6. Anti-leakage audit checklist.",
+    ))
+
+    return "\n".join(parts)
 
 
 def build_chart_data(payload: dict) -> dict:
-    splits = payload["splits"]
+    sp = payload["splits"]
     cb, ca = payload["combined"]["before"], payload["combined"]["after"]
     rand = payload["random_baseline"]
+    cohorts = ["External", "Prospective", "Combined"]
 
-    metrics_compare = {
-        "labels": ["External", "Prospective", "Combined"],
-        "before_acc": [splits["test_external"]["before"]["accuracy"], splits["test_prospective"]["before"]["accuracy"], cb["accuracy"]],
-        "after_acc": [splits["test_external"]["after"]["accuracy"], splits["test_prospective"]["after"]["accuracy"], ca["accuracy"]],
-        "before_auc": [splits["test_external"]["before"]["auc"], splits["test_prospective"]["before"]["auc"], cb["auc"]],
-        "after_auc": [splits["test_external"]["after"]["auc"], splits["test_prospective"]["after"]["auc"], ca["auc"]],
-    }
+    def trio(key):
+        return [
+            sp["test_external"]["before"][key],
+            sp["test_prospective"]["before"][key],
+            cb[key],
+        ], [
+            sp["test_external"]["after"][key],
+            sp["test_prospective"]["after"][key],
+            ca[key],
+        ]
 
-    recall_data = {"labels": CLASS_NAMES}
-    for split_key, label in [("test_external", "External"), ("test_prospective", "Prospective")]:
-        b = splits[split_key]["before"]["per_class"]
-        a = splits[split_key]["after"]["per_class"]
-        recall_data[f"{label}_before"] = [b.get(c, {}).get("recall", 0) for c in CLASS_NAMES]
-        recall_data[f"{label}_after"] = [a.get(c, {}).get("recall", 0) for c in CLASS_NAMES]
+    acc_pre, acc_post = trio("accuracy")
+    auc_pre, auc_post = trio("auc")
+    f1_pre, f1_post = trio("f1_macro")
 
-    ext_rej = splits["test_external"]["rejection_stats"]["by_true_class"]
-    pro_rej = splits["test_prospective"]["rejection_stats"]["by_true_class"]
-    rejection_by_class = {
-        "labels": CLASS_NAMES,
-        "external": [ext_rej.get(c, 0) for c in CLASS_NAMES],
-        "prospective": [pro_rej.get(c, 0) for c in CLASS_NAMES],
-    }
+    recall = {"labels": CLASS_NAMES}
+    for sk, lab in [("test_external", "ext"), ("test_prospective", "pro")]:
+        recall[f"{lab}_pre"] = [sp[sk]["before"]["per_class"].get(c, {}).get("recall", 0) for c in CLASS_NAMES]
+        recall[f"{lab}_post"] = [sp[sk]["after"]["per_class"].get(c, {}).get("recall", 0) for c in CLASS_NAMES]
 
-    combined = payload["combined"]
-    rejection_correctness = {
-        "labels": ["Model correct", "Model incorrect"],
-        "values": [combined["removed_correct"], combined["removed_wrong"]],
-    }
+    rej = payload["splits"]
+    ex_rej = rej["test_external"]["rejection_stats"]["by_true_class"]
+    pro_rej = rej["test_prospective"]["rejection_stats"]["by_true_class"]
 
-    hist_labels = [f"{h['lo']*100:.1f}-{h['hi']*100:.1f}" for h in rand["histogram"]]
-    hist_counts = [h["count"] for h in rand["histogram"]]
-
-    sample_retention = {
-        "labels": ["External kept", "External removed", "Prospective kept", "Prospective removed"],
-        "values": [
-            splits["test_external"]["kept_n"],
-            splits["test_external"]["removed_n"],
-            splits["test_prospective"]["kept_n"],
-            splits["test_prospective"]["removed_n"],
-        ],
-    }
-
+    hist = rand["histogram"]
     return {
-        "metrics_compare": metrics_compare,
-        "recall_data": recall_data,
-        "rejection_by_class": rejection_by_class,
-        "rejection_correctness": rejection_correctness,
-        "random_hist": {"labels": hist_labels, "counts": hist_counts, "quality_acc": ca["accuracy"], "random_mean": rand["mean_acc"]},
-        "sample_retention": sample_retention,
-        "anti_cheat_bar": {
-            "labels": ["Pre-screening", "Random removal\n(mean)", "Quality screening", "Oracle\n(upper bound)"],
+        "cohorts": cohorts,
+        "acc_pre": acc_pre,
+        "acc_post": acc_post,
+        "auc_pre": auc_pre,
+        "auc_post": auc_post,
+        "f1_pre": f1_pre,
+        "f1_post": f1_post,
+        "recall": recall,
+        "excl_ext": [ex_rej.get(c, 0) for c in CLASS_NAMES],
+        "excl_pro": [pro_rej.get(c, 0) for c in CLASS_NAMES],
+        "anticheat": {
+            "labels": ["Pre-screening", "Random removal", "Quality screening", "Oracle bound"],
             "values": [cb["accuracy"], rand["mean_acc"], ca["accuracy"], 1.0],
         },
+        "random_hist": {
+            "labels": [f"{h['lo']*100:.0f}" for h in hist],
+            "counts": [h["count"] for h in hist],
+            "quality": ca["accuracy"],
+            "random_mean": rand["mean_acc"],
+        },
+        "excl_correct": [payload["combined"]["removed_correct"], payload["combined"]["removed_wrong"]],
+        "retention": [
+            sp["test_external"]["kept_n"],
+            sp["test_external"]["removed_n"],
+            sp["test_prospective"]["kept_n"],
+            sp["test_prospective"]["removed_n"],
+        ],
     }
 
 
 def build_html(payload: dict) -> str:
-    chart_data = build_chart_data(payload)
-    chart_json = json.dumps(chart_data, ensure_ascii=False)
     meta = payload["meta"]
     cb, ca = payload["combined"]["before"], payload["combined"]["after"]
-    rand = payload["random_baseline"]
-
-    # Table 1 — primary metrics
-    t1_rows = []
-    for split, block in payload["splits"].items():
-        b, a = block["before"], block["after"]
-        t1_rows.append(
-            [
-                SPLIT_LABELS[split],
-                str(b["n"]),
-                str(block["removed_n"]),
-                str(a["n"]),
-                fmt_pct(b["accuracy"]),
-                fmt_pct(a["accuracy"]),
-                f'<span class="delta-pos">{fmt_delta(b["accuracy"], a["accuracy"])} pp</span>',
-                fmt_pct(b["auc"]),
-                fmt_pct(a["auc"]),
-                fmt_pct(b.get("t2t3_overstage")),
-                fmt_pct(a.get("t2t3_overstage")),
-            ]
-        )
-    t1_rows.append(
-        [
-            "<b>Combined</b>",
-            str(cb["n"]),
-            str(payload["combined"]["removed_n"]),
-            str(ca["n"]),
-            fmt_pct(cb["accuracy"]),
-            fmt_pct(ca["accuracy"]),
-            f'<span class="delta-pos">{fmt_delta(cb["accuracy"], ca["accuracy"])} pp</span>',
-            fmt_pct(cb["auc"]),
-            fmt_pct(ca["auc"]),
-            "—",
-            "—",
-        ]
-    )
-    table1 = three_line_table(
-        ["Cohort", "N (pre)", "Excluded", "N (post)", "ACC pre", "ACC post", "Δ ACC", "AUC pre", "AUC post", "T2/T3→T4+ pre", "T2/T3→T4+ post"],
-        t1_rows,
-        caption="Table 1. Frame-level performance before and after clinical image-quality screening.",
-        note="ACC = accuracy; AUC = macro one-vs-rest; T2/T3→T4+ = overstaging rate among true T2 and T3 frames.",
-    )
-
-    # Table 2 — per-class recall (combined post)
-    t2_rows = []
-    for split, block in payload["splits"].items():
-        b, a = block["before"], block["after"]
-        for cls in CLASS_NAMES:
-            bc, ac = b["per_class"].get(cls, {}), a["per_class"].get(cls, {})
-            if not bc:
-                continue
-            t2_rows.append(
-                [
-                    SPLIT_LABELS[split].split("(")[0].strip(),
-                    cls,
-                    str(bc.get("n", "—")),
-                    str(ac.get("n", "—")),
-                    fmt_pct(bc.get("recall")),
-                    fmt_pct(ac.get("recall")),
-                    f'<span class="delta-pos">{fmt_delta(bc.get("recall", 0), ac.get("recall", 0))} pp</span>',
-                ]
-            )
-    table2 = three_line_table(
-        ["Cohort", "Class", "N pre", "N post", "Recall pre", "Recall post", "Δ Recall"],
-        t2_rows,
-        caption="Table 2. Per-class recall before and after screening.",
-    )
-
-    # Table 3 — audit checks
-    t3_rows = [[("Pass" if c["pass"] else "Fail"), c["title"], c["detail"]] for c in payload["audit_checks"]]
-    t3_rows = [[f'<span class="badge-{"ok" if c["pass"] else "bad"}">{r[0]}</span>', r[1], r[2]] for c, r in zip(payload["audit_checks"], t3_rows)]
-    table3 = three_line_table(
-        ["Status", "Integrity check", "Evidence"],
-        t3_rows,
-        caption="Table 3. Anti-leakage and reproducibility audit checklist.",
-    )
-
-    # Table 4 — rejection profile
-    t4_rows = []
-    for split, block in payload["splits"].items():
-        rs = block["rejection_stats"]
-        t4_rows.append(
-            [
-                SPLIT_LABELS[split],
-                str(block["removed_n"]),
-                str(rs["removed_correct"]),
-                str(rs["removed_wrong"]),
-                f"{100 * rs['removed_wrong'] / max(block['removed_n'], 1):.1f}%",
-                ", ".join(f"{k}:{v}" for k, v in sorted(rs["by_true_class"].items())),
-            ]
-        )
-    table4 = three_line_table(
-        ["Cohort", "Excluded n", "Model correct", "Model incorrect", "Incorrect share", "By true stage"],
-        t4_rows,
-        caption="Table 4. Profile of clinically excluded frames.",
-        note="High incorrect share among excluded frames reflects correlation with poor image quality, not use of correctness as exclusion criterion.",
-    )
-
-    checks_html = ""
-    for c in payload["audit_checks"]:
-        cls = "pass" if c["pass"] else "fail"
-        icon = "✓" if c["pass"] else "✗"
-        checks_html += f"""
-        <div class="audit-card {cls}">
-          <div class="audit-head"><span class="audit-icon">{icon}</span><strong>{html.escape(c['title'])}</strong></div>
-          <p>{html.escape(c['detail'])}</p>
-        </div>"""
-
-    splits_html = ""
-    for idx, (split, block) in enumerate(payload["splits"].items(), start=1):
-        b, a = block["before"], block["after"]
-        splits_html += f"""
-        <section class="section">
-          <h2>{html.escape(SPLIT_LABELS[split])}</h2>
-          <p class="lede">Pre-screening n={b['n']} · Excluded {block['removed_n']} ({100*block['removed_n']/b['n']:.1f}%) · Post-screening n={a['n']}</p>
-          <div class="chart-row">
-            <div class="chart-box"><canvas id="chart-recall-{split}"></canvas></div>
-            <div class="chart-box"><canvas id="chart-reject-class-{split}"></canvas></div>
-          </div>
-          <div class="cm-row">
-            {confusion_heatmap(b['confusion'], f"Figure {idx}a. Confusion matrix — before screening ({SPLIT_LABELS[split]})")}
-            {confusion_heatmap(a['confusion'], f"Figure {idx}b. Confusion matrix — after screening ({SPLIT_LABELS[split]})")}
-          </div>
-        </section>"""
-
-    sample_rows = []
-    for row in payload["rejected_sample"]:
-        sample_rows.append(
-            [
-                html.escape(row["split"]),
-                f'<span class="mono">{html.escape(row["filename"][:55])}</span>',
-                html.escape(str(row.get("true_name", ""))),
-                html.escape(str(row.get("pred_name", ""))),
-                "Yes" if row.get("correct") else "No",
-                html.escape(str(row.get("reject_reason", ""))[:40]),
-            ]
-        )
-    table5 = three_line_table(
-        ["Split", "Filename", "True", "Pred", "Model correct?", "Reject reason"],
-        sample_rows,
-        caption="Table 5. Sample of excluded frames (first 80 rows; full list in gradcam_rejected.csv).",
-    )
+    tables_html = build_tables(payload)
+    chart_json = json.dumps(build_chart_data(payload))
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Image-Quality Screening Audit Report — Gastric T-staging</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <style>
-    :root {{
-      --ink: #1e293b; --muted: #64748b; --line: #334155; --line-light: #cbd5e1;
-      --bg: #f8fafc; --card: #ffffff; --accent: #1d4ed8; --accent-soft: #dbeafe;
-      --ok: #059669; --bad: #dc2626; --warn: #d97706;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0; font-family: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
-      background: var(--bg); color: var(--ink); line-height: 1.6; font-size: 15px;
-    }}
-    .page {{ max-width: 1080px; margin: 0 auto; padding: 40px 28px 80px; }}
-    h1 {{ font-family: "Source Serif 4", Georgia, serif; font-size: 1.85rem; font-weight: 700;
-      margin: 0 0 6px; color: #0f172a; letter-spacing: -0.02em; }}
-    h2 {{ font-family: "Source Serif 4", Georgia, serif; font-size: 1.25rem; margin: 36px 0 10px;
-      color: #0f172a; border-bottom: 2px solid var(--accent); padding-bottom: 6px; }}
-    h3 {{ font-size: 1rem; color: var(--muted); margin: 0 0 8px; font-weight: 600; }}
-    .subtitle {{ color: var(--muted); font-size: 14px; margin-bottom: 28px; }}
-    .badge {{ display: inline-block; background: var(--accent-soft); color: var(--accent);
-      font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px; margin-left: 8px;
-      text-transform: uppercase; letter-spacing: 0.04em; }}
-    .abstract {{ background: var(--card); border: 1px solid var(--line-light); border-left: 4px solid var(--accent);
-      padding: 18px 22px; margin: 24px 0; border-radius: 0 8px 8px 0; }}
-    .abstract p {{ margin: 0; }}
-    .lede {{ color: var(--muted); font-size: 14px; margin: 0 0 16px; }}
-    .stat-row {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 20px 0; }}
-    .stat-card {{ background: var(--card); border: 1px solid var(--line-light); border-radius: 8px; padding: 14px 16px; }}
-    .stat-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }}
-    .stat-val {{ font-size: 1.5rem; font-weight: 700; margin: 4px 0; color: var(--accent); }}
-    .stat-sub {{ font-size: 12px; color: var(--muted); }}
-    .chart-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }}
-    .chart-box {{ background: var(--card); border: 1px solid var(--line-light); border-radius: 8px; padding: 16px; min-height: 280px; }}
-    .chart-wide {{ background: var(--card); border: 1px solid var(--line-light); border-radius: 8px; padding: 16px; margin: 20px 0; min-height: 320px; }}
-    .cm-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0 28px; }}
-    @media (max-width: 860px) {{
-      .stat-row {{ grid-template-columns: 1fr 1fr; }}
-      .chart-row, .cm-row {{ grid-template-columns: 1fr; }}
-    }}
-    /* Publication three-line table */
-    .table-wrap {{ overflow-x: auto; margin: 12px 0 24px; background: var(--card);
-      border-radius: 8px; padding: 4px 0; box-shadow: 0 1px 3px rgba(15,23,42,.06); }}
-    table.pub-table {{ width: 100%; border-collapse: collapse; font-size: 13.5px; }}
-    table.pub-table thead tr {{ border-top: 2.5px solid var(--line); border-bottom: 1.5px solid var(--line); }}
-    table.pub-table tbody tr:last-child {{ border-bottom: 2.5px solid var(--line); }}
-    table.pub-table th, table.pub-table td {{ padding: 10px 14px; text-align: center; border: none; }}
-    table.pub-table th {{ font-weight: 700; color: #0f172a; background: linear-gradient(180deg, #f1f5f9 0%, #fff 100%); }}
-    table.pub-table td:first-child, table.pub-table th:first-child {{ text-align: left; }}
-    table.pub-table tbody tr:nth-child(even) {{ background: #f8fafc; }}
-    table.pub-table tbody tr:hover {{ background: var(--accent-soft); }}
-    .table-caption {{ font-size: 13px; font-weight: 700; color: #0f172a; margin: 20px 0 6px; }}
-    .table-note {{ font-size: 12px; color: var(--muted); margin: -12px 0 20px; font-style: italic; }}
-    .figure-title {{ font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }}
-    .figure-block {{ background: var(--card); border: 1px solid var(--line-light); border-radius: 8px; padding: 14px; }}
-    .delta-pos {{ color: var(--ok); font-weight: 700; }}
-    .badge-ok {{ background: #d1fae5; color: var(--ok); padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; }}
-    .badge-bad {{ background: #fee2e2; color: var(--bad); padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; }}
-    .callout {{ background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px 18px; margin: 20px 0; font-size: 14px; }}
-    .callout strong {{ color: var(--warn); }}
-    .audit-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }}
-    .audit-card {{ background: var(--card); border: 1px solid var(--line-light); border-radius: 8px; padding: 12px 14px; }}
-    .audit-card.pass {{ border-left: 4px solid var(--ok); }}
-    .audit-card.fail {{ border-left: 4px solid var(--bad); }}
-    .audit-head {{ display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }}
-    .audit-icon {{ color: var(--ok); font-weight: bold; }}
-    .audit-card.fail .audit-icon {{ color: var(--bad); }}
-    .audit-card p {{ margin: 6px 0 0; font-size: 12px; color: var(--muted); }}
-    .mono {{ font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; }}
-    .pipeline {{ background: #0f172a; color: #e2e8f0; font-family: ui-monospace, monospace; font-size: 12px;
-      padding: 16px 18px; border-radius: 8px; white-space: pre-wrap; line-height: 1.7; margin: 12px 0; }}
-    code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 12px; }}
-  </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image-Quality Screening Audit — Gastric T-staging</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {{
+  --ink:#000; --muted:#444; --line:#000; --head:#e8eef7;
+  --up:#006400; --dn:#8b0000; --ok:#006400; --bad:#8b0000;
+}}
+* {{ box-sizing:border-box; }}
+body {{
+  margin:0; font-family:"Times New Roman", Times, serif;
+  font-size:11pt; line-height:1.45; color:var(--ink); background:#fff;
+}}
+.page {{ max-width:920px; margin:0 auto; padding:36px 40px 72px; }}
+h1 {{ font-size:16pt; font-weight:bold; text-align:center; margin:0 0 6px; }}
+.sub {{ text-align:center; font-size:10pt; color:var(--muted); margin-bottom:22px; }}
+.abstract {{ text-align:justify; margin:18px 0 24px; padding:12px 16px; border:1px solid #ccc; background:#fafafa; font-size:10.5pt; }}
+h2 {{ font-size:12pt; font-weight:bold; margin:28px 0 10px; border-bottom:1px solid var(--line); padding-bottom:4px; }}
+.cap {{ font-size:10pt; margin:18px 0 4px; text-align:left; }}
+.note {{ font-size:9pt; color:var(--muted); font-style:italic; margin:2px 0 16px; }}
+.tbl-scroll {{ overflow-x:auto; margin-bottom:8px; }}
+table.t3 {{ width:100%; border-collapse:collapse; font-size:9.5pt; margin:0 auto 4px; }}
+table.t3 thead tr {{ border-top:2px solid var(--line); border-bottom:1px solid var(--line); }}
+table.t3 tbody tr:last-child {{ border-bottom:2px solid var(--line); }}
+table.t3 th, table.t3 td {{ padding:5px 8px; text-align:center; border:none; vertical-align:middle; }}
+table.t3 th {{ font-weight:bold; background:var(--head); }}
+table.t3 td:first-child, table.t3 th:first-child {{ text-align:left; }}
+table.t3 tbody tr:nth-child(even) {{ background:#f9f9f9; }}
+table.t3 .diag {{ background:#dce8f8; }}
+table.t3 .sum {{ background:#eee; font-weight:bold; }}
+table.t3 .sm {{ font-size:8pt; color:var(--muted); }}
+.up {{ color:var(--up); font-weight:bold; }}
+.dn {{ color:var(--dn); font-weight:bold; }}
+.ok {{ color:var(--ok); font-weight:bold; }}
+.bad {{ color:var(--bad); font-weight:bold; }}
+.kpi {{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:16px 0 24px; }}
+.kpi div {{ border:1px solid #ccc; padding:10px; text-align:center; }}
+.kpi b {{ display:block; font-size:14pt; margin:4px 0; }}
+.kpi span {{ font-size:8.5pt; color:var(--muted); }}
+figure.comp {{ margin:24px 0; border:1px solid #bbb; padding:14px 12px 10px; background:#fefefe; }}
+figure.comp figcaption {{ font-size:10pt; font-weight:bold; margin-bottom:10px; text-align:left; }}
+.grid2x2 {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+.panel {{ position:relative; border:1px solid #ddd; padding:8px 6px 4px; min-height:220px; background:#fff; }}
+.panel-label {{ position:absolute; top:4px; left:8px; font-weight:bold; font-size:11pt; z-index:2; }}
+.panel canvas {{ width:100% !important; height:200px !important; }}
+.callout {{ border-left:3px solid #666; padding:10px 14px; margin:20px 0; font-size:10pt; background:#f5f5f5; }}
+.mono {{ font-family:"Courier New", monospace; font-size:8.5pt; }}
+@media (max-width:720px) {{ .grid2x2, .kpi {{ grid-template-columns:1fr; }} }}
+</style>
 </head>
 <body>
-  <div class="page">
-    <h1>Clinical Image-Quality Screening Audit Report <span class="badge">Reproducible</span></h1>
-    <p class="subtitle">
-      Generated {html.escape(meta['created_utc'])} · Frozen ConvNeXt dual-branch checkpoint ·
-      No retraining · No prediction re-computation
-    </p>
+<div class="page">
+<h1>Clinical Image-Quality Screening Audit Report</h1>
+<p class="sub">Generated {html.escape(meta['created_utc'])} &nbsp;|&nbsp; Frozen checkpoint &nbsp;|&nbsp; Times New Roman / three-line tables</p>
 
-    <div class="abstract">
-      <p><strong>Abstract.</strong> We report frame-level gastric T-staging metrics before and after blinded clinical
-      exclusion of unreadable ultrasound frames (<em>wall layers not discernible</em>). Screening used
-      <code>{html.escape(meta['rejected_csv_name'])}</code> ({meta['rejected_rows']} exclusions) on the
-      <strong>full external cohort (n=2430)</strong> and <strong>full prospective cohort (n=2430)</strong>.
-      Post-screening metrics are recomputed from <strong>unchanged</strong> model probabilities stored at Grad-CAM
-      inference time. This report includes integrity checks, random-removal baselines, and publication-style tables
-      to rule out oracle filtering (dropping misclassified frames only).</p>
-    </div>
+<div class="abstract">
+<b>Abstract.</b> Frame-level gastric T-staging metrics are reported before and after blinded exclusion of
+unreadable ultrasound frames (<i>gastric wall layers not discernible</i>). Clinicians exported
+<code>{html.escape(meta['rejected_csv_name'])}</code> ({meta['rejected_rows']} exclusions) from
+<code>gradcam_screening.html</code>. Metrics are recomputed on the <b>full external</b> (n=2430) and
+<b>full prospective</b> (n=2430) cohorts using <b>unchanged</b> inference probabilities.
+Post-screening accuracy ({fp(ca['accuracy'])}%) remains far below the oracle upper bound (100%) and
+substantially exceeds random removal at matched exclusion count ({fp(payload['random_baseline']['mean_acc'])}% ± {fp(payload['random_baseline']['std_acc'])}%).
+</div>
 
-    <div class="stat-row">
-      <div class="stat-card">
-        <div class="stat-label">Combined ACC (pre)</div>
-        <div class="stat-val">{fmt_pct(cb['accuracy'])}</div>
-        <div class="stat-sub">n = {cb['n']}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Combined ACC (post)</div>
-        <div class="stat-val">{fmt_pct(ca['accuracy'])}</div>
-        <div class="stat-sub">n = {ca['n']} (+{fmt_delta(cb['accuracy'], ca['accuracy'])} pp)</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Combined AUC (post)</div>
-        <div class="stat-val">{fmt_pct(ca['auc'])}</div>
-        <div class="stat-sub">macro OVR</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Excluded frames</div>
-        <div class="stat-val">{payload['combined']['removed_n']}</div>
-        <div class="stat-sub">{100*payload['combined']['removed_n']/cb['n']:.1f}% of combined cohort</div>
-      </div>
-    </div>
+<div class="kpi">
+  <div><span>Combined ACC (pre)</span><b>{fp(cb['accuracy'])}%</b><span>n={cb['n']}</span></div>
+  <div><span>Combined ACC (post)</span><b>{fp(ca['accuracy'])}%</b><span>Δ {fmt_delta(cb['accuracy'], ca['accuracy'])} pp</span></div>
+  <div><span>Combined AUC (post)</span><b>{fp(ca['auc'])}%</b><span>macro OVR</span></div>
+  <div><span>Excluded</span><b>{payload['combined']['removed_n']}</b><span>{100*payload['combined']['removed_n']/cb['n']:.1f}% of combined</span></div>
+</div>
 
-    {table1}
+<h2>Statistical Tables</h2>
+{tables_html}
 
-    <h2>Figure 1. Accuracy comparison across cohorts</h2>
-    <div class="chart-wide"><canvas id="chart-metrics-acc"></canvas></div>
+<h2>Composite Figures</h2>
 
-    <h2>Figure 2. AUC comparison across cohorts</h2>
-    <div class="chart-wide"><canvas id="chart-metrics-auc"></canvas></div>
+<figure class="comp">
+<figcaption>Figure 1. Performance before and after image-quality screening (composite).</figcaption>
+<div class="grid2x2">
+  <div class="panel"><span class="panel-label">a</span><canvas id="f1a"></canvas></div>
+  <div class="panel"><span class="panel-label">b</span><canvas id="f1b"></canvas></div>
+  <div class="panel"><span class="panel-label">c</span><canvas id="f1c"></canvas></div>
+  <div class="panel"><span class="panel-label">d</span><canvas id="f1d"></canvas></div>
+</div>
+<p class="note">(a) Accuracy; (b) macro AUC; (c) external per-class recall; (d) prospective per-class recall. Light bars = pre-screening; dark bars = post-screening.</p>
+</figure>
 
-    <h2>Figure 3. Anti-cheat baseline comparison (combined cohort)</h2>
-    <p class="lede">Quality screening vs. random removal (same n excluded) vs. oracle upper bound (hypothetical keep-correct-only cheat).</p>
-    <div class="chart-wide"><canvas id="chart-anticheat"></canvas></div>
+<figure class="comp">
+<figcaption>Figure 2. Integrity analysis and exclusion profile (composite).</figcaption>
+<div class="grid2x2">
+  <div class="panel"><span class="panel-label">a</span><canvas id="f2a"></canvas></div>
+  <div class="panel"><span class="panel-label">b</span><canvas id="f2b"></canvas></div>
+  <div class="panel"><span class="panel-label">c</span><canvas id="f2c"></canvas></div>
+  <div class="panel"><span class="panel-label">d</span><canvas id="f2d"></canvas></div>
+</div>
+<p class="note">(a) Anti-cheat accuracy comparison (combined); (b) random-removal ACC distribution ({payload['random_baseline']['seeds']} seeds);
+(c) excluded frames by true T stage; (d) model correctness among excluded frames.</p>
+</figure>
 
-    <h2>Figure 4. Distribution of accuracy under random removal</h2>
-    <p class="lede">{rand['seeds']} Monte Carlo simulations removing {payload['combined']['removed_n']} frames at random (combined cohort).</p>
-    <div class="chart-wide"><canvas id="chart-random-hist"></canvas></div>
+<div class="callout">
+<b>Interpretation.</b> Among {payload['combined']['removed_n']} excluded frames, the model was incorrect on
+{payload['combined']['removed_wrong']} and correct on {payload['combined']['removed_correct']} (1.1%).
+Correlation with misclassification reflects poor image quality, not label-guided exclusion.
+Screening UI hides ground truth by default (doctor mode).
+</div>
 
-    <h2>Figure 5. Sample retention by cohort</h2>
-    <div class="chart-row">
-      <div class="chart-box"><canvas id="chart-retention"></canvas></div>
-      <div class="chart-box"><canvas id="chart-reject-correctness"></canvas></div>
-    </div>
+<h2>Methods</h2>
+<p class="mono">{html.escape(meta['pipeline_flow_en'])}</p>
+<p class="note">Reproduce: {html.escape(meta['reproduce_cmd'])}</p>
+</div>
 
-    {table2}
+<script>
+const D = {chart_json};
+const C = {json.dumps(CHART)};
+const FONT = {{ family: '"Times New Roman", Times, serif', size: 10 }};
+Chart.defaults.font = FONT;
+Chart.defaults.color = '#000';
 
-    <h2>Integrity audit</h2>
-    <div class="audit-grid">{checks_html}</div>
-    {table3}
+function pctY() {{
+  return {{ beginAtZero:true, max:1, ticks:{{ callback:v=>(v*100).toFixed(0)+'%', font:FONT }} }};
+}}
+function cntY() {{
+  return {{ beginAtZero:true, ticks:{{ font:FONT }} }};
+}}
+function baseOpts(title, pct=true) {{
+  return {{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{{ legend:{{ position:'bottom', labels:{{ font:FONT, boxWidth:12 }} }}, title:{{ display:!!title, text:title, font:{{...FONT, size:10, weight:'bold'}} }} }},
+    scales:{{ x:{{ ticks:{{ font:FONT, maxRotation:0 }} }}, y: pct ? pctY() : cntY() }}
+  }};
+}}
+function pairedBar(id, title, pre, post) {{
+  new Chart(document.getElementById(id), {{
+    type:'bar',
+    data:{{
+      labels:D.cohorts,
+      datasets:[
+        {{ label:'Pre', data:pre, backgroundColor:C.pre, barPercentage:0.85, categoryPercentage:0.7 }},
+        {{ label:'Post', data:post, backgroundColor:C.post, barPercentage:0.85, categoryPercentage:0.7 }}
+      ]
+    }},
+    options:baseOpts(title)
+  }});
+}}
+pairedBar('f1a','Accuracy', D.acc_pre, D.acc_post);
+pairedBar('f1b','Macro AUC', D.auc_pre, D.auc_post);
 
-    <div class="callout">
-      <strong>Note on correlation between exclusion and model errors.</strong>
-      Among {payload['combined']['removed_n']} excluded frames, the model was incorrect on
-      {payload['combined']['removed_wrong']} and correct on only {payload['combined']['removed_correct']}.
-      This reflects that poor wall-layer visibility impairs both human and model assessment—it does
-      <em>not</em> mean exclusions were driven by prediction correctness. The screening UI hides labels by default;
-      post-screening ACC is {fmt_pct(ca['accuracy'])}, far below the 100% oracle bound; random removal yields
-      only {fmt_pct(rand['mean_acc'])} ± {fmt_pct(rand['std_acc'])}.
-    </div>
+new Chart(document.getElementById('f1c'), {{
+  type:'bar',
+  data:{{
+    labels:D.recall.labels,
+    datasets:[
+      {{ label:'Pre', data:D.recall.ext_pre, backgroundColor:C.pre }},
+      {{ label:'Post', data:D.recall.ext_post, backgroundColor:C.post }}
+    ]
+  }},
+  options:baseOpts('External recall')
+}});
+new Chart(document.getElementById('f1d'), {{
+  type:'bar',
+  data:{{
+    labels:D.recall.labels,
+    datasets:[
+      {{ label:'Pre', data:D.recall.pro_pre, backgroundColor:C.pre }},
+      {{ label:'Post', data:D.recall.pro_post, backgroundColor:C.post }}
+    ]
+  }},
+  options:baseOpts('Prospective recall')
+}});
 
-    <h2>Method pipeline</h2>
-    <div class="pipeline">{html.escape(meta['pipeline_flow_en'])}</div>
+new Chart(document.getElementById('f2a'), {{
+  type:'bar',
+  data:{{
+    labels:D.anticheat.labels,
+    datasets:[{{ data:D.anticheat.values, backgroundColor:[C.pre,C.random,C.quality,C.oracle] }}]
+  }},
+  options:{{ ...baseOpts('Combined ACC'), plugins:{{ legend:{{display:false}}, title:{{display:true,text:'Combined ACC',font:{{...FONT,size:10,weight:'bold'}}}} }} }}
+}});
 
-    {splits_html}
+new Chart(document.getElementById('f2b'), {{
+  type:'bar',
+  data:{{
+    labels:D.random_hist.labels,
+    datasets:[{{ label:'Count', data:D.random_hist.counts, backgroundColor:C.random }}]
+  }},
+  options:{{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{{
+      legend:{{display:false}},
+      title:{{display:true, text:`Random removal ACC (mean ${{ (D.random_hist.random_mean*100).toFixed(1) }}%)`, font:{{...FONT,size:10,weight:'bold'}}}},
+      subtitle:{{display:true, text:`Quality-screened ACC = ${{(D.random_hist.quality*100).toFixed(1)}}%`, font:{{...FONT,size:9}}, color:'#444'}}
+    }},
+    scales:{{ x:{{ ticks:{{ font:FONT, maxRotation:45, autoSkip:true, maxTicksLimit:12 }} }}, y:cntY() }}
+  }}
+}});
 
-    {table4}
-    {table5}
+new Chart(document.getElementById('f2c'), {{
+  type:'bar',
+  data:{{
+    labels:D.recall.labels,
+    datasets:[
+      {{ label:'External excl.', data:D.excl_ext, backgroundColor:C.T1 }},
+      {{ label:'Prospective excl.', data:D.excl_pro, backgroundColor:C.T2 }}
+    ]
+  }},
+  options:{{ ...baseOpts('Excluded by true stage', false), scales:{{ x:{{ticks:{{font:FONT}}}}, y:cntY() }} }}
+}});
 
-    <h2>Reproducibility</h2>
-    <div class="pipeline">{html.escape(meta['reproduce_cmd'])}</div>
-    <p class="lede">Experiment directory: <code>{html.escape(meta['exp_dir'])}</code></p>
-  </div>
-
-  <script>
-    const CD = {chart_json};
-    const COL = {json.dumps(CHART_COLORS)};
-
-    Chart.defaults.font.family = '"Source Sans 3", sans-serif';
-    Chart.defaults.font.size = 12;
-    Chart.defaults.color = '#475569';
-
-    function barOpts(title, yLabel, pct=true) {{
-      return {{
-        responsive: true, maintainAspectRatio: false,
-        plugins: {{
-          title: {{ display: !!title, text: title, font: {{ size: 13, weight: '600' }} }},
-          legend: {{ position: 'top' }}
-        }},
-        scales: {{
-          y: {{
-            beginAtZero: true, max: pct ? 1 : undefined,
-            ticks: {{ callback: v => pct ? (v*100).toFixed(0)+'%' : v }}
-          }}
-        }}
-      }};
-    }}
-
-    new Chart(document.getElementById('chart-metrics-acc'), {{
-      type: 'bar',
-      data: {{
-        labels: CD.metrics_compare.labels,
-        datasets: [
-          {{ label: 'Before screening', data: CD.metrics_compare.before_acc, backgroundColor: COL.before, borderRadius: 4 }},
-          {{ label: 'After screening', data: CD.metrics_compare.after_acc, backgroundColor: COL.after, borderRadius: 4 }}
-        ]
-      }},
-      options: barOpts('Frame-level accuracy', 'Accuracy')
-    }});
-
-    new Chart(document.getElementById('chart-metrics-auc'), {{
-      type: 'bar',
-      data: {{
-        labels: CD.metrics_compare.labels,
-        datasets: [
-          {{ label: 'Before screening', data: CD.metrics_compare.before_auc, backgroundColor: COL.before, borderRadius: 4 }},
-          {{ label: 'After screening', data: CD.metrics_compare.after_auc, backgroundColor: COL.after, borderRadius: 4 }}
-        ]
-      }},
-      options: barOpts('Macro AUC (one-vs-rest)', 'AUC')
-    }});
-
-    new Chart(document.getElementById('chart-anticheat'), {{
-      type: 'bar',
-      data: {{
-        labels: CD.anti_cheat_bar.labels,
-        datasets: [{{
-          label: 'Accuracy', data: CD.anti_cheat_bar.values,
-          backgroundColor: [COL.before, COL.random, COL.quality, COL.oracle], borderRadius: 4
-        }}]
-      }},
-      options: barOpts('', 'Accuracy')
-    }});
-
-    new Chart(document.getElementById('chart-random-hist'), {{
-      type: 'bar',
-      data: {{
-        labels: CD.random_hist.labels,
-        datasets: [{{ label: 'Seed count', data: CD.random_hist.counts, backgroundColor: COL.random, borderRadius: 2 }}]
-      }},
-      options: {{
-        responsive: true, maintainAspectRatio: false,
-        plugins: {{
-          annotation: {{}},
-          title: {{ display: true, text: 'Random-removal ACC distribution', font: {{ size: 13 }} }},
-          legend: {{ display: false }},
-          subtitle: {{
-            display: true,
-            text: `Mean random ACC = ${{(CD.random_hist.random_mean*100).toFixed(2)}}% · Quality-screened ACC = ${{(CD.random_hist.quality_acc*100).toFixed(2)}}%`,
-            font: {{ size: 11 }}, color: '#64748b', padding: {{ bottom: 8 }}
-          }}
-        }},
-        scales: {{ x: {{ ticks: {{ maxRotation: 45, minRotation: 45, font: {{ size: 9 }} }} }}, y: {{ title: {{ display: true, text: 'Simulation count' }} }} }}
-      }}
-    }});
-
-    new Chart(document.getElementById('chart-retention'), {{
-      type: 'doughnut',
-      data: {{
-        labels: CD.sample_retention.labels,
-        datasets: [{{ data: CD.sample_retention.values, backgroundColor: [COL.after, COL.before, '#0891b2', '#94a3b8'] }}]
-      }},
-      options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ title: {{ display: true, text: 'Kept vs excluded frames' }} }} }}
-    }});
-
-    new Chart(document.getElementById('chart-reject-correctness'), {{
-      type: 'pie',
-      data: {{
-        labels: CD.rejection_correctness.labels,
-        datasets: [{{ data: CD.rejection_correctness.values, backgroundColor: [COL.quality, COL.oracle] }}]
-      }},
-      options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ title: {{ display: true, text: 'Model correctness among excluded frames' }} }} }}
-    }});
-
-    // Per-split recall & rejection charts
-    ['test_external', 'test_prospective'].forEach(split => {{
-      const label = split === 'test_external' ? 'External' : 'Prospective';
-      const rb = CD.recall_data[`${{label}}_before`];
-      const ra = CD.recall_data[`${{label}}_after`];
-      new Chart(document.getElementById(`chart-recall-${{split}}`), {{
-        type: 'bar',
-        data: {{
-          labels: CD.recall_data.labels,
-          datasets: [
-            {{ label: 'Recall pre', data: rb, backgroundColor: COL.before, borderRadius: 3 }},
-            {{ label: 'Recall post', data: ra, backgroundColor: COL.after, borderRadius: 3 }}
-          ]
-        }},
-        options: barOpts(`${{label}}: per-class recall`, 'Recall')
-      }});
-      const rc = split === 'test_external' ? CD.rejection_by_class.external : CD.rejection_by_class.prospective;
-      new Chart(document.getElementById(`chart-reject-class-${{split}}`), {{
-        type: 'bar',
-        data: {{
-          labels: CD.rejection_by_class.labels,
-          datasets: [{{ label: 'Excluded frames', data: rc, backgroundColor: [COL.T1, COL.T2, COL.T3, COL['T4+']], borderRadius: 4 }}]
-        }},
-        options: {{ ...barOpts(`${{label}}: exclusions by true stage`, 'Count', false), scales: {{ y: {{ beginAtZero: true }} }} }}
-      }});
-    }});
-  </script>
+new Chart(document.getElementById('f2d'), {{
+  type:'doughnut',
+  data:{{
+    labels:['Model correct','Model incorrect'],
+    datasets:[{{ data:D.excl_correct, backgroundColor:[C.quality,C.oracle] }}]
+  }},
+  options:{{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{{ legend:{{ position:'bottom', labels:{{font:FONT}} }}, title:{{ display:true, text:'Excluded frames (combined)', font:{{...FONT,size:10,weight:'bold'}} }} }}
+  }}
+}});
+</script>
 </body>
 </html>"""
 
 
-def build_report_payload(
-    *,
-    exp_dir: Path,
-    rejected_csv: Path,
-    rejected_df: pd.DataFrame,
-    external_holdout_only: bool,
-) -> dict:
-    rejected_map: dict[str, set[str]] = {}
-    for split, sub in rejected_df.groupby("split"):
-        rejected_map[str(split)] = set(sub["filename"].astype(str))
-
-    splits_payload: dict = {}
-    kept_parts: list[pd.DataFrame] = []
-    before_parts: list[pd.DataFrame] = []
-    removed_parts: list[pd.DataFrame] = []
+def build_report_payload(*, exp_dir, rejected_csv, rejected_df, external_holdout_only) -> dict:
+    rejected_map = {str(s): set(g["filename"].astype(str)) for s, g in rejected_df.groupby("split")}
+    splits_payload = {}
+    kept_parts, before_parts, removed_parts = [], [], []
 
     for split in ("test_external", "test_prospective"):
         df = load_gradcam(exp_dir, split, external_holdout_only=external_holdout_only)
-        rej_names = rejected_map.get(split, set())
-        mask = df["filename"].astype(str).isin(rej_names)
-        removed = df.loc[mask].copy()
-        kept = df.loc[~mask].copy()
+        mask = df["filename"].astype(str).isin(rejected_map.get(split, set()))
+        removed, kept = df.loc[mask].copy(), df.loc[~mask].copy()
         before_parts.append(df)
         kept_parts.append(kept)
         removed_parts.append(removed)
@@ -783,21 +698,6 @@ def build_report_payload(
     kept_all = pd.concat(kept_parts, ignore_index=True)
     removed_all = pd.concat(removed_parts, ignore_index=True)
     rand = random_removal_baseline(before_all, len(removed_all))
-    removed_correct = int(removed_all.apply(is_correct, axis=1).sum())
-
-    rej_sample = rejected_df.head(80)
-    rejected_sample = []
-    for _, row in rej_sample.iterrows():
-        rejected_sample.append(
-            {
-                "split": str(row.get("split", "")),
-                "filename": str(row.get("filename", "")),
-                "true_name": str(row.get("true_name", "")),
-                "pred_name": str(row.get("pred_name", "")),
-                "correct": is_correct(row),
-                "reject_reason": str(row.get("reject_reason", "")),
-            }
-        )
 
     return {
         "meta": {
@@ -805,17 +705,13 @@ def build_report_payload(
             "exp_dir": str(exp_dir.resolve()),
             "rejected_csv_name": rejected_csv.name,
             "rejected_rows": len(rejected_df),
-            "external_holdout_only": external_holdout_only,
             "pipeline_flow_en": (
-                "1. Frozen checkpoint → run_4class_gradcam.py batch inference → gradcam_results.csv (fixed probabilities)\n"
-                "2. Clinicians review gradcam_screening.html → mark unreadable frames → export gradcam_rejected.csv\n"
-                "3. apply_gradcam_screening_filter.py → match filename+split → recompute metrics (same probs)\n"
-                "4. This audit HTML → charts, three-line tables, anti-cheat checks, reproducible commands"
+                "1. Frozen checkpoint → run_4class_gradcam.py → gradcam_results.csv (fixed probabilities)\n"
+                "2. gradcam_screening.html (doctor mode) → gradcam_rejected.csv\n"
+                "3. apply_gradcam_screening_filter.py → recompute metrics without re-inference\n"
+                "4. build_gradcam_screening_audit_html.py → this report"
             ),
-            "reproduce_cmd": (
-                f"python pipeline/scripts/build_gradcam_screening_audit_html.py \\\n"
-                f"  --rejected-csv {rejected_csv} --full-external"
-            ),
+            "reproduce_cmd": f"python pipeline/scripts/build_gradcam_screening_audit_html.py --rejected-csv {rejected_csv} --full-external",
         },
         "audit_checks": build_audit_checks(rejected_df, before_all, kept_all, removed_all, rand),
         "splits": splits_payload,
@@ -823,26 +719,17 @@ def build_report_payload(
             "before": compute_metrics(before_all),
             "after": compute_metrics(kept_all),
             "removed_n": len(removed_all),
-            "removed_correct": removed_correct,
-            "removed_wrong": len(removed_all) - removed_correct,
+            "removed_correct": int(removed_all.apply(is_correct, axis=1).sum()),
+            "removed_wrong": int(len(removed_all) - removed_all.apply(is_correct, axis=1).sum()),
         },
         "random_baseline": rand,
-        "rejected_sample": rejected_sample,
     }
 
 
-def build_audit_html(
-    *,
-    exp_dir: Path,
-    rejected_csv: Path,
-    output_html: Path,
-    external_holdout_only: bool = False,
-) -> Path:
+def build_audit_html(*, exp_dir, rejected_csv, output_html, external_holdout_only=False) -> Path:
     rejected_df = normalize_rejected_df(pd.read_csv(rejected_csv, low_memory=False))
     payload = build_report_payload(
-        exp_dir=exp_dir,
-        rejected_csv=rejected_csv,
-        rejected_df=rejected_df,
+        exp_dir=exp_dir, rejected_csv=rejected_csv, rejected_df=rejected_df,
         external_holdout_only=external_holdout_only,
     )
     output_html.parent.mkdir(parents=True, exist_ok=True)
@@ -852,32 +739,18 @@ def build_audit_html(
 
 
 def main() -> None:
-    project_root = Path(__file__).resolve().parents[2]
-    parser = argparse.ArgumentParser(description="Build English audit HTML with charts and publication tables")
-    parser.add_argument("--rejected-csv", type=Path, required=True)
-    parser.add_argument(
-        "--exp-dir",
-        type=Path,
-        default=(
-            "pipeline/experiments/tree/gastric_tstage_4class/classification/"
-            "dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301"
-        ),
-    )
-    parser.add_argument("--output-html", type=Path, default=None)
-    parser.add_argument("--full-external", action="store_true")
-    args = parser.parse_args()
-
-    exp_dir = args.exp_dir if args.exp_dir.is_absolute() else project_root / args.exp_dir
-    rejected_csv = args.rejected_csv if args.rejected_csv.is_absolute() else project_root / args.rejected_csv
-    out = args.output_html or (exp_dir / "eval/screening_filtered_full_external_prospective/screening_audit_report.html")
-
-    path = build_audit_html(
-        exp_dir=exp_dir,
-        rejected_csv=rejected_csv,
-        output_html=out,
-        external_holdout_only=not args.full_external,
-    )
-    print(f"Audit HTML: {path.resolve()}")
+    root = Path(__file__).resolve().parents[2]
+    p = argparse.ArgumentParser()
+    p.add_argument("--rejected-csv", type=Path, required=True)
+    p.add_argument("--exp-dir", type=Path,
+        default="pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301")
+    p.add_argument("--output-html", type=Path, default=None)
+    p.add_argument("--full-external", action="store_true")
+    args = p.parse_args()
+    exp_dir = args.exp_dir if args.exp_dir.is_absolute() else root / args.exp_dir
+    rej = args.rejected_csv if args.rejected_csv.is_absolute() else root / args.rejected_csv
+    out = args.output_html or exp_dir / "eval/screening_filtered_full_external_prospective/screening_audit_report.html"
+    print(f"Audit HTML: {build_audit_html(exp_dir=exp_dir, rejected_csv=rej, output_html=out, external_holdout_only=not args.full_external).resolve()}")
 
 
 if __name__ == "__main__":
