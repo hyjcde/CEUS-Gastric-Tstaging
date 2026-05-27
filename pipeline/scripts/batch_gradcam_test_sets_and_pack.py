@@ -22,7 +22,9 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 from build_gradcam_screening_html import (
     SCREENING_DATA_DIR,
+    SYNC_CSV_NAME,
     build_unified_html as build_screening_html,
+    write_sync_csv_template,
 )
 
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
@@ -221,10 +223,12 @@ def build_clinical_folder_bundle(
         unified_html_sources,
         bundle_root / "gradcam_screening.html",
     )
+    sync_csv = write_sync_csv_template(bundle_root)
     print(
         f"  HTML at root: {bundle_root / 'gradcam_screening.html'} "
         f"({screening_summary['cases']} cases, chunks={screening_summary.get('chunk_count')})"
     )
+    print(f"  Sync CSV: {sync_csv.name} (auto-load / auto-save target)")
 
     layout = verify_bundle_layout(bundle_root)
     if not layout["ok"]:
@@ -368,6 +372,7 @@ def write_bundle_readme(path: Path) -> None:
                 "",
                 "【文件夹结构】",
                 "  gradcam_screening.html           ← 双击打开（唯一入口）",
+                "  gradcam_review_sync.csv          ← 筛图记录（自动读/写）",
                 "  screening_data/                  索引分片（自动加载，勿删）",
                 "  gradcam_test_external_full/      外部测试 panel 图片",
                 "  gradcam_test_prospective_full/   2025 前瞻 panel 图片",
@@ -377,7 +382,12 @@ def write_bundle_readme(path: Path) -> None:
                 "  2. 双击 gradcam_screening.html",
                 "  3. 顶部标签切换：全部 / 外部测试 / 2025前瞻",
                 "  4. 质量差点「✕ 剔除」或按 X；质量好点「✓ 保留」或按 K",
-                "  5. 可按数据集分别导出剔除 CSV",
+                "  5. 首次使用点「绑定自动保存文件」，之后每次操作自动写入 CSV",
+                "  6. 恢复历史：把旧 CSV 复制到本文件夹，命名为 gradcam_review_sync.csv 后刷新",
+                "",
+                "【记录同步】",
+                "  自动读取：gradcam_review_sync.csv / gradcam_review_export.csv / gradcam_rejected.csv",
+                "  自动保存：绑定一次后写入 gradcam_review_sync.csv（需 Chrome/Edge）",
                 "",
                 "【快捷键】",
                 "  → 下一张   X 剔除   K 保留   Z 撤销   F 全屏   ? 帮助",

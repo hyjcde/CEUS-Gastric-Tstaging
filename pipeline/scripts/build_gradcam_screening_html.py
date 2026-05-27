@@ -13,6 +13,11 @@ import pandas as pd
 
 DEFAULT_CHUNK_SIZE = 350
 SCREENING_DATA_DIR = "screening_data"
+SYNC_CSV_NAME = "gradcam_review_sync.csv"
+SYNC_CSV_HEADER = (
+    "uid,filename,split,true_name,pred_name,correct,stage_gap,viewed,rejected,"
+    "reject_reason,note,error_note,annot_true,annot_model,panel,updated_at"
+)
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html lang="zh-CN">
@@ -577,11 +582,18 @@ HTML_TEMPLATE = r"""<!doctype html>
       line-height: 1.6;
       margin-bottom: 10px;
     }
-    .welcome-banner button {
-      float: right;
+    .sync-status {
       font-size: 11px;
-      padding: 4px 8px;
+      color: var(--muted);
+      line-height: 1.5;
+      padding: 8px 10px;
+      background: #0a0f15;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
     }
+    .sync-status.ok { border-color: rgba(52,211,153,.4); color: var(--ok); }
+    .sync-status.warn { border-color: rgba(251,191,36,.4); color: var(--warn); }
     @media (max-width: 1100px) {
       .workspace { grid-template-columns: 1fr; }
       .workspace:not(.sidebar-collapsed) aside {
@@ -686,12 +698,19 @@ HTML_TEMPLATE = r"""<!doctype html>
           </select>
         </details>
         <div class="section-card">
-          <h2>导出</h2>
+          <h2>记录同步</h2>
+          <div class="sync-status" id="sync-status">启动后将自动读取同目录 CSV…</div>
           <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="primary" id="btn-export-reject">导出剔除 CSV</button>
-            <button id="btn-export-split">导出当前数据集 CSV</button>
-            <button id="btn-export-all">导出全部记录</button>
+            <button class="primary" id="btn-bind-sync">绑定自动保存文件（只需一次）</button>
+            <button id="btn-reload-csv">重新加载文件夹 CSV</button>
+            <button id="btn-export-reject">另存剔除 CSV 副本</button>
+            <button id="btn-export-all">另存全部记录副本</button>
             <button id="btn-clear-storage">清空本地标记</button>
+          </div>
+          <div class="hint" style="margin-top:8px">
+            把之前导出的 CSV 复制到本文件夹，命名为
+            <code>gradcam_review_sync.csv</code> 后刷新即可恢复进度。
+            绑定文件后每次操作自动写入，无需再手动导出。
           </div>
         </div>
         <div class="section-card">
@@ -766,6 +785,23 @@ HTML_TEMPLATE = r"""<!doctype html>
     const DATA_PREFIX = __DATA_PREFIX_JSON__;
     const STORAGE_KEY = "gradcam_screening_" + (META.storage_key || "default");
     const STAGE_ORDER = ["T1", "T2", "T3", "T4+"];
+    const SYNC_FILE_NAME = "gradcam_review_sync.csv";
+    const SYNC_CSV_CANDIDATES = [
+      "gradcam_review_sync.csv",
+      "gradcam_review_export.csv",
+      "gradcam_rejected.csv",
+    ];
+    const SYNC_ROW_FIELDS = [
+      "uid", "filename", "split", "true_name", "pred_name", "correct", "stage_gap",
+      "viewed", "rejected", "reject_reason", "note", "error_note",
+      "annot_true", "annot_model", "panel", "updated_at",
+    ];
+    const IDB_NAME = "gradcam_screening_sync_v1";
+    const IDB_HANDLE_KEY = "sync_file_handle";
+
+    let syncFileHandle = null;
+    let syncWriteTimer = null;
+    let syncSourceFile = "";
 
     let CASES = [];
     let reviews = {};
@@ -1126,6 +1162,222 @@ HTML_TEMPLATE = r"""<!doctype html>
       catch (e) { return {}; }
     }
 
+    function updateSyncStatus(text, level) {
+      const el = document.getElementById("sync-status");
+      if (!el) return;
+      el.textContent = text;
+      el.className = "sync-status" + (level ? " " + level : "");
+    }
+
+    function parseCsvLine(line) {
+      const out = [];
+      let cur = "";
+      let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line.charAt(i);
+        if (inQ) {
+          if (c === '"' && line.charAt(i + 1) === '"') { cur += '"'; i++; }
+          else if (c === '"') inQ = false;
+          else cur += c;
+        } else if (c === '"') inQ = true;
+        else if (c === ",") { out.push(cur); cur = ""; }
+        else cur += c;
+      }
+      out.push(cur);
+      return out;
+    }
+
+    function parseCsv(text) {
+      const lines = String(text).replace(/^\ufeff/, "").split(/\r?\n/).filter((l) => l.trim());
+      if (!lines.length) return [];
+      const header = parseCsvLine(lines[0]).map((h) => h.trim());
+      return lines.slice(1).map((line) => {
+        const vals = parseCsvLine(line);
+        const row = {};
+        header.forEach((h, i) => { row[h] = vals[i] ?? ""; });
+        return row;
+      });
+    }
+
+    function resolveUidFromRow(row) {
+      if (row.uid) return String(row.uid).trim();
+      const split = String(row.split || "").trim();
+      const filename = String(row.filename || "").trim();
+      if (split && filename) return `${split}::${filename}`;
+      if (filename) {
+        const hit = CASES.find((c) => c.id === filename || c.uid.endsWith("::" + filename));
+        if (hit) return hit.uid;
+      }
+      return "";
+    }
+
+    function csvRowToReview(row) {
+      const rejected = String(row.rejected || "").trim() === "1";
+      const viewedRaw = String(row.viewed || "").trim();
+      const viewed = viewedRaw === "1" || rejected || !!String(row.updated_at || "").trim();
+      let annot_true = [];
+      let annot_model = [];
+      try { annot_true = JSON.parse(row.annot_true || "[]"); } catch (e) {}
+      try { annot_model = JSON.parse(row.annot_model || "[]"); } catch (e) {}
+      return {
+        viewed,
+        rejected,
+        reason: row.reject_reason || "",
+        note: row.note || "",
+        error_note: row.error_note || "",
+        annot_true,
+        annot_model,
+        updated_at: row.updated_at || new Date().toISOString(),
+      };
+    }
+
+    function mergeCsvRowsIntoReviews(rows) {
+      let merged = 0;
+      for (const row of rows) {
+        const uid = resolveUidFromRow(row);
+        if (!uid) continue;
+        const incoming = csvRowToReview(row);
+        const existing = reviews[uid] ? { ...defaultReview(), ...reviews[uid] } : defaultReview();
+        const oldTs = Date.parse(existing.updated_at || "") || 0;
+        const newTs = Date.parse(incoming.updated_at || "") || 0;
+        if (!reviews[uid] || newTs >= oldTs) {
+          reviews[uid] = { ...existing, ...incoming };
+          merged += 1;
+        }
+      }
+      return merged;
+    }
+
+    async function loadReviewsFromFolderCsv() {
+      for (const name of SYNC_CSV_CANDIDATES) {
+        try {
+          const resp = await fetch(name + "?t=" + Date.now());
+          if (!resp.ok) continue;
+          const text = await resp.text();
+          const rows = parseCsv(text);
+          if (!rows.length) continue;
+          const merged = mergeCsvRowsIntoReviews(rows);
+          if (merged > 0) {
+            syncSourceFile = name;
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
+            return { ok: true, file: name, merged, rows: rows.length };
+          }
+        } catch (e) {}
+      }
+      return { ok: false };
+    }
+
+    function rowsToCsv(rows) {
+      const header = SYNC_ROW_FIELDS;
+      const body = rows.map((row) => header.map((k) => `"${String(row[k] ?? "").replace(/"/g, '""')}"`).join(","));
+      return ["\ufeff" + header.join(",")].concat(body).join("\n");
+    }
+
+    function buildSyncRows() {
+      return CASES.filter((item) => {
+        const rev = getReview(item.uid);
+        return rev.viewed || rev.rejected;
+      }).map(reviewToRow);
+    }
+
+    function openSyncIdb() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("kv");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbSet(key, value) {
+      const db = await openSyncIdb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function idbGet(key) {
+      const db = await openSyncIdb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readonly");
+        const req = tx.objectStore("kv").get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function restoreSyncFileHandle() {
+      if (!("showSaveFilePicker" in window)) return false;
+      try {
+        const handle = await idbGet(IDB_HANDLE_KEY);
+        if (!handle) return false;
+        if (handle.queryPermission && await handle.queryPermission({ mode: "readwrite" }) === "granted") {
+          syncFileHandle = handle;
+          return true;
+        }
+        if (handle.requestPermission && await handle.requestPermission({ mode: "readwrite" }) === "granted") {
+          syncFileHandle = handle;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    }
+
+    async function writeSyncCsvToFile() {
+      if (!syncFileHandle) return false;
+      const rows = buildSyncRows();
+      const csv = rowsToCsv(rows.length ? rows : []);
+      try {
+        const writable = await syncFileHandle.createWritable();
+        await writable.write(csv);
+        await writable.close();
+        updateSyncStatus(`已自动保存 ${rows.length} 条 → ${SYNC_FILE_NAME}`, "ok");
+        return true;
+      } catch (e) {
+        updateSyncStatus("自动保存失败，请重新绑定同步文件", "warn");
+        syncFileHandle = null;
+        return false;
+      }
+    }
+
+    function scheduleSyncFileWrite() {
+      clearTimeout(syncWriteTimer);
+      syncWriteTimer = setTimeout(() => { writeSyncCsvToFile(); }, 400);
+    }
+
+    async function bindSyncFile() {
+      if (!("showSaveFilePicker" in window)) {
+        alert("请使用 Chrome 或 Edge 浏览器，才能将记录自动保存到文件夹中的 CSV。");
+        return;
+      }
+      try {
+        syncFileHandle = await window.showSaveFilePicker({
+          suggestedName: SYNC_FILE_NAME,
+          types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }],
+        });
+        await idbSet(IDB_HANDLE_KEY, syncFileHandle);
+        await writeSyncCsvToFile();
+        toast("已绑定，之后每次操作都会自动保存");
+      } catch (e) {
+        if (e && e.name !== "AbortError") toast("绑定失败：" + (e.message || e));
+      }
+    }
+
+    async function reloadFolderCsv() {
+      const result = await loadReviewsFromFolderCsv();
+      if (result.ok) {
+        updateSyncStatus(`已从 ${result.file} 合并 ${result.merged} 条记录`, "ok");
+        toast(`已加载 ${result.file}`);
+        renderCurrent();
+      } else {
+        updateSyncStatus("未找到可读取的 CSV（请复制到本文件夹后重试）", "warn");
+        toast("未找到 CSV 文件");
+      }
+    }
+
     function defaultReview() {
       return {
         viewed: false,
@@ -1150,6 +1402,13 @@ HTML_TEMPLATE = r"""<!doctype html>
         alert("本地保存失败（可能超出浏览器配额）：" + e.message);
       }
       showSaveIndicator();
+      if (syncFileHandle) scheduleSyncFileWrite();
+      else updateSyncStatus(
+        syncSourceFile
+          ? `已从 ${syncSourceFile} 恢复；绑定文件后可自动写回`
+          : "记录仅在浏览器内；请绑定 CSV 或复制 gradcam_review_sync.csv 到本文件夹",
+        syncSourceFile ? "" : "warn"
+      );
       refreshStats();
       renderList();
     }
@@ -1593,6 +1852,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         correct: item.correct ? "1" : "0",
         stage_gap: item.correct ? "0" : String(stageGap(item)),
         rejected: rev.rejected ? "1" : "0",
+        viewed: rev.viewed ? "1" : "0",
         reject_reason: rev.reason || "",
         note: rev.note || "",
         error_note: rev.error_note || "",
@@ -1651,23 +1911,18 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.querySelectorAll("#stage-chips button").forEach((btn) => {
         btn.onclick = () => setStageFilter(btn.dataset.stage);
       });
+      document.getElementById("btn-bind-sync").onclick = bindSyncFile;
+      document.getElementById("btn-reload-csv").onclick = reloadFolderCsv;
       document.getElementById("btn-export-reject").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
         if (!rows.length) { alert("暂无剔除样本"); return; }
         downloadCsv("gradcam_rejected.csv", rows);
-        toast("已导出 " + rows.length + " 条剔除记录");
-      };
-      document.getElementById("btn-export-split").onclick = () => {
-        const rows = scopeCases(activeSplit).map(reviewToRow).filter((r) => r.rejected === "1");
-        const name = activeSplit === "all" ? "gradcam_rejected_all.csv" : `gradcam_rejected_${activeSplit}.csv`;
-        if (!rows.length) { alert("当前数据集暂无剔除样本"); return; }
-        downloadCsv(name, rows);
-        toast("已导出当前数据集 " + rows.length + " 条");
+        toast("已下载剔除 CSV 副本");
       };
       document.getElementById("btn-export-all").onclick = () => {
-        const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1" || r.error_note || r.annot_true !== "[]" || r.annot_model !== "[]");
-        downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.map(reviewToRow));
-        toast("已导出 CSV");
+        const rows = buildSyncRows();
+        downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.slice(0, 1).map(reviewToRow));
+        toast("已下载全部记录副本");
       };
       document.getElementById("btn-clear-storage").onclick = () => {
         if (confirm("确定清空所有本地标记？")) {
@@ -1737,6 +1992,16 @@ HTML_TEMPLATE = r"""<!doctype html>
         showLoading("正在加载样本索引…", 5);
         CASES = await loadAllCases();
         reviews = loadReviews();
+        const csvLoad = await loadReviewsFromFolderCsv();
+        const hasHandle = await restoreSyncFileHandle();
+        if (csvLoad.ok) {
+          updateSyncStatus(`已从 ${csvLoad.file} 恢复 ${csvLoad.merged} 条记录`, "ok");
+        } else if (hasHandle) {
+          updateSyncStatus("已绑定自动保存文件", "ok");
+        } else {
+          updateSyncStatus("可将历史 CSV 复制为 gradcam_review_sync.csv 后点「重新加载」", "warn");
+        }
+        if (hasHandle) await writeSyncCsvToFile();
         renderDatasetTabs();
         maybeShowWelcome();
         showLoading(`已加载 ${CASES.length} 条，校验图片路径…`, 100);
@@ -1755,6 +2020,14 @@ HTML_TEMPLATE = r"""<!doctype html>
 </body>
 </html>
 """
+
+
+def write_sync_csv_template(bundle_root: Path) -> Path:
+    """Create empty sync CSV in bundle root if missing (do not overwrite doctor progress)."""
+    path = bundle_root / SYNC_CSV_NAME
+    if not path.exists():
+        path.write_text("\ufeff" + SYNC_CSV_HEADER + "\n", encoding="utf-8")
+    return path
 
 
 def rel_asset_path(asset_path: object, root_dir: Path) -> str | None:
@@ -1913,7 +2186,7 @@ def build_unified_html(
     *,
     title: str = "GradCAM 测试集筛图",
     subtitle: str | None = None,
-    storage_key: str = "unified_v6",
+    storage_key: str = "unified_v7",
     mode: str = "unified",
     fixed_split: str | None = None,
     root_folder: str | None = None,
@@ -1968,12 +2241,12 @@ def build_unified_html(
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "gradcam_screening_test_external_v6",
+        "storage_key": "gradcam_screening_test_external_v7",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 2025前瞻全量筛图",
-        "storage_key": "gradcam_screening_test_prospective_2025_full_v6",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v7",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
@@ -1987,7 +2260,7 @@ def build_split_screening_html(source: dict, output_html: Path, *, chunk_size: i
         [{**source, "path_prefix": ""}],
         output_html,
         title=spec.get("title", f"GradCAM {split} 筛图"),
-        storage_key=spec.get("storage_key", f"{split}_v6"),
+        storage_key=spec.get("storage_key", f"{split}_v7"),
         mode="single",
         fixed_split=split,
         root_folder=spec.get("dir_name", root_dir.name),
