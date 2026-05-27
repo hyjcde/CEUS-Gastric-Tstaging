@@ -23,8 +23,10 @@ if str(SCRIPTS_DIR) not in sys.path:
 from build_gradcam_screening_html import (
     SCREENING_DATA_DIR,
     SYNC_CSV_NAME,
+    SYNC_JSON_NAME,
     build_unified_html as build_screening_html,
     write_sync_csv_template,
+    write_sync_json_template,
 )
 
 RUN_SCRIPT = PIPELINE_ROOT / "scripts" / "run_4class_gradcam.py"
@@ -224,11 +226,12 @@ def build_clinical_folder_bundle(
         bundle_root / "gradcam_screening.html",
     )
     sync_csv = write_sync_csv_template(bundle_root)
+    sync_json = write_sync_json_template(bundle_root)
     print(
         f"  HTML at root: {bundle_root / 'gradcam_screening.html'} "
         f"({screening_summary['cases']} cases, chunks={screening_summary.get('chunk_count')})"
     )
-    print(f"  Sync CSV: {sync_csv.name} (auto-load / auto-save target)")
+    print(f"  Sync files: {sync_json.name} (primary), {sync_csv.name} (legacy CSV)")
 
     layout = verify_bundle_layout(bundle_root)
     if not layout["ok"]:
@@ -372,7 +375,8 @@ def write_bundle_readme(path: Path) -> None:
                 "",
                 "【文件夹结构】",
                 "  gradcam_screening.html           ← 双击打开（唯一入口）",
-                "  gradcam_review_sync.csv          ← 筛图记录（自动读/写）",
+                "  gradcam_review_sync.json          ← 进度 JSON（自动读/写，推荐）",
+                "  gradcam_review_sync.csv          ← 进度 CSV（兼容旧版）",
                 "  screening_data/                  索引分片（自动加载，勿删）",
                 "  gradcam_test_external_full/      外部测试 panel 图片",
                 "  gradcam_test_prospective_full/   2025 前瞻 panel 图片",
@@ -382,12 +386,13 @@ def write_bundle_readme(path: Path) -> None:
                 "  2. 双击 gradcam_screening.html",
                 "  3. 顶部标签切换：全部 / 外部测试 / 2025前瞻",
                 "  4. 质量差点「✕ 剔除」或按 X；质量好点「✓ 保留」或按 K",
-                "  5. 首次使用点「绑定自动保存文件」，之后每次操作自动写入 CSV",
-                "  6. 恢复历史：把旧 CSV 复制到本文件夹，命名为 gradcam_review_sync.csv 后刷新",
+                "  5. 首次使用点「绑定 JSON 自动保存」，之后每次操作自动写入",
+                "  6. 恢复历史：复制 JSON/CSV 到本文件夹，或点「导入历史进度」",
                 "",
-                "【记录同步】",
-                "  自动读取：gradcam_review_sync.csv / gradcam_review_export.csv / gradcam_rejected.csv",
-                "  自动保存：绑定一次后写入 gradcam_review_sync.csv（需 Chrome/Edge）",
+                "【记录同步 · 不会随便覆盖】",
+                "  导入/读取时：本机较新的记录优先保留，只补充缺失条目",
+                "  主文件：gradcam_review_sync.json（推荐）",
+                "  兼容：gradcam_review_sync.csv / gradcam_review_export.csv",
                 "",
                 "【快捷键】",
                 "  → 下一张   X 剔除   K 保留   Z 撤销   F 全屏   ? 帮助",

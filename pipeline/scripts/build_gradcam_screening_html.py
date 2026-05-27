@@ -14,6 +14,7 @@ import pandas as pd
 DEFAULT_CHUNK_SIZE = 350
 SCREENING_DATA_DIR = "screening_data"
 SYNC_CSV_NAME = "gradcam_review_sync.csv"
+SYNC_JSON_NAME = "gradcam_review_sync.json"
 SYNC_CSV_HEADER = (
     "uid,filename,split,true_name,pred_name,correct,stage_gap,viewed,rejected,"
     "reject_reason,note,error_note,annot_true,annot_model,panel,updated_at"
@@ -40,15 +41,19 @@ HTML_TEMPLATE = r"""<!doctype html>
       --accent2: #818cf8;
       --true-color: #22c55e;
       --wrong-color: #ef4444;
-      --sidebar-w: 320px;
-      --topbar-h: 56px;
+      --sidebar-w: 340px;
+      --topbar-h: 58px;
+      --radius: 12px;
+      --radius-lg: 16px;
       --shadow: 0 4px 24px rgba(0,0,0,.35);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: var(--bg);
+      background: radial-gradient(1200px 600px at 10% -10%, rgba(96,165,250,.08), transparent),
+                  radial-gradient(900px 500px at 90% 0%, rgba(52,211,153,.06), transparent),
+                  var(--bg);
       color: var(--text);
       height: 100vh;
       overflow: hidden;
@@ -123,11 +128,11 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .workspace.sidebar-collapsed { grid-template-columns: 0 1fr; }
     aside.sidebar {
-      background: var(--panel);
+      background: linear-gradient(180deg, var(--panel) 0%, #0e1520 100%);
       border-right: 1px solid var(--border);
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 12px;
+      padding: 14px;
       min-width: 0;
     }
     .workspace.sidebar-collapsed aside { padding: 0; border: none; overflow: hidden; }
@@ -141,9 +146,14 @@ HTML_TEMPLATE = r"""<!doctype html>
     .section-card {
       background: var(--panel2);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin-bottom: 10px;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+    }
+    .section-card.highlight {
+      border-color: rgba(96,165,250,.35);
+      background: linear-gradient(145deg, rgba(96,165,250,.08), var(--panel2));
     }
     .section-card h2 {
       font-size: 11px;
@@ -170,12 +180,12 @@ HTML_TEMPLATE = r"""<!doctype html>
       gap: 6px;
     }
     .stat {
-      background: #0a0f15;
+      background: linear-gradient(160deg, #0d1420, #0a0f15);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
+      border-radius: var(--radius);
+      padding: 10px 12px;
     }
-    .stat b { display: block; font-size: 18px; font-weight: 700; }
+    .stat b { display: block; font-size: 20px; font-weight: 700; color: #e2e8f0; }
     .stat span { font-size: 10px; color: var(--muted); }
     .filter-chips {
       display: flex;
@@ -392,7 +402,45 @@ HTML_TEMPLATE = r"""<!doctype html>
       min-width: 110px;
       font-weight: 600;
     }
-    .toolbar-large .btn-reject { font-size: 16px; min-width: 140px; }
+    .toolbar-large .btn-reject { font-size: 16px; min-width: 120px; background: linear-gradient(180deg,#c62828,#962018); }
+    .toolbar-large .btn-keep { background: linear-gradient(180deg,#0d8a55,#067647); min-width: 120px; }
+    .action-dock {
+      display: none;
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 800;
+      gap: 14px;
+      padding: 10px 14px;
+      background: rgba(15,23,42,.92);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .action-dock button {
+      min-width: 130px;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 14px 22px;
+      border-radius: 999px;
+    }
+    @media (min-width: 900px) {
+      .workspace:not(.sidebar-collapsed) .action-dock { display: flex; }
+    }
+    .import-zone .sync-status { margin-bottom: 10px; }
+    .btn-stack { display: flex; flex-direction: column; gap: 8px; }
+    .btn-stack button { width: 100%; text-align: left; }
+    .merge-hint {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: rgba(15,23,42,.5);
+      border-radius: 8px;
+    }
     .quick-reasons {
       display: flex;
       flex-wrap: wrap;
@@ -697,20 +745,20 @@ HTML_TEMPLATE = r"""<!doctype html>
             <option value="T4+">T4+</option>
           </select>
         </details>
-        <div class="section-card">
-          <h2>记录同步</h2>
-          <div class="sync-status" id="sync-status">启动后将自动读取同目录 CSV…</div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="primary" id="btn-bind-sync">绑定自动保存文件（只需一次）</button>
-            <button id="btn-reload-csv">重新加载文件夹 CSV</button>
-            <button id="btn-export-reject">另存剔除 CSV 副本</button>
-            <button id="btn-export-all">另存全部记录副本</button>
-            <button id="btn-clear-storage">清空本地标记</button>
+        <div class="section-card highlight">
+          <h2>进度同步</h2>
+          <div class="sync-status" id="sync-status">启动后将自动读取同目录 JSON/CSV…</div>
+          <div class="btn-stack">
+            <button class="primary" id="btn-import">📥 导入历史进度（智能合并）</button>
+            <button id="btn-bind-json">💾 绑定 JSON 自动保存（推荐）</button>
+            <button id="btn-reload-folder">🔄 重新读取文件夹内进度</button>
+            <button id="btn-export-json">⬇ 下载 JSON 备份</button>
+            <button id="btn-export-reject">⬇ 下载剔除 CSV 副本</button>
+            <button id="btn-clear-storage">🗑 清空本地标记</button>
           </div>
-          <div class="hint" style="margin-top:8px">
-            把之前导出的 CSV 复制到本文件夹，命名为
-            <code>gradcam_review_sync.csv</code> 后刷新即可恢复进度。
-            绑定文件后每次操作自动写入，无需再手动导出。
+          <div class="merge-hint">
+            <b>不会随便覆盖：</b>导入/读取时，若本机记录更新，则保留本机；仅补充缺失或合并较新的条目。
+            绑定 <code>gradcam_review_sync.json</code> 后，每次操作自动写入 JSON。
           </div>
         </div>
         <div class="section-card">
@@ -747,6 +795,10 @@ HTML_TEMPLATE = r"""<!doctype html>
         <div class="viewer" id="viewer"><div class="load-box">正在加载索引…</div></div>
       </main>
     </div>
+  </div>
+  <div class="action-dock">
+    <button class="danger btn-reject" id="btn-reject-dock">✕ 剔除</button>
+    <button class="success btn-keep" id="btn-keep-dock">✓ 保留</button>
   </div>
   <div class="toast" id="toast"></div>
   <div class="modal-overlay hidden" id="help-modal">
@@ -786,6 +838,10 @@ HTML_TEMPLATE = r"""<!doctype html>
     const STORAGE_KEY = "gradcam_screening_" + (META.storage_key || "default");
     const STAGE_ORDER = ["T1", "T2", "T3", "T4+"];
     const SYNC_FILE_NAME = "gradcam_review_sync.csv";
+    const SYNC_JSON_NAME = "gradcam_review_sync.json";
+    const SYNC_JSON_CANDIDATES = [
+      "gradcam_review_sync.json",
+    ];
     const SYNC_CSV_CANDIDATES = [
       "gradcam_review_sync.csv",
       "gradcam_review_export.csv",
@@ -796,9 +852,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       "viewed", "rejected", "reject_reason", "note", "error_note",
       "annot_true", "annot_model", "panel", "updated_at",
     ];
-    const IDB_NAME = "gradcam_screening_sync_v1";
-    const IDB_HANDLE_KEY = "sync_file_handle";
+    const IDB_NAME = "gradcam_screening_sync_v2";
+    const IDB_JSON_HANDLE_KEY = "sync_json_handle";
+    const IDB_HANDLE_KEY = "sync_csv_handle";
 
+    let syncJsonHandle = null;
     let syncFileHandle = null;
     let syncWriteTimer = null;
     let syncSourceFile = "";
@@ -1211,6 +1269,49 @@ HTML_TEMPLATE = r"""<!doctype html>
       return "";
     }
 
+    function reviewTimestamp(rev) {
+      return Date.parse((rev && rev.updated_at) || "") || 0;
+    }
+
+    function mergeTwoReviews(existing, incoming) {
+      const e = { ...defaultReview(), ...existing };
+      const n = { ...defaultReview(), ...incoming };
+      const te = reviewTimestamp(e);
+      const tn = reviewTimestamp(n);
+      if (tn > te) return { ...e, ...n, updated_at: n.updated_at || e.updated_at };
+      if (te > tn) return e;
+      return {
+        ...e,
+        viewed: e.viewed || n.viewed,
+        rejected: e.rejected || n.rejected,
+        reason: e.reason || n.reason,
+        note: (String(e.note).length >= String(n.note).length) ? e.note : n.note,
+        error_note: (String(e.error_note).length >= String(n.error_note).length) ? e.error_note : n.error_note,
+        annot_true: ((e.annot_true || []).length >= (n.annot_true || []).length) ? e.annot_true : n.annot_true,
+        annot_model: ((e.annot_model || []).length >= (n.annot_model || []).length) ? e.annot_model : n.annot_model,
+        updated_at: e.updated_at || n.updated_at || new Date().toISOString(),
+      };
+    }
+
+    function mergeReviewsFromObject(incomingMap, stats) {
+      const st = stats || { added: 0, updated: 0, keptLocal: 0 };
+      for (const [uid, rev] of Object.entries(incomingMap || {})) {
+        if (!uid || typeof rev !== "object") continue;
+        const incoming = { ...defaultReview(), ...rev };
+        if (!reviews[uid]) {
+          reviews[uid] = incoming;
+          st.added += 1;
+          continue;
+        }
+        const before = JSON.stringify(reviews[uid]);
+        const merged = mergeTwoReviews(reviews[uid], incoming);
+        reviews[uid] = merged;
+        if (JSON.stringify(merged) !== before) st.updated += 1;
+        else st.keptLocal += 1;
+      }
+      return st;
+    }
+
     function csvRowToReview(row) {
       const rejected = String(row.rejected || "").trim() === "1";
       const viewedRaw = String(row.viewed || "").trim();
@@ -1232,20 +1333,48 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
 
     function mergeCsvRowsIntoReviews(rows) {
-      let merged = 0;
+      const incoming = {};
       for (const row of rows) {
         const uid = resolveUidFromRow(row);
         if (!uid) continue;
-        const incoming = csvRowToReview(row);
-        const existing = reviews[uid] ? { ...defaultReview(), ...reviews[uid] } : defaultReview();
-        const oldTs = Date.parse(existing.updated_at || "") || 0;
-        const newTs = Date.parse(incoming.updated_at || "") || 0;
-        if (!reviews[uid] || newTs >= oldTs) {
-          reviews[uid] = { ...existing, ...incoming };
-          merged += 1;
-        }
+        incoming[uid] = csvRowToReview(row);
       }
-      return merged;
+      return mergeReviewsFromObject(incoming);
+    }
+
+    function buildSyncPayload() {
+      return {
+        version: 2,
+        storage_key: STORAGE_KEY,
+        saved_at: new Date().toISOString(),
+        reviews,
+      };
+    }
+
+    function parseSyncJson(text) {
+      const data = JSON.parse(text);
+      if (data && data.reviews && typeof data.reviews === "object") return data.reviews;
+      if (data && typeof data === "object") return data;
+      return {};
+    }
+
+    async function loadReviewsFromFolderJson() {
+      for (const name of SYNC_JSON_CANDIDATES) {
+        try {
+          const resp = await fetch(name + "?t=" + Date.now());
+          if (!resp.ok) continue;
+          const text = await resp.text();
+          if (!text.trim()) continue;
+          const incoming = parseSyncJson(text);
+          const keys = Object.keys(incoming);
+          if (!keys.length) continue;
+          const stats = mergeReviewsFromObject(incoming);
+          syncSourceFile = name;
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
+          return { ok: true, file: name, stats, count: keys.length };
+        } catch (e) {}
+      }
+      return { ok: false };
     }
 
     async function loadReviewsFromFolderCsv() {
@@ -1256,15 +1385,25 @@ HTML_TEMPLATE = r"""<!doctype html>
           const text = await resp.text();
           const rows = parseCsv(text);
           if (!rows.length) continue;
-          const merged = mergeCsvRowsIntoReviews(rows);
-          if (merged > 0) {
+          const stats = mergeCsvRowsIntoReviews(rows);
+          if (stats.added + stats.updated > 0 || rows.length > 0) {
             syncSourceFile = name;
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
-            return { ok: true, file: name, merged, rows: rows.length };
+            return { ok: true, file: name, stats, count: rows.length };
           }
         } catch (e) {}
       }
       return { ok: false };
+    }
+
+    async function loadReviewsFromFolder() {
+      const jsonRes = await loadReviewsFromFolderJson();
+      if (jsonRes.ok) return jsonRes;
+      return loadReviewsFromFolderCsv();
+    }
+
+    function formatMergeStats(stats) {
+      return `新增 ${stats.added || 0} · 合并 ${stats.updated || 0} · 保留本机较新 ${stats.keptLocal || 0}`;
     }
 
     function rowsToCsv(rows) {
@@ -1312,18 +1451,41 @@ HTML_TEMPLATE = r"""<!doctype html>
     async function restoreSyncFileHandle() {
       if (!("showSaveFilePicker" in window)) return false;
       try {
-        const handle = await idbGet(IDB_HANDLE_KEY);
-        if (!handle) return false;
-        if (handle.queryPermission && await handle.queryPermission({ mode: "readwrite" }) === "granted") {
-          syncFileHandle = handle;
-          return true;
+        const jsonHandle = await idbGet(IDB_JSON_HANDLE_KEY);
+        if (jsonHandle) {
+          let ok = jsonHandle.queryPermission && await jsonHandle.queryPermission({ mode: "readwrite" }) === "granted";
+          if (!ok && jsonHandle.requestPermission) {
+            ok = await jsonHandle.requestPermission({ mode: "readwrite" }) === "granted";
+          }
+          if (ok) { syncJsonHandle = jsonHandle; return true; }
         }
-        if (handle.requestPermission && await handle.requestPermission({ mode: "readwrite" }) === "granted") {
-          syncFileHandle = handle;
-          return true;
+        const csvHandle = await idbGet(IDB_HANDLE_KEY);
+        if (csvHandle) {
+          let ok = csvHandle.queryPermission && await csvHandle.queryPermission({ mode: "readwrite" }) === "granted";
+          if (!ok && csvHandle.requestPermission) {
+            ok = await csvHandle.requestPermission({ mode: "readwrite" }) === "granted";
+          }
+          if (ok) { syncFileHandle = csvHandle; return true; }
         }
       } catch (e) {}
       return false;
+    }
+
+    async function writeSyncJsonToFile() {
+      if (!syncJsonHandle) return false;
+      try {
+        const payload = buildSyncPayload();
+        const writable = await syncJsonHandle.createWritable();
+        await writable.write(JSON.stringify(payload, null, 2));
+        await writable.close();
+        const n = Object.keys(reviews).filter((k) => getReview(k).viewed || getReview(k).rejected).length;
+        updateSyncStatus(`已自动保存 JSON · ${n} 条有效记录`, "ok");
+        return true;
+      } catch (e) {
+        updateSyncStatus("JSON 自动保存失败，请重新绑定", "warn");
+        syncJsonHandle = null;
+        return false;
+      }
     }
 
     async function writeSyncCsvToFile() {
@@ -1334,10 +1496,8 @@ HTML_TEMPLATE = r"""<!doctype html>
         const writable = await syncFileHandle.createWritable();
         await writable.write(csv);
         await writable.close();
-        updateSyncStatus(`已自动保存 ${rows.length} 条 → ${SYNC_FILE_NAME}`, "ok");
         return true;
       } catch (e) {
-        updateSyncStatus("自动保存失败，请重新绑定同步文件", "warn");
         syncFileHandle = null;
         return false;
       }
@@ -1345,38 +1505,86 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function scheduleSyncFileWrite() {
       clearTimeout(syncWriteTimer);
-      syncWriteTimer = setTimeout(() => { writeSyncCsvToFile(); }, 400);
+      syncWriteTimer = setTimeout(async () => {
+        if (syncJsonHandle) await writeSyncJsonToFile();
+        else if (syncFileHandle) await writeSyncCsvToFile();
+      }, 400);
     }
 
-    async function bindSyncFile() {
+    async function bindSyncJsonFile() {
       if (!("showSaveFilePicker" in window)) {
-        alert("请使用 Chrome 或 Edge 浏览器，才能将记录自动保存到文件夹中的 CSV。");
+        alert("请使用 Chrome 或 Edge，才能自动保存 JSON 到文件夹。");
         return;
       }
       try {
-        syncFileHandle = await window.showSaveFilePicker({
-          suggestedName: SYNC_FILE_NAME,
-          types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }],
+        syncJsonHandle = await window.showSaveFilePicker({
+          suggestedName: SYNC_JSON_NAME,
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
         });
-        await idbSet(IDB_HANDLE_KEY, syncFileHandle);
-        await writeSyncCsvToFile();
-        toast("已绑定，之后每次操作都会自动保存");
+        await idbSet(IDB_JSON_HANDLE_KEY, syncJsonHandle);
+        await writeSyncJsonToFile();
+        toast("已绑定 JSON，每次操作自动保存");
       } catch (e) {
         if (e && e.name !== "AbortError") toast("绑定失败：" + (e.message || e));
       }
     }
 
-    async function reloadFolderCsv() {
-      const result = await loadReviewsFromFolderCsv();
-      if (result.ok) {
-        updateSyncStatus(`已从 ${result.file} 合并 ${result.merged} 条记录`, "ok");
-        toast(`已加载 ${result.file}`);
+    async function importProgressFile() {
+      if (!("showOpenFilePicker" in window)) {
+        alert("请使用 Chrome 或 Edge 导入文件");
+        return;
+      }
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          multiple: false,
+          types: [
+            { description: "JSON", accept: { "application/json": [".json"] } },
+            { description: "CSV", accept: { "text/csv": [".csv"] } },
+          ],
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        let stats;
+        if (file.name.toLowerCase().endsWith(".json")) {
+          stats = mergeReviewsFromObject(parseSyncJson(text));
+        } else {
+          stats = mergeCsvRowsIntoReviews(parseCsv(text));
+        }
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
+        updateSyncStatus(`已导入 ${file.name}：${formatMergeStats(stats)}`, "ok");
+        toast(`导入完成：${formatMergeStats(stats)}`);
+        if (syncJsonHandle) scheduleSyncFileWrite();
         renderCurrent();
-      } else {
-        updateSyncStatus("未找到可读取的 CSV（请复制到本文件夹后重试）", "warn");
-        toast("未找到 CSV 文件");
+      } catch (e) {
+        if (e && e.name !== "AbortError") toast("导入失败：" + (e.message || e));
       }
     }
+
+    async function reloadFolderProgress() {
+      const result = await loadReviewsFromFolder();
+      if (result.ok) {
+        updateSyncStatus(`已读取 ${result.file}：${formatMergeStats(result.stats)}`, "ok");
+        toast(`已读取 ${result.file}`);
+        renderCurrent();
+      } else {
+        updateSyncStatus("文件夹内未找到 gradcam_review_sync.json / .csv", "warn");
+        toast("未找到可读取的进度文件");
+      }
+    }
+
+    function downloadJsonBackup() {
+      const payload = buildSyncPayload();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = SYNC_JSON_NAME;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("已下载 JSON 备份");
+    }
+
+    async function bindSyncFile() { return bindSyncJsonFile(); }
 
     function defaultReview() {
       return {
@@ -1402,11 +1610,11 @@ HTML_TEMPLATE = r"""<!doctype html>
         alert("本地保存失败（可能超出浏览器配额）：" + e.message);
       }
       showSaveIndicator();
-      if (syncFileHandle) scheduleSyncFileWrite();
+      if (syncJsonHandle || syncFileHandle) scheduleSyncFileWrite();
       else updateSyncStatus(
         syncSourceFile
-          ? `已从 ${syncSourceFile} 恢复；绑定文件后可自动写回`
-          : "记录仅在浏览器内；请绑定 CSV 或复制 gradcam_review_sync.csv 到本文件夹",
+          ? `已从 ${syncSourceFile} 读取；绑定 JSON 后可自动写回`
+          : "可将历史 JSON/CSV 放入本文件夹，或点「导入历史进度」",
         syncSourceFile ? "" : "warn"
       );
       refreshStats();
@@ -1911,18 +2119,17 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.querySelectorAll("#stage-chips button").forEach((btn) => {
         btn.onclick = () => setStageFilter(btn.dataset.stage);
       });
-      document.getElementById("btn-bind-sync").onclick = bindSyncFile;
-      document.getElementById("btn-reload-csv").onclick = reloadFolderCsv;
+      document.getElementById("btn-import").onclick = importProgressFile;
+      document.getElementById("btn-bind-json").onclick = bindSyncJsonFile;
+      document.getElementById("btn-reload-folder").onclick = reloadFolderProgress;
+      document.getElementById("btn-export-json").onclick = downloadJsonBackup;
+      document.getElementById("btn-reject-dock").onclick = markReject;
+      document.getElementById("btn-keep-dock").onclick = markKeep;
       document.getElementById("btn-export-reject").onclick = () => {
         const rows = CASES.map(reviewToRow).filter((r) => r.rejected === "1");
         if (!rows.length) { alert("暂无剔除样本"); return; }
         downloadCsv("gradcam_rejected.csv", rows);
         toast("已下载剔除 CSV 副本");
-      };
-      document.getElementById("btn-export-all").onclick = () => {
-        const rows = buildSyncRows();
-        downloadCsv("gradcam_review_export.csv", rows.length ? rows : CASES.slice(0, 1).map(reviewToRow));
-        toast("已下载全部记录副本");
       };
       document.getElementById("btn-clear-storage").onclick = () => {
         if (confirm("确定清空所有本地标记？")) {
@@ -1992,16 +2199,17 @@ HTML_TEMPLATE = r"""<!doctype html>
         showLoading("正在加载样本索引…", 5);
         CASES = await loadAllCases();
         reviews = loadReviews();
-        const csvLoad = await loadReviewsFromFolderCsv();
+        const csvLoad = await loadReviewsFromFolder();
         const hasHandle = await restoreSyncFileHandle();
         if (csvLoad.ok) {
-          updateSyncStatus(`已从 ${csvLoad.file} 恢复 ${csvLoad.merged} 条记录`, "ok");
+          updateSyncStatus(`已读取 ${csvLoad.file}：${formatMergeStats(csvLoad.stats)}`, "ok");
         } else if (hasHandle) {
-          updateSyncStatus("已绑定自动保存文件", "ok");
+          updateSyncStatus("已绑定 JSON 自动保存", "ok");
         } else {
-          updateSyncStatus("可将历史 CSV 复制为 gradcam_review_sync.csv 后点「重新加载」", "warn");
+          updateSyncStatus("可导入 JSON/CSV，或复制 gradcam_review_sync.json 到本文件夹", "warn");
         }
-        if (hasHandle) await writeSyncCsvToFile();
+        if (syncJsonHandle) await writeSyncJsonToFile();
+        else if (syncFileHandle) await writeSyncCsvToFile();
         renderDatasetTabs();
         maybeShowWelcome();
         showLoading(`已加载 ${CASES.length} 条，校验图片路径…`, 100);
@@ -2020,6 +2228,16 @@ HTML_TEMPLATE = r"""<!doctype html>
 </body>
 </html>
 """
+
+
+def write_sync_json_template(bundle_root: Path) -> Path:
+    path = bundle_root / SYNC_JSON_NAME
+    if not path.exists():
+        path.write_text(
+            json.dumps({"version": 2, "reviews": {}, "saved_at": ""}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return path
 
 
 def write_sync_csv_template(bundle_root: Path) -> Path:
@@ -2186,7 +2404,7 @@ def build_unified_html(
     *,
     title: str = "GradCAM 测试集筛图",
     subtitle: str | None = None,
-    storage_key: str = "unified_v7",
+    storage_key: str = "unified_v8",
     mode: str = "unified",
     fixed_split: str | None = None,
     root_folder: str | None = None,
@@ -2241,12 +2459,12 @@ def build_unified_html(
 SPLIT_HTML_SPECS = {
     "test_external": {
         "title": "GradCAM 外部测试筛图",
-        "storage_key": "gradcam_screening_test_external_v7",
+        "storage_key": "gradcam_screening_test_external_v8",
         "dir_name": "gradcam_test_external_full",
     },
     "test_prospective": {
         "title": "GradCAM 2025前瞻全量筛图",
-        "storage_key": "gradcam_screening_test_prospective_2025_full_v7",
+        "storage_key": "gradcam_screening_test_prospective_2025_full_v8",
         "dir_name": "gradcam_test_prospective_full",
     },
 }
@@ -2260,7 +2478,7 @@ def build_split_screening_html(source: dict, output_html: Path, *, chunk_size: i
         [{**source, "path_prefix": ""}],
         output_html,
         title=spec.get("title", f"GradCAM {split} 筛图"),
-        storage_key=spec.get("storage_key", f"{split}_v7"),
+        storage_key=spec.get("storage_key", f"{split}_v8"),
         mode="single",
         fixed_split=split,
         root_folder=spec.get("dir_name", root_dir.name),
