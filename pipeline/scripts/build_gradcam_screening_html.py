@@ -29,13 +29,13 @@ HTML_TEMPLATE = r"""<!doctype html>
   <style>
     :root {
       --bg: #000000;
-      --glass: rgba(255, 255, 255, 0.05);
-      --glass2: rgba(255, 255, 255, 0.08);
-      --glass3: rgba(255, 255, 255, 0.11);
-      --panel: rgba(255, 255, 255, 0.06);
-      --panel2: rgba(255, 255, 255, 0.09);
-      --border: rgba(255, 255, 255, 0.12);
-      --border-strong: rgba(255, 255, 255, 0.2);
+      --glass: rgba(255, 255, 255, 0.09);
+      --glass2: rgba(255, 255, 255, 0.14);
+      --glass3: rgba(255, 255, 255, 0.18);
+      --panel: rgba(255, 255, 255, 0.08);
+      --panel2: rgba(255, 255, 255, 0.12);
+      --border: rgba(255, 255, 255, 0.16);
+      --border-strong: rgba(255, 255, 255, 0.28);
       --text: #f5f5f7;
       --muted: #a1a1aa;
       --ok: #34d399;
@@ -45,26 +45,36 @@ HTML_TEMPLATE = r"""<!doctype html>
       --accent2: #a5b4fc;
       --true-color: #22c55e;
       --wrong-color: #ef4444;
-      --sidebar-w: 340px;
+      --sidebar-w: 300px;
       --topbar-h: 58px;
       --radius: 14px;
       --radius-lg: 18px;
-      --blur: 24px;
+      --blur: 40px;
       --shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background:
-        radial-gradient(ellipse 70% 50% at 15% -10%, rgba(96, 165, 250, 0.14), transparent 55%),
-        radial-gradient(ellipse 55% 45% at 85% 110%, rgba(52, 211, 153, 0.08), transparent 50%),
-        var(--bg);
+      background: var(--bg);
       color: var(--text);
       height: 100vh;
       overflow: hidden;
     }
-    .app { display: flex; flex-direction: column; height: 100vh; }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: -20%;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle 480px at 10% 20%, rgba(59, 130, 246, 0.42), transparent 68%),
+        radial-gradient(circle 420px at 92% 12%, rgba(16, 185, 129, 0.32), transparent 65%),
+        radial-gradient(circle 560px at 78% 88%, rgba(139, 92, 246, 0.28), transparent 70%),
+        radial-gradient(circle 360px at 22% 82%, rgba(244, 114, 182, 0.2), transparent 68%);
+      filter: blur(2px);
+    }
+    .app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
     .topbar {
       height: var(--topbar-h);
       min-height: var(--topbar-h);
@@ -72,11 +82,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       align-items: center;
       gap: 16px;
       padding: 0 16px;
-      background: rgba(0, 0, 0, 0.45);
-      backdrop-filter: blur(var(--blur));
-      -webkit-backdrop-filter: blur(var(--blur));
-      border-bottom: 1px solid var(--border);
-      box-shadow: var(--shadow);
+      background: rgba(10, 10, 12, 0.55);
+      backdrop-filter: blur(var(--blur)) saturate(1.4);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(1.4);
+      border-bottom: 1px solid var(--border-strong);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1);
       z-index: 100;
     }
     .brand { min-width: 160px; }
@@ -150,10 +160,10 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .workspace.sidebar-collapsed { grid-template-columns: 0 1fr; }
     aside.sidebar {
-      background: rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(var(--blur));
-      -webkit-backdrop-filter: blur(var(--blur));
-      border-right: 1px solid var(--border);
+      background: rgba(8, 8, 10, 0.52);
+      backdrop-filter: blur(var(--blur)) saturate(1.35);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+      border-right: 1px solid var(--border-strong);
       overflow-y: auto;
       overflow-x: hidden;
       padding: 14px;
@@ -169,17 +179,17 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .section-card {
       background: var(--glass);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
+      backdrop-filter: blur(20px) saturate(1.3);
+      -webkit-backdrop-filter: blur(20px) saturate(1.3);
+      border: 1px solid var(--border-strong);
       border-radius: var(--radius);
       padding: 12px 14px;
       margin-bottom: 12px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
     .section-card.highlight {
-      border-color: rgba(126, 184, 255, 0.35);
-      background: rgba(126, 184, 255, 0.08);
+      border-color: rgba(126, 184, 255, 0.45);
+      background: rgba(126, 184, 255, 0.12);
     }
     .section-card h2 {
       font-size: 11px;
@@ -190,18 +200,33 @@ HTML_TEMPLATE = r"""<!doctype html>
       font-weight: 600;
     }
     label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
-    select, input[type="text"], input[type="number"], textarea {
+    input[type="text"], input[type="number"], textarea {
       width: 100%;
-      background: rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 8px 10px;
       font-size: 13px;
     }
-    textarea { min-height: 56px; resize: vertical; }
+    textarea { min-height: 48px; resize: vertical; }
+    .chip-row, .filter-chips, .reason-chips, .stage-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip-row button, .filter-chips button, .reason-chips button, .stage-chips button {
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 999px;
+    }
+    .chip-row button.active, .filter-chips button.active, .reason-chips button.active, .stage-chips button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
     .stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -217,30 +242,15 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .stat b { display: block; font-size: 20px; font-weight: 700; color: #e2e8f0; }
     .stat span { font-size: 10px; color: var(--muted); }
-    .filter-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    .filter-chips button {
-      font-size: 12px;
-      padding: 5px 10px;
-      border-radius: 999px;
-    }
-    .filter-chips button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
     .toolbar {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       padding: 10px 16px;
       border-bottom: 1px solid var(--border);
-      background: rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(var(--blur));
-      -webkit-backdrop-filter: blur(var(--blur));
+      background: rgba(8, 8, 10, 0.5);
+      backdrop-filter: blur(var(--blur)) saturate(1.3);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(1.3);
       align-items: center;
     }
     button {
@@ -321,14 +331,65 @@ HTML_TEMPLATE = r"""<!doctype html>
       max-height: calc(100vh - 200px);
       box-shadow: var(--shadow);
     }
-    .panel-stage.zoom-fit .panel-img { min-width: 0; width: 100%; }
-    .panel-stage.zoom-150 .panel-inner { transform: scale(1.5); transform-origin: top center; }
-    .panel-stage.zoom-200 .panel-inner { transform: scale(2); transform-origin: top center; }
+    .panel-stage.zoom-fit .panel-img { min-width: 0; width: 100%; cursor: zoom-in; }
+    .panel-stage .panel-hint {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 6;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.55);
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 4px 12px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .panel-stage.is-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      max-width: none;
+      max-height: none;
+      min-height: 100vh;
+      width: 100vw;
+      height: 100vh;
+      border-radius: 0;
+      border: none;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      overflow: auto;
+    }
+    .panel-stage.is-fullscreen .panel-overlay { top: 16px; right: 16px; }
+    .panel-stage.is-fullscreen .panel-hint { bottom: 20px; font-size: 12px; }
+    .panel-stage.is-fullscreen .panel-inner {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 40px);
+      padding: 12px;
+    }
+    .panel-stage.is-fullscreen .panel-img {
+      min-width: 0;
+      width: auto;
+      height: auto;
+      max-width: 98vw;
+      max-height: 96vh;
+      object-fit: contain;
+      cursor: zoom-out;
+    }
     .panel-img {
       display: block;
       width: 100%;
       height: auto;
       min-width: 720px;
+      cursor: zoom-in;
     }
     .panel-stage canvas.draw-layer {
       position: absolute;
@@ -506,20 +567,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       background: rgba(15,23,42,.5);
       border-radius: 8px;
     }
-    .quick-reasons {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 0 14px 10px;
-      background: rgba(0, 0, 0, 0.25);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border);
-    }
-    .quick-reasons button {
-      font-size: 12px;
-      padding: 6px 10px;
-    }
+    .quick-reasons { display: none; }
     .doctor-banner {
       background: var(--glass);
       backdrop-filter: blur(16px);
@@ -563,23 +611,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       align-items: center;
       margin-bottom: 6px;
     }
-    .panel-stage.zoom-fit .panel-img { min-width: 0; width: 100%; }
-    .panel-stage.is-fullscreen {
-      position: fixed;
-      inset: 0;
-      z-index: 9000;
-      max-width: none;
-      max-height: none;
-      min-height: 100vh;
-      border-radius: 0;
+    .panel-stage.is-fullscreen canvas.draw-layer {
+      max-width: 98vw;
+      max-height: 96vh;
     }
-    details.advanced { margin-top: 8px; }
-    details.advanced summary {
-      cursor: pointer;
-      font-size: 12px;
-      color: var(--muted);
-      user-select: none;
-    }
+    details.advanced { display: none; }
     .mode-toggle { display: none; }
     .modal-overlay {
       position: fixed; inset: 0;
@@ -618,10 +654,10 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .main-progress {
       padding: 14px 18px 12px;
-      background: rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(var(--blur));
-      -webkit-backdrop-filter: blur(var(--blur));
-      border-bottom: 1px solid var(--border);
+      background: rgba(8, 8, 10, 0.48);
+      backdrop-filter: blur(var(--blur)) saturate(1.3);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(1.3);
+      border-bottom: 1px solid var(--border-strong);
     }
     .progress-hero {
       display: grid;
@@ -707,12 +743,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       letter-spacing: .04em;
       color: var(--text);
     }
-    .stage-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-    .stage-chips button {
-      font-size: 11px;
-      padding: 4px 10px;
-      border-radius: 999px;
-    }
+    .stage-chips { margin-top: 6px; }
     .stage-chips button.active { background: var(--accent2); border-color: var(--accent2); }
     .panel-overlay {
       position: absolute;
@@ -834,46 +865,22 @@ HTML_TEMPLATE = r"""<!doctype html>
           </div>
           <label>搜索患者号 / 文件名</label>
           <input id="filter-search" type="text" placeholder="输入后回车跳转">
-          <label>跳转到序号（当前列表）</label>
-          <input id="jump-index" type="number" min="1" placeholder="例如 1200">
         </div>
         <div class="section-card">
           <h2>剔除原因</h2>
-          <select id="reject-reason">
-            <option value="图像质量差-胃壁层次不清">胃壁层次不清</option>
-            <option value="图像质量差-伪影/遮挡">伪影 / 遮挡</option>
-            <option value="图像质量差-其他">其他质量问题</option>
-            <option value="暂不确定">暂不确定</option>
-          </select>
+          <input type="hidden" id="reject-reason" value="图像质量差-胃壁层次不清">
+          <div class="reason-chips" id="reason-chips">
+            <button type="button" data-reason="图像质量差-胃壁层次不清" class="active">层次不清</button>
+            <button type="button" data-reason="图像质量差-伪影/遮挡">伪影遮挡</button>
+            <button type="button" data-reason="图像质量差-其他">其他</button>
+            <button type="button" data-reason="暂不确定">暂不确定</button>
+          </div>
           <label>备注（可选）</label>
           <textarea id="reject-note" placeholder="可选备注"></textarea>
         </div>
-        <details class="advanced">
-          <summary>高级筛选（算法组）</summary>
-          <select id="filter-split" class="hidden">
-            <option value="all">全部</option>
-            <option value="test_external">外部测试</option>
-            <option value="test_prospective">前瞻测试</option>
-          </select>
-          <select id="filter-status" class="hidden">
-            <option value="unreviewed" selected>未浏览</option>
-            <option value="all">全部</option>
-            <option value="reject">已标记剔除</option>
-            <option value="keep">未剔除</option>
-            <option value="wrong">仅分错</option>
-            <option value="correct">仅分对</option>
-            <option value="cross">跨级误分</option>
-            <option value="adjacent">相邻误分</option>
-          </select>
-          <label>真实 T 分期</label>
-          <select id="filter-true">
-            <option value="all">全部</option>
-            <option value="T1">T1</option>
-            <option value="T2">T2</option>
-            <option value="T3">T3</option>
-            <option value="T4+">T4+</option>
-          </select>
-        </details>
+        <input type="hidden" id="filter-split" value="all">
+        <input type="hidden" id="filter-status" value="unreviewed">
+        <input type="hidden" id="filter-true" value="all">
         <div class="section-card highlight" style="order:-3">
           <h2>恢复 / 同步进度</h2>
           <div class="sync-steps">
@@ -928,16 +935,7 @@ HTML_TEMPLATE = r"""<!doctype html>
           <button class="success" id="btn-keep">保留</button>
           <button id="btn-next">下一张</button>
           <button id="btn-undo" title="撤销 (Z)">撤销</button>
-          <button id="btn-zoom-out" title="缩小 (-)">−</button>
-          <button id="btn-zoom-reset" title="100%">100%</button>
-          <button id="btn-zoom-in" title="放大 (+)">+</button>
-          <button id="btn-fullscreen" title="全屏 (F)">全屏</button>
-        </div>
-        <div class="quick-reasons">
-          <span style="font-size:12px;color:var(--muted);align-self:center">快选原因：</span>
-          <button data-reason="图像质量差-胃壁层次不清">1 层次不清</button>
-          <button data-reason="图像质量差-伪影/遮挡">2 伪影遮挡</button>
-          <button data-reason="图像质量差-其他">3 其他</button>
+          <button id="btn-fullscreen" title="全屏放大 (F)">全屏放大</button>
         </div>
         <div class="viewer" id="viewer"><div class="load-box">正在加载索引…</div></div>
       </main>
@@ -958,10 +956,10 @@ HTML_TEMPLATE = r"""<!doctype html>
         <tr><td><kbd>X</kbd></td><td>标记剔除</td></tr>
         <tr><td><kbd>K</kbd></td><td>标记保留</td></tr>
         <tr><td><kbd>Z</kbd></td><td>撤销剔除</td></tr>
-        <tr><td><kbd>F</kbd></td><td>全屏看图</td></tr>
+        <tr><td><kbd>F</kbd> / 双击图片</td><td>全屏放大查看</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>退出全屏</td></tr>
         <tr><td><kbd>Home</kbd></td><td>跳到未浏览</td></tr>
         <tr><td><kbd>1/2/3</kbd></td><td>快选剔除原因</td></tr>
-        <tr><td><kbd>+ / −</kbd></td><td>放大 / 缩小</td></tr>
         <tr><td><kbd>[ / ]</kbd></td><td>切换数据集标签</td></tr>
         <tr><td><kbd>C</kbd></td><td>复制患者号</td></tr>
         <tr><td><kbd>?</kbd></td><td>显示本帮助</td></tr>
@@ -1027,7 +1025,6 @@ HTML_TEMPLATE = r"""<!doctype html>
     let lastRejectedUid = null;
     let toastTimer = null;
     let activeSplit = "all";
-    let zoomLevel = 100;
     let splitPositions = {};
     let sidebarCollapsed = false;
 
@@ -1068,6 +1065,15 @@ HTML_TEMPLATE = r"""<!doctype html>
       });
       currentIndex = 0;
       renderCurrent();
+    }
+
+    function setRejectReason(reason, silent) {
+      const input = document.getElementById("reject-reason");
+      if (input) input.value = reason;
+      document.querySelectorAll("#reason-chips button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.reason === reason);
+      });
+      if (!silent) toast("已选择：" + String(reason).replace("图像质量差-", ""));
     }
 
     function copyPatientId() {
@@ -1207,14 +1213,31 @@ HTML_TEMPLATE = r"""<!doctype html>
       renderCurrent();
     }
 
-    function setZoom(level) {
-      zoomLevel = Math.max(75, Math.min(200, level));
+    function ensurePanelFit() {
+      const stage = document.getElementById("panel-stage");
+      if (stage && !stage.classList.contains("is-fullscreen")) stage.classList.add("zoom-fit");
+    }
+
+    function enterFullscreen() {
       const stage = document.getElementById("panel-stage");
       if (!stage) return;
-      stage.classList.remove("zoom-fit", "zoom-150", "zoom-200");
-      if (zoomLevel <= 100) stage.classList.add("zoom-fit");
-      else if (zoomLevel <= 150) stage.classList.add("zoom-150");
-      else stage.classList.add("zoom-200");
+      stage.classList.add("is-fullscreen");
+      document.body.style.overflow = "hidden";
+      toast("按 Esc 退出全屏");
+    }
+
+    function exitFullscreen() {
+      const stage = document.getElementById("panel-stage");
+      if (!stage) return;
+      stage.classList.remove("is-fullscreen");
+      document.body.style.overflow = "";
+    }
+
+    function toggleFullscreen() {
+      const stage = document.getElementById("panel-stage");
+      if (!stage) return;
+      if (stage.classList.contains("is-fullscreen")) exitFullscreen();
+      else enterFullscreen();
     }
 
     function toggleSidebar() {
@@ -1929,8 +1952,9 @@ HTML_TEMPLATE = r"""<!doctype html>
           <button id="clear-annot">清空标注</button>
           <span class="legend"><span class="g">绿色=真实病灶</span> · <span class="r">红色=模型看错</span></span>
         </div>` : ""}
-        <div class="panel-stage" id="panel-stage">
+        <div class="panel-stage zoom-fit" id="panel-stage">
           <div class="panel-overlay">${overlay}</div>
+          <span class="panel-hint">双击图片或按 F 全屏放大</span>
           <div class="panel-inner">
             <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}" loading="lazy" decoding="async"
               onerror="document.getElementById('panel-stage').innerHTML=window.__imgErr('${err}')">
@@ -2037,6 +2061,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       renderList();
       const viewer = document.getElementById("viewer");
       const item = filtered[currentIndex];
+      const wasFullscreen = document.getElementById("panel-stage")?.classList.contains("is-fullscreen");
       currentItem = item || null;
       if (!item) {
         viewer.innerHTML = `<div class="empty">${CASES.length ? "当前筛选条件下没有样本，可切换「全部」或清空搜索" : "没有可显示的样本"}</div>`;
@@ -2048,7 +2073,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       saveReviews();
 
       document.getElementById("reject-note").value = rev.note || "";
-      if (rev.reason) document.getElementById("reject-reason").value = rev.reason;
+      const reasonVal = rev.reason || document.getElementById("reject-reason").value;
+      setRejectReason(reasonVal, true);
 
       const gap = stageGap(item);
       const gapText = item.correct ? "—" : (gap > 1 ? `跨级 Δ=${gap}` : "相邻误分");
@@ -2108,23 +2134,12 @@ HTML_TEMPLATE = r"""<!doctype html>
         redrawAnnotations();
       });
       bind("btn-copy-pid", copyPatientId);
-      bind("btn-zoom-fit", () => { setZoom(100); });
-      bind("btn-zoom-100", () => {
-        setZoom(100);
-        document.getElementById("panel-stage")?.classList.remove("zoom-fit");
-      });
+      const panelImg = document.getElementById("panel-img");
+      if (panelImg) panelImg.addEventListener("dblclick", (e) => { e.preventDefault(); enterFullscreen(); });
       setupCanvas();
-      setZoom(zoomLevel);
+      ensurePanelFit();
+      if (wasFullscreen) enterFullscreen();
       prefetchAdjacent();
-    }
-
-    function toggleFullscreen() {
-      const stage = document.getElementById("panel-stage");
-      if (!stage) return;
-      stage.classList.toggle("is-fullscreen");
-      if (stage.classList.contains("is-fullscreen")) {
-        toast("按 Esc 或再点「全屏」退出");
-      }
     }
 
     function persistSidebarFields(rejected) {
@@ -2167,9 +2182,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
 
     function setQuickReason(reason) {
-      const sel = document.getElementById("reject-reason");
-      if (sel) sel.value = reason;
-      toast("已选择：" + reason.replace("图像质量差-", ""));
+      setRejectReason(reason);
     }
 
     function goPrev() {
@@ -2189,14 +2202,6 @@ HTML_TEMPLATE = r"""<!doctype html>
         if (!getReview(filtered[idx].uid).viewed) { currentIndex = idx; renderCurrent(); return; }
       }
       goNext();
-    }
-
-    function jumpToIndex() {
-      const raw = document.getElementById("jump-index").value;
-      const n = parseInt(raw, 10);
-      if (!n || n < 1 || !filtered.length) return;
-      currentIndex = Math.min(filtered.length - 1, n - 1);
-      renderCurrent();
     }
 
     function searchAndJump() {
@@ -2272,11 +2277,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("help-modal").onclick = (e) => {
         if (e.target.id === "help-modal") showHelp(false);
       };
-      document.getElementById("btn-zoom-in").onclick = () => { setZoom(zoomLevel + 25); toast("缩放 " + zoomLevel + "%"); };
-      document.getElementById("btn-zoom-out").onclick = () => { setZoom(zoomLevel - 25); toast("缩放 " + zoomLevel + "%"); };
-      document.getElementById("btn-zoom-reset").onclick = () => { setZoom(100); toast("100%"); };
-      document.querySelectorAll(".quick-reasons button[data-reason]").forEach((btn) => {
-        btn.onclick = () => setQuickReason(btn.dataset.reason);
+      document.querySelectorAll("#reason-chips button[data-reason]").forEach((btn) => {
+        btn.onclick = () => setRejectReason(btn.dataset.reason);
       });
       document.querySelectorAll("#filter-chips button").forEach((btn) => {
         btn.onclick = () => setFilterStatus(btn.dataset.status);
@@ -2314,14 +2316,9 @@ HTML_TEMPLATE = r"""<!doctype html>
           toast("已清空");
         }
       };
-      document.getElementById("filter-true").addEventListener("change", () => { currentIndex = 0; renderCurrent(); });
       document.getElementById("filter-search").addEventListener("input", () => { currentIndex = 0; renderCurrent(); });
       document.getElementById("filter-search").addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); searchAndJump(); }
-      });
-      document.getElementById("jump-index").addEventListener("change", jumpToIndex);
-      document.getElementById("jump-index").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") jumpToIndex();
       });
 
       document.addEventListener("keydown", (e) => {
@@ -2330,7 +2327,7 @@ HTML_TEMPLATE = r"""<!doctype html>
           showHelp(false); return;
         }
         if (document.getElementById("panel-stage")?.classList.contains("is-fullscreen") && e.key === "Escape") {
-          document.getElementById("panel-stage").classList.remove("is-fullscreen");
+          exitFullscreen();
           return;
         }
         if (e.key === "?") { showHelp(true); return; }
@@ -2348,8 +2345,6 @@ HTML_TEMPLATE = r"""<!doctype html>
         if (e.key === "1") setQuickReason("图像质量差-胃壁层次不清");
         if (e.key === "2") setQuickReason("图像质量差-伪影/遮挡");
         if (e.key === "3") setQuickReason("图像质量差-其他");
-        if (e.key === "+" || e.key === "=") { setZoom(zoomLevel + 25); toast("缩放 " + zoomLevel + "%"); }
-        if (e.key === "-") { setZoom(zoomLevel - 25); toast("缩放 " + zoomLevel + "%"); }
         if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
         if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
       });
