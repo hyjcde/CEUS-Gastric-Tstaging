@@ -426,7 +426,41 @@ HTML_TEMPLATE = r"""<!doctype html>
     @media (min-width: 900px) {
       .workspace:not(.sidebar-collapsed) .action-dock { display: flex; }
     }
-    .import-zone .sync-status { margin-bottom: 10px; }
+    .sync-steps {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .sync-step {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 12px;
+      line-height: 1.55;
+      padding: 8px 10px;
+      background: rgba(15,23,42,.55);
+      border-radius: 8px;
+      border: 1px dashed var(--border);
+    }
+    .sync-step-num {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sync-filenames {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .sync-filenames code { color: var(--accent); font-size: 11px; }
     .btn-stack { display: flex; flex-direction: column; gap: 8px; }
     .btn-stack button { width: 100%; text-align: left; }
     .merge-hint {
@@ -807,21 +841,30 @@ HTML_TEMPLATE = r"""<!doctype html>
             <option value="T4+">T4+</option>
           </select>
         </details>
-        <div class="section-card highlight">
-          <h2>进度同步</h2>
-          <div class="sync-status" id="sync-status">启动后将自动读取同目录 JSON/CSV…</div>
+        <div class="section-card highlight" style="order:-3">
+          <h2>恢复 / 同步进度</h2>
+          <div class="sync-steps">
+            <div class="sync-step">
+              <span class="sync-step-num">1</span>
+              <div>
+                把 CSV 放进<strong>本文件夹</strong>（与 HTML 同级）
+                <div class="sync-filenames">推荐文件名：<code>gradcam_rejected.csv</code> · <code>gradcam_review_sync.csv</code></div>
+              </div>
+            </div>
+            <div class="sync-step">
+              <span class="sync-step-num">2</span>
+              <div>点击下方按钮同步（不会覆盖本机较新记录）</div>
+            </div>
+          </div>
+          <div class="sync-status" id="sync-status">等待同步…</div>
           <div class="btn-stack">
-            <button class="primary" id="btn-import">📥 导入历史进度（智能合并）</button>
-            <button id="btn-bind-json">💾 绑定 JSON 自动保存（推荐）</button>
-            <button id="btn-reload-folder">🔄 重新读取文件夹内进度</button>
+            <button class="primary" id="btn-sync-csv">📥 同步文件夹中的 CSV</button>
+            <button id="btn-bind-json">💾 绑定自动保存（筛完后自动写 JSON）</button>
             <button id="btn-export-json">⬇ 下载 JSON 备份</button>
             <button id="btn-export-reject">⬇ 下载剔除 CSV 副本</button>
             <button id="btn-clear-storage">🗑 清空本地标记</button>
           </div>
-          <div class="merge-hint">
-            <b>不会随便覆盖：</b>导入/读取时，若本机记录更新，则保留本机；仅补充缺失或合并较新的条目。
-            绑定 <code>gradcam_review_sync.json</code> 后，每次操作自动写入 JSON。
-          </div>
+          <input type="file" id="csv-file-input" accept=".csv,text/csv" class="hidden">
         </div>
         <div class="section-card">
           <h2>样本列表</h2>
@@ -915,8 +958,11 @@ HTML_TEMPLATE = r"""<!doctype html>
     ];
     const SYNC_CSV_CANDIDATES = [
       "gradcam_review_sync.csv",
-      "gradcam_review_export.csv",
       "gradcam_rejected.csv",
+      "gradcam_review_export.csv",
+      "筛图记录.csv",
+      "筛图进度.csv",
+      "review_sync.csv",
     ];
     const SYNC_ROW_FIELDS = [
       "uid", "filename", "split", "true_name", "pred_name", "correct", "stage_gap",
@@ -1462,6 +1508,9 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
 
     async function loadReviewsFromFolderCsv() {
+      const mergedFiles = [];
+      let totalStats = { added: 0, updated: 0, keptLocal: 0 };
+      let totalCount = 0;
       for (const name of SYNC_CSV_CANDIDATES) {
         try {
           const resp = await fetch(name + "?t=" + Date.now());
@@ -1470,12 +1519,22 @@ HTML_TEMPLATE = r"""<!doctype html>
           const rows = parseCsv(text);
           if (!rows.length) continue;
           const stats = mergeCsvRowsIntoReviews(rows);
-          if (stats.added + stats.updated > 0 || rows.length > 0) {
-            syncSourceFile = name;
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
-            return { ok: true, file: name, stats, count: rows.length };
-          }
+          mergedFiles.push(name);
+          totalStats.added += stats.added || 0;
+          totalStats.updated += stats.updated || 0;
+          totalStats.keptLocal += stats.keptLocal || 0;
+          totalCount += rows.length;
+          syncSourceFile = name;
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
         } catch (e) {}
+      }
+      if (mergedFiles.length) {
+        return {
+          ok: true,
+          file: mergedFiles.join(" + "),
+          stats: totalStats,
+          count: totalCount,
+        };
       }
       return { ok: false };
     }
@@ -1613,47 +1672,59 @@ HTML_TEMPLATE = r"""<!doctype html>
       }
     }
 
-    async function importProgressFile() {
-      if (!("showOpenFilePicker" in window)) {
-        alert("请使用 Chrome 或 Edge 导入文件");
-        return;
+    function applyImportedCsvText(text, fileName) {
+      const rows = parseCsv(text);
+      if (!rows.length) {
+        toast("CSV 为空或格式不对");
+        return null;
       }
-      try {
-        const [handle] = await window.showOpenFilePicker({
-          multiple: false,
-          types: [
-            { description: "JSON", accept: { "application/json": [".json"] } },
-            { description: "CSV", accept: { "text/csv": [".csv"] } },
-          ],
-        });
-        const file = await handle.getFile();
-        const text = await file.text();
-        let stats;
-        if (file.name.toLowerCase().endsWith(".json")) {
-          stats = mergeReviewsFromObject(parseSyncJson(text));
-        } else {
-          stats = mergeCsvRowsIntoReviews(parseCsv(text));
-        }
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
-        updateSyncStatus(`已导入 ${file.name}：${formatMergeStats(stats)}`, "ok");
-        toast(`导入完成：${formatMergeStats(stats)}`);
-        if (syncJsonHandle) scheduleSyncFileWrite();
-        renderCurrent();
-      } catch (e) {
-        if (e && e.name !== "AbortError") toast("导入失败：" + (e.message || e));
-      }
+      const stats = mergeCsvRowsIntoReviews(rows);
+      syncSourceFile = fileName || "import.csv";
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch (e) {}
+      updateSyncStatus(`已从 ${syncSourceFile} 同步：${formatMergeStats(stats)}`, "ok");
+      toast(`同步完成：${formatMergeStats(stats)}`);
+      if (syncJsonHandle || syncFileHandle) scheduleSyncFileWrite();
+      renderCurrent();
+      return stats;
     }
 
-    async function reloadFolderProgress() {
-      const result = await loadReviewsFromFolder();
-      if (result.ok) {
-        updateSyncStatus(`已读取 ${result.file}：${formatMergeStats(result.stats)}`, "ok");
-        toast(`已读取 ${result.file}`);
+    async function syncCsvFromFolder(manualPick) {
+      updateSyncStatus("正在读取文件夹中的 CSV…", "");
+      const csvRes = await loadReviewsFromFolderCsv();
+      if (csvRes.ok) {
+        updateSyncStatus(`已同步 ${csvRes.file}：${formatMergeStats(csvRes.stats)}`, "ok");
+        toast(`已从 ${csvRes.file} 同步进度`);
         renderCurrent();
-      } else {
-        updateSyncStatus("文件夹内未找到 gradcam_review_sync.json / .csv", "warn");
-        toast("未找到可读取的进度文件");
+        if (syncJsonHandle || syncFileHandle) scheduleSyncFileWrite();
+        return true;
       }
+      if (manualPick !== false) {
+        updateSyncStatus("未找到 CSV，请选择文件…", "warn");
+        if ("showOpenFilePicker" in window) {
+          try {
+            const [handle] = await window.showOpenFilePicker({
+              multiple: false,
+              types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }],
+            });
+            const file = await handle.getFile();
+            applyImportedCsvText(await file.text(), file.name);
+            return true;
+          } catch (e) {
+            if (e && e.name === "AbortError") {
+              updateSyncStatus("未选择文件；请把 CSV 放入本文件夹后重试", "warn");
+              return false;
+            }
+          }
+        }
+        document.getElementById("csv-file-input")?.click();
+      } else {
+        updateSyncStatus("文件夹内未找到 CSV（请复制 gradcam_rejected.csv 等到本目录）", "warn");
+      }
+      return false;
+    }
+
+    async function importProgressFile() {
+      return syncCsvFromFolder(true);
     }
 
     function downloadJsonBackup() {
@@ -2229,9 +2300,14 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.querySelectorAll("#stage-chips button").forEach((btn) => {
         btn.onclick = () => setStageFilter(btn.dataset.stage);
       });
-      document.getElementById("btn-import").onclick = importProgressFile;
+      document.getElementById("btn-sync-csv").onclick = () => syncCsvFromFolder(true);
+      document.getElementById("csv-file-input")?.addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        applyImportedCsvText(await file.text(), file.name);
+        e.target.value = "";
+      });
       document.getElementById("btn-bind-json").onclick = bindSyncJsonFile;
-      document.getElementById("btn-reload-folder").onclick = reloadFolderProgress;
       document.getElementById("btn-export-json").onclick = downloadJsonBackup;
       document.getElementById("btn-reject-dock").onclick = markReject;
       document.getElementById("btn-keep-dock").onclick = markKeep;
@@ -2309,14 +2385,14 @@ HTML_TEMPLATE = r"""<!doctype html>
         showLoading("正在加载样本索引…", 5);
         CASES = await loadAllCases();
         reviews = loadReviews();
-        const csvLoad = await loadReviewsFromFolder();
+        const folderRes = await loadReviewsFromFolder();
         const hasHandle = await restoreSyncFileHandle();
-        if (csvLoad.ok) {
-          updateSyncStatus(`已读取 ${csvLoad.file}：${formatMergeStats(csvLoad.stats)}`, "ok");
+        if (folderRes.ok) {
+          updateSyncStatus(`已自动同步 ${folderRes.file}：${formatMergeStats(folderRes.stats)}`, "ok");
         } else if (hasHandle) {
-          updateSyncStatus("已绑定 JSON 自动保存", "ok");
+          updateSyncStatus("已绑定自动保存；筛图后自动写入 JSON", "ok");
         } else {
-          updateSyncStatus("可导入 JSON/CSV，或复制 gradcam_review_sync.json 到本文件夹", "warn");
+          updateSyncStatus("若有历史 CSV，放入本文件夹后点「同步文件夹中的 CSV」", "warn");
         }
         if (syncJsonHandle) await writeSyncJsonToFile();
         else if (syncFileHandle) await writeSyncCsvToFile();
