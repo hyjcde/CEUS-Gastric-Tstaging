@@ -120,6 +120,16 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .topbar-actions button:hover { background: var(--panel2); }
     .topbar-actions button.active { outline: 2px solid var(--accent); background: rgba(96,165,250,.15); }
+    .topbar-progress {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ok);
+      background: rgba(52,211,153,.12);
+      border: 1px solid rgba(52,211,153,.35);
+      border-radius: 999px;
+      padding: 6px 12px;
+      white-space: nowrap;
+    }
     .workspace {
       flex: 1;
       display: grid;
@@ -379,22 +389,9 @@ HTML_TEMPLATE = r"""<!doctype html>
     .progress-label {
       display: flex;
       justify-content: space-between;
-      font-size: 12px;
+      font-size: 13px;
       color: var(--muted);
       margin-bottom: 6px;
-    }
-    .progress-bar {
-      height: 10px;
-      background: #0a0f15;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-    .progress-bar > i {
-      display: block;
-      height: 100%;
-      background: linear-gradient(90deg, #2563eb, #3ecf8e);
-      transition: width 0.25s ease;
     }
     .toolbar-large button {
       font-size: 15px;
@@ -541,9 +538,72 @@ HTML_TEMPLATE = r"""<!doctype html>
       font-size: 12px; font-weight: 600;
     }
     .main-progress {
-      padding: 10px 16px 0;
-      background: var(--panel);
+      padding: 14px 18px 12px;
+      background: linear-gradient(180deg, rgba(96,165,250,.10), rgba(15,23,42,.0));
       border-bottom: 1px solid var(--border);
+    }
+    .progress-hero {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .progress-ring {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: conic-gradient(var(--ok) calc(var(--pct, 0) * 1%), #1e293b 0);
+      position: relative;
+      box-shadow: 0 0 0 4px rgba(52,211,153,.15);
+    }
+    .progress-ring::after {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border-radius: 50%;
+      background: var(--panel);
+    }
+    .progress-ring span {
+      position: relative;
+      z-index: 1;
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .hero-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .hero-metric {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .hero-metric b { display: block; font-size: 22px; font-weight: 800; line-height: 1.1; }
+    .hero-metric span { font-size: 11px; color: var(--muted); }
+    .hero-metric.reject b { color: #fbbf24; }
+    .hero-metric.remaining b { color: var(--accent); }
+    .progress-label { font-size: 13px; }
+    .progress-bar {
+      height: 14px;
+      background: #0a0f15;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 4px;
+      border: 1px solid var(--border);
+    }
+    .progress-bar > i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #2563eb, #3ecf8e);
+      transition: width 0.35s ease;
     }
     .save-indicator {
       font-size: 11px;
@@ -662,6 +722,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       </div>
       <nav class="dataset-tabs" id="dataset-tabs" aria-label="数据集切换"></nav>
       <div class="topbar-actions">
+        <span class="topbar-progress" id="topbar-progress">总进度 0%</span>
         <span class="save-indicator" id="save-indicator">✓ 已保存</span>
         <button id="btn-summary" title="进度总览">📊</button>
         <button id="btn-theme" title="切换浅色/深色">🌓</button>
@@ -678,16 +739,17 @@ HTML_TEMPLATE = r"""<!doctype html>
           请打开<strong>本文件夹根目录</strong>的 <code>gradcam_screening.html</code>（不是子文件夹里的旧版）。
           顶部标签可切换「外部测试 / 2025前瞻」，按 <kbd>X</kbd> 剔除、<kbd>K</kbd> 保留。
         </div>
-        <div class="section-card">
+        <div class="section-card highlight" style="order:-2">
           <h2>当前进度</h2>
           <div class="stats">
             <div class="stat"><b id="stat-reviewed-pct">0%</b><span>已浏览</span></div>
             <div class="stat"><b id="stat-reject">0</b><span>已剔除</span></div>
             <div class="stat"><b id="stat-remaining">0</b><span>未浏览</span></div>
-            <div class="stat"><b id="stat-idx">0/0</b><span>当前位置</span></div>
+            <div class="stat"><b id="stat-idx">0/0</b><span>当前列表</span></div>
           </div>
+          <div class="hint" id="scope-hint">切换顶部标签可查看各数据集进度</div>
         </div>
-        <div class="section-card">
+        <div class="section-card" style="order:-1">
           <h2>筛选</h2>
           <div class="filter-chips" id="filter-chips">
             <button data-status="unreviewed" class="active">未浏览</button>
@@ -768,6 +830,15 @@ HTML_TEMPLATE = r"""<!doctype html>
       </aside>
       <main>
         <div class="main-progress">
+          <div class="progress-hero">
+            <div class="progress-ring" id="progress-ring" style="--pct:0"><span id="hero-pct">0%</span></div>
+            <div class="hero-metrics">
+              <div class="hero-metric"><b id="hero-reviewed">0</b><span>已浏览</span></div>
+              <div class="hero-metric reject"><b id="hero-reject">0</b><span>已剔除</span></div>
+              <div class="hero-metric remaining"><b id="hero-remaining">0</b><span>未浏览</span></div>
+              <div class="hero-metric"><b id="hero-total">0</b><span>本集总数</span></div>
+            </div>
+          </div>
           <div class="progress-label">
             <span id="progress-text">加载中…</span>
             <span id="progress-count">0 / 0</span>
@@ -1216,8 +1287,21 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
 
     function loadReviews() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
-      catch (e) { return {}; }
+      try {
+        let data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        if (Object.keys(data).length === 0) {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith("gradcam_screening_") && k !== STORAGE_KEY) {
+              try {
+                const legacy = JSON.parse(localStorage.getItem(k) || "{}");
+                if (Object.keys(legacy).length > Object.keys(data).length) data = legacy;
+              } catch (e) {}
+            }
+          }
+        }
+        return data;
+      } catch (e) { return {}; }
     }
 
     function updateSyncStatus(text, level) {
@@ -1664,22 +1748,48 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function refreshStats() {
       const scope = scopeCases(activeSplit);
+      const globalScope = CASES;
       const rejectCount = scope.filter((c) => getReview(c.uid).rejected).length;
       const reviewedCount = scope.filter((c) => getReview(c.uid).viewed).length;
       const total = scope.length;
       const remaining = total - reviewedCount;
       const pct = total ? Math.round((reviewedCount / total) * 100) : 0;
+      const globalReviewed = globalScope.filter((c) => getReview(c.uid).viewed).length;
+      const globalTotal = globalScope.length;
+      const globalPct = globalTotal ? Math.round((globalReviewed / globalTotal) * 100) : 0;
+      const globalReject = globalScope.filter((c) => getReview(c.uid).rejected).length;
+
       document.getElementById("stat-reviewed-pct").textContent = pct + "%";
       document.getElementById("stat-reject").textContent = rejectCount;
       document.getElementById("stat-remaining").textContent = remaining;
       document.getElementById("stat-idx").textContent = filtered.length ? `${currentIndex + 1}/${filtered.length}` : "0/0";
+
+      const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      setText("hero-pct", pct + "%");
+      setText("hero-reviewed", reviewedCount);
+      setText("hero-reject", rejectCount);
+      setText("hero-remaining", remaining);
+      setText("hero-total", total);
+      setText("topbar-progress", `总进度 ${globalPct}%`);
+
+      const ring = document.getElementById("progress-ring");
+      if (ring) ring.style.setProperty("--pct", String(pct));
+
       const fill = document.getElementById("progress-fill");
       const pText = document.getElementById("progress-text");
       const pCount = document.getElementById("progress-count");
       const splitName = SPLIT_DEFS.find((d) => d.id === activeSplit)?.label || "全部";
+      const hint = document.getElementById("scope-hint");
       if (fill) fill.style.width = pct + "%";
-      if (pText) pText.textContent = remaining > 0 ? `【${splitName}】还剩 ${remaining} 张未浏览` : `【${splitName}】已全部浏览完成`;
-      if (pCount) pCount.textContent = `${reviewedCount} / ${total}`;
+      if (pText) {
+        pText.textContent = remaining > 0
+          ? `【${splitName}】已浏览 ${reviewedCount}/${total}，还剩 ${remaining} 张`
+          : `【${splitName}】已全部浏览完成 🎉`;
+      }
+      if (pCount) pCount.textContent = `全部 ${globalReviewed}/${globalTotal} · 剔除 ${globalReject}`;
+      if (hint) hint.textContent = activeSplit === "all"
+        ? `全部合集：已浏览 ${globalReviewed}/${globalTotal}（${globalPct}%）`
+        : `${splitName}：${reviewedCount}/${total}（${pct}%）· 全部合集 ${globalPct}%`;
       renderDatasetTabs();
     }
 
