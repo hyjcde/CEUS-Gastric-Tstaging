@@ -615,6 +615,18 @@ HTML_TEMPLATE = r"""<!doctype html>
       max-width: 98vw;
       max-height: 96vh;
     }
+    details.sync-details { margin-bottom: 12px; }
+    details.sync-details summary {
+      cursor: pointer;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      font-weight: 600;
+      list-style: none;
+      margin-bottom: 8px;
+    }
+    details.sync-details summary::-webkit-details-marker { display: none; }
     details.advanced { display: none; }
     .mode-toggle { display: none; }
     .modal-overlay {
@@ -881,8 +893,8 @@ HTML_TEMPLATE = r"""<!doctype html>
         <input type="hidden" id="filter-split" value="all">
         <input type="hidden" id="filter-status" value="unreviewed">
         <input type="hidden" id="filter-true" value="all">
-        <div class="section-card highlight" style="order:-3">
-          <h2>恢复 / 同步进度</h2>
+        <details class="section-card highlight sync-details" style="order:-3" open>
+          <summary>恢复 / 同步进度</summary>
           <div class="sync-steps">
             <div class="sync-step">
               <span class="sync-step-num">1</span>
@@ -905,7 +917,7 @@ HTML_TEMPLATE = r"""<!doctype html>
             <button id="btn-clear-storage">清空本地标记</button>
           </div>
           <input type="file" id="csv-file-input" accept=".csv,text/csv" class="hidden">
-        </div>
+        </details>
         <div class="section-card">
           <h2>样本列表</h2>
           <div class="list" id="thumb-list"></div>
@@ -1069,11 +1081,18 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function setRejectReason(reason, silent) {
       const input = document.getElementById("reject-reason");
-      if (input) input.value = reason;
+      const val = reason || (input && input.value) || "图像质量差-胃壁层次不清";
+      if (input) input.value = val;
+      let matched = false;
       document.querySelectorAll("#reason-chips button").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.reason === reason);
+        const on = btn.dataset.reason === val;
+        btn.classList.toggle("active", on);
+        if (on) matched = true;
       });
-      if (!silent) toast("已选择：" + String(reason).replace("图像质量差-", ""));
+      if (!matched) {
+        document.querySelectorAll("#reason-chips button").forEach((btn) => btn.classList.remove("active"));
+      }
+      if (!silent) toast("已选择：" + String(val).replace("图像质量差-", ""));
     }
 
     function copyPatientId() {
@@ -1211,6 +1230,39 @@ HTML_TEMPLATE = r"""<!doctype html>
       });
       currentIndex = 0;
       renderCurrent();
+    }
+
+    function bindPanelZoom() {
+      const stage = document.getElementById("panel-stage");
+      const img = document.getElementById("panel-img");
+      if (img) {
+        img.onerror = () => {
+          img.style.display = "none";
+          if (!stage?.querySelector(".panel-load-error")) {
+            const msg = document.createElement("div");
+            msg.className = "empty panel-load-error";
+            msg.innerHTML = "图片加载失败<br>请确认已完整解压，且 HTML 与 <code>gradcam_test_*_full</code> 在同一目录";
+            img.parentElement?.appendChild(msg);
+          }
+        };
+        img.ondblclick = (e) => { e.preventDefault(); enterFullscreen(); };
+        img.onclick = (e) => {
+          if (stage?.classList.contains("is-fullscreen")) {
+            e.preventDefault();
+            exitFullscreen();
+          }
+        };
+      }
+    }
+
+    function ensureVisibleFilterList() {
+      applyFilters();
+      if (filtered.length || !CASES.length) return;
+      const reviewed = CASES.filter((c) => getReview(c.uid).viewed).length;
+      if (reviewed > 0) {
+        setFilterStatus("all");
+        toast(`已恢复 ${reviewed} 条进度，已切换到「全部」列表`);
+      }
     }
 
     function ensurePanelFit() {
@@ -1794,7 +1846,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       else updateSyncStatus(
         syncSourceFile
           ? `已从 ${syncSourceFile} 读取；绑定 JSON 后可自动写回`
-          : "可将历史 JSON/CSV 放入本文件夹，或点「导入历史进度」",
+          : "进度已保存在浏览器；换电脑请用 CSV 同步",
         syncSourceFile ? "" : "warn"
       );
       refreshStats();
@@ -1821,7 +1873,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     function applyFilters() {
       const split = document.getElementById("filter-split")?.value || activeSplit;
       const status = document.getElementById("filter-status")?.value || "unreviewed";
-      const trueName = document.getElementById("filter-true").value;
+      const trueName = (document.getElementById("filter-true") || {}).value || "all";
       const search = document.getElementById("filter-search").value.trim().toLowerCase();
       filtered = CASES.filter((item) => {
         const rev = getReview(item.uid);
@@ -1935,7 +1987,6 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function buildPanelHtml(item, showAnnot) {
       const src = panelSrc(item.panel);
-      const err = item.panel.replace(/'/g, "\\'");
       const rev = getReview(item.uid);
       const overlay = rev.rejected
         ? `<span class="overlay-badge reject">已剔除</span>`
@@ -1956,8 +2007,7 @@ HTML_TEMPLATE = r"""<!doctype html>
           <div class="panel-overlay">${overlay}</div>
           <span class="panel-hint">双击图片或按 F 全屏放大</span>
           <div class="panel-inner">
-            <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}" loading="lazy" decoding="async"
-              onerror="document.getElementById('panel-stage').innerHTML=window.__imgErr('${err}')">
+            <img class="panel-img" id="panel-img" src="${src}" alt="${escHtml(item.id)}" loading="lazy" decoding="async">
             ${showAnnot ? `<canvas id="annot-canvas" class="draw-layer"></canvas>` : ""}
           </div>
         </div>
@@ -2064,7 +2114,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       const wasFullscreen = document.getElementById("panel-stage")?.classList.contains("is-fullscreen");
       currentItem = item || null;
       if (!item) {
-        viewer.innerHTML = `<div class="empty">${CASES.length ? "当前筛选条件下没有样本，可切换「全部」或清空搜索" : "没有可显示的样本"}</div>`;
+        const status = document.getElementById("filter-status")?.value || "unreviewed";
+        const hint = status === "unreviewed"
+          ? "当前「未浏览」列表为空。若已同步过进度，请点「全部」查看；或切换顶部数据集标签。"
+          : "当前筛选条件下没有样本，可切换「全部」或清空搜索";
+        viewer.innerHTML = `<div class="empty">${CASES.length ? hint : "没有可显示的样本"}</div>`;
         return;
       }
       const rev = getReview(item.uid);
@@ -2093,6 +2147,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       const infoHtml = `
           <div class="info info-large">
             <div class="filename">#${currentIndex + 1} · ${escHtml(item.id)}</div>
+            <button type="button" id="btn-copy-pid">复制患者号</button>
             <span class="tag split">${splitLabel(item.split)}</span>
             <span class="folder-badge">${escHtml(folderLabel(item))}</span>
             <div>真实 <b>${item.true}</b> → 预测 <b>${item.pred}</b></div>
@@ -2134,8 +2189,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         redrawAnnotations();
       });
       bind("btn-copy-pid", copyPatientId);
-      const panelImg = document.getElementById("panel-img");
-      if (panelImg) panelImg.addEventListener("dblclick", (e) => { e.preventDefault(); enterFullscreen(); });
+      bindPanelZoom();
       setupCanvas();
       ensurePanelFit();
       if (wasFullscreen) enterFullscreen();
@@ -2320,6 +2374,15 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("filter-search").addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); searchAndJump(); }
       });
+      document.getElementById("reject-note").addEventListener("blur", () => {
+        const item = filtered[currentIndex];
+        if (!item) return;
+        const rev = getReview(item.uid);
+        rev.note = document.getElementById("reject-note").value.trim();
+        rev.updated_at = new Date().toISOString();
+        reviews[item.uid] = rev;
+        saveReviews();
+      });
 
       document.addEventListener("keydown", (e) => {
         if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
@@ -2365,6 +2428,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         const hasHandle = await restoreSyncFileHandle();
         if (folderRes.ok) {
           updateSyncStatus(`已自动同步 ${folderRes.file}：${formatMergeStats(folderRes.stats)}`, "ok");
+          document.querySelector("details.sync-details")?.setAttribute("open", "");
         } else if (hasHandle) {
           updateSyncStatus("已绑定自动保存；筛图后自动写入 JSON", "ok");
         } else {
@@ -2374,6 +2438,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         else if (syncFileHandle) await writeSyncCsvToFile();
         renderDatasetTabs();
         maybeShowWelcome();
+        ensureVisibleFilterList();
         showLoading(`已加载 ${CASES.length} 条，校验图片路径…`, 100);
         verifyPaths(() => renderCurrent());
       } catch (err) {
