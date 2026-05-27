@@ -28,32 +28,38 @@ HTML_TEMPLATE = r"""<!doctype html>
   <title>__PAGE_TITLE__</title>
   <style>
     :root {
-      --bg: #0a0e14;
-      --panel: #121a24;
-      --panel2: #1a2433;
-      --border: #2d3a4d;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
+      --bg: #000000;
+      --glass: rgba(255, 255, 255, 0.05);
+      --glass2: rgba(255, 255, 255, 0.08);
+      --glass3: rgba(255, 255, 255, 0.11);
+      --panel: rgba(255, 255, 255, 0.06);
+      --panel2: rgba(255, 255, 255, 0.09);
+      --border: rgba(255, 255, 255, 0.12);
+      --border-strong: rgba(255, 255, 255, 0.2);
+      --text: #f5f5f7;
+      --muted: #a1a1aa;
       --ok: #34d399;
       --bad: #f87171;
       --warn: #fbbf24;
-      --accent: #60a5fa;
-      --accent2: #818cf8;
+      --accent: #7eb8ff;
+      --accent2: #a5b4fc;
       --true-color: #22c55e;
       --wrong-color: #ef4444;
       --sidebar-w: 340px;
       --topbar-h: 58px;
-      --radius: 12px;
-      --radius-lg: 16px;
-      --shadow: 0 4px 24px rgba(0,0,0,.35);
+      --radius: 14px;
+      --radius-lg: 18px;
+      --blur: 24px;
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: radial-gradient(1200px 600px at 10% -10%, rgba(96,165,250,.08), transparent),
-                  radial-gradient(900px 500px at 90% 0%, rgba(52,211,153,.06), transparent),
-                  var(--bg);
+      background:
+        radial-gradient(ellipse 70% 50% at 15% -10%, rgba(96, 165, 250, 0.14), transparent 55%),
+        radial-gradient(ellipse 55% 45% at 85% 110%, rgba(52, 211, 153, 0.08), transparent 50%),
+        var(--bg);
       color: var(--text);
       height: 100vh;
       overflow: hidden;
@@ -66,7 +72,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       align-items: center;
       gap: 16px;
       padding: 0 16px;
-      background: linear-gradient(180deg, #141c28 0%, #101820 100%);
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
       border-bottom: 1px solid var(--border);
       box-shadow: var(--shadow);
       z-index: 100;
@@ -85,24 +93,26 @@ HTML_TEMPLATE = r"""<!doctype html>
       flex: 1;
       min-width: 140px;
       max-width: 220px;
-      background: var(--panel);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 8px 12px;
       cursor: pointer;
       text-align: left;
       transition: border-color .15s, background .15s;
     }
-    .dataset-tab:hover { background: var(--panel2); border-color: #3d4f66; }
+    .dataset-tab:hover { background: var(--glass2); border-color: var(--border-strong); }
     .dataset-tab.active {
-      border-color: var(--accent);
-      background: rgba(96,165,250,.12);
-      box-shadow: inset 0 0 0 1px rgba(96,165,250,.25);
+      border-color: rgba(126, 184, 255, 0.55);
+      background: rgba(126, 184, 255, 0.12);
+      box-shadow: inset 0 0 0 1px rgba(126, 184, 255, 0.2);
     }
     .dataset-tab .tab-title { font-size: 13px; font-weight: 600; display: block; }
     .dataset-tab .tab-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .dataset-tab .tab-bar {
-      height: 4px; background: #0a0f15; border-radius: 99px; margin-top: 6px; overflow: hidden;
+      height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 99px; margin-top: 6px; overflow: hidden;
     }
     .dataset-tab .tab-bar i {
       display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--ok));
@@ -111,15 +121,17 @@ HTML_TEMPLATE = r"""<!doctype html>
     .topbar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
     .topbar-actions button, .seg-btn {
       border: 1px solid var(--border);
-      background: var(--panel);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       color: var(--text);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 7px 11px;
       cursor: pointer;
       font-size: 12px;
     }
-    .topbar-actions button:hover { background: var(--panel2); }
-    .topbar-actions button.active { outline: 2px solid var(--accent); background: rgba(96,165,250,.15); }
+    .topbar-actions button:hover { background: var(--glass2); border-color: var(--border-strong); }
+    .topbar-actions button.active { outline: 1px solid rgba(126, 184, 255, 0.5); background: rgba(126, 184, 255, 0.14); }
     .topbar-progress {
       font-size: 13px;
       font-weight: 700;
@@ -138,7 +150,9 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .workspace.sidebar-collapsed { grid-template-columns: 0 1fr; }
     aside.sidebar {
-      background: linear-gradient(180deg, var(--panel) 0%, #0e1520 100%);
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
       border-right: 1px solid var(--border);
       overflow-y: auto;
       overflow-x: hidden;
@@ -151,19 +165,21 @@ HTML_TEMPLATE = r"""<!doctype html>
       flex-direction: column;
       min-width: 0;
       min-height: 0;
-      background: #0c1118;
+      background: transparent;
     }
     .section-card {
-      background: var(--panel2);
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 12px 14px;
       margin-bottom: 12px;
-      box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
     .section-card.highlight {
-      border-color: rgba(96,165,250,.35);
-      background: linear-gradient(145deg, rgba(96,165,250,.08), var(--panel2));
+      border-color: rgba(126, 184, 255, 0.35);
+      background: rgba(126, 184, 255, 0.08);
     }
     .section-card h2 {
       font-size: 11px;
@@ -176,10 +192,12 @@ HTML_TEMPLATE = r"""<!doctype html>
     label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
     select, input[type="text"], input[type="number"], textarea {
       width: 100%;
-      background: #0a0f15;
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 8px 10px;
       font-size: 13px;
     }
@@ -190,7 +208,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       gap: 6px;
     }
     .stat {
-      background: linear-gradient(160deg, #0d1420, #0a0f15);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 10px 12px;
@@ -218,22 +238,27 @@ HTML_TEMPLATE = r"""<!doctype html>
       gap: 8px;
       padding: 10px 16px;
       border-bottom: 1px solid var(--border);
-      background: var(--panel);
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
       align-items: center;
     }
     button {
       border: 1px solid var(--border);
-      background: #243044;
+      background: var(--glass2);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       color: var(--text);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 8px 12px;
       cursor: pointer;
       font-size: 13px;
+      transition: background .15s, border-color .15s;
     }
-    button:hover { background: #2f3f57; }
-    button.primary { background: #2563eb; border-color: #2563eb; }
-    button.danger { background: #b42318; border-color: #b42318; }
-    button.success { background: #067647; border-color: #067647; }
+    button:hover { background: var(--glass3); border-color: var(--border-strong); }
+    button.primary { background: rgba(37, 99, 235, 0.55); border-color: rgba(96, 165, 250, 0.5); }
+    button.danger { background: rgba(180, 35, 24, 0.55); border-color: rgba(248, 113, 113, 0.45); }
+    button.success { background: rgba(6, 118, 71, 0.55); border-color: rgba(52, 211, 153, 0.45); }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
     .viewer {
       flex: 1;
@@ -244,9 +269,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       gap: 10px;
     }
     .info {
-      background: var(--panel);
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius);
       padding: 10px 14px;
       display: flex;
       flex-wrap: wrap;
@@ -270,9 +297,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       gap: 8px;
     }
     .prob {
-      background: var(--panel);
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 8px 10px;
       font-size: 12px;
     }
@@ -285,8 +314,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       max-width: 100%;
       margin: 0 auto;
       background: #000;
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
       overflow: auto;
       min-height: calc(100vh - 240px);
       max-height: calc(100vh - 200px);
@@ -324,13 +353,15 @@ HTML_TEMPLATE = r"""<!doctype html>
       margin: 24px auto;
     }
     .load-box {
-      background: var(--panel);
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border-color: var(--border);
       color: var(--text);
     }
     .load-bar {
       height: 8px;
-      background: #0a0f15;
+      background: rgba(255, 255, 255, 0.08);
       border-radius: 999px;
       overflow: hidden;
       margin-top: 12px;
@@ -357,8 +388,10 @@ HTML_TEMPLATE = r"""<!doctype html>
       max-height: 220px;
       overflow-y: auto;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #0a0f15;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
     .list-item {
       padding: 8px 10px;
@@ -375,8 +408,8 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .list-item .dot.reject { background: var(--warn); }
     .list-item .dot.done { background: var(--ok); }
-    .list-item:hover { background: #182030; }
-    .list-item.active { background: #1e3a5f; border-left: 3px solid var(--accent); }
+    .list-item:hover { background: rgba(255, 255, 255, 0.06); }
+    .list-item.active { background: rgba(126, 184, 255, 0.14); border-left: 3px solid var(--accent); }
     .list-item.rejected { color: #fcd34d; }
     .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
     .empty { padding: 36px; text-align: center; color: var(--muted); }
@@ -399,8 +432,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       min-width: 110px;
       font-weight: 600;
     }
-    .toolbar-large .btn-reject { font-size: 16px; min-width: 120px; background: linear-gradient(180deg,#c62828,#962018); }
-    .toolbar-large .btn-keep { background: linear-gradient(180deg,#0d8a55,#067647); min-width: 120px; }
+    .toolbar-large .btn-reject { font-size: 16px; min-width: 120px; }
+    .toolbar-large .btn-keep { min-width: 120px; }
     .action-dock {
       display: none;
       position: fixed;
@@ -410,11 +443,12 @@ HTML_TEMPLATE = r"""<!doctype html>
       z-index: 800;
       gap: 14px;
       padding: 10px 14px;
-      background: rgba(15,23,42,.92);
-      border: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid var(--border-strong);
       border-radius: 999px;
       box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
     }
     .action-dock button {
       min-width: 130px;
@@ -438,8 +472,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       font-size: 12px;
       line-height: 1.55;
       padding: 8px 10px;
-      background: rgba(15,23,42,.55);
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
       border: 1px dashed var(--border);
     }
     .sync-step-num {
@@ -477,7 +511,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       flex-wrap: wrap;
       gap: 6px;
       padding: 0 14px 10px;
-      background: var(--panel);
+      background: rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
     }
     .quick-reasons button {
@@ -485,9 +521,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       padding: 6px 10px;
     }
     .doctor-banner {
-      background: #0f172a;
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius);
       padding: 10px 14px;
       font-size: 13px;
       line-height: 1.6;
@@ -503,11 +541,13 @@ HTML_TEMPLATE = r"""<!doctype html>
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: #1e293b;
-      border: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      border: 1px solid var(--border-strong);
       color: var(--text);
       padding: 12px 18px;
-      border-radius: 10px;
+      border-radius: var(--radius);
       font-size: 14px;
       z-index: 9999;
       opacity: 0;
@@ -542,15 +582,20 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .mode-toggle { display: none; }
     .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       z-index: 10000; display: flex; align-items: center; justify-content: center;
       padding: 20px;
     }
     .modal-overlay.hidden { display: none; }
     .modal-box {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 14px;
+      background: rgba(20, 20, 20, 0.75);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
       padding: 20px 24px;
       max-width: 520px;
       width: 100%;
@@ -560,8 +605,8 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .modal-box h2 { margin: 0 0 12px; font-size: 18px; }
     .modal-box kbd {
-      background: #0a0f15; border: 1px solid var(--border);
-      border-radius: 4px; padding: 2px 6px; font-size: 12px;
+      background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border);
+      border-radius: 6px; padding: 2px 6px; font-size: 12px;
     }
     .modal-box table { width: 100%; font-size: 13px; border-collapse: collapse; }
     .modal-box td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
@@ -573,7 +618,9 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .main-progress {
       padding: 14px 18px 12px;
-      background: linear-gradient(180deg, rgba(96,165,250,.10), rgba(15,23,42,.0));
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
       border-bottom: 1px solid var(--border);
     }
     .progress-hero {
@@ -590,7 +637,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       display: flex;
       align-items: center;
       justify-content: center;
-      background: conic-gradient(var(--ok) calc(var(--pct, 0) * 1%), #1e293b 0);
+      background: conic-gradient(var(--ok) calc(var(--pct, 0) * 1%), rgba(255, 255, 255, 0.08) 0);
       position: relative;
       box-shadow: 0 0 0 4px rgba(52,211,153,.15);
     }
@@ -599,7 +646,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       position: absolute;
       inset: 10px;
       border-radius: 50%;
-      background: var(--panel);
+      background: rgba(0, 0, 0, 0.85);
     }
     .progress-ring span {
       position: relative;
@@ -614,7 +661,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       gap: 8px;
     }
     .hero-metric {
-      background: var(--panel2);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 8px 10px;
@@ -627,7 +676,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     .progress-label { font-size: 13px; }
     .progress-bar {
       height: 14px;
-      background: #0a0f15;
+      background: rgba(255, 255, 255, 0.08);
       border-radius: 999px;
       overflow: hidden;
       margin-bottom: 4px;
@@ -691,33 +740,20 @@ HTML_TEMPLATE = r"""<!doctype html>
       margin: 12px 0;
     }
     .summary-card {
-      background: #0a0f15;
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius);
       padding: 12px;
     }
     .summary-card h3 { margin: 0 0 8px; font-size: 14px; }
     .summary-card .num { font-size: 24px; font-weight: 700; }
-    body.theme-light {
-      --bg: #eef2f7;
-      --panel: #ffffff;
-      --panel2: #f8fafc;
-      --border: #cbd5e1;
-      --text: #0f172a;
-      --muted: #64748b;
-      --shadow: 0 4px 20px rgba(15,23,42,.08);
-    }
-    body.theme-light .topbar { background: linear-gradient(180deg, #fff 0%, #f8fafc 100%); }
-    body.theme-light select,
-    body.theme-light input,
-    body.theme-light textarea,
-    body.theme-light .stat,
-    body.theme-light .list,
-    body.theme-light .summary-card { background: #f1f5f9; }
-    body.theme-light .panel-stage { border-color: #94a3b8; }
     .welcome-banner {
-      background: rgba(96,165,250,.1);
-      border: 1px solid rgba(96,165,250,.35);
+      background: rgba(126, 184, 255, 0.1);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(126, 184, 255, 0.3);
       border-radius: 10px;
       padding: 10px 12px;
       font-size: 12px;
@@ -729,8 +765,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       color: var(--muted);
       line-height: 1.5;
       padding: 8px 10px;
-      background: #0a0f15;
-      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 10px;
       border: 1px solid var(--border);
       margin-bottom: 8px;
     }
@@ -757,13 +793,10 @@ HTML_TEMPLATE = r"""<!doctype html>
       <nav class="dataset-tabs" id="dataset-tabs" aria-label="数据集切换"></nav>
       <div class="topbar-actions">
         <span class="topbar-progress" id="topbar-progress">总进度 0%</span>
-        <span class="save-indicator" id="save-indicator">✓ 已保存</span>
-        <button id="btn-summary" title="进度总览">📊</button>
-        <button id="btn-theme" title="切换浅色/深色">🌓</button>
-        <button id="btn-doctor-mode" class="active" title="简易模式">简易</button>
-        <button id="btn-expert-mode" title="专家模式">专家</button>
-        <button id="btn-help" title="快捷键帮助">?</button>
-        <button id="btn-toggle-sidebar" title="显示/隐藏侧栏">☰</button>
+        <span class="save-indicator" id="save-indicator">已保存</span>
+        <button id="btn-summary" title="进度总览">总览</button>
+        <button id="btn-help" title="快捷键帮助">帮助</button>
+        <button id="btn-toggle-sidebar" title="显示/隐藏侧栏">侧栏</button>
       </div>
     </header>
     <div class="workspace" id="workspace">
@@ -858,11 +891,11 @@ HTML_TEMPLATE = r"""<!doctype html>
           </div>
           <div class="sync-status" id="sync-status">等待同步…</div>
           <div class="btn-stack">
-            <button class="primary" id="btn-sync-csv">📥 同步文件夹中的 CSV</button>
-            <button id="btn-bind-json">💾 绑定自动保存（筛完后自动写 JSON）</button>
-            <button id="btn-export-json">⬇ 下载 JSON 备份</button>
-            <button id="btn-export-reject">⬇ 下载剔除 CSV 副本</button>
-            <button id="btn-clear-storage">🗑 清空本地标记</button>
+            <button class="primary" id="btn-sync-csv">同步文件夹中的 CSV</button>
+            <button id="btn-bind-json">绑定自动保存（筛完后自动写 JSON）</button>
+            <button id="btn-export-json">下载 JSON 备份</button>
+            <button id="btn-export-reject">下载剔除 CSV 副本</button>
+            <button id="btn-clear-storage">清空本地标记</button>
           </div>
           <input type="file" id="csv-file-input" accept=".csv,text/csv" class="hidden">
         </div>
@@ -889,11 +922,11 @@ HTML_TEMPLATE = r"""<!doctype html>
           <div class="progress-bar"><i id="progress-fill" style="width:0%"></i></div>
         </div>
         <div class="toolbar toolbar-large">
-          <button id="btn-first-unreviewed" title="跳到第一张未浏览 (Home)">⏮ 未浏览</button>
-          <button id="btn-prev">← 上一张</button>
-          <button class="danger btn-reject" id="btn-reject">✕ 剔除</button>
-          <button class="success" id="btn-keep">✓ 保留</button>
-          <button id="btn-next">下一张 →</button>
+          <button id="btn-first-unreviewed" title="跳到第一张未浏览 (Home)">未浏览</button>
+          <button id="btn-prev">上一张</button>
+          <button class="danger btn-reject" id="btn-reject">剔除</button>
+          <button class="success" id="btn-keep">保留</button>
+          <button id="btn-next">下一张</button>
           <button id="btn-undo" title="撤销 (Z)">撤销</button>
           <button id="btn-zoom-out" title="缩小 (-)">−</button>
           <button id="btn-zoom-reset" title="100%">100%</button>
@@ -911,8 +944,8 @@ HTML_TEMPLATE = r"""<!doctype html>
     </div>
   </div>
   <div class="action-dock">
-    <button class="danger btn-reject" id="btn-reject-dock">✕ 剔除</button>
-    <button class="success btn-keep" id="btn-keep-dock">✓ 保留</button>
+    <button class="danger btn-reject" id="btn-reject-dock">剔除</button>
+    <button class="success btn-keep" id="btn-keep-dock">保留</button>
   </div>
   <div class="toast" id="toast"></div>
   <div class="modal-overlay hidden" id="help-modal">
@@ -991,14 +1024,12 @@ HTML_TEMPLATE = r"""<!doctype html>
     let pathOk = null;
     let saveTimer = null;
     let prefetchImg = null;
-    let doctorMode = true;
     let lastRejectedUid = null;
     let toastTimer = null;
     let activeSplit = "all";
     let zoomLevel = 100;
     let splitPositions = {};
     let sidebarCollapsed = false;
-    let lightTheme = false;
 
     function showSaveIndicator() {
       const el = document.getElementById("save-indicator");
@@ -1006,20 +1037,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       el.classList.add("show");
       clearTimeout(showSaveIndicator._t);
       showSaveIndicator._t = setTimeout(() => el.classList.remove("show"), 1200);
-    }
-
-    function toggleTheme() {
-      lightTheme = !lightTheme;
-      document.body.classList.toggle("theme-light", lightTheme);
-      try { localStorage.setItem(STORAGE_KEY + "_theme", lightTheme ? "light" : "dark"); } catch (e) {}
-      toast(lightTheme ? "已切换浅色模式" : "已切换深色模式");
-    }
-
-    function loadTheme() {
-      try {
-        lightTheme = localStorage.getItem(STORAGE_KEY + "_theme") === "light";
-        document.body.classList.toggle("theme-light", lightTheme);
-      } catch (e) {}
     }
 
     function showSummary(show) {
@@ -1077,7 +1094,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         applyFilters();
         if (currentIndex >= filtered.length) currentIndex = Math.max(0, filtered.length - 1);
         renderCurrent();
-        toast(filtered.length ? "已保存" : "本列表已全部浏览完成 🎉");
+        toast(filtered.length ? "已保存" : "本列表已全部浏览完成");
         return;
       }
       goNextUnreviewed();
@@ -1241,21 +1258,6 @@ HTML_TEMPLATE = r"""<!doctype html>
     function extractPatientId(id) {
       const m = String(id).match(/(\d{6,})/);
       return m ? m[1] : id;
-    }
-
-    function setDoctorMode(on) {
-      doctorMode = !!on;
-      document.getElementById("btn-doctor-mode")?.classList.toggle("active", doctorMode);
-      document.getElementById("btn-expert-mode")?.classList.toggle("active", !doctorMode);
-      try { localStorage.setItem(STORAGE_KEY + "_mode", doctorMode ? "doctor" : "expert"); } catch (e) {}
-      renderCurrent();
-    }
-
-    function loadDoctorMode() {
-      try {
-        const v = localStorage.getItem(STORAGE_KEY + "_mode");
-        if (v === "expert") doctorMode = false;
-      } catch (e) {}
     }
 
     function escHtml(s) {
@@ -1855,7 +1857,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (pText) {
         pText.textContent = remaining > 0
           ? `【${splitName}】已浏览 ${reviewedCount}/${total}，还剩 ${remaining} 张`
-          : `【${splitName}】已全部浏览完成 🎉`;
+          : `【${splitName}】已全部浏览完成`;
       }
       if (pCount) pCount.textContent = `全部 ${globalReviewed}/${globalTotal} · 剔除 ${globalReject}`;
       if (hint) hint.textContent = activeSplit === "all"
@@ -2048,7 +2050,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("reject-note").value = rev.note || "";
       if (rev.reason) document.getElementById("reject-reason").value = rev.reason;
 
-      const patientId = extractPatientId(item.id);
       const gap = stageGap(item);
       const gapText = item.correct ? "—" : (gap > 1 ? `跨级 Δ=${gap}` : "相邻误分");
       const statusTag = rev.rejected ? `<span class="tag reject">已剔除</span>` : `<span class="tag ok">保留</span>`;
@@ -2062,31 +2063,17 @@ HTML_TEMPLATE = r"""<!doctype html>
         return `<div class="${classes.join(" ")}"><span>${name}</span><b>${(val * 100).toFixed(1)}%</b></div>`;
       }).join("");
 
-      const showAnnot = !doctorMode && !item.correct && !rev.rejected;
-      let infoHtml;
-      if (doctorMode) {
-        infoHtml = `
-          <div class="doctor-banner">
-            <span class="folder-badge">📁 ${escHtml(folderLabel(item))}</span>
-            <div class="patient-row">
-              <span class="patient-id">${escHtml(patientId)}</span>
-              <button id="btn-copy-pid" title="复制患者号 (C)">复制</button>
-            </div>
-            第 <b>${currentIndex + 1}</b> / ${filtered.length}
-            ${rev.rejected ? " · <span style='color:#f87171'>已剔除</span>" : ""}
-          </div>
-        `;
-      } else {
-        infoHtml = `
+      const showAnnot = !item.correct && !rev.rejected;
+      const infoHtml = `
           <div class="info info-large">
             <div class="filename">#${currentIndex + 1} · ${escHtml(item.id)}</div>
             <span class="tag split">${splitLabel(item.split)}</span>
+            <span class="folder-badge">${escHtml(folderLabel(item))}</span>
             <div>真实 <b>${item.true}</b> → 预测 <b>${item.pred}</b></div>
             ${statusTag} ${correctTag}
           </div>
           <div class="probs">${probs}</div>
         `;
-      }
 
       viewer.innerHTML = infoHtml + buildPanelHtml(item, showAnnot);
 
@@ -2277,11 +2264,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.getElementById("summary-modal").onclick = (e) => {
         if (e.target.id === "summary-modal") showSummary(false);
       };
-      document.getElementById("btn-theme").onclick = toggleTheme;
       document.getElementById("btn-dismiss-welcome").onclick = dismissWelcome;
       document.getElementById("btn-first-unreviewed").onclick = goFirstUnreviewed;
-      document.getElementById("btn-doctor-mode").onclick = () => setDoctorMode(true);
-      document.getElementById("btn-expert-mode").onclick = () => setDoctorMode(false);
       document.getElementById("btn-toggle-sidebar").onclick = toggleSidebar;
       document.getElementById("btn-help").onclick = () => showHelp(true);
       document.getElementById("btn-close-help").onclick = () => showHelp(false);
@@ -2366,21 +2350,18 @@ HTML_TEMPLATE = r"""<!doctype html>
         if (e.key === "3") setQuickReason("图像质量差-其他");
         if (e.key === "+" || e.key === "=") { setZoom(zoomLevel + 25); toast("缩放 " + zoomLevel + "%"); }
         if (e.key === "-") { setZoom(zoomLevel - 25); toast("缩放 " + zoomLevel + "%"); }
-        if (!doctorMode && e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
-        if (!doctorMode && e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
+        if (e.key.toLowerCase() === "g") { drawMode = "true"; renderCurrent(); }
+        if (e.key.toLowerCase() === "r") { drawMode = "model"; renderCurrent(); }
       });
     }
 
     async function boot() {
       initPageMode();
-      loadDoctorMode();
-      loadTheme();
       loadActiveSplit();
       bindUi();
       const splitEl = document.getElementById("filter-split");
       if (splitEl) splitEl.value = activeSplit;
       document.getElementById("workspace")?.classList.toggle("sidebar-collapsed", sidebarCollapsed);
-      setDoctorMode(doctorMode);
       try {
         showLoading("正在加载样本索引…", 5);
         CASES = await loadAllCases();
