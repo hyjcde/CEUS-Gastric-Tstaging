@@ -97,14 +97,21 @@ RESOLUTION_UI_PRESETS = {
         (1286, 1028): (0.10, 0.11, 0.91, 0.89),
     },
     "external_tumor_hospital": {
-        (720, 576): (0.07, 0.06, 0.93, 0.92),
-        (768, 576): (0.07, 0.06, 0.93, 0.92),
-        (1024, 768): (0.07, 0.06, 0.93, 0.92),
-        (1452, 1038): (0.05, 0.05, 0.97, 0.95),
-        (1460, 1080): (0.05, 0.05, 0.97, 0.95),
-        (1552, 970): (0.05, 0.05, 0.97, 0.93),
-        (1552, 874): (0.05, 0.04, 0.97, 0.93),
-        (1656, 992): (0.05, 0.05, 0.97, 0.94),
+        (720, 576): (0.08, 0.08, 0.92, 0.90),
+        (768, 576): (0.08, 0.08, 0.92, 0.90),
+        (800, 600): (0.08, 0.08, 0.92, 0.90),
+        (960, 720): (0.10, 0.10, 0.90, 0.88),
+        (1024, 576): (0.08, 0.08, 0.92, 0.90),
+        (1024, 768): (0.08, 0.08, 0.92, 0.90),
+        (1452, 1038): (0.08, 0.08, 0.92, 0.90),
+        (1460, 1080): (0.08, 0.08, 0.92, 0.90),
+        (1552, 970): (0.08, 0.08, 0.92, 0.90),
+        (1552, 874): (0.08, 0.08, 0.92, 0.90),
+        (1656, 992): (0.08, 0.08, 0.92, 0.90),
+        (640, 480): (0.10, 0.10, 0.90, 0.88),
+        (800, 555): (0.08, 0.08, 0.92, 0.90),
+        (1280, 1024): (0.08, 0.08, 0.92, 0.90),
+        (1920, 1080): (0.08, 0.08, 0.92, 0.90),
     },
     "external_putian2": {
         (1280, 960): (0.09, 0.11, 0.91, 0.86),
@@ -118,6 +125,8 @@ RESOLUTION_UI_PRESETS = {
         (1920, 1200): (0.10, 0.08, 0.88, 0.92),
         (1340, 1150): (0.09, 0.08, 0.89, 0.92),
         (680, 412): (0.10, 0.08, 0.90, 0.92),
+        (1182, 899): (0.09, 0.08, 0.89, 0.92),
+        (1300, 950): (0.09, 0.08, 0.89, 0.92),
     },
     "external_sanming": {
         (960, 720): (0.15, 0.13, 0.92, 0.90),
@@ -592,6 +601,102 @@ def union_rect(
     return clamp_rect((x1, y1, x2, y2), width, height)
 
 
+def rect_area_ratio(rect: Tuple[int, int, int, int], width: int, height: int) -> float:
+    x1, y1, x2, y2 = rect
+    return ((x2 - x1) * (y2 - y1)) / float(width * height)
+
+
+def rect_contains(
+    container: Tuple[int, int, int, int],
+    inner: Tuple[int, int, int, int],
+) -> bool:
+    return (
+        container[0] <= inner[0]
+        and container[1] <= inner[1]
+        and container[2] >= inner[2]
+        and container[3] >= inner[3]
+    )
+
+
+def expand_rect_to_min_area(
+    rect: Tuple[int, int, int, int],
+    width: int,
+    height: int,
+    min_ratio: float,
+) -> Tuple[int, int, int, int]:
+    x1, y1, x2, y2 = rect
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    target_w = max(x2 - x1, int(round((width * height * min_ratio) ** 0.5)))
+    target_h = max(y2 - y1, int(round((width * height * min_ratio) ** 0.5)))
+    new_x1 = int(round(cx - target_w / 2.0))
+    new_y1 = int(round(cy - target_h / 2.0))
+    new_x2 = new_x1 + target_w
+    new_y2 = new_y1 + target_h
+    return clamp_rect((new_x1, new_y1, new_x2, new_y2), width, height)
+
+
+def shrink_rect_to_max_area(
+    rect: Tuple[int, int, int, int],
+    width: int,
+    height: int,
+    max_ratio: float,
+    must_contain: Optional[Tuple[int, int, int, int]] = None,
+) -> Tuple[int, int, int, int]:
+    x1, y1, x2, y2 = rect
+    if rect_area_ratio(rect, width, height) <= max_ratio:
+        return rect
+
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    scale = (max_ratio / rect_area_ratio(rect, width, height)) ** 0.5
+    new_w = max(1, int(round((x2 - x1) * scale)))
+    new_h = max(1, int(round((y2 - y1) * scale)))
+    candidate = clamp_rect(
+        (int(round(cx - new_w / 2.0)), int(round(cy - new_h / 2.0)), int(round(cx + new_w / 2.0)), int(round(cy + new_h / 2.0))),
+        width,
+        height,
+    )
+    if must_contain is not None and not rect_contains(candidate, must_contain):
+        return union_rect(candidate, must_contain, width, height)
+    return candidate
+
+
+def merge_ui_rect_with_roi(
+    base_rect: Tuple[int, int, int, int],
+    mask: Optional[np.ndarray],
+    width: int,
+    height: int,
+    *,
+    min_area_ratio: float = 0.45,
+    max_area_ratio: float = 0.82,
+    roi_margin_ratio: float = 0.08,
+) -> Tuple[int, int, int, int]:
+    rect = base_rect
+    roi_guard: Optional[Tuple[int, int, int, int]] = None
+    if mask is not None and np.any(mask > 0):
+        roi_guard = compute_roi_crop_rect(mask, margin_ratio=roi_margin_ratio)
+        if not rect_contains(rect, roi_guard):
+            rect = union_rect(rect, roi_guard, width, height)
+
+    ratio = rect_area_ratio(rect, width, height)
+    if ratio < min_area_ratio:
+        rect = expand_rect_to_min_area(rect, width, height, min_area_ratio)
+    elif ratio > max_area_ratio:
+        if roi_guard is not None and rect_contains(base_rect, roi_guard):
+            rect = base_rect
+        else:
+            rect = shrink_rect_to_max_area(rect, width, height, max_area_ratio, must_contain=roi_guard)
+    return rect
+
+
+DEFAULT_UI_CROP_RATIOS = (0.08, 0.08, 0.92, 0.90)
+
+
+def default_ui_crop_rect(width: int, height: int) -> Tuple[int, int, int, int]:
+    return rect_from_ratios(width, height, DEFAULT_UI_CROP_RATIOS)
+
+
 def rect_from_component_mask(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
     count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
     if count <= 1:
@@ -681,16 +786,15 @@ def compute_auto_ui_crop_rect(
         ]
     )
     default_threshold = float(np.percentile(border_pixels, 95) + 5)
-    roi_rect = compute_roi_crop_rect(mask, margin_ratio=0.35) if mask is not None and np.any(mask > 0) else None
+
+    def finalize(rect: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
+        return merge_ui_rect_with_roi(rect, mask, width, height)
 
     preset = None
     if profile_key is not None:
         preset = RESOLUTION_UI_PRESETS.get(profile_key, {}).get((width, height))
     if preset is not None:
-        rect = rect_from_ratios(width, height, preset)
-        if roi_rect is not None:
-            rect = union_rect(rect, roi_rect, width, height)
-        return rect
+        return finalize(rect_from_ratios(width, height, preset))
 
     if center_name == "福建省肿瘤医院":
         trim_threshold = max(default_threshold, float(np.mean(border_pixels) + 1.0))
@@ -699,24 +803,21 @@ def compute_auto_ui_crop_rect(
             rect = rect_from_bright_component(gray, trim_threshold)
         if rect is not None:
             rect = expand_rect(rect, width, height, max(18, int(width * 0.04)), max(18, int(height * 0.04)))
-            if roi_rect is not None:
-                rect = union_rect(rect, roi_rect, width, height)
-            return rect
+            return finalize(rect)
 
     if center_name == "莆田学院附属医院":
         component_threshold = max(default_threshold, float(np.mean(border_pixels) + 6.0))
         rect = rect_from_bright_component(gray, component_threshold, open_kernel=5, close_kernel=31)
         if rect is not None:
             rect = expand_rect(rect, width, height, max(20, int(width * 0.10)), max(20, int(height * 0.08)))
-            if roi_rect is not None:
-                rect = union_rect(rect, roi_rect, width, height)
-            return rect
+            return finalize(rect)
 
     if center_name == "莆田市第一医院":
         roi_fallback_rect = None
-        if roi_rect is not None:
+        if mask is not None and np.any(mask > 0):
+            roi_tight = compute_roi_crop_rect(mask, margin_ratio=0.08)
             roi_fallback_rect = expand_rect(
-                roi_rect,
+                roi_tight,
                 width,
                 height,
                 max(180, int(width * 0.28)),
@@ -738,20 +839,18 @@ def compute_auto_ui_crop_rect(
             if area_ratio >= 0.93 and roi_fallback_rect is not None:
                 rect = roi_fallback_rect
             rect = expand_rect(rect, width, height, max(20, int(width * 0.03)), max(12, int(height * 0.02)))
-            if roi_rect is not None:
-                rect = union_rect(rect, roi_rect, width, height)
-            return rect
+            return finalize(rect)
         if roi_fallback_rect is not None:
-            return roi_fallback_rect
+            return finalize(roi_fallback_rect)
 
     rect = rect_from_bright_component(gray, default_threshold)
     if rect is None:
-        return (0, 0, width, height)
+        return finalize(default_ui_crop_rect(width, height))
 
     x1, y1, x2, y2 = rect
     area_ratio = ((x2 - x1) * (y2 - y1)) / float(width * height)
     if area_ratio >= 0.96:
-        return (0, 0, width, height)
+        return finalize(default_ui_crop_rect(width, height))
 
     rect = expand_rect(
         rect,
@@ -760,9 +859,7 @@ def compute_auto_ui_crop_rect(
         max(20, int(round(width * 0.18)), int(round((x2 - x1) * 0.25))),
         max(20, int(round(height * 0.14)), int(round((y2 - y1) * 0.25))),
     )
-    if roi_rect is not None:
-        rect = union_rect(rect, roi_rect, width, height)
-    return rect
+    return finalize(rect)
 
 
 def compute_roi_crop_rect(mask: np.ndarray, margin_ratio: float = 0.1) -> Tuple[int, int, int, int]:
