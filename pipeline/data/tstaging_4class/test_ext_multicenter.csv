@@ -1,0 +1,11 @@
+image_path,roi_path,patient_id,label,T_stage,class_label,source,split
+dataset/external/multicenter/images/1519- (1).jpg,dataset/external/multicenter/roi/1519- (1)_roi.jpg,1519,3,T4a,3,ext/multicenter,test
+dataset/external/multicenter/images/1519- (2).jpg,dataset/external/multicenter/roi/1519- (2)_roi.jpg,1519,3,T4a,3,ext/multicenter,test
+dataset/external/multicenter/images/1519- (3).jpg,dataset/external/multicenter/roi/1519- (3)_roi.jpg,1519,3,T4a,3,ext/multicenter,test
+dataset/external/multicenter/images/1535- (2).jpg,dataset/external/multicenter/roi/1535- (2)_roi.jpg,1535,3,T4b,3,ext/multicenter,test
+dataset/external/multicenter/images/1535- (3).jpg,dataset/external/multicenter/roi/1535- (3)_roi.jpg,1535,3,T4b,3,ext/multicenter,test
+dataset/external/multicenter/images/1546- (1).jpg,dataset/external/multicenter/roi/1546- (1)_roi.jpg,1546,3,T4a,3,ext/multicenter,test
+dataset/external/multicenter/images/1546- (2).jpg,dataset/external/multicenter/roi/1546- (2)_roi.jpg,1546,3,T4a,3,ext/multicenter,test
+dataset/external/multicenter/images/1546- (3).jpg,dataset/external/multicenter/roi/1546- (3)_roi.jpg,1546,3,T4a,3,ext/multicenter,test
+dataset/external/multicenter/images/1549-2.jpg,dataset/external/multicenter/roi/1549-2_roi.jpg,1549,3,T4b,3,ext/multicenter,test
+dataset/external/multicenter/images/1549-3.jpg,dataset/external/multicenter/roi/1549-3_roi.jpg,1549,3,T4b,3,ext/multicenter,test

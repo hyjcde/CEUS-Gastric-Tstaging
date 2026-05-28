@@ -43,6 +43,11 @@ DATASET_IMAGE_DIRS = {
     "external_tumor": Path("/data/research/gastric/GastricTstaging/dataset/external/福建省肿瘤医院/crop_ui/images"),
     "external_putian1": Path("/data/research/gastric/GastricTstaging/dataset/external/莆田学院附属医院/crop_ui/images"),
     "external_putian2": Path("/data/research/gastric/GastricTstaging/dataset/external/莆田市第一医院/crop_ui/images"),
+    "external_beijing_friendship": Path("/data/research/gastric/GastricTstaging/dataset/external/北京友谊医院/crop_ui/images"),
+    "external_foshan_first": Path("/data/research/gastric/GastricTstaging/dataset/external/佛山市第一人民医院/crop_ui/images"),
+    "external_cnnc_504": Path("/data/research/gastric/GastricTstaging/dataset/external/中核五〇四医院/crop_ui/images"),
+    "external_dehua": Path("/data/research/gastric/GastricTstaging/dataset/external/福建省德化县医院/crop_ui/images"),
+    "external_fujian_provincial": Path("/data/research/gastric/GastricTstaging/dataset/external/福建省立医院/crop_ui/images"),
 }
 
 SOURCE_TO_DATASET_CANDIDATES = {
@@ -57,6 +62,17 @@ SOURCE_TO_DATASET_CANDIDATES = {
     "ext/putian_2025_07_09": ("external_putian2", "external_putian1"),
     "ext/multicenter": ("external_tumor", "external_sanming"),
     "ext/zhongliu": ("external_tumor",),
+    "ext/sanming": ("external_sanming",),
+    "ext/putian2": ("external_putian2", "external_putian1"),
+    "ext/北京友谊医院": ("external_beijing_friendship",),
+    "ext/佛山市第一人民医院": ("external_foshan_first",),
+    "ext/中核五〇四医院": ("external_cnnc_504",),
+    "ext/福建省德化县医院": ("external_dehua",),
+    "ext/福建省立医院": ("external_fujian_provincial",),
+    "ext/newzip/北京友谊医院": ("external_beijing_friendship",),
+    "ext/newzip/佛山市第一人民医院": ("external_foshan_first",),
+    "ext/newzip/中核五〇四医院": ("external_cnnc_504",),
+    "ext/newzip/福建省德化县医院": ("external_dehua",),
 }
 
 _IMAGE_INVENTORY_CACHE = None

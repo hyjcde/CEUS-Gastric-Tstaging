@@ -40,10 +40,30 @@ DEFAULT_DATASET_CONFIGS = {
         "output": OUTPUT_ROOT / "internal_direct_surgery",
     },
     "external": {
-        "source": ROOT / "外部测试集" / "胃癌直接手术外部测试集",
+        "source": ROOT / "胃癌直接手术外部测试集" / "直接手术图片",
         "output": OUTPUT_ROOT / "external_direct_surgery",
     },
 }
+
+EXTERNAL_CENTER_NAMES = {
+    "三明市第二医院",
+    "福建省肿瘤医院",
+    "莆田学院附属医院",
+    "莆田市第一医院",
+    "北京友谊医院",
+    "佛山市第一人民医院",
+    "福建省德化县医院",
+    "中核五〇四医院",
+    "福建省立医院",
+}
+
+EXTERNAL_CENTER_ALIASES = {
+    "中核五O四医院": "中核五〇四医院",
+}
+
+
+def normalize_external_center_name(name: str) -> str:
+    return EXTERNAL_CENTER_ALIASES.get(name, name)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".bmp", ".png", ".dcm"}
 MASK_EXTENSIONS = {".nii", ".nii.gz", ".gz"}
@@ -223,6 +243,11 @@ def infer_crop_profile(dataset_key: str, entry: FileEntry) -> Optional[str]:
         return None
 
     center = infer_external_center(entry)
+    return external_crop_profile_for_center(center)
+
+
+def external_crop_profile_for_center(center: str) -> Optional[str]:
+    center = normalize_external_center_name(center)
     if center == "福建省肿瘤医院":
         return "external_tumor_hospital"
     if center == "三明市第二医院":
@@ -231,6 +256,14 @@ def infer_crop_profile(dataset_key: str, entry: FileEntry) -> Optional[str]:
         return "external_putian1"
     if center == "莆田市第一医院":
         return "external_putian2"
+    if center in {
+        "北京友谊医院",
+        "佛山市第一人民医院",
+        "福建省德化县医院",
+        "中核五〇四医院",
+        "福建省立医院",
+    }:
+        return "external_tumor_hospital"
     return None
 
 
@@ -254,44 +287,57 @@ def infer_internal_year(entry: FileEntry) -> str:
     return "unknown_year"
 
 
-def infer_external_center(entry: FileEntry) -> str:
+def infer_external_center(entry: FileEntry, source_root: Optional[Path] = None) -> str:
     path_parts = relative_dir_parts(entry)
     for part in path_parts:
-        if part in {
-            "三明市第二医院",
-            "福建省肿瘤医院",
-            "莆田学院附属医院",
-            "莆田市第一医院",
-        }:
-            return part
+        normalized = normalize_external_center_name(part)
+        if normalized in EXTERNAL_CENTER_NAMES:
+            return normalized
+    if source_root is not None:
+        normalized = normalize_external_center_name(source_root.name)
+        if normalized in EXTERNAL_CENTER_NAMES:
+            return normalized
     return "未识别中心"
 
 
 def collect_entries(source_root: Path) -> Tuple[List[FileEntry], List[FileEntry]]:
+    return collect_entries_from_roots([source_root])
+
+
+def collect_entries_from_roots(
+    source_roots: Sequence[Path],
+    exclude_stems: Optional[set[str]] = None,
+) -> Tuple[List[FileEntry], List[FileEntry]]:
     image_entries: List[FileEntry] = []
     mask_entries: List[FileEntry] = []
+    exclude_stems = exclude_stems or set()
 
-    for path in sorted(source_root.rglob("*")):
-        if not path.is_file():
-            continue
-        if path.name.startswith("._") or path.name == ".DS_Store":
-            continue
+    for source_root in source_roots:
+        for path in sorted(source_root.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name.startswith("._") or path.name == ".DS_Store":
+                continue
+            if path.name.startswith("~$"):
+                continue
 
-        ext = file_extension(path)
-        if ext not in IMAGE_EXTENSIONS and ext not in MASK_EXTENSIONS:
-            continue
+            ext = file_extension(path)
+            if ext not in IMAGE_EXTENSIONS and ext not in MASK_EXTENSIONS:
+                continue
 
-        entry = FileEntry(
-            path=path,
-            relative_dir=path.parent.relative_to(source_root),
-            base_name=strip_known_extension(path.name),
-            normalized_name=normalize_base_name(path.name),
-            extension=ext,
-        )
-        if is_image_file(path):
-            image_entries.append(entry)
-        elif is_mask_file(path):
-            mask_entries.append(entry)
+            entry = FileEntry(
+                path=path,
+                relative_dir=path.parent.relative_to(source_root),
+                base_name=strip_known_extension(path.name),
+                normalized_name=normalize_base_name(path.name),
+                extension=ext,
+            )
+            if is_image_file(path):
+                if entry.normalized_name in exclude_stems or compact_name(entry.normalized_name) in exclude_stems:
+                    continue
+                image_entries.append(entry)
+            elif is_mask_file(path):
+                mask_entries.append(entry)
 
     return image_entries, mask_entries
 
@@ -868,6 +914,8 @@ def destination_roots_for_pair(
     dataset_key: str,
     pair: PairEntry,
     dataset_configs: Dict[str, Dict[str, Path]],
+    forced_center: Optional[str] = None,
+    direct_output_root: Optional[Path] = None,
 ) -> List[Tuple[str, Path]]:
     if dataset_key == "internal":
         year = infer_internal_year(pair.image)
@@ -878,8 +926,147 @@ def destination_roots_for_pair(
         else:
             return []
 
-    center = infer_external_center(pair.image)
+    center = forced_center or infer_external_center(pair.image)
+    if direct_output_root is not None:
+        return [(center, direct_output_root)]
     return [(center, dataset_configs["external"]["output"] / center)]
+
+
+@dataclass
+class ProcessHospitalResult:
+    manifest_rows: List[dict]
+    error_rows: List[dict]
+    unmatched_rows: List[dict]
+    matched_pairs: int
+
+
+def process_external_hospital(
+    center_name: str,
+    source_root: Path,
+    output_root: Path,
+    limit: Optional[int] = None,
+    clear_output: bool = True,
+    extra_source_roots: Optional[Sequence[Path]] = None,
+    exclude_stems: Optional[set[str]] = None,
+) -> ProcessHospitalResult:
+    center_name = normalize_external_center_name(center_name)
+    print(f"[INFO] Processing external hospital: {center_name}")
+    print(f"[INFO] Source: {source_root}")
+    if extra_source_roots:
+        print(f"[INFO] Extra sources: {', '.join(str(p) for p in extra_source_roots)}")
+    print(f"[INFO] Output: {output_root}")
+
+    source_roots = [source_root, *(extra_source_roots or [])]
+    image_entries, mask_entries = collect_entries_from_roots(source_roots, exclude_stems=exclude_stems)
+    print(f"[INFO] Found {len(image_entries)} image candidates and {len(mask_entries)} mask candidates.")
+
+    pairs, unmatched_images, unmatched_masks = pair_images_and_masks(image_entries, mask_entries)
+    if limit is not None:
+        pairs = pairs[:limit]
+
+    print(f"[INFO] Matched {len(pairs)} image-mask pairs.")
+    print(f"[INFO] Unmatched images: {len(unmatched_images)}")
+    print(f"[INFO] Unmatched masks: {len(unmatched_masks)}")
+
+    if clear_output:
+        clear_output_root(output_root)
+    ensure_dir(output_root)
+
+    manifest_rows: List[dict] = []
+    error_rows: List[dict] = []
+    unmatched_rows: List[dict] = []
+
+    for entry in unmatched_images:
+        unmatched_rows.append(
+            {
+                "type": "image",
+                "path": str(entry.path),
+                "normalized_name": entry.normalized_name,
+            }
+        )
+    for entry in unmatched_masks:
+        unmatched_rows.append(
+            {
+                "type": "mask",
+                "path": str(entry.path),
+                "normalized_name": entry.normalized_name,
+            }
+        )
+
+    profile_key = external_crop_profile_for_center(center_name)
+
+    for index, pair in enumerate(pairs, start=1):
+        try:
+            image_rgb = load_image(pair.image.path)
+            height, width = image_rgb.shape[:2]
+            mask = load_mask(pair.mask.path, (height, width))
+
+            original_rect = (0, 0, width, height)
+            ui_rect = compute_auto_ui_crop_rect(
+                image_rgb,
+                profile_key=profile_key,
+                center_name=center_name,
+                mask=mask,
+            )
+            roi_rect = compute_roi_crop_rect(mask)
+
+            save_variant("original", image_rgb, mask, pair.sample_id, output_root)
+            save_variant(
+                "crop_ui",
+                crop_array(image_rgb, ui_rect),
+                crop_array(mask, ui_rect),
+                pair.sample_id,
+                output_root,
+            )
+            save_variant(
+                "crop_roi",
+                crop_array(image_rgb, roi_rect),
+                crop_array(mask, roi_rect),
+                pair.sample_id,
+                output_root,
+            )
+
+            manifest_rows.append(
+                {
+                    "sample_id": pair.sample_id,
+                    "image_source": str(pair.image.path),
+                    "mask_source": str(pair.mask.path),
+                    "group_targets": center_name,
+                    "image_width": width,
+                    "image_height": height,
+                    "original_rect": ",".join(map(str, original_rect)),
+                    "ui_crop_rect": ",".join(map(str, ui_rect)),
+                    "roi_crop_rect": ",".join(map(str, roi_rect)),
+                }
+            )
+
+            if index % 100 == 0:
+                print(f"[INFO] Processed {index}/{len(pairs)} pairs...")
+
+        except Exception as exc:  # noqa: BLE001
+            error_rows.append(
+                {
+                    "sample_id": pair.sample_id,
+                    "image_source": str(pair.image.path),
+                    "mask_source": str(pair.mask.path),
+                    "error": str(exc),
+                }
+            )
+
+    save_manifest_rows(manifest_rows, output_root / "manifest.csv")
+    save_manifest_rows(unmatched_rows, output_root / "unmatched_files.csv")
+    save_manifest_rows(error_rows, output_root / "errors.csv")
+
+    print(f"[INFO] Done: {center_name}")
+    print(f"[INFO] Successful samples: {len(manifest_rows)}")
+    print(f"[INFO] Errors: {len(error_rows)}")
+
+    return ProcessHospitalResult(
+        manifest_rows=manifest_rows,
+        error_rows=error_rows,
+        unmatched_rows=unmatched_rows,
+        matched_pairs=len(pairs),
+    )
 
 
 def process_dataset(
@@ -933,8 +1120,16 @@ def process_dataset(
             image_rgb = load_image(pair.image.path)
             height, width = image_rgb.shape[:2]
             mask = load_mask(pair.mask.path, (height, width))
-            center_name = infer_external_center(pair.image) if dataset_key == "external" else None
-            profile_key = infer_crop_profile(dataset_key, pair.image)
+            center_name = (
+                normalize_external_center_name(infer_external_center(pair.image, source_root=source_root))
+                if dataset_key == "external"
+                else None
+            )
+            profile_key = (
+                external_crop_profile_for_center(center_name)
+                if dataset_key == "external" and center_name
+                else infer_crop_profile(dataset_key, pair.image)
+            )
 
             original_rect = (0, 0, width, height)
             ui_rect = compute_auto_ui_crop_rect(
@@ -1029,20 +1224,51 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional override for the processed_datasets root.",
     )
+    parser.add_argument(
+        "--output-layout",
+        choices=["processed_datasets", "dataset_external"],
+        default="processed_datasets",
+        help="Write external output under processed_datasets/external_direct_surgery or dataset/external/{hospital}.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    output_root = args.output_root
+    if args.output_layout == "dataset_external" and output_root is None:
+        output_root = ROOT / "dataset" / "external"
     dataset_configs = build_dataset_configs(
         internal_source=args.internal_source,
         external_source=args.external_source,
-        output_root=args.output_root,
+        output_root=output_root,
     )
+    if args.output_layout == "dataset_external":
+        dataset_configs["external"]["output"] = output_root or (ROOT / "dataset" / "external")
+
     dataset_keys = ["internal", "external"] if args.dataset == "all" else [args.dataset]
 
     for dataset_key in dataset_keys:
         config = dataset_configs[dataset_key]
+        if dataset_key == "external" and args.output_layout == "dataset_external":
+            source_root = config["source"]
+            if not source_root.exists():
+                raise FileNotFoundError(f"External source root not found: {source_root}")
+            for hospital_dir in sorted(source_root.iterdir()):
+                if not hospital_dir.is_dir():
+                    continue
+                center_name = normalize_external_center_name(hospital_dir.name)
+                if center_name not in EXTERNAL_CENTER_NAMES:
+                    print(f"[WARN] Skipping unrecognized hospital folder: {hospital_dir.name}")
+                    continue
+                process_external_hospital(
+                    center_name=center_name,
+                    source_root=hospital_dir,
+                    output_root=dataset_configs["external"]["output"] / center_name,
+                    limit=args.limit,
+                )
+            continue
+
         process_dataset(
             dataset_key=dataset_key,
             source_root=config["source"],

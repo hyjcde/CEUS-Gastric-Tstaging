@@ -1,13 +1,13 @@
 center_id,standard_hospital_name,folder_name,legacy_folder_aliases,source_prefix,dataset_key,cohort,tstaging_manifest,tstaging_split,benign_data,malignant_data,video_data,image_data,manifest_frames,modeled_frames,clinical_patients,notes
 internal_xh,福建医科大学附属协和医院,internal,int/协和内部,int/,,internal_xh_2018;internal_xh_2019;internal_xh_2020_2023;internal_xh_2024;internal_xh_2025,internal,yes,train;val;test_external;test_prospective,yes,yes,no,yes,10659,9681,1883,organized by year under dataset/internal/
-external_putian1,莆田学院附属医院,莆田学院附属医院,莆田1胃癌直接手术,ext/putian,external_putian1,external,yes,train;val;test_external,yes,yes,no,yes,2376,1103,344,
-external_putian2,莆田市第一医院,莆田市第一医院,莆田2胃癌直接手术,ext/putian2,external_putian2,external,yes,test_external,no,yes,no,yes,25,0,8,
-external_tumor,福建省肿瘤医院,福建省肿瘤医院,肿瘤医院直接手术,ext/zhongliu,external_tumor,external,yes,test_external,yes,yes,no,yes,436,229,135,
-external_sanming,三明市第二医院,三明市第二医院,三明胃癌直接手术,ext/sanming,external_sanming,external,yes,test_external,yes,yes,no,yes,19,0,4,
-external_dehua,福建省德化县医院,福建省德化县医院,德化直接手术,ext/newzip/福建省德化县医院,external_dehua,external,newzip_only,test_external_newzip,no,yes,no,yes,100,88,16,
-external_beijing_friendship,北京友谊医院,北京友谊医院,外省整理/北京;外省整理,ext/newzip/北京友谊医院,external_beijing_friendship,external,newzip_only,test_external_newzip,no,yes,no,yes,124,124,22,
-external_foshan_first,佛山市第一人民医院,佛山市第一人民医院,外省整理/广东;外省整理,ext/newzip/佛山市第一人民医院,external_foshan_first,external,newzip_only,test_external_newzip,no,yes,no,yes,112,67,31,
+external_putian1,莆田学院附属医院,莆田学院附属医院,莆田1胃癌直接手术,ext/putian,external_putian1,external,yes,train;val;test_external,yes,yes,no,yes,1852,1809,344,rebuilt from 胃癌直接手术外部测试集
+external_putian2,莆田市第一医院,莆田市第一医院,莆田2胃癌直接手术,ext/putian2,external_putian2,external,yes,test_external,no,yes,no,yes,25,25,8,rebuilt from 胃癌直接手术外部测试集
+external_tumor,福建省肿瘤医院,福建省肿瘤医院,肿瘤医院直接手术,ext/zhongliu,external_tumor,external,yes,test_external,yes,yes,no,yes,436,402,135,rebuilt from 胃癌直接手术外部测试集
+external_sanming,三明市第二医院,三明市第二医院,三明胃癌直接手术,ext/sanming,external_sanming,external,yes,test_external,yes,yes,no,yes,19,19,4,rebuilt from 胃癌直接手术外部测试集
+external_dehua,福建省德化县医院,福建省德化县医院,德化直接手术,ext/福建省德化县医院,external_dehua,external,yes,test_external,no,yes,no,yes,100,88,16,unified external manifest
+external_beijing_friendship,北京友谊医院,北京友谊医院,外省整理/北京;外省整理,ext/北京友谊医院,external_beijing_friendship,external,yes,test_external,no,yes,no,yes,124,124,22,unified external manifest
+external_foshan_first,佛山市第一人民医院,佛山市第一人民医院,外省整理/广东;外省整理,ext/佛山市第一人民医院,external_foshan_first,external,yes,test_external,no,yes,no,yes,112,67,31,unified external manifest
 external_hubei_tcm,湖北中西医结合医院,湖北中西医结合医院,外省整理/湖北窦;外省整理,ext/newzip/湖北中西医结合医院,external_hubei_tcm,external,no,,no,no,no,no,0,0,0,DEPRECATED mislabeled zip; images are 中核五〇四医院 Lanzhou 504
-external_cnnc_504,中核五〇四医院,中核五〇四医院,外省整理/湖北窦;湖北中西医结合医院;窦晓霞中核五〇四医院胃溃疡病例(1),ext/newzip/中核五〇四医院,external_cnnc_504,external,newzip_only,test_external_newzip,yes,yes,yes,yes,216,216,67,Gastric direct-surgery hbd* cohort; ulcer videos under data/中核五〇四医院/
-external_fujian_provincial,福建省立医院,,,,external_fujian_provincial,external,no,,no,yes,no,yes,0,0,0,not imported
+external_cnnc_504,中核五〇四医院,中核五〇四医院,外省整理/湖北窦;湖北中西医结合医院;窦晓霞中核五〇四医院胃溃疡病例(1);中核五O四医院,ext/中核五〇四医院,external_cnnc_504,external,yes,test_external,yes,yes,yes,yes,216,216,67,unified external manifest
+external_fujian_provincial,福建省立医院,福建省立医院,省立胃癌图像,ext/福建省立医院,external_fujian_provincial,external,yes,test_external,no,yes,no,yes,220,216,0,rebuilt from 胃癌直接手术外部测试集
 external_ningde,宁德市医院,,,,external_ningde,external,no,,yes,no,no,yes,0,0,0,not imported

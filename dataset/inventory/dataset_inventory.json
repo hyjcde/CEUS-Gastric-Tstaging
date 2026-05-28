@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-05-20 07:07 UTC",
+  "generated_at": "2026-05-28 03:34 UTC",
   "project_root": "/data/research/gastric/GastricTstaging",
   "dataset_root": "/data/research/gastric/GastricTstaging/dataset",
   "summary": {
     "internal_manifest": 10659,
-    "external_manifest": 2856,
-    "external_newzip_manifest": 552,
-    "total_manifest": 14067,
+    "external_manifest": 3104,
+    "external_newzip_manifest": 0,
+    "total_manifest": 13763,
     "internal_physical_original_images": 10659,
     "lumen_detection_train": 1439
   },
@@ -14,13 +14,13 @@
     {
       "name": "正式 manifest 口径",
       "scope": "dataset/internal + external manifest.csv",
-      "frames": 13515,
+      "frames": 13763,
       "use": "分割、ROI、正式物理数据统计"
     },
     {
       "name": "manifest + newzip",
       "scope": "正式 manifest + new_external_zip_manifest.csv",
-      "frames": 14067,
+      "frames": 13763,
       "use": "含新增外部 zip 的磁盘可用标注图像"
     },
     {
@@ -162,23 +162,23 @@
     ]
   },
   "external": {
-    "manifest_rows": 2856,
-    "newzip_manifest_rows": 552,
-    "combined_manifest_rows": 3408,
-    "unmatched_rows": 16,
-    "error_rows": 2,
+    "manifest_rows": 3104,
+    "newzip_manifest_rows": 0,
+    "combined_manifest_rows": 3104,
+    "unmatched_rows": 1062,
+    "error_rows": 1,
     "manifest_by_center": {
-      "莆田学院附属医院": 2376,
+      "莆田学院附属医院": 1852,
       "福建省肿瘤医院": 436,
-      "莆田市第一医院": 25,
-      "三明市第二医院": 19
-    },
-    "newzip_by_center": {
+      "福建省立医院": 220,
       "中核五〇四医院": 216,
       "北京友谊医院": 124,
       "佛山市第一人民医院": 112,
-      "福建省德化县医院": 100
+      "福建省德化县医院": 100,
+      "莆田市第一医院": 25,
+      "三明市第二医院": 19
     },
+    "newzip_by_center": {},
     "centers": [
       {
         "folder": "三明市第二医院",
@@ -296,6 +296,29 @@
         }
       },
       {
+        "folder": "福建省立医院",
+        "views": {
+          "original": {
+            "images": 220,
+            "annotations": 220,
+            "roi_masks": 220,
+            "overlays": 220
+          },
+          "crop_ui": {
+            "images": 220,
+            "annotations": 220,
+            "roi_masks": 220,
+            "overlays": 220
+          },
+          "crop_roi": {
+            "images": 220,
+            "annotations": 220,
+            "roi_masks": 220,
+            "overlays": 220
+          }
+        }
+      },
+      {
         "folder": "福建省肿瘤医院",
         "views": {
           "original": {
@@ -322,22 +345,22 @@
         "folder": "莆田学院附属医院",
         "views": {
           "original": {
-            "images": 2376,
-            "annotations": 2376,
-            "roi_masks": 2376,
-            "overlays": 2376
+            "images": 1852,
+            "annotations": 1852,
+            "roi_masks": 1852,
+            "overlays": 1852
           },
           "crop_ui": {
-            "images": 2376,
-            "annotations": 2376,
-            "roi_masks": 2376,
-            "overlays": 2376
+            "images": 1852,
+            "annotations": 1852,
+            "roi_masks": 1852,
+            "overlays": 1852
           },
           "crop_roi": {
-            "images": 2376,
-            "annotations": 2376,
-            "roi_masks": 2376,
-            "overlays": 2376
+            "images": 1852,
+            "annotations": 1852,
+            "roi_masks": 1852,
+            "overlays": 1852
           }
         }
       },
@@ -388,11 +411,11 @@
       },
       {
         "name": "clinical_table_index.csv",
-        "size_mb": 0.282
+        "size_mb": 0.29
       },
       {
         "name": "clinical_table_registry.csv",
-        "size_mb": 185.62
+        "size_mb": 185.93
       },
       {
         "name": "external_hospital_overlay_audit.csv",
@@ -404,15 +427,15 @@
       },
       {
         "name": "patient_clinical_candidates.csv",
-        "size_mb": 179.928
+        "size_mb": 180.32
       },
       {
         "name": "patient_clinical_master.csv",
-        "size_mb": 7.658
+        "size_mb": 7.991
       },
       {
         "name": "patient_clinical_master_coverage_by_group.csv",
-        "size_mb": 0.019
+        "size_mb": 0.031
       },
       {
         "name": "patient_clinical_master_coverage_overall.csv",
@@ -420,7 +443,7 @@
       },
       {
         "name": "patient_clinical_schema.json",
-        "size_mb": 0.004
+        "size_mb": 0.005
       }
     ],
     "center_registry_rows": 12,
@@ -461,10 +484,10 @@
         "malignant_data": "yes",
         "video_data": "no",
         "image_data": "yes",
-        "manifest_frames": "2376",
-        "modeled_frames": "1103",
+        "manifest_frames": "1852",
+        "modeled_frames": "1809",
         "clinical_patients": "344",
-        "notes": ""
+        "notes": "rebuilt from 胃癌直接手术外部测试集"
       },
       {
         "center_id": "external_putian2",
@@ -481,9 +504,9 @@
         "video_data": "no",
         "image_data": "yes",
         "manifest_frames": "25",
-        "modeled_frames": "0",
+        "modeled_frames": "25",
         "clinical_patients": "8",
-        "notes": ""
+        "notes": "rebuilt from 胃癌直接手术外部测试集"
       },
       {
         "center_id": "external_tumor",
@@ -500,9 +523,9 @@
         "video_data": "no",
         "image_data": "yes",
         "manifest_frames": "436",
-        "modeled_frames": "229",
+        "modeled_frames": "402",
         "clinical_patients": "135",
-        "notes": ""
+        "notes": "rebuilt from 胃癌直接手术外部测试集"
       },
       {
         "center_id": "external_sanming",
@@ -519,20 +542,20 @@
         "video_data": "no",
         "image_data": "yes",
         "manifest_frames": "19",
-        "modeled_frames": "0",
+        "modeled_frames": "19",
         "clinical_patients": "4",
-        "notes": ""
+        "notes": "rebuilt from 胃癌直接手术外部测试集"
       },
       {
         "center_id": "external_dehua",
         "standard_hospital_name": "福建省德化县医院",
         "folder_name": "福建省德化县医院",
         "legacy_folder_aliases": "德化直接手术",
-        "source_prefix": "ext/newzip/福建省德化县医院",
+        "source_prefix": "ext/福建省德化县医院",
         "dataset_key": "external_dehua",
         "cohort": "external",
-        "tstaging_manifest": "newzip_only",
-        "tstaging_split": "test_external_newzip",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
         "benign_data": "no",
         "malignant_data": "yes",
         "video_data": "no",
@@ -540,18 +563,18 @@
         "manifest_frames": "100",
         "modeled_frames": "88",
         "clinical_patients": "16",
-        "notes": ""
+        "notes": "unified external manifest"
       },
       {
         "center_id": "external_beijing_friendship",
         "standard_hospital_name": "北京友谊医院",
         "folder_name": "北京友谊医院",
         "legacy_folder_aliases": "外省整理/北京;外省整理",
-        "source_prefix": "ext/newzip/北京友谊医院",
+        "source_prefix": "ext/北京友谊医院",
         "dataset_key": "external_beijing_friendship",
         "cohort": "external",
-        "tstaging_manifest": "newzip_only",
-        "tstaging_split": "test_external_newzip",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
         "benign_data": "no",
         "malignant_data": "yes",
         "video_data": "no",
@@ -559,18 +582,18 @@
         "manifest_frames": "124",
         "modeled_frames": "124",
         "clinical_patients": "22",
-        "notes": ""
+        "notes": "unified external manifest"
       },
       {
         "center_id": "external_foshan_first",
         "standard_hospital_name": "佛山市第一人民医院",
         "folder_name": "佛山市第一人民医院",
         "legacy_folder_aliases": "外省整理/广东;外省整理",
-        "source_prefix": "ext/newzip/佛山市第一人民医院",
+        "source_prefix": "ext/佛山市第一人民医院",
         "dataset_key": "external_foshan_first",
         "cohort": "external",
-        "tstaging_manifest": "newzip_only",
-        "tstaging_split": "test_external_newzip",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
         "benign_data": "no",
         "malignant_data": "yes",
         "video_data": "no",
@@ -578,7 +601,7 @@
         "manifest_frames": "112",
         "modeled_frames": "67",
         "clinical_patients": "31",
-        "notes": ""
+        "notes": "unified external manifest"
       },
       {
         "center_id": "external_hubei_tcm",
@@ -603,12 +626,12 @@
         "center_id": "external_cnnc_504",
         "standard_hospital_name": "中核五〇四医院",
         "folder_name": "中核五〇四医院",
-        "legacy_folder_aliases": "外省整理/湖北窦;湖北中西医结合医院;窦晓霞中核五〇四医院胃溃疡病例(1)",
-        "source_prefix": "ext/newzip/中核五〇四医院",
+        "legacy_folder_aliases": "外省整理/湖北窦;湖北中西医结合医院;窦晓霞中核五〇四医院胃溃疡病例(1);中核五O四医院",
+        "source_prefix": "ext/中核五〇四医院",
         "dataset_key": "external_cnnc_504",
         "cohort": "external",
-        "tstaging_manifest": "newzip_only",
-        "tstaging_split": "test_external_newzip",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
         "benign_data": "yes",
         "malignant_data": "yes",
         "video_data": "yes",
@@ -616,26 +639,26 @@
         "manifest_frames": "216",
         "modeled_frames": "216",
         "clinical_patients": "67",
-        "notes": "Gastric direct-surgery hbd* cohort; ulcer videos under data/中核五〇四医院/"
+        "notes": "unified external manifest"
       },
       {
         "center_id": "external_fujian_provincial",
         "standard_hospital_name": "福建省立医院",
-        "folder_name": "",
-        "legacy_folder_aliases": "",
-        "source_prefix": "",
+        "folder_name": "福建省立医院",
+        "legacy_folder_aliases": "省立胃癌图像",
+        "source_prefix": "ext/福建省立医院",
         "dataset_key": "external_fujian_provincial",
         "cohort": "external",
-        "tstaging_manifest": "no",
-        "tstaging_split": "",
+        "tstaging_manifest": "yes",
+        "tstaging_split": "test_external",
         "benign_data": "no",
         "malignant_data": "yes",
         "video_data": "no",
         "image_data": "yes",
-        "manifest_frames": "0",
-        "modeled_frames": "0",
+        "manifest_frames": "220",
+        "modeled_frames": "216",
         "clinical_patients": "0",
-        "notes": "not imported"
+        "notes": "rebuilt from 胃癌直接手术外部测试集"
       },
       {
         "center_id": "external_ningde",
@@ -657,7 +680,7 @@
         "notes": "not imported"
       }
     ],
-    "patient_clinical_master_rows": 2374
+    "patient_clinical_master_rows": 2558
   },
   "modeling_splits": {
     "test_external_clinical": {

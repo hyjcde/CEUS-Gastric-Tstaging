@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-05-28T03:32:58.057330+00:00",
+  "output_csv": "/data/research/gastric/GastricTstaging/pipeline/data/tstaging_4class/test_external.csv",
+  "total_labeled_rows": 2966,
+  "per_center": {
+    "三明市第二医院": {
+      "manifest_rows": 19,
+      "labeled_rows": 19
+    },
+    "中核五〇四医院": {
+      "manifest_rows": 216,
+      "labeled_rows": 216
+    },
+    "佛山市第一人民医院": {
+      "manifest_rows": 112,
+      "labeled_rows": 67
+    },
+    "北京友谊医院": {
+      "manifest_rows": 124,
+      "labeled_rows": 124
+    },
+    "福建省德化县医院": {
+      "manifest_rows": 100,
+      "labeled_rows": 88
+    },
+    "福建省立医院": {
+      "manifest_rows": 220,
+      "labeled_rows": 216
+    },
+    "福建省肿瘤医院": {
+      "manifest_rows": 436,
+      "labeled_rows": 402
+    },
+    "莆田学院附属医院": {
+      "manifest_rows": 1852,
+      "labeled_rows": 1809
+    },
+    "莆田市第一医院": {
+      "manifest_rows": 25,
+      "labeled_rows": 25
+    }
+  }
+}
