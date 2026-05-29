@@ -39,3 +39,4 @@ echo "Annot: http://127.0.0.1:3000/annotate"
 if [[ -d "$VIDEO_ROOT" ]]; then
   echo "Video: http://127.0.0.1:$VIDEO_PORT"
 fi
+echo "Tip: run scripts/serve_visual_review.sh for Grad-CAM screening (:3110) + mainline figures (:3111)"
