@@ -1,70 +1,38 @@
-# 文档总入口
+# 文档入口
 
-这套文档的目标不是“尽量多”，而是让后续实验始终沿着同一条主线推进。
+仓库总入口：**[../START_HERE.md](../START_HERE.md)**。文档很多时，**只认下面一条路径**，避免在 `mainline/`、`references/` 里迷路。
 
-当前默认阅读入口只有这一页；`docs copy/`、历史迁移材料和实验结果目录都不是当前主线入口。
+## 三步阅读（推荐）
 
-## 推荐阅读顺序
+| 步骤 | 文档 | 用时 |
+|------|------|------|
+| 1 | **[ARCHITECTURE.md](ARCHITECTURE.md)** — 系统分层、目录地图、数据流、文档 Tier A/B/C | ~15 分钟 |
+| 2 | **[mainline/gastric_tstaging_project_framework_zh.md](mainline/gastric_tstaging_project_framework_zh.md)** — 临床目标、P0 T 分期、已有模型资产 | ~30 分钟 |
+| 3 | **[mainline/tstaging_current_mainline.md](mainline/tstaging_current_mainline.md)** — 当前在做什么（阶段 A/B/C） | ~10 分钟 |
 
-1. `mainline/project_scope.md`
-2. `mainline/tstaging_current_mainline.md`
-3. `mainline/research_mainline.md`
-4. `data_governance/data_registry_spec.md`
-5. `data_governance/data_split_policy.md`
-6. `data_governance/data_qc_policy.md`
-7. `experiment_governance/experiment_structure.md`
-8. `experiment_governance/baseline_plan.md`
-9. `evaluation/validation_protocol.md`
-10. `visualization/visualization_standard.md`
+可视化：浏览器打开 [mainline/gastric_tstaging_project_logic.html](mainline/gastric_tstaging_project_logic.html)。
 
-如果只想快速知道“现在到底做什么”，先看：
+## 按角色跳转
 
-- `mainline/tstaging_current_mainline.md`
+| 你要做的事 | 去读 |
+|------------|------|
+| 核对数据、split、多中心 | [../dataset/DATASET_GUIDE.md](../dataset/DATASET_GUIDE.md) + [data_governance/data_split_policy.md](data_governance/data_split_policy.md) |
+| 跑检测/分割/T 分期实验 | [../scripts/README.md](../scripts/README.md) + [experiment_governance/experiment_structure.md](experiment_governance/experiment_structure.md) |
+| 开发 Agent / 前端工作台 | [mainline/agent_api_contract.md](mainline/agent_api_contract.md) + [../apps/README.md](../apps/README.md) |
+| 查某次实验结论 | [../experiments/registry.csv](../experiments/registry.csv) + `pipeline/experiments/reports/` |
+| 维护仓库路径 | [../MAINTENANCE.md](../MAINTENANCE.md) |
+| 查全部文档清单 | [DOCUMENT_MAP.md](DOCUMENT_MAP.md) |
 
-## Current
+## 不要从这里开始
 
-这些页面定义当前默认口径，优先级最高：
+- `docs copy/` → 实体在 `archive/docs_legacy/docs_copy/`（根 symlink 兼容），非当前 SSOT
+- `references/dinov3/`、`references/segdino/` — 阶段性笔记
+- `archive_refs/` — 旧 Tstaging 迁移材料
+- `mainline/figures/results/` — 出图产物
 
-- `mainline/`：项目范围、阶段定义、当前主线
-- `data_governance/`：数据注册、split、QC 和版本边界
-- `experiment_governance/`：实验命名、落盘结构、基线顺序
-- `evaluation/`：内部/外部验证、病例级评估、错误分析规范
-- `visualization/`：出图规范、目录规则、医生审阅材料要求
+## 治理规范（需要时打开）
 
-数据目录本身的正式说明不在 `docs/` 内，而在：
-
-- `../dataset/DATASET_GUIDE.md`
-
-做实验、写统计和核对数据边界时，应优先以 `dataset/DATASET_GUIDE.md`、`manifest.csv` 和当前治理文档为准，而不是旧索引页。
-
-## Operations
-
-这些页面帮助你把主线文档落到脚本、目录和实验执行上：
-
-- `../scripts/README.md`：脚本索引与推荐使用顺序
-- `../experiments/baselines/`：当前 baseline 入口目录
-- `experiment_governance/baseline_plan.md`：默认基线推进顺序
-
-旧 `Tstaging` 迁移后保留的实验结果证据在：
-
-- `archive_refs/tstaging_migration/`
-- `../experiments/archive_tstaging/`
-
-这些目录用于核对历史证据，不替代当前主线规范。
-
-## Archive
-
-以下内容只作为历史参考，不作为当前默认入口：
-
-- `archive_refs/legacy_selected/`
-- `archive_refs/legacy_doc_map.md`
-- `archive_refs/tstaging_migration/`
-- `../docs copy/`
-
-如果你是第一次进入仓库，建议不要从这些位置开始读。
-
-## 这套文档解决什么问题
-
-- 防止实验从一开始又散成多个并行分叉。
-- 防止旧结果、旧脚本、旧结论和新主线混在一起。
-- 让数据、实验、验证、可视化从一开始就有统一口径。
+- [data_governance/](data_governance/) — 注册表、split、QC
+- [experiment_governance/](experiment_governance/) — 实验命名与 baseline 顺序
+- [evaluation/validation_protocol.md](evaluation/validation_protocol.md) — 验证协议
+- [visualization/visualization_standard.md](visualization/visualization_standard.md) — 出图规范

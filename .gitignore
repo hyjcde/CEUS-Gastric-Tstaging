@@ -10,10 +10,23 @@
 外部测试集/
 data/raw/
 data/processed/
-data/metadata/
 data/splits/
 external/
 .venv*/
+
+# Generated artifacts (see MAINTENANCE.md)
+artifacts/
+tmp/
+output/
+frames_1fps/
+direction_annotations/
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
 
 # Python cache
 __pycache__/
@@ -26,3 +39,28 @@ docs/mainline/project_logic_white/*.png
 docs/mainline/project_logic_white/index.html
 docs/mainline/project_logic_white.zip
 *.pdf
+
+# Frontend build outputs
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.vercel
+
+# Keep governance metadata trackable
+!data/metadata/
+!data/metadata/*.csv
+!data/metadata/*.md
+!data/metadata/*.txt
+
+# Large experiment trees (index via experiments/registry.csv)
+pipeline/experiments/tree/
+pipeline/experiments_legacy_backup_*/
+experiments/segmentation/**/weights/
+experiments/**/checkpoints/
