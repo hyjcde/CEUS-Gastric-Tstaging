@@ -1,3 +1,6 @@
+"""Legacy script — prefer README §1–3 mainline. Do not use as default entry."""
+# STATUS: legacy
+
 #!/usr/bin/env python3
 """OCR audit: burned-in hospital name on US frame headers vs folder label."""
 

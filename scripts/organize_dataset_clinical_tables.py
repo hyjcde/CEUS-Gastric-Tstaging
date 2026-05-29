@@ -12,11 +12,13 @@ from typing import Iterable
 from openpyxl import load_workbook
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from repo_paths import PROJECT_ROOT, RAW_LEGACY_EXTERNAL_SURGERY, RAW_LEGACY_GASTRIC
+
 DATASET_ROOT = PROJECT_ROOT / "dataset"
 OUTPUT_ROOT = DATASET_ROOT / "tables"
 RAW_COPY_ROOT = OUTPUT_ROOT / "raw"
 BY_SOURCE_ROOT = OUTPUT_ROOT / "by_source"
+LEGACY_GASTRIC_TABLES = RAW_LEGACY_GASTRIC / "协和内部数据集/直接手术/表格整理"
 
 
 @dataclass(frozen=True)
@@ -28,7 +30,7 @@ class TableSource:
     workbook_path: Path
 
 
-EXTERNAL_SOURCE_ROOT = PROJECT_ROOT / "胃癌直接手术外部测试集" / "直接手术图片"
+EXTERNAL_SOURCE_ROOT = RAW_LEGACY_EXTERNAL_SURGERY / "直接手术图片"
 
 SOURCES: list[TableSource] = [
     TableSource(
@@ -36,35 +38,35 @@ SOURCES: list[TableSource] = [
         cohort="internal_training",
         center="协和内部",
         year_group="2018",
-        workbook_path=PROJECT_ROOT / "胃癌分期/协和内部数据集/直接手术/表格整理/2018直接手术.xlsx",
+        workbook_path=LEGACY_GASTRIC_TABLES / "2018直接手术.xlsx",
     ),
     TableSource(
         table_id="internal_2019_direct_surgery",
         cohort="internal_training",
         center="协和内部",
         year_group="2019",
-        workbook_path=PROJECT_ROOT / "胃癌分期/协和内部数据集/直接手术/表格整理/2019.xlsx",
+        workbook_path=LEGACY_GASTRIC_TABLES / "2019.xlsx",
     ),
     TableSource(
         table_id="internal_2020_2023_direct_surgery",
         cohort="internal_training",
         center="协和内部",
         year_group="2020_2023",
-        workbook_path=PROJECT_ROOT / "胃癌分期/协和内部数据集/直接手术/表格整理/20-23年直接手术胃癌.xlsx",
+        workbook_path=LEGACY_GASTRIC_TABLES / "20-23年直接手术胃癌.xlsx",
     ),
     TableSource(
         table_id="internal_2024_direct_surgery",
         cohort="internal_training",
         center="协和内部",
         year_group="2024",
-        workbook_path=PROJECT_ROOT / "胃癌分期/协和内部数据集/直接手术/表格整理/2024年胃癌手术.xlsx",
+        workbook_path=LEGACY_GASTRIC_TABLES / "2024年胃癌手术.xlsx",
     ),
     TableSource(
         table_id="internal_2025_direct_surgery",
         cohort="internal_prospective",
         center="协和内部",
         year_group="2025",
-        workbook_path=PROJECT_ROOT / "胃癌分期/协和内部数据集/直接手术/表格整理/2025胃癌直接手术.xlsx",
+        workbook_path=LEGACY_GASTRIC_TABLES / "2025胃癌直接手术.xlsx",
     ),
     TableSource(
         table_id="external_sanming_direct_surgery",

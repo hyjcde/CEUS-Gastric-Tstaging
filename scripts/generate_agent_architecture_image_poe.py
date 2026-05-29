@@ -12,6 +12,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -21,6 +22,12 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DOCS = PROJECT_ROOT / "docs" / "mainline"
+
+# Load POE_API_KEY from repo-root `.env` when present.
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+from repo_env import load_repo_env  # noqa: E402
+
+load_repo_env()
 
 PROMPT_OVERVIEW = DOCS / "gastric_us_agent_architecture_poe_prompt.txt"
 PROMPT_DETAILED = DOCS / "gastric_us_agent_methodology_architecture_poe_prompt_detailed.txt"
@@ -36,6 +43,8 @@ DEFAULT_MODEL = {
 }
 
 POE_IMAGES_URL = "https://api.poe.com/v1/images"
+POE_CHAT_URL = "https://api.poe.com/v1/chat/completions"
+_IMAGE_URL_RE = re.compile(r"https://[^\s\)\]>\"']+")
 
 # Fallback if prompt files missing (overview only).
 _OVERVIEW_FALLBACK = PROMPT_OVERVIEW.read_text(encoding="utf-8") if PROMPT_OVERVIEW.exists() else ""
@@ -63,6 +72,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quality", default="high", choices=["low", "medium", "high", "auto"])
     parser.add_argument("--aspect-ratio", default="16:9")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--backend",
+        choices=["auto", "chat", "images"],
+        default="auto",
+        help="auto: chat (Poe Images API often 404/403); chat: GPT-Image via /v1/chat/completions.",
+    )
     return parser.parse_args()
 
 
@@ -75,6 +90,68 @@ def _resolve_prompt(variant: str, prompt_file: Path | None) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _extract_image_url_from_text(text: str) -> str:
+    for url in _IMAGE_URL_RE.findall(text or ""):
+        if any(token in url for token in ("poecdn", "/image/", ".png", ".jpg", ".jpeg", ".webp")):
+            return url.rstrip(")")
+    raise RuntimeError("No image URL found in Poe chat response")
+
+
+def _generate_via_chat(api_key: str, model: str, prompt: str) -> bytes:
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 4096,
+    }
+    request = urllib.request.Request(
+        POE_CHAT_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=600) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Poe chat request failed: HTTP {exc.code}: {detail}") from exc
+
+    choices = payload.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"Poe chat returned no choices: {payload}")
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    image_url = _extract_image_url_from_text(content)
+    download_req = urllib.request.Request(
+        image_url,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; GastricTstaging/1.0)"},
+    )
+    with urllib.request.urlopen(download_req, timeout=120) as response:
+        return response.read()
+
+
+def _generate_via_images(api_key: str, request_body: dict[str, Any]) -> bytes:
+    request = urllib.request.Request(
+        POE_IMAGES_URL,
+        data=json.dumps(request_body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Poe image request failed: HTTP {exc.code}: {detail}") from exc
+    return _extract_image_bytes(payload)
+
+
 def _extract_image_bytes(payload: dict[str, Any]) -> bytes:
     data = payload.get("data")
     if isinstance(data, list) and data:
@@ -85,7 +162,11 @@ def _extract_image_bytes(payload: dict[str, Any]) -> bytes:
                 return base64.b64decode(b64)
             url = item.get("url")
             if isinstance(url, str) and url:
-                with urllib.request.urlopen(url, timeout=120) as response:
+                download_req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; GastricTstaging/1.0)"},
+                )
+                with urllib.request.urlopen(download_req, timeout=120) as response:
                     return response.read()
     image = payload.get("image")
     if isinstance(image, str) and image:
@@ -113,11 +194,16 @@ def main() -> None:
         "aspect_ratio": args.aspect_ratio,
     }
 
+    backend = args.backend
+    if backend == "auto":
+        backend = "chat"
+
     if args.dry_run:
         print(json.dumps({
             "status": "dry_run",
             "variant": args.variant,
-            "endpoint": POE_IMAGES_URL,
+            "backend": backend,
+            "endpoint": POE_CHAT_URL if backend == "chat" else POE_IMAGES_URL,
             "model": model,
             "prompt_chars": len(prompt),
             "prompt_path": str(prompt_out),
@@ -126,35 +212,33 @@ def main() -> None:
         }, indent=2, ensure_ascii=False))
         return
 
+    load_repo_env()
     api_key = os.getenv(args.api_key_env)
     if not api_key:
         raise RuntimeError(
-            f"Missing {args.api_key_env}. Example:\n"
-            f"  export {args.api_key_env}=...\n"
+            f"Missing {args.api_key_env}. Copy .env.example to .env or export in shell.\n"
             f"  python {Path(__file__).name} --variant detailed"
         )
 
-    request = urllib.request.Request(
-        POE_IMAGES_URL,
-        data=json.dumps(request_body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=300) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Poe image request failed: HTTP {exc.code}: {detail}") from exc
+    if backend == "chat":
+        image_bytes = _generate_via_chat(api_key, model, prompt)
+        used_backend = "chat"
+    else:
+        try:
+            image_bytes = _generate_via_images(api_key, request_body)
+            used_backend = "images"
+        except RuntimeError as exc:
+            if args.backend != "images":
+                image_bytes = _generate_via_chat(api_key, model, prompt)
+                used_backend = "chat"
+            else:
+                raise exc
 
-    image_bytes = _extract_image_bytes(payload)
     out_path.write_bytes(image_bytes)
     print(json.dumps({
         "status": "ok",
         "variant": args.variant,
+        "backend": used_backend,
         "model": model,
         "output_path": str(out_path),
         "prompt_path": str(prompt_out),

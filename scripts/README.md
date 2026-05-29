@@ -7,7 +7,9 @@
 
 为准，避免复制易过期的命令细节。
 
-项目阶段与文档总览见根目录 `README.md`、`docs/README.md` 与 `docs/mainline/tstaging_current_mainline.md`。
+项目阶段与文档总览见根目录 `README.md`、`REPO_LAYOUT.md`、`docs/ARCHITECTURE.md` 与 `docs/mainline/tstaging_current_mainline.md`。
+
+脚本状态登记见 [script_registry.csv](script_registry.csv)（`current` / `legacy` / `runtime`）。
 
 ---
 
