@@ -1,6 +1,8 @@
-# 数据集说明
+# 数据集（Dataset）
 
-**交互式盘点页**：[`inventory/index.html`](inventory/index.html)（由 `python scripts/build_dataset_inventory.py` 生成，含 manifest / 物理目录 / 建模 split 统计）
+**七类资产中的正式数据集层**，总地图见 [../REPO_LAYOUT.md](../REPO_LAYOUT.md) §2。原始遗留数据在 [../data/raw/](../data/raw/)（根目录 `胃癌分期` 等为 symlink）。
+
+**交互式盘点页**：[`inventory/index.html`](inventory/index.html)（`python scripts/build_dataset_inventory.py`）
 
 本目录保存当前项目已经整理好的正式数据集，重点服务于胃充盈超声 T 分期相关的分割、定位和后续分类实验。
 
@@ -16,7 +18,7 @@
 
 这批数据不是最原始压缩包，而是已经经过统一预处理后的任务数据。
 
-原始来源路径用于追溯：
+原始来源路径用于追溯（symlink 仍指向 `data/raw/legacy_gastric_staging/`）：
 
 - 内部原始来源：`胃癌分期/协和内部数据集/直接手术`
 - 外部原始来源：`胃癌分期/外部测试集/胃癌直接手术外部测试集`

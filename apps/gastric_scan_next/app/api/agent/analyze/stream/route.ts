@@ -1,6 +1,11 @@
 import { spawn } from 'child_process';
 import { NextRequest } from 'next/server';
-import { resolvePatientAgentPaths, mapClinicalToAgentInput, mapReportToAgentInput } from '@/lib/agent-server';
+import {
+  resolvePatientAgentPaths,
+  resolvePatientFramePaths,
+  mapClinicalToAgentInput,
+  mapReportToAgentInput,
+} from '@/lib/agent-server';
 import { DatasetType, CohortYear, TreatmentType, PROJECT_ROOT } from '@/lib/config';
 import { Patient } from '@/types';
 
@@ -25,6 +30,8 @@ function buildPayload(body: AnalyzeRequestBody) {
     throw new Error('Could not resolve patient image path');
   }
 
+  const frames = resolvePatientFramePaths(patient, cohortYear, treatmentType, dataset, 3);
+
   return {
     session_id: sessionId,
     patient_id: patient.patient_id,
@@ -33,7 +40,9 @@ function buildPayload(body: AnalyzeRequestBody) {
     treatment_type: treatmentType,
     dataset,
     data_source: patient.source_label || patient.agent_report.data_source,
-    frame_count: patient.frame_count,
+    frame_count: frames.length || patient.frame_count,
+    max_frames: 3,
+    frames: frames.length > 0 ? frames : undefined,
     clinical: mapClinicalToAgentInput(patient),
     report_text: mapReportToAgentInput(patient),
     segmentation: patient.segmentation,

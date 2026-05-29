@@ -1,17 +1,16 @@
-# 数据目录说明
+# 数据层（data/）
 
-这里放当前项目的数据层结构，而不是旧项目的历史包袱。
+介于 **原始数据** 与 **正式数据集 [dataset/](../dataset/)** 之间：注册表、split、元数据、标注、中间 zip。
 
-## 子目录
+| 子目录 | 七类中的位置 | 说明 |
+|--------|--------------|------|
+| [raw/](raw/) | **原始数据** | 遗留中文目录实体（根 symlink 指向此） |
+| [registry/](registry/) | **数据集** | 样本/患者注册表模板 |
+| [splits/](splits/) | **数据集** | 冻结 split manifest |
+| [processed/](processed/) | **数据集** | 可再生产物（如临床报告特征） |
+| [metadata/](metadata/) | 治理 | 资产清单、迁移日志、验证 JSON |
+| [annotation/](annotation/) | **数据集** | 方向标注 batch 与输出 |
 
-- `raw/`：原始来源数据，只读心态管理
-- `registry/`：注册表、模板、映射清单
-- `processed/`：可再生的处理中间产物
-- `splits/`：患者级 split 清单
-- `metadata/`：版本说明、统计摘要、审计结果
+正式影像与 `manifest.csv` 在 **[../dataset/](../dataset/)**，不在此目录。
 
-## 原则
-
-- 原始数据、正式注册表、可再生产物分开存放
-- 没进注册表的数据，不直接进入训练
-- split 清单属于正式资产，不应散落在脚本目录
+详见 [../REPO_LAYOUT.md](../REPO_LAYOUT.md)。

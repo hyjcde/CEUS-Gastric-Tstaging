@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import { Activity, AlertTriangle, ArrowRight, Brain, CheckCircle2, Clipboard, Database, FileSearch, FileText, Layers3, Loader2, Microscope, Network, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Workflow, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, Brain, CheckCircle2, ChevronRight, Clipboard, Database, FileSearch, FileText, Layers3, Loader2, Microscope, Network, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Workflow, X } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
 import { AgentAnalysisResponse, AgentReportCue, AgentStep, AgentToolResult, Patient, RuntimeVerification } from '@/types';
 
@@ -1331,49 +1331,109 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-3 2xl:sticky 2xl:top-4 2xl:self-start">
-                  <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                    {language === 'zh' ? '实时调用队列' : 'Live Tool Queue'}
-                  </div>
-                  <div className="max-h-[72vh] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                    {adaptiveSteps.length ? adaptiveSteps.map((step, idx) => {
-                      const Icon = step.icon;
-                      const isSelected = idx === activeStep;
-                      const isDone = idx < liveSteps.length || Boolean(result);
-                      return (
-                        <button
-                          key={`inline-step-${step.key}-${idx}`}
-                          type="button"
-                          onClick={() => setActiveStep(idx)}
-                          className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                            isSelected
-                              ? 'border-emerald-200/60 bg-emerald-200/15 text-emerald-50'
-                              : 'border-white/10 bg-white/[0.035] text-slate-300 hover:border-emerald-300/30'
-                          }`}
-                        >
-                          <div className="flex items-start gap-2">
-                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                              isSelected ? 'bg-emerald-200 text-slate-950' : 'bg-white/5 text-emerald-200'
-                            }`}>
-                              {loading && idx === liveSteps.length ? <Loader2 size={14} className="animate-spin" /> : isDone ? <CheckCircle2 size={14} /> : <Icon size={14} />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="truncate text-xs font-black">{idx + 1}. {step.title}</div>
-                                <span className="text-[9px] uppercase text-slate-500">{step.backendStep?.status || 'pending'}</span>
-                              </div>
-                              <div className="mt-1 line-clamp-2 text-[10px] leading-relaxed opacity-70">{step.output}</div>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    }) : (
-                      <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-xs leading-relaxed text-slate-500">
-                        {language === 'zh' ? '点击启动后，Agent 会先盘点病例资料，然后第一条真实步骤会出现在这里。' : 'Start the agent to see the first real backend step here.'}
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                        {language === 'zh' ? '实时调用队列' : 'Live Tool Queue'}
                       </div>
-                    )}
+                      {adaptiveSteps.length > 0 && (
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          {language === 'zh'
+                            ? `工具链 ${adaptiveSteps.length} 步 · 当前查看第 ${activeStep + 1} 步`
+                            : `${adaptiveSteps.length} tools · viewing step ${activeStep + 1}`}
+                        </div>
+                      )}
+                    </div>
+                    {adaptiveSteps.length > 0 && (() => {
+                      const doneCount = adaptiveSteps.filter((_, idx) => idx < liveSteps.length || Boolean(result)).length;
+                      const progress = Math.round((doneCount / adaptiveSteps.length) * 100);
+                      return (
+                        <div className="flex min-w-[140px] flex-col items-end gap-1">
+                          <span className="text-[10px] font-mono text-emerald-200/80">{doneCount}/{adaptiveSteps.length}</span>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                            <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500" style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+
+                  {adaptiveSteps.length ? (
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      {adaptiveSteps.map((step, idx) => {
+                        const Icon = step.icon;
+                        const isSelected = idx === activeStep;
+                        const isDone = idx < liveSteps.length || Boolean(result);
+                        const isRunning = loading && idx === liveSteps.length;
+                        const isPending = !isDone && !isRunning;
+                        const showConnector = (idx + 1) % 4 !== 0 && idx < adaptiveSteps.length - 1;
+                        const statusLabel = isRunning
+                          ? (language === 'zh' ? '运行中' : 'running')
+                          : isDone
+                            ? (step.backendStep?.status || (language === 'zh' ? '完成' : 'done'))
+                            : (language === 'zh' ? '等待' : 'pending');
+                        return (
+                          <button
+                            key={`inline-step-${step.key}-${idx}`}
+                            type="button"
+                            onClick={() => setActiveStep(idx)}
+                            className={`group relative rounded-xl border px-2.5 py-2 text-left transition ${
+                              isSelected
+                                ? 'border-emerald-200/70 bg-emerald-200/15 text-emerald-50 shadow-[0_0_20px_rgba(16,185,129,0.2)] ring-1 ring-emerald-200/40'
+                                : isRunning
+                                  ? 'border-amber-300/40 bg-amber-300/10 text-amber-50'
+                                  : isDone
+                                    ? 'border-cyan-300/25 bg-cyan-300/10 text-cyan-100/90 hover:border-emerald-300/35'
+                                    : 'border-white/10 bg-white/[0.03] text-slate-500 hover:border-white/20 hover:text-slate-300'
+                            }`}
+                          >
+                            {showConnector && (
+                              <span className="pointer-events-none absolute -right-[9px] top-1/2 z-10 hidden -translate-y-1/2 text-slate-600 md:block" aria-hidden="true">
+                                <ChevronRight size={12} />
+                              </span>
+                            )}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${
+                                  isSelected ? 'bg-emerald-200 text-slate-950' : isDone ? 'bg-cyan-400/20 text-cyan-100' : 'bg-white/10 text-slate-400'
+                                }`}>
+                                  {idx + 1}
+                                </span>
+                                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${
+                                  isSelected ? 'bg-emerald-200 text-slate-950' : isPending ? 'bg-white/5 text-slate-500' : 'bg-white/10 text-emerald-200'
+                                }`}>
+                                  {isRunning ? <Loader2 size={12} className="animate-spin" /> : isDone ? <CheckCircle2 size={12} /> : <Icon size={12} />}
+                                </div>
+                              </div>
+                              <span className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide ${
+                                isRunning ? 'bg-amber-300/20 text-amber-100' : isDone ? 'bg-emerald-300/15 text-emerald-100' : 'bg-white/5 text-slate-500'
+                              }`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 line-clamp-2 text-[10px] font-bold leading-snug">{step.title}</div>
+                            <div className="mt-1 truncate text-[9px] opacity-70">{step.output}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-3 text-xs leading-relaxed text-slate-500">
+                      {language === 'zh' ? '点击启动后，Agent 会先盘点病例资料，然后第一条真实步骤会出现在这里。' : 'Start the agent to see the first real backend step here.'}
+                    </div>
+                  )}
+
+                  {adaptiveSteps.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-white/5 pt-2 text-[9px] text-slate-500">
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" />{language === 'zh' ? '已完成' : 'done'}</span>
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />{language === 'zh' ? '运行中' : 'running'}</span>
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-500" />{language === 'zh' ? '等待' : 'pending'}</span>
+                      <span className="text-slate-600">·</span>
+                      <span>{language === 'zh' ? '点击卡片查看该步详情' : 'Click a card for step details'}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
