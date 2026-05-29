@@ -1,0 +1,129 @@
+{
+  "date": "2026-05-29",
+  "project_root": "/data/research/gastric/GastricTstaging",
+  "pass": true,
+  "root_check": {
+    "pass": true,
+    "unexpected": 0,
+    "discouraged": 0,
+    "output": "/data/research/gastric/GastricTstaging/data/metadata/root_check_20260529.json",
+    "exit_code": 0
+  },
+  "checks": [
+    {
+      "name": "repo_layout",
+      "path": "REPO_LAYOUT.md",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/REPO_LAYOUT.md"
+    },
+    {
+      "name": "dataset_guide",
+      "path": "dataset/DATASET_GUIDE.md",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/dataset/DATASET_GUIDE.md"
+    },
+    {
+      "name": "architecture",
+      "path": "docs/ARCHITECTURE.md",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/docs/ARCHITECTURE.md"
+    },
+    {
+      "name": "docs_readme",
+      "path": "docs/README.md",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/docs/README.md"
+    },
+    {
+      "name": "raw_legacy_gastric",
+      "path": "data/raw/legacy_gastric_staging",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/data/raw/legacy_gastric_staging"
+    },
+    {
+      "name": "docs_legacy_copy",
+      "path": "archive/docs_legacy/docs_copy",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/archive/docs_legacy/docs_copy"
+    },
+    {
+      "name": "model_weights_yolo",
+      "path": "artifacts/model_weights/yolo",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/artifacts/model_weights/yolo"
+    },
+    {
+      "name": "models_readme",
+      "path": "models/README.md",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/models/README.md"
+    },
+    {
+      "name": "agent_analyze_case",
+      "path": "pipeline/agent/product/analyze_case.py",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/pipeline/agent/product/analyze_case.py"
+    },
+    {
+      "name": "gastric_scan_next",
+      "path": "apps/gastric_scan_next/package.json",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/apps/gastric_scan_next/package.json"
+    },
+    {
+      "name": "direction_annotator",
+      "path": "apps/direction_annotator/package.json",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/apps/direction_annotator/package.json"
+    },
+    {
+      "name": "experiments_registry",
+      "path": "experiments/registry.csv",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/experiments/registry.csv"
+    },
+    {
+      "name": "direction_batch_canonical",
+      "path": "data/annotation/batches/direction_annotation_batch.json",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/data/annotation/batches/direction_annotation_batch.json"
+    },
+    {
+      "name": "compat_readme",
+      "path": "_compat/README.md",
+      "ok": true,
+      "is_symlink": false,
+      "resolved": "/data/research/gastric/GastricTstaging/_compat/README.md"
+    }
+  ],
+  "manifest_samples": {
+    "internal": [
+      {
+        "sampled": 20,
+        "missing_count": 0,
+        "missing_paths": []
+      }
+    ],
+    "external": [
+      {
+        "sampled": 20,
+        "missing_count": 0,
+        "missing_paths": []
+      }
+    ]
+  },
+  "failed_count": 0
+}

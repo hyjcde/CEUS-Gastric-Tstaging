@@ -1,0 +1,3 @@
+needs_review
+# YOLO detection runs live under pipeline/experiments/tree/ — fill after next training run.
+# See YOLO11_BASELINE_PIPELINE.md for config and naming convention.

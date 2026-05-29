@@ -1,0 +1,8 @@
+{
+  "date": "2026-05-29",
+  "pass": true,
+  "allowed_count": 22,
+  "unexpected": [],
+  "discouraged": [],
+  "hint": "Move unexpected items to artifacts/, data/raw/, or _compat/ per REPO_LAYOUT.md"
+}

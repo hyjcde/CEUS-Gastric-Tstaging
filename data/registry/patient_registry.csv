@@ -1,0 +1,6 @@
+split,patient_count,csv_path,updated_at
+train,1405,pipeline/data/tstaging_4class_region_contrastive_full/regions/train_clinical.csv,2026-05-29
+val,161,pipeline/data/tstaging_4class_region_contrastive_full/regions/val_clinical.csv,2026-05-29
+test_external,381,pipeline/data/tstaging_4class_region_contrastive_full/regions/test_external_clinical.csv,2026-05-29
+test_external_newzip,136,pipeline/data/tstaging_4class_region_contrastive_full/regions/test_external_newzip_clinical.csv,2026-05-29
+test_prospective,46,pipeline/data/tstaging_4class_region_contrastive_full/regions/test_prospective_clinical.csv,2026-05-29

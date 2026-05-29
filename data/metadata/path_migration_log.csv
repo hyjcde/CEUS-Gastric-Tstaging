@@ -1,0 +1,63 @@
+old_path,new_path,action,date,verified,notes
+direction_annotation_batch.json,data/annotation/batches/direction_annotation_batch.json,mv+symlink,2026-05-29,yes,phase2
+direction_annotations,data/annotation/outputs/direction_annotations,mv+symlink,2026-05-29,yes,phase2
+gradcam_rejected (2).csv,artifacts/reports/gradcam_rejected.csv,mv+symlink,2026-05-29,yes,phase2
+yolo11l.pt,artifacts/model_weights/yolo/yolo11l.pt,mv+symlink,2026-05-29,yes,phase2
+yolo11m.pt,artifacts/model_weights/yolo/yolo11m.pt,mv+symlink,2026-05-29,yes,phase2
+yolo11n.pt,artifacts/model_weights/yolo/yolo11n.pt,mv+symlink,2026-05-29,yes,phase2
+yolo11s.pt,artifacts/model_weights/yolo/yolo11s.pt,mv+symlink,2026-05-29,yes,phase2
+胃癌直接手术外部测试集(1).zip,artifacts/raw_imports/incoming/胃癌直接手术外部测试集(1).zip,mv+symlink,2026-05-29,yes,phase2 zip
+外部测试集胃癌视频.zip,artifacts/raw_imports/incoming/外部测试集胃癌视频.zip,mv+symlink,2026-05-29,yes,phase2 zip
+2024_crop_ui_unlabeled_lumen_for_labelme(1).zip,artifacts/raw_imports/incoming/2024_crop_ui_unlabeled_lumen_for_labelme(1).zip,mv+symlink,2026-05-29,yes,phase2 zip
+2024_crop_ui_unlabeled_lumen_for_labelme(2).zip,artifacts/raw_imports/incoming/2024_crop_ui_unlabeled_lumen_for_labelme(2).zip,mv+symlink,2026-05-29,yes,phase2 zip
+外部测试集炎症视频.zip,artifacts/raw_imports/incoming/外部测试集炎症视频.zip,mv+symlink,2026-05-29,yes,phase2 zip
+200.zip,artifacts/raw_imports/incoming/200.zip,mv+symlink,2026-05-29,yes,phase2 zip
+胃癌分期,/data/research/gastric/GastricTstaging/胃癌分期.bak_20260529,mv_backup,2026-05-29,yes,phase3
+胃癌分期,data/raw/legacy_gastric_staging,symlink,2026-05-29,yes,phase3
+胃癌直接手术外部测试集,/data/research/gastric/GastricTstaging/胃癌直接手术外部测试集.bak_20260529,mv_backup,2026-05-29,yes,phase3
+胃癌直接手术外部测试集,data/raw/legacy_external_direct_surgery,symlink,2026-05-29,yes,phase3
+胃腔,/data/research/gastric/GastricTstaging/胃腔.bak_20260529,mv_backup,2026-05-29,yes,phase3
+胃腔,data/raw/legacy_lumen,symlink,2026-05-29,yes,phase3
+胃壁区域可视化方向,/data/research/gastric/GastricTstaging/胃壁区域可视化方向.bak_20260529,mv_backup,2026-05-29,yes,phase3
+胃壁区域可视化方向,data/raw/legacy_wall_viz,symlink,2026-05-29,yes,phase3
+docs copy,archive/docs_legacy/docs_copy,mv+symlink,2026-05-29,yes,phase4 docs
+docs copy,archive/docs_legacy/docs_copy,symlink,2026-05-29,yes,phase4 docs
+frames_1fps,artifacts/video_frames/frames_1fps,mv+symlink,2026-05-29,yes,raw video frames
+frames_1fps,artifacts/video_frames/frames_1fps,symlink,2026-05-29,yes,raw video frames
+results,artifacts/results,mv+symlink,2026-05-29,yes,analysis outputs
+results,artifacts/results,symlink,2026-05-29,yes,analysis outputs
+output,artifacts/output,mv+symlink,2026-05-29,yes,export output
+output,artifacts/output,symlink,2026-05-29,yes,export output
+paper,docs/paper,mv+symlink,2026-05-29,yes,paper assets
+paper,docs/paper,symlink,2026-05-29,yes,paper assets
+tmp,artifacts/tmp,mv+symlink,2026-05-29,yes,temp workspace
+tmp,artifacts/tmp,symlink,2026-05-29,yes,temp workspace
+胃癌分期.bak_20260529,,delete_backup,2026-05-29,yes,phase8 cleanup after verify pass
+胃癌直接手术外部测试集.bak_20260529,,delete_backup,2026-05-29,yes,phase8 cleanup after verify pass
+胃腔.bak_20260529,,delete_backup,2026-05-29,yes,phase8 cleanup after verify pass
+胃壁区域可视化方向.bak_20260529,,delete_backup,2026-05-29,yes,phase8 cleanup after verify pass
+200.zip,_compat/200.zip,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+2024_crop_ui_unlabeled_lumen_for_labelme(1).zip,_compat/2024_crop_ui_unlabeled_lumen_for_labelme(1).zip,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+2024_crop_ui_unlabeled_lumen_for_labelme(2).zip,_compat/2024_crop_ui_unlabeled_lumen_for_labelme(2).zip,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+direction_annotation_batch.json,_compat/direction_annotation_batch.json,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+direction_annotations,_compat/direction_annotations,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+docs copy,_compat/docs copy,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+frames_1fps,_compat/frames_1fps,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+gradcam_rejected (2).csv,_compat/gradcam_rejected (2).csv,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+output,_compat/output,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+paper,_compat/paper,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+results,_compat/results,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+tmp,_compat/tmp,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+yolo11l.pt,_compat/yolo11l.pt,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+yolo11m.pt,_compat/yolo11m.pt,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+yolo11n.pt,_compat/yolo11n.pt,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+yolo11s.pt,_compat/yolo11s.pt,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+外部测试集炎症视频.zip,_compat/外部测试集炎症视频.zip,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+外部测试集胃癌视频.zip,_compat/外部测试集胃癌视频.zip,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+胃壁区域可视化方向,_compat/胃壁区域可视化方向,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+胃癌分期,_compat/胃癌分期,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+胃癌直接手术外部测试集,_compat/胃癌直接手术外部测试集,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+胃癌直接手术外部测试集(1).zip,_compat/胃癌直接手术外部测试集(1).zip,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+胃腔,_compat/胃腔,mv_symlink_to_compat,2026-05-29,yes,consolidate_compat
+data/德化直接手术.zip,artifacts/raw_imports/incoming/德化直接手术.zip,mv+symlink,2026-05-29,yes,phase B data zip
+docs/mainline/figures,artifacts/docs_exports/mainline_figures,mv+symlink,2026-05-29,yes,phase E docs slim
