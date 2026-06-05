@@ -27,6 +27,54 @@ def signed_distance_from_lumen(lumen_mask: np.ndarray) -> np.ndarray:
     return dist_outside - dist_inside
 
 
+def breakthrough_mask(
+    lesion_mask: np.ndarray,
+    sdf: np.ndarray,
+    threshold: float = 0.3,
+) -> np.ndarray:
+    """Per-lesion breakthrough mask: 1 where the lesion pixel is far enough
+    from the lumen to look "broken through" the wall layers.
+
+    Definition (mirrors ``compute_wall_features.fraction_outside_lumen``):
+      breakthrough = (lesion > 0) & (sdf > 0)
+      breakthrough_area_ratio = sum(breakthrough) / sum(lesion > 0)
+      breakthrough_mask = breakthrough_area_ratio > threshold  (i.e. > 30%
+      of the lesion sits outside the lumen)
+
+    Returns a uint8 array {0, 1} of the SAME shape as ``lesion_mask``.
+    Background (outside lesion) is always 0; only lesion pixels can be 1.
+
+    Notes
+    -----
+    - This is a per-IMAGE binary feature: either the whole lesion is
+      classified as "breakthrough" (all lesion pixels -> 1) or it is not
+      (all lesion pixels -> 0).  The threshold is on the *ratio* of
+      outward-extension pixels within the lesion, not on a per-pixel
+      SDF value.
+    - P0.2-FU-A (1D retry) writes this mask as the 5th channel, replacing
+      the 1C SDF channel.  The dataset (wallaux_5ch_dataset.py) only
+      reads uint8 PNGs and divides by 255, so it works unchanged for
+      {0, 255} PNGs as well as for the {0, 1} int8 intermediate.
+    """
+    if lesion_mask is None or sdf is None:
+        return np.zeros_like(lesion_mask, dtype=np.uint8) if lesion_mask is not None else np.zeros((0, 0), dtype=np.uint8)
+    if lesion_mask.shape != sdf.shape:
+        raise ValueError(
+            f"breakthrough_mask: lesion_mask.shape={lesion_mask.shape} "
+            f"!= sdf.shape={sdf.shape}"
+        )
+    lesion_bin = (lesion_mask > 127).astype(np.uint8)
+    if lesion_bin.sum() == 0:
+        return np.zeros_like(lesion_bin, dtype=np.uint8)
+    outward = (sdf > 0).astype(np.uint8)
+    # Per-image ratio:  fraction of lesion pixels that lie OUTSIDE the lumen.
+    ratio = float((outward & lesion_bin).sum()) / float(lesion_bin.sum())
+    mask = np.zeros_like(lesion_bin, dtype=np.uint8)
+    if ratio > threshold:
+        mask[lesion_bin > 0] = 1
+    return mask
+
+
 def compute_wall_features(
     lesion_mask: np.ndarray,
     lumen_mask: np.ndarray,
