@@ -48,7 +48,7 @@ docs/ldh_mainline/          ← 你在这里：总逻辑 + LDH 对标 + 差距
 
 | 项 | 值 |
 |----|-----|
-| 手稿版本 | v2.2（2026-06-10 4-agent 审核→统一修复） |
+| 手稿版本 | v2.3（2026-06-10 4-agent 审核 round 2→统一修复：M1-M4 + P1 净化） |
 | 标杆论文 | ldh1 SuRImage；ldh2 HCC ML |
 | 主线模型 | 06-03 `acc_boost2` |
 | 基线 | 04-23 frozen primary |

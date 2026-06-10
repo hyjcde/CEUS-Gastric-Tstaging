@@ -1,6 +1,6 @@
-# Reviewer Self-Check — 5 Rounds + v2.2 修复闭环
+# Reviewer Self-Check — 5 Rounds + v2.2 + v2.3 修复闭环
 
-> 状态：2026-06-10 v2.2 修订（4-agent 审核→统一修复）  
+> 状态：2026-06-10 v2.3 修订（4-agent 审核 round 2→统一修复）  
 > 卡：t_2f4f1d95（T6 LaTeX 编译 + 审稿人自检）  
 > 注：pdflatex **not in PATH** (verified `which pdflatex` empty)。编译验证无法跑；自检靠 `read_file` + Python 脚本扫。
 
@@ -110,6 +110,20 @@
 | G06 | Discussion 扩到 ~1500 词 | A3 | ✅ |
 | G02 | `tab:baseline` 跨队列 14 行 + p 值 | A3 | ✅ |
 | G14 | 3 个 dangling PNG 移到 `_build/` | A2 | ✅ |
+
+## v2.3 修复闭环（2026-06-10 round 2）
+
+| ID | 修复项 | 来源 agent | 状态 |
+|----|--------|-----------|------|
+| G28 (M1) | T1→T2 over-stage "6%" → "5.1%" (16/312, L367) | A1 | ✅ |
+| G29 (M2) | 1000-patient hypothetical 220 → 10% prevalence + 0.65 lift → ~100-110 additional T2 frames / 1,600 帧 | A1 | ✅ |
+| G30 (M3) | fig:confusion caption L379 0.10/0.19 → 0.058/0.20 + 加 boundary-subset 0.095/0.29 | A1 | ✅ |
+| G31 (M4) | Appendix S6 L519 22% → 20% (495/2458) | A1 | ✅ |
+| G32 (P1) | Introduction L106/L108 净化（移除 "mask-augmented 4-channel ConvNeXt + ... + boundary-aware asymmetric cost" + "six-agent evidence framework (planner/executor/...)" 工程术语；改为临床导向句） | A2 | ✅ |
+
+**v2.3 字数**：Summary 241 / Introduction 470 (净化后) / Methods 1096 / Results 1063 / Discussion 1143 / Total 4013（target 3500-4500 ✅）。9/9 结构 PASS，27/27 cite↔bibitem 解析。
+
+---
 
 **v2.2 仍待办**（编译依赖 + 真跑）：
 1. **pdflatex 编译验证** — `which pdflatex` 空，必须在有 LaTeX 引擎的机器上跑

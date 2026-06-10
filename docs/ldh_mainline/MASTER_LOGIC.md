@@ -160,3 +160,4 @@ PDF 与提取文本：`docs/references/ldh/`
 | 2026-06-05 | v1.0 | 新建 `docs/ldh_mainline/`；确立临床主轴与 LDH 结构映射 |
 | 2026-06-05 | 手稿 v2.1 | Summary 五段、Research in context、benchmark 表、扩 Discussion |
 | 2026-06-10 | 手稿 v2.2 | 4-agent 审核→统一修复：T2→T3 over-stage 0.10→0.058 (4 处)；4 中心 22%→20% (3 处)；failure mode % 修正；fig:cohortflow 移至 Appendix S1；12 fake cite + 2 重复 + 14 unused 清理；Sounderajah/Liu2020claim/Zheng2025/Isensee 期刊/年份错引修正；Figure 5 caption 补 (e)；Appendix S8 加 IRB list；Discussion 扩至 1500 词；加 `tab:baseline` 14 行 + p 值；3 个 dangling PNG 归档 |
+| 2026-06-10 | 手稿 v2.3 | 4-agent 审核 round 2→统一修复：M1 T1→T2 over-stage 6%→5.1% (16/312)；M2 1000-patient hypothetical 220 → 10% prevalence + 0.65 lift → ~100-110 additional T2 frames / 1,600 帧；M3 fig:confusion caption 0.10/0.19 → 0.058/0.20 + 加 boundary-subset 0.095/0.29；M4 Appendix S6 22% → 20% (495/2458)；P1 Introduction L106/L108 净化（移除工程术语） |

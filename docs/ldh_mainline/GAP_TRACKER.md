@@ -35,6 +35,11 @@
 | G21 | fig:cohortflow 编号 vs 6 fig 冲突 | LDH 编号 | ✅ | cohort flow tikz 移到 Appendix S1；主文 6 fig (montage→confusion) 编号对齐 |
 | G22 | Figure 5 gradcam caption 缺 (e) | 图实有 5 case | ✅ | caption 补 (e) T4+ correctly classified |
 | G23 | Appendix S8 缺 IRB list | ldh1 IRB 中心+号 | ✅ | 加 10 中心 IRB 编号段 |
+| G28 | T1→T2 over-stage "6%" → "5.1%" (16/312, L367) | 内部算术 | ✅ | M1: 16/312 T1 frames 改 5.1% |
+| G29 | 1000-patient hypothetical 220 算式单位含糊 | 可追溯算式 | ✅ | M2: 重写为 10% T2 prevalence + 0.65 lift → ~100-110 additional T2 frames / 1,600 帧 |
+| G30 | fig:confusion caption L379 0.10/0.19 回归 | 内部 SSOT | ✅ | M3: 改 0.058/0.20 + 加 boundary-subset 0.095/0.29 |
+| G31 | Appendix S6 L519 22% → 20% (495/2458) | 内部算术 | ✅ | M4: 改 20% (495 of 2,458 frames) |
+| G32 | Introduction L106/L108 工程术语污染 | LDH 标杆 | ✅ | P1: 移除 "mask-augmented 4-channel ConvNeXt + ... + boundary-aware asymmetric cost" + "six-agent evidence framework (planner/executor/...)"；改为临床导向句 |
 
 ---
 
