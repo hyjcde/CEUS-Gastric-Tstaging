@@ -23,6 +23,7 @@
 | T2→T1 30.8% of T2 / T2→T2 54.8% | pro confusion | 06-03 pro row T2 32/104 + 57/104 |
 | T1→T2 over-stage (T1→T2) | 0.051 (16/312 T1 frames, 5.1%) | 06-03 pro row T1 16/312 | `test_predictions.csv` 4×4 |
 | Discussion hypothetical 算式 | 10% T2 prevalence + 0.65 boundary lift → ~100-110 additional T2 frames / 1,600 帧 | paper §Discussion (M2 重写) |
+| tab:ci 真 95% CI | 2000-replicate patient-level bootstrap | `scripts/bootstrap_tstaging_ci.py` (committed); `pipeline/experiments/tree/.../eval/bootstrap_ci_2000.json` (audit raw) |
 
 ---
 

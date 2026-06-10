@@ -29,7 +29,7 @@
 | Figure 编号连贯 | 6 fig | 5+ fig | ❌ 7 fig (tikz 算) | ✅ 6 fig + tikz in S1 | ✅ 6 fig + tikz in S1 | — |
 | Introduction 临床语言纯度 (LDH 标杆) | ✅ | ✅ | ❌ 工程术语堆砌 | ⚠️ 残留 | ✅ 临床导向 | — |
 
-**v2.3 结论（2026-06-10 r2）**：第二轮 4-agent 审核发现的 5 项 P0 全部闭环：M1 T1→T2 5.1% (16/312)；M2 hypothetical 重写为可追溯算式 100-110 帧/1,600 帧；M3 fig:confusion caption 与正文一致；M4 Appendix S6 20% (495/2458)；P1 Introduction 净化为临床导向句（移除 mask-augmented 4-channel ConvNeXt + ... + boundary-aware asymmetric cost + six-agent evidence framework 工程术语）。**剩余 P0 差距**仅 reader study 实测数据 + ChiCTR 真号 + Bootstrap 真跑。
+**v2.3 结论（2026-06-10 r2）**：第二轮 4-agent 审核发现的 5 项 P0 全部闭环：M1 T1→T2 5.1% (16/312)；M2 hypothetical 重写为可追溯算式 100-110 帧/1,600 帧；M3 fig:confusion caption 与正文一致；M4 Appendix S6 20% (495/2458)；P1 Introduction 净化为临床导向句（移除 mask-augmented 4-channel ConvNeXt + ... + boundary-aware asymmetric cost + six-agent evidence framework 工程术语）。**G04 Bootstrap 2000 真跑 (2026-06-10)**：script 提交、tab:ci 8 metric × 2 cohort 真 95% CI、§Limitations / Appendix S5 "in progress" 删除。**剩余 P0 差距**仅 reader study 实测数据 + ChiCTR 真号 + Contributors/CRediT + Funding 真号。
 
 ---
 

@@ -24,7 +24,7 @@
 | G01 | Reader study 实测数据 | ldh1 Fig4 | ❌ | 设计见 Appendix S10；执行多中心读者试验 |
 | G02 | 基线特征 Table（跨队列 + p 值） | ldh1 Table1 | ✅ | `tab:baseline` 已加，age/sex/Lauren/location/Diff/CEA/CA19-9 14 行 + Kruskal/χ² p |
 | G03 | ChiCTR 注册号 | ldh1 ChiCTR | ❌ | 占位保留，投稿前补 |
-| G04 | Bootstrap 2000 真跑 | LDH CI 规范 | ⚠️ | `tab:ci` 仍为 median estimate，Appendix S5 已诚实声明 in progress |
+| G04 | Bootstrap 2000 真跑 | LDH CI 规范 | ✅ | `scripts/bootstrap_tstaging_ci.py` 跑完；tab:ci 8 指标 × 2 队列全部替换为真 CI；script + audit JSON 入仓；§Limitations 第 4 条删除 (in progress)；Appendix S5 删除 in progress 声明 |
 | G05 | pdflatex 编译通过 | 投稿包 | ⚠️ | `which pdflatex` 空；本仓库不能编译；CI 容器待配 |
 | G15 | 数字一致性（T2→T3 over-stage 0.10 vs 0.058） | 内部 SSOT | ✅ | 4-class 改 0.058；L75/L107/L285/L361/L376/F2 caption 全部一致 |
 | G16 | "22% of external frames" → 20% | 内部算术 (495/2458) | ✅ | L75/L296/L359 全部改 20% |

@@ -127,11 +127,17 @@
 
 **v2.2 仍待办**（编译依赖 + 真跑）：
 1. **pdflatex 编译验证** — `which pdflatex` 空，必须在有 LaTeX 引擎的机器上跑
-2. **真 bootstrap 2000 跑** — 当前 CI 表是 median estimate（GAP G04）
-3. **ChiCTR 实号** — 占位保留（GAP G03）
-4. **Funding 实号** — 占位保留（GAP G12）
-5. **Contributors 真名 + CRediT** — 占位保留（GAP G11）
-6. **Reader study 实测数据** — planned（GAP G01）
+2. **ChiCTR 实号** — 占位保留（GAP G03）
+3. **Funding 实号** — 占位保留（GAP G12）
+4. **Contributors 真名 + CRediT** — 占位保留（GAP G11）
+5. **Reader study 实测数据** — planned（GAP G01）
+
+**G04 (Bootstrap 2000) 已闭环 (2026-06-10, v2.3 round 2)**：
+- `scripts/bootstrap_tstaging_ci.py` 提交；8 metric × 2 cohort 真 95% CI
+- §Summary/§Findings/§Results/§Discussion/§Conclusions 全部 CIs 替换为真值
+- §Limitations 第 4 条 ("bootstrap CIs are median estimates pending the final 2000-replicate script run") 删除
+- Appendix S5 删除 "in progress" 声明，指向已 commit 的 script
+- 审计：`pipeline/experiments/tree/.../eval/bootstrap_ci_2000.json`
 
 **结论**：稿件**结构 + 数字 + 引用 + 图**均已与 LDH Original Research 对齐；剩余待办为 author-side 信息（ChiCTR、Funding、Contributors、Reader study 数据）。
 
