@@ -15,6 +15,7 @@
 | Introduction 临床铺垫 | ~1200 词 | ~900 词 | ~690 词 | ~720 词 | ~470 词 (净化) | 中 |
 | Methods 子节完整度 | 6+ 子节 | 5+ 子节 | ✅ 6+ | ✅ 6+ | ✅ 6+ | 小 |
 | 队列流程图 (Fig1) | ✅ CONSORT | 数据流 | ✅ tikz in §Methods | ✅ tikz in S1 | ✅ tikz in S1 | — |
+| 筛图 funnel figure | — | — | ❌ 无 | ❌ 无 | ✅ `fig:screening_funnel` (S1, 真实数字) | 小 |
 | 基线特征表 (Table1) | 20+ 行 + p | 15+ 行 | 仅 split | ✅ 14 行 + p | ✅ 14 行 + p | 小 |
 | 与临床金标准对照 | vs 冰冻 | vs 8 基准 | ✅ benchmark 表 | ✅ benchmark 表 | ✅ benchmark 表 | 小 |
 | Reader study | ✅ Fig4 | — | planned | planned | planned | **大** (GAP G01) |

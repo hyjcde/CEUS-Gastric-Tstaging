@@ -274,3 +274,4 @@ visualize_wall_layer_profiles.py,analysis,analysis,4,scripts,scripts/analysis,re
 visualize_wall_strip_examples.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 yolo_detection_runtime.py,runtime,detection,1,scripts,scripts/runtime,import_only,true,
 bootstrap_tstaging_ci.py,current,bootstrap_ci,scripts,scripts,review_env,true,2026-06-10 added; patient-level bootstrap 95% CI for 06-03 frozen primary (G04)
+make_screening_funnel_figure.py,current,screening_funnel,scripts,scripts,review_env,true,2026-06-11 added; build screening funnel figure + table from contract data (筛图)

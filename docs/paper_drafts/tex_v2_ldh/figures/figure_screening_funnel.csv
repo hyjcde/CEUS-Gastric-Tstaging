@@ -1,0 +1,13 @@
+stage,cohort,frames,patients,step
+"Raw enrolled
+(test cohorts)",test_external,2966,516,0. Raw enrolled
+"Raw enrolled
+(test cohorts)",test_prospective,2430,506,0. Raw enrolled
+"Screened
+(2026-05-31 contract)",test_external,2458,485,1. After screening
+"Screened
+(2026-05-31 contract)",test_prospective,1659,425,1. After screening
+Final split,train,9138,1441,2. Final split
+Final split,val,1117,167,2. Final split
+Final split,test_prospective,1659,425,2. Final split
+Final split,test_external,2458,485,2. Final split

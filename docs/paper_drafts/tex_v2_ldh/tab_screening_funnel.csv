@@ -1,0 +1,6 @@
+| step | external frames | external pts | prospective frames | prospective pts | train frames | train pts | val frames | val pts |
+|---|---|---|---|---|---|---|---|---|
+| 0. Raw enrolled | 2,966 | 516 | 2,430 | 506 | nan | nan | nan | nan |
+| 1. After screening | 2,458 | 485 | 1,659 | 425 | nan | nan | nan | nan |
+| 2. Final split | 2,458 | 485 | 1,659 | 425 | 9,138 | 1,441 | 1,117 | 167 |
+| drop (raw → screened) | 508 (17.1%) | — | 771 (31.7%) | — | — | — | — | — |
