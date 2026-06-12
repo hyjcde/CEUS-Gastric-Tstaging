@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>胃癌 CEUS T 分期独立阅片 · 卓医生团队</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="reader.css" />
+</head>
+<body>
+<header class="bar">
+  <div class="bar-left">
+    <span id="passBadge" class="badge pass1">Pass 1 · 无 AI</span>
+    <span id="caseBadge" class="badge">CASE-001 / 150</span>
+    <span id="armBadge" class="badge arm">Arm</span>
+  </div>
+  <div class="bar-right">
+    <span id="aiReveal" class="ai-reveal" hidden>
+      <span class="ai-label">AI 判断：</span>
+      <span id="aiValue" class="ai-value">—</span>
+      <span id="aiConf" class="ai-conf">—</span>
+    </span>
+  </div>
+</header>
+
+<main>
+  <section class="video-pane">
+    <div class="video-wrap">
+      <video id="video" preload="auto" playsinline></video>
+    </div>
+    <div class="controls">
+      <button id="btnPlay" class="ctl" type="button">播放</button>
+      <input id="seek" class="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="视频进度" />
+      <span id="time" class="time">0:00 / 0:00</span>
+      <label class="speed-label">倍速
+        <select id="speed" class="speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5" selected>0.5×</option>
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="choice-pane">
+    <h2 class="prompt">该患者的 T 分期是：</h2>
+    <div class="choices">
+      <button class="choice" data-value="T1" type="button"><span class="tag">T1</span><span class="hint">黏膜/黏膜下</span></button>
+      <button class="choice" data-value="T2" type="button"><span class="tag">T2</span><span class="hint">固有肌层</span></button>
+      <button class="choice" data-value="T3" type="button"><span class="tag">T3</span><span class="hint">浆膜下</span></button>
+      <button class="choice" data-value="T4" type="button"><span class="tag">T4+</span><span class="hint">穿透浆膜/侵犯邻近结构</span></button>
+    </div>
+    <div class="footer-row">
+      <button id="btnSkip" class="ghost" type="button">跳过</button>
+      <button id="btnExport" class="ghost" type="button">导出结果</button>
+    </div>
+  </section>
+</main>
+
+<script src="reader.js"></script>
+</body>
+</html>

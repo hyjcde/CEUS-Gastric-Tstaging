@@ -1,0 +1,37 @@
+{
+  "design": "two_arm",
+  "arm_a_label": "AI-clean (frame-level majority == truth, frame recall > 0.5)",
+  "arm_b_label": "AI-uncertain (max_prob < 0.5 or AI wrong, balanced against A)",
+  "arm_a_size": 91,
+  "arm_b_size": 59,
+  "total": 150,
+  "pool_size": 185,
+  "t_stage_distribution": {
+    "T4+": 60,
+    "T3": 44,
+    "T2": 28,
+    "T1": 18
+  },
+  "ai_accuracy_arm_a": 1.0,
+  "ai_accuracy_arm_b": 0.1694915254237288,
+  "ai_overall_subset": 0.6733333333333333,
+  "ai_mean_max_prob": 0.7493726666666667,
+  "cohort_split": {
+    "external": 78,
+    "prospective": 72
+  },
+  "t_stage_by_arm": {
+    "A": {
+      "T4+": 44,
+      "T3": 22,
+      "T2": 13,
+      "T1": 12
+    },
+    "B": {
+      "T3": 22,
+      "T4+": 16,
+      "T2": 15,
+      "T1": 6
+    }
+  }
+}

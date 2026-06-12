@@ -25,6 +25,8 @@
 | Discussion hypothetical 算式 | 10% T2 prevalence + 0.65 boundary lift → ~100-110 additional T2 frames / 1,600 帧 | paper §Discussion (M2 重写) |
 | tab:ci 真 95% CI | 2000-replicate patient-level bootstrap | `scripts/bootstrap_tstaging_ci.py` (committed); `pipeline/experiments/tree/.../eval/bootstrap_ci_2000.json` (audit raw) |
 | 筛图 funnel 数字 | ext 2966→2458 (508, 17.1%) / pro 2430→1659 (771, 31.7%) | `pipeline/data/tstaging_4class_screened_latest_external_2966_20260529/test_external_with_reject_flag.csv` (ext) + `screened_build_summary.json` (pro) |
+| reader study 子集 n=150 (2-arm) | Arm A 91 AI-clean + Arm B 59 AI-uncertain | `docs/clinical_validation/reader_study_150/reader_subset_v2.csv` (由 `scripts/select_reader_study_subset.py` 跑出) |
+| reader study 视频源 | 185 视频患者池 + 701 video stems 库 | `docs/clinical_validation/reader_study_150/video_screening_pool.csv` + `video_label_inventory.csv` |
 
 ---
 
@@ -50,6 +52,7 @@
 | `fig:ablation` | `figure4_ablation_panel.png` | ablation_matrix.csv |
 | `fig:gradcam` | `figure5_gradcam_representative.png` | 真实 Grad-CAM |
 | `fig:confusion` | `figure6_confusion_panel.png` | test_results.json |
+| `fig:screening_funnel` | `tex_v2_ldh/figures/figure_screening_funnel.png` | `scripts/make_screening_funnel_figure.py` |
 | `tab:cohort` | tex 内嵌 | SPLIT + 统计 |
 | `tab:baseline` | tex 内嵌 | cross-cohort 临床特征 + p 值 |
 | `tab:benchmark` | tex 内嵌 | 文献 + 本文 JSON |
@@ -73,6 +76,5 @@
 ## 已知 caveat（写入正文，不可删）
 
 1. **04-23 vs 06-03 非同一 prospective split**（0 image_path overlap）→ model-family 对比
-2. **Bootstrap CI 表为估计值** → Appendix S5 声明
-3. **Ablation 部分行 TBD** → 进行中
-4. **Reader study 无数字** → Appendix S10 planned
+2. **Ablation 部分行 TBD** → 进行中
+3. **Reader study 子集已选 (n=150) + 极简阅片包已搭建**（`apps/tstage_reader_study/`，2-pass、3-reader 含 site PI Dr. Zhuo）→ 等待 3 位 reader 跑完拿到 ground truth 数字；**子集算法准确率不直接代表全队列**（§Limitations #3 + Appendix S10 §app:reader 明示）

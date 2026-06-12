@@ -1,6 +1,6 @@
 # GAP_TRACKER — LDH 对标差距 живой 表
 
-> 最后更新：2026-06-10  
+> 最后更新：2026-06-12  
 > 规则：完成一项 → 改状态 + 在 MASTER_LOGIC 版本记录留痕
 
 ---
@@ -10,10 +10,10 @@
 | 类别 | 已完成 | 进行中 | 未开始 |
 |------|--------|--------|--------|
 | 结构对标 | 7 | 0 | 0 |
-| 内容丰富度 | 7 | 1 | 1 |
-| 数据/验证 | 2 | 1 | 2 |
+| 内容丰富度 | 8 | 1 | 1 |
+| 数据/验证 | 3 | 1 | 2 |
 
-**投稿就绪度（诚实估计）**：结构 ~92% · 内容 ~78% · 验证 ~50%
+**投稿就绪度（诚实估计）**：结构 ~92% · 内容 ~85% · 验证 ~70%
 
 ---
 
@@ -21,7 +21,7 @@
 
 | ID | 差距 | 对标 | 状态 | 负责动作 |
 |----|------|------|------|----------|
-| G01 | Reader study 实测数据 | ldh1 Fig4 | ❌ | 设计见 Appendix S10；执行多中心读者试验 |
+| G01 | Reader study 实测数据 | ldh1 Fig4 | ⚠️ 子集 + UI 完成 | 2-arm 视频优先子集 n=150 (Arm A 91 + Arm B 59) 已选 (reader_subset_v2.csv)；极简阅片包 `apps/tstage_reader_study/` (4 选 1 T-stage, 2-pass, 倍速 + scrubber) 已搭建；3 reader 含 site PI Dr. Zhuo 等待跑通；本文不报 AI raw test-set 数字（boss + 卓医生微信 2026-06-12） |
 | G02 | 基线特征 Table（跨队列 + p 值） | ldh1 Table1 | ✅ | `tab:baseline` 已加，age/sex/Lauren/location/Diff/CEA/CA19-9 14 行 + Kruskal/χ² p |
 | G03 | ChiCTR 注册号 | ldh1 ChiCTR | ❌ | 占位保留，投稿前补 |
 | G04 | Bootstrap 2000 真跑 | LDH CI 规范 | ✅ | `scripts/bootstrap_tstaging_ci.py` 跑完；tab:ci 8 指标 × 2 队列全部替换为真 CI；script + audit JSON 入仓；§Limitations 第 4 条删除 (in progress)；Appendix S5 删除 in progress 声明 |
@@ -40,6 +40,7 @@
 | G30 | fig:confusion caption L379 0.10/0.19 回归 | 内部 SSOT | ✅ | M3: 改 0.058/0.20 + 加 boundary-subset 0.095/0.29 |
 | G31 | Appendix S6 L519 22% → 20% (495/2458) | 内部算术 | ✅ | M4: 改 20% (495 of 2,458 frames) |
 | G32 | Introduction L106/L108 工程术语污染 | LDH 标杆 | ✅ | P1: 移除 "mask-augmented 4-channel ConvNeXt + ... + boundary-aware asymmetric cost" + "six-agent evidence framework (planner/executor/...)"；改为临床导向句 |
+| G33 | Reader study 单臂设计 → 2-arm 视频优先重设计 | boss + 卓医生 2026-06-12 | ✅ | 子集 n=150: Arm A 91 AI-clean + Arm B 59 AI-uncertain (max_prob<0.5)；3 reader 含 site PI Dr. Zhuo (Fujian Med Univ Xiehe Hospital) + 2 junior/senior sonographer；a priori 80% power 检 0.10 abs 提升 (α=0.05, ρ=0.5, baseline 0.65)；2-pass (no-AI / with-AI) 减 carry-over；极简 UI (4 选 1 + 0.25/0.5/1/2× 倍速 + scrubber) 替换原 5 选项；§Limitations #3 加 "子集算法准确率不代表全队列" 警示 |
 
 ---
 

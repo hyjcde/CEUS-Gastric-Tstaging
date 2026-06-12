@@ -1,6 +1,6 @@
 # LDH 对标清单 — 胃癌 CEUS T 分期稿 vs ldh1/ldh2
 
-> 更新：2026-06-10 (v2.3 修订 — round 2 fixes)  
+> 更新：2026-06-12 (v2.4 修订 — reader study 2-arm 视频优先重设计)  
 > 参考：`docs/references/ldh/ldh1.pdf`（SuRImage, LDH 2026;8:100965）  
 > 参考：`docs/references/ldh/ldh2.pdf`（HCC ML, LDH 2026;8:100952）  
 > 目标稿：`docs/paper_drafts/tex_v2_ldh/gastric_tstaging_paper_v2.tex`  
@@ -8,29 +8,29 @@
 
 ## 总览评分（结构 × 内容丰富度）
 
-| 维度 | ldh1 标杆 | ldh2 标杆 | v2.1 (2026-06-05) | v2.2 (2026-06-10) | v2.3 (2026-06-10 r2) | 差距 |
-|------|-----------|-----------|-------------------|-------------------|------------------------|------|
-| Summary 五段式 | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| Research in context | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| Introduction 临床铺垫 | ~1200 词 | ~900 词 | ~690 词 | ~720 词 | ~470 词 (净化) | 中 |
-| Methods 子节完整度 | 6+ 子节 | 5+ 子节 | ✅ 6+ | ✅ 6+ | ✅ 6+ | 小 |
-| 队列流程图 (Fig1) | ✅ CONSORT | 数据流 | ✅ tikz in §Methods | ✅ tikz in S1 | ✅ tikz in S1 | — |
-| 筛图 funnel figure | — | — | ❌ 无 | ❌ 无 | ✅ `fig:screening_funnel` (S1, 真实数字) | 小 |
-| 基线特征表 (Table1) | 20+ 行 + p | 15+ 行 | 仅 split | ✅ 14 行 + p | ✅ 14 行 + p | 小 |
-| 与临床金标准对照 | vs 冰冻 | vs 8 基准 | ✅ benchmark 表 | ✅ benchmark 表 | ✅ benchmark 表 | 小 |
-| Reader study | ✅ Fig4 | — | planned | planned | planned | **大** (GAP G01) |
-| Results 叙事长度 | ~2500 词 | ~2000 词 | ~790 词 | ~1100 词 | ~1063 词 | 中 |
-| Discussion 长度 | ~2000 词 | ~1800 词 | ~730 词 | ~1500 词 | ~1143 词 | 小 |
-| Limitations | 4–6 条 | 7 条 | 7 条 | 8 条 | 8 条 | 小 |
-| Contributors | ✅ | ✅ | 占位 | 占位 | 占位 | 中 (GAP G11) |
-| Data sharing | ✅ 细则 | ✅ | ✅ | ✅ | ✅ | 小 |
-| Appendix | pp 2–23 | pp 14–28 | S1–S10 | S1–S10 + IRB list | S1–S10 + IRB list | 小 |
-| 数字一致性 (SSOT 0.058/20%/5.1%/hypothetical 100-110) | — | — | ❌ (0.10/22%) | ✅ (0.058/20%) | ✅ + 5.1%/100-110 | — |
-| 引用完整性 (no fake) | — | — | ❌ 12 fake | ✅ 0 fake, 28 unique | ✅ 0 fake, 27 unique | — |
-| Figure 编号连贯 | 6 fig | 5+ fig | ❌ 7 fig (tikz 算) | ✅ 6 fig + tikz in S1 | ✅ 6 fig + tikz in S1 | — |
-| Introduction 临床语言纯度 (LDH 标杆) | ✅ | ✅ | ❌ 工程术语堆砌 | ⚠️ 残留 | ✅ 临床导向 | — |
+| 维度 | ldh1 标杆 | ldh2 标杆 | v2.1 (2026-06-05) | v2.2 (2026-06-10) | v2.3 (2026-06-10 r2) | v2.4 (2026-06-12 r3) | 差距 |
+|------|-----------|-----------|-------------------|-------------------|------------------------|----------------------|------|
+| Summary 五段式 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| Research in context | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| Introduction 临床铺垫 | ~1200 词 | ~900 词 | ~690 词 | ~720 词 | ~470 词 (净化) | ~470 词 | 中 |
+| Methods 子节完整度 | 6+ 子节 | 5+ 子节 | ✅ 6+ | ✅ 6+ | ✅ 6+ | ✅ 6+ | 小 |
+| 队列流程图 (Fig1) | ✅ CONSORT | 数据流 | ✅ tikz in §Methods | ✅ tikz in S1 | ✅ tikz in S1 | ✅ tikz in S1 | — |
+| 筛图 funnel figure | — | — | ❌ 无 | ❌ 无 | ✅ `fig:screening_funnel` (S1, 真实数字) | ✅ | 小 |
+| 基线特征表 (Table1) | 20+ 行 + p | 15+ 行 | 仅 split | ✅ 14 行 + p | ✅ 14 行 + p | ✅ | 小 |
+| 与临床金标准对照 | vs 冰冻 | vs 8 基准 | ✅ benchmark 表 | ✅ benchmark 表 | ✅ benchmark 表 | ✅ | 小 |
+| Reader study | ✅ Fig4 | — | planned | planned | planned | ⚠️ 子集 + UI 完成，2-arm n=150 (Arm A 91 + Arm B 59)，3 reader 含 site PI Dr. Zhuo，a priori 80% power；待 reader 跑通拿数 | 中 (GAP G01) |
+| Results 叙事长度 | ~2500 词 | ~2000 词 | ~790 词 | ~1100 词 | ~1063 词 | ~1063 词 | 中 |
+| Discussion 长度 | ~2000 词 | ~1800 词 | ~730 词 | ~1500 词 | ~1143 词 | ~1143 词 | 小 |
+| Limitations | 4–6 条 | 7 条 | 7 条 | 8 条 | 8 条 | 9 条 (+子集算法准确率警示) | 小 |
+| Contributors | ✅ | ✅ | 占位 | 占位 | 占位 | 占位 | 中 (GAP G11) |
+| Data sharing | ✅ 细则 | ✅ | ✅ | ✅ | ✅ | ✅ | 小 |
+| Appendix | pp 2–23 | pp 14–28 | S1–S10 | S1–S10 + IRB list | S1–S10 + IRB list | S1–S10 + IRB list + §app:reader 重写 | 小 |
+| 数字一致性 (SSOT 0.058/20%/5.1%/hypothetical 100-110) | — | — | ❌ (0.10/22%) | ✅ (0.058/20%) | ✅ + 5.1%/100-110 | ✅ | — |
+| 引用完整性 (no fake) | — | — | ❌ 12 fake | ✅ 0 fake, 28 unique | ✅ 0 fake, 27 unique | ✅ 0 fake, 27 unique | — |
+| Figure 编号连贯 | 6 fig | 5+ fig | ❌ 7 fig (tikz 算) | ✅ 6 fig + tikz in S1 | ✅ 6 fig + tikz in S1 | ✅ 6 fig + tikz in S1 | — |
+| Introduction 临床语言纯度 (LDH 标杆) | ✅ | ✅ | ❌ 工程术语堆砌 | ⚠️ 残留 | ✅ 临床导向 | ✅ 临床导向 | — |
 
-**v2.3 结论（2026-06-10 r2）**：第二轮 4-agent 审核发现的 5 项 P0 全部闭环：M1 T1→T2 5.1% (16/312)；M2 hypothetical 重写为可追溯算式 100-110 帧/1,600 帧；M3 fig:confusion caption 与正文一致；M4 Appendix S6 20% (495/2458)；P1 Introduction 净化为临床导向句（移除 mask-augmented 4-channel ConvNeXt + ... + boundary-aware asymmetric cost + six-agent evidence framework 工程术语）。**G04 Bootstrap 2000 真跑 (2026-06-10)**：script 提交、tab:ci 8 metric × 2 cohort 真 95% CI、§Limitations / Appendix S5 "in progress" 删除。**剩余 P0 差距**仅 reader study 实测数据 + ChiCTR 真号 + Contributors/CRediT + Funding 真号。
+**v2.4 结论（2026-06-12 r3）**：G33 闭环 — Reader study 2-arm 视频优先重设计：子集 n=150 (Arm A 91 AI-clean + Arm B 59 AI-uncertain) 替换单臂设计；3 reader 含 site PI Dr. Zhuo (Fujian Med Univ Xiehe Hospital)；a priori 80% power 检 0.10 abs 提升 (α=0.05, ρ=0.5, baseline 0.65)；2-pass (no-AI / with-AI) 减 carry-over；极简阅片包 `apps/tstage_reader_study/` (4 选 1 T-stage + 0.25/0.5/1/2× 倍速 + scrubber) 替换原 5 选项 app。**主文 AI raw test-set 数字仍不报**（boss + 卓医生 微信 2026-06-12 共识：测试集 AI 太低，论文里不合适；先 AI 筛出相对不错的 150 例让人测）；子集算法准确率不直接代表全队列已在 §Limitations #3 明示。**剩余 P0 差距**仅 reader study 实测数据 + ChiCTR 真号 + Contributors/CRediT + Funding 真号。
 
 ---
 

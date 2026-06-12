@@ -1,0 +1,3978 @@
+[
+  {
+    "case_id": "CASE-001",
+    "display_id": "P001",
+    "arm": "A_ai_clean",
+    "patient_id": "6911774",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.6709,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "6911774-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/6911774-1.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-002",
+    "display_id": "P002",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd41",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.7202,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "hbd41-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd41-1.avi"
+      },
+      {
+        "stem": "hbd41-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd41-2.avi"
+      },
+      {
+        "stem": "hbd41-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd41-1.avi"
+      },
+      {
+        "stem": "hbd41-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd41-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-003",
+    "display_id": "P003",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd38",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.5972,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "hbd38-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd38-1.avi"
+      },
+      {
+        "stem": "hbd38-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd38-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-004",
+    "display_id": "P004",
+    "arm": "A_ai_clean",
+    "patient_id": "pt152",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9944,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "pt152-16",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt152-16.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-005",
+    "display_id": "P005",
+    "arm": "A_ai_clean",
+    "patient_id": "pt159",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9953,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "pt159-22",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt159-22.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-006",
+    "display_id": "P006",
+    "arm": "A_ai_clean",
+    "patient_id": "pt256",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9945,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "pt256-10",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt256-10.Avi"
+      },
+      {
+        "stem": "pt256-11",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt256-11.Avi"
+      },
+      {
+        "stem": "pt256-9",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt256-9.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-007",
+    "display_id": "P007",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa3",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5145,
+    "ai_frame_recall": 0.6,
+    "videos": [
+      {
+        "stem": "dhwa3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-008",
+    "display_id": "P008",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa6",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9794,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "dhwa6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa6.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-009",
+    "display_id": "P009",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa8",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6228,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "dhwa8-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa8-1.avi"
+      },
+      {
+        "stem": "dhwa8-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa8-2.avi"
+      },
+      {
+        "stem": "dhwa8-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa8-1.avi"
+      },
+      {
+        "stem": "dhwa8-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa8-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-010",
+    "display_id": "P010",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd27",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9521,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd27-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd27-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-011",
+    "display_id": "P011",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd35",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.8104,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "hbd35-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd35-1.avi"
+      },
+      {
+        "stem": "hbd35-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd35-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-012",
+    "display_id": "P012",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd53",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.8287,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd53-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd53-1.avi"
+      },
+      {
+        "stem": "hbd53-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd53-2.avi"
+      },
+      {
+        "stem": "hbd53-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd53-1.avi"
+      },
+      {
+        "stem": "hbd53-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd53-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-013",
+    "display_id": "P013",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd59",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9202,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd59-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd59-1.avi"
+      },
+      {
+        "stem": "hbd59-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd59-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-014",
+    "display_id": "P014",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd61",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6981,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "hbd61-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd61-1.avi"
+      },
+      {
+        "stem": "hbd61-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd61-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-015",
+    "display_id": "P015",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd64",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6211,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "hbd64-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd64-1.avi"
+      },
+      {
+        "stem": "hbd64-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd64-2.avi"
+      },
+      {
+        "stem": "hbd64-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd64-1.avi"
+      },
+      {
+        "stem": "hbd64-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd64-2.avi"
+      },
+      {
+        "stem": "hbd64-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd64-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-016",
+    "display_id": "P016",
+    "arm": "A_ai_clean",
+    "patient_id": "pt249",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9889,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "pt249-11",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt249-11.Avi"
+      },
+      {
+        "stem": "pt249-12",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt249-12.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-017",
+    "display_id": "P017",
+    "arm": "A_ai_clean",
+    "patient_id": "pt262",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.8852,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "pt262-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt262-4.Avi"
+      },
+      {
+        "stem": "pt262-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt262-5.Avi"
+      },
+      {
+        "stem": "pt262-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt262-6.Avi"
+      },
+      {
+        "stem": "pt262-7",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt262-7.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-018",
+    "display_id": "P018",
+    "arm": "A_ai_clean",
+    "patient_id": "pt337",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9542,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "pt337-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt337-6.Avi"
+      },
+      {
+        "stem": "pt337-7",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt337-7.Avi"
+      },
+      {
+        "stem": "pt337-8",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt337-8.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-019",
+    "display_id": "P019",
+    "arm": "A_ai_clean",
+    "patient_id": "10297658",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9905,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "10297658-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/10297658-2.wmv"
+      },
+      {
+        "stem": "10297658-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/10297658-3.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-020",
+    "display_id": "P020",
+    "arm": "A_ai_clean",
+    "patient_id": "11175397",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9962,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "11175397-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/11175397-2.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-021",
+    "display_id": "P021",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa1",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9853,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "dhwa1-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa1-1.avi"
+      },
+      {
+        "stem": "dhwa1-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa1-2.avi"
+      },
+      {
+        "stem": "dhwa1-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa1-1.avi"
+      },
+      {
+        "stem": "dhwa1-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa1-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-022",
+    "display_id": "P022",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa12",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9951,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "dhwa12-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa12-1.avi"
+      },
+      {
+        "stem": "dhwa12-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa12-2.avi"
+      },
+      {
+        "stem": "dhwa12-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa12-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-023",
+    "display_id": "P023",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa14",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.7808,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "dhwa14-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa14-1.avi"
+      },
+      {
+        "stem": "dhwa14-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa14-2.avi"
+      },
+      {
+        "stem": "dhwa14-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa14-1.avi"
+      },
+      {
+        "stem": "dhwa14-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa14-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-024",
+    "display_id": "P024",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa5",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.716,
+    "ai_frame_recall": 0.7143,
+    "videos": [
+      {
+        "stem": "dhwa5-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa5-1.avi"
+      },
+      {
+        "stem": "dhwa5-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa5-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-025",
+    "display_id": "P025",
+    "arm": "A_ai_clean",
+    "patient_id": "dhwa7",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.7959,
+    "ai_frame_recall": 0.8333,
+    "videos": [
+      {
+        "stem": "dhwa7-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa7-1.avi"
+      },
+      {
+        "stem": "dhwa7-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa7-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-026",
+    "display_id": "P026",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd11",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9985,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd11-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd11-1.avi"
+      },
+      {
+        "stem": "hbd11-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd11-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-027",
+    "display_id": "P027",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd17",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9932,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd17-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd17-1.avi"
+      },
+      {
+        "stem": "hbd17-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd17-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-028",
+    "display_id": "P028",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd18",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9831,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd18-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd18-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-029",
+    "display_id": "P029",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd22",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.957,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd22-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd22-1.avi"
+      },
+      {
+        "stem": "hbd22-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd22-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-030",
+    "display_id": "P030",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd46",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.7354,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "hbd46-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd46-1.avi"
+      },
+      {
+        "stem": "hbd46-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd46-2.avi"
+      },
+      {
+        "stem": "hbd46-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd46-1.avi"
+      },
+      {
+        "stem": "hbd46-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd46-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-031",
+    "display_id": "P031",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd65",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6338,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "hbd65-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd65-2.avi"
+      },
+      {
+        "stem": "hbd65-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd65-3.avi"
+      },
+      {
+        "stem": "hbd65-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd65-1.avi"
+      },
+      {
+        "stem": "hbd65-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd65-2.avi"
+      },
+      {
+        "stem": "hbd65-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd65-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-032",
+    "display_id": "P032",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd66",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.8404,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd66-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd66-2.avi"
+      },
+      {
+        "stem": "hbd66-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd66-3.avi"
+      },
+      {
+        "stem": "hbd66-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd66-1.avi"
+      },
+      {
+        "stem": "hbd66-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd66-2.avi"
+      },
+      {
+        "stem": "hbd66-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd66-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-033",
+    "display_id": "P033",
+    "arm": "A_ai_clean",
+    "patient_id": "hbd9",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9567,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "hbd9-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd9-1.avi"
+      },
+      {
+        "stem": "hbd9-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd9-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-034",
+    "display_id": "P034",
+    "arm": "A_ai_clean",
+    "patient_id": "1457633",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.9979,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1457633_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1457633_(2).mp4"
+      },
+      {
+        "stem": "1457633_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1457633_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-035",
+    "display_id": "P035",
+    "arm": "A_ai_clean",
+    "patient_id": "1463633",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.9928,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1463633_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1463633_(1).mp4"
+      },
+      {
+        "stem": "1463633_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1463633_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-036",
+    "display_id": "P036",
+    "arm": "A_ai_clean",
+    "patient_id": "1465025",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.999,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1465025-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1465025-1.mp4"
+      },
+      {
+        "stem": "1465025-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1465025-2.mp4"
+      },
+      {
+        "stem": "1465025_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1465025_(1).mp4"
+      },
+      {
+        "stem": "1465025_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1465025_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-037",
+    "display_id": "P037",
+    "arm": "A_ai_clean",
+    "patient_id": "1465603",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.6845,
+    "ai_frame_recall": 0.6667,
+    "videos": [
+      {
+        "stem": "1465603-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1465603-2.mp4"
+      },
+      {
+        "stem": "1465603-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1465603-3.mp4"
+      },
+      {
+        "stem": "1465603_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1465603_(2).mp4"
+      },
+      {
+        "stem": "1465603_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1465603_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-038",
+    "display_id": "P038",
+    "arm": "A_ai_clean",
+    "patient_id": "1486246",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.9986,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1486246_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1486246_(1).mp4"
+      },
+      {
+        "stem": "1486246_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1486246_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-039",
+    "display_id": "P039",
+    "arm": "A_ai_clean",
+    "patient_id": "1497593",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.9937,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1497593-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1497593-3.mp4"
+      },
+      {
+        "stem": "1497593-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1497593-4.mp4"
+      },
+      {
+        "stem": "1497593_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497593_(1).mp4"
+      },
+      {
+        "stem": "1497593_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497593_(2).mp4"
+      },
+      {
+        "stem": "1497593_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497593_(3).mp4"
+      },
+      {
+        "stem": "1497593_(4)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497593_(4).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-040",
+    "display_id": "P040",
+    "arm": "A_ai_clean",
+    "patient_id": "1510142",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.9991,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1510142_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1510142_(1).mp4"
+      },
+      {
+        "stem": "1510142_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1510142_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-041",
+    "display_id": "P041",
+    "arm": "A_ai_clean",
+    "patient_id": "1511376",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.576,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1511376_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1511376_(1).mp4"
+      },
+      {
+        "stem": "1511376_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1511376_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-042",
+    "display_id": "P042",
+    "arm": "A_ai_clean",
+    "patient_id": "212320",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.9787,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0212320-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0212320-1.mp4"
+      },
+      {
+        "stem": "Z0212320-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0212320-2.mp4"
+      },
+      {
+        "stem": "Z0212320-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0212320-1.mp4"
+      },
+      {
+        "stem": "Z0212320-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0212320-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-043",
+    "display_id": "P043",
+    "arm": "A_ai_clean",
+    "patient_id": "225342",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.8138,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0225342-3",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0225342-3.mp4"
+      },
+      {
+        "stem": "Z0225342-4",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0225342-4.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-044",
+    "display_id": "P044",
+    "arm": "A_ai_clean",
+    "patient_id": "1189997",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.8257,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1189997_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1189997_(1).mp4"
+      },
+      {
+        "stem": "1189997_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1189997_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-045",
+    "display_id": "P045",
+    "arm": "A_ai_clean",
+    "patient_id": "1454997",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.712,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1454997-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1454997-3.wmv"
+      },
+      {
+        "stem": "1454997-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1454997-6.wmv"
+      },
+      {
+        "stem": "1454997_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1454997_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-046",
+    "display_id": "P046",
+    "arm": "A_ai_clean",
+    "patient_id": "1466069",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9798,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1466069-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1466069-1.mp4"
+      },
+      {
+        "stem": "1466069-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1466069-2.mp4"
+      },
+      {
+        "stem": "1466069_(7)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1466069_(7).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-047",
+    "display_id": "P047",
+    "arm": "A_ai_clean",
+    "patient_id": "1466467",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9676,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1466467-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1466467-1.mp4"
+      },
+      {
+        "stem": "1466467-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1466467-2.mp4"
+      },
+      {
+        "stem": "1466467_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1466467_(1).mp4"
+      },
+      {
+        "stem": "1466467_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1466467_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-048",
+    "display_id": "P048",
+    "arm": "A_ai_clean",
+    "patient_id": "1472654",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9831,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1472654-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1472654-5.mp4"
+      },
+      {
+        "stem": "1472654-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1472654-6.mp4"
+      },
+      {
+        "stem": "1472654_(5)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1472654_(5).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-049",
+    "display_id": "P049",
+    "arm": "A_ai_clean",
+    "patient_id": "1477217",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9926,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1477217-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1477217-1.mp4"
+      },
+      {
+        "stem": "1477217_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1477217_(1).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-050",
+    "display_id": "P050",
+    "arm": "A_ai_clean",
+    "patient_id": "1488127",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9952,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1488127-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1488127-1.mp4"
+      },
+      {
+        "stem": "1488127_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1488127_(1).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-051",
+    "display_id": "P051",
+    "arm": "A_ai_clean",
+    "patient_id": "1488684",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.9946,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1488684-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1488684-1.mp4"
+      },
+      {
+        "stem": "1488684-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1488684-2.mp4"
+      },
+      {
+        "stem": "1488684_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1488684_(1).mp4"
+      },
+      {
+        "stem": "1488684_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1488684_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-052",
+    "display_id": "P052",
+    "arm": "A_ai_clean",
+    "patient_id": "1497176",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.8931,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1497176-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1497176-4.mp4"
+      },
+      {
+        "stem": "1497176-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1497176-5.mp4"
+      },
+      {
+        "stem": "1497176_(4)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497176_(4).mp4"
+      },
+      {
+        "stem": "1497176_(5)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497176_(5).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-053",
+    "display_id": "P053",
+    "arm": "A_ai_clean",
+    "patient_id": "1387681",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9745,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1387681_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1387681_(1).mp4"
+      },
+      {
+        "stem": "1387681_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1387681_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-054",
+    "display_id": "P054",
+    "arm": "A_ai_clean",
+    "patient_id": "1452743",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.4971,
+    "ai_frame_recall": 0.6,
+    "videos": [
+      {
+        "stem": "1452743-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1452743-1.wmv"
+      },
+      {
+        "stem": "1452743-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1452743-2.wmv"
+      },
+      {
+        "stem": "1452743_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1452743_(1).mp4"
+      },
+      {
+        "stem": "1452743_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1452743_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-055",
+    "display_id": "P055",
+    "arm": "A_ai_clean",
+    "patient_id": "1458412",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9818,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1458412_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1458412_(1).mp4"
+      },
+      {
+        "stem": "1458412_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1458412_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-056",
+    "display_id": "P056",
+    "arm": "A_ai_clean",
+    "patient_id": "1469113",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9826,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1469113-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1469113-1.mp4"
+      },
+      {
+        "stem": "1469113-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1469113-2.mp4"
+      },
+      {
+        "stem": "1469113_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1469113_(1).mp4"
+      },
+      {
+        "stem": "1469113_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1469113_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-057",
+    "display_id": "P057",
+    "arm": "A_ai_clean",
+    "patient_id": "1476800",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9701,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1476800_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1476800_(1).mp4"
+      },
+      {
+        "stem": "1476800_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1476800_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-058",
+    "display_id": "P058",
+    "arm": "A_ai_clean",
+    "patient_id": "1476901",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5264,
+    "ai_frame_recall": 0.7143,
+    "videos": [
+      {
+        "stem": "1476901-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1476901-1.mp4"
+      },
+      {
+        "stem": "1476901_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1476901_(1).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-059",
+    "display_id": "P059",
+    "arm": "A_ai_clean",
+    "patient_id": "1478976",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9906,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1478976_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1478976_(1).mp4"
+      },
+      {
+        "stem": "1478976_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1478976_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-060",
+    "display_id": "P060",
+    "arm": "A_ai_clean",
+    "patient_id": "1480337",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.9612,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1480337-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1480337-1.mp4"
+      },
+      {
+        "stem": "1480337-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1480337-3.mp4"
+      },
+      {
+        "stem": "1480337_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1480337_(1).mp4"
+      },
+      {
+        "stem": "1480337_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1480337_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-061",
+    "display_id": "P061",
+    "arm": "A_ai_clean",
+    "patient_id": "1503242",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.7245,
+    "ai_frame_recall": 0.8333,
+    "videos": [
+      {
+        "stem": "1503242-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1503242-1.mp4"
+      },
+      {
+        "stem": "1503242-9",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1503242-9.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-062",
+    "display_id": "P062",
+    "arm": "A_ai_clean",
+    "patient_id": "215265",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.8634,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0215265-4",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0215265-4.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-063",
+    "display_id": "P063",
+    "arm": "A_ai_clean",
+    "patient_id": "1034135",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.8009,
+    "ai_frame_recall": 0.8,
+    "videos": [
+      {
+        "stem": "1034135-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1034135-1.mp4"
+      },
+      {
+        "stem": "1034135-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1034135-2.mp4"
+      },
+      {
+        "stem": "1034135_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1034135_(1).mp4"
+      },
+      {
+        "stem": "1034135_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1034135_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-064",
+    "display_id": "P064",
+    "arm": "A_ai_clean",
+    "patient_id": "1273916",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9243,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1273916_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1273916_(1).mp4"
+      },
+      {
+        "stem": "1273916_(10)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1273916_(10).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-065",
+    "display_id": "P065",
+    "arm": "A_ai_clean",
+    "patient_id": "1351776",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9886,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1351776-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1351776-2.mp4"
+      },
+      {
+        "stem": "1351776-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1351776-3.mp4"
+      },
+      {
+        "stem": "1351776-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1351776-2.mp4"
+      },
+      {
+        "stem": "1351776-3",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1351776-3.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-066",
+    "display_id": "P066",
+    "arm": "A_ai_clean",
+    "patient_id": "13638153",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9713,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "13638153_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/13638153_(1).mp4"
+      },
+      {
+        "stem": "13638153_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/13638153_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-067",
+    "display_id": "P067",
+    "arm": "A_ai_clean",
+    "patient_id": "1452040",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9954,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1452040-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1452040-2.wmv"
+      },
+      {
+        "stem": "1452040-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1452040-3.wmv"
+      },
+      {
+        "stem": "1452040_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1452040_(2).mp4"
+      },
+      {
+        "stem": "1452040_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1452040_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-068",
+    "display_id": "P068",
+    "arm": "A_ai_clean",
+    "patient_id": "1452408",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9168,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1452408-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1452408-1.wmv"
+      },
+      {
+        "stem": "1452408_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1452408_(1).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-069",
+    "display_id": "P069",
+    "arm": "A_ai_clean",
+    "patient_id": "1469074",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9929,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1469074_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1469074_(1).mp4"
+      },
+      {
+        "stem": "1469074_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1469074_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-070",
+    "display_id": "P070",
+    "arm": "A_ai_clean",
+    "patient_id": "1469863",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9946,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1469863-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1469863-2.mp4"
+      },
+      {
+        "stem": "1469863_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1469863_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-071",
+    "display_id": "P071",
+    "arm": "A_ai_clean",
+    "patient_id": "1476613",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9947,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1476613-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1476613-1.mp4"
+      },
+      {
+        "stem": "1476613_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1476613_(1).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-072",
+    "display_id": "P072",
+    "arm": "A_ai_clean",
+    "patient_id": "1482352",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9935,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1482352-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1482352-3.mp4"
+      },
+      {
+        "stem": "1482352-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1482352-4.mp4"
+      },
+      {
+        "stem": "1482352_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1482352_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-073",
+    "display_id": "P073",
+    "arm": "A_ai_clean",
+    "patient_id": "1482937",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9928,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1482937-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1482937-1.mp4"
+      },
+      {
+        "stem": "1482937-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1482937-2.mp4"
+      },
+      {
+        "stem": "1482937_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1482937_(1).mp4"
+      },
+      {
+        "stem": "1482937_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1482937_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-074",
+    "display_id": "P074",
+    "arm": "A_ai_clean",
+    "patient_id": "1487927",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9964,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1487927-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1487927-1.mp4"
+      },
+      {
+        "stem": "1487927_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1487927_(1).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-075",
+    "display_id": "P075",
+    "arm": "A_ai_clean",
+    "patient_id": "1492910",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9805,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1492910-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1492910-1.mp4"
+      },
+      {
+        "stem": "1492910-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1492910-2.mp4"
+      },
+      {
+        "stem": "1492910_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1492910_(1).mp4"
+      },
+      {
+        "stem": "1492910_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1492910_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-076",
+    "display_id": "P076",
+    "arm": "A_ai_clean",
+    "patient_id": "1497589",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.8972,
+    "ai_frame_recall": 0.9,
+    "videos": [
+      {
+        "stem": "1497589-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1497589-2.mp4"
+      },
+      {
+        "stem": "1497589-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1497589-6.mp4"
+      },
+      {
+        "stem": "1497589_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497589_(1).mp4"
+      },
+      {
+        "stem": "1497589_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497589_(2).mp4"
+      },
+      {
+        "stem": "1497589_(6)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1497589_(6).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-077",
+    "display_id": "P077",
+    "arm": "A_ai_clean",
+    "patient_id": "1506559",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9734,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1506559-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1506559-1.mp4"
+      },
+      {
+        "stem": "1506559-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1506559-2.mp4"
+      },
+      {
+        "stem": "1506559_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1506559_(1).mp4"
+      },
+      {
+        "stem": "1506559_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1506559_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-078",
+    "display_id": "P078",
+    "arm": "A_ai_clean",
+    "patient_id": "1542910",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9961,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1542910-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1542910-2.mp4"
+      },
+      {
+        "stem": "1542910-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1542910-3.mp4"
+      },
+      {
+        "stem": "1542910-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1542910-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-079",
+    "display_id": "P079",
+    "arm": "A_ai_clean",
+    "patient_id": "1563946",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9808,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "1563946-3",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1563946-3.mp4"
+      },
+      {
+        "stem": "1563946-7",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1563946-7.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-080",
+    "display_id": "P080",
+    "arm": "A_ai_clean",
+    "patient_id": "200821",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.8889,
+    "ai_frame_recall": 0.8571,
+    "videos": [
+      {
+        "stem": "Z0200821-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0200821-4.mp4"
+      },
+      {
+        "stem": "Z0200821-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0200821-5.mp4"
+      },
+      {
+        "stem": "Z0200821-4",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0200821-4.mp4"
+      },
+      {
+        "stem": "Z0200821-5",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0200821-5.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-081",
+    "display_id": "P081",
+    "arm": "A_ai_clean",
+    "patient_id": "206183",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9815,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0206183-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0206183-1.mp4"
+      },
+      {
+        "stem": "Z0206183-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0206183-1.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-082",
+    "display_id": "P082",
+    "arm": "A_ai_clean",
+    "patient_id": "208417",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.745,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "Z0208417-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0208417-1.mp4"
+      },
+      {
+        "stem": "Z0208417-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0208417-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-083",
+    "display_id": "P083",
+    "arm": "A_ai_clean",
+    "patient_id": "208494",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6167,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "Z0208494-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0208494-1.mp4"
+      },
+      {
+        "stem": "Z0208494-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0208494-2.mp4"
+      },
+      {
+        "stem": "Z0208494-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0208494-1.mp4"
+      },
+      {
+        "stem": "Z0208494-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0208494-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-084",
+    "display_id": "P084",
+    "arm": "A_ai_clean",
+    "patient_id": "215191",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9947,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0215191-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0215191-1.mp4"
+      },
+      {
+        "stem": "Z0215191-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0215191-2.mp4"
+      },
+      {
+        "stem": "Z0215191-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0215191-1.mp4"
+      },
+      {
+        "stem": "Z0215191-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0215191-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-085",
+    "display_id": "P085",
+    "arm": "A_ai_clean",
+    "patient_id": "216275",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9964,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0216275-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0216275-2.mp4"
+      },
+      {
+        "stem": "Z0216275-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0216275-3.mp4"
+      },
+      {
+        "stem": "Z0216275-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0216275-2.mp4"
+      },
+      {
+        "stem": "Z0216275-3",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0216275-3.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-086",
+    "display_id": "P086",
+    "arm": "A_ai_clean",
+    "patient_id": "218450",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5806,
+    "ai_frame_recall": 0.6,
+    "videos": [
+      {
+        "stem": "Z0218450-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0218450-1.mp4"
+      },
+      {
+        "stem": "Z0218450-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0218450-3.mp4"
+      },
+      {
+        "stem": "Z0218450-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0218450-1.mp4"
+      },
+      {
+        "stem": "Z0218450-3",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0218450-3.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-087",
+    "display_id": "P087",
+    "arm": "A_ai_clean",
+    "patient_id": "219053",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9963,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0219053-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0219053-1.mp4"
+      },
+      {
+        "stem": "Z0219053-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0219053-2.mp4"
+      },
+      {
+        "stem": "Z0219053-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0219053-1.mp4"
+      },
+      {
+        "stem": "Z0219053-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0219053-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-088",
+    "display_id": "P088",
+    "arm": "A_ai_clean",
+    "patient_id": "226685",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.8983,
+    "ai_frame_recall": 1.0,
+    "videos": [
+      {
+        "stem": "Z0226685-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0226685-3.mp4"
+      },
+      {
+        "stem": "Z0226685-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0226685-4.mp4"
+      },
+      {
+        "stem": "Z0226685-3",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0226685-3.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-089",
+    "display_id": "P089",
+    "arm": "A_ai_clean",
+    "patient_id": "231378",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.7507,
+    "ai_frame_recall": 0.75,
+    "videos": [
+      {
+        "stem": "Z0231378-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0231378-2.mp4"
+      },
+      {
+        "stem": "Z0231378-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0231378-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-090",
+    "display_id": "P090",
+    "arm": "A_ai_clean",
+    "patient_id": "234608",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6461,
+    "ai_frame_recall": 0.7,
+    "videos": [
+      {
+        "stem": "Z0234608-10",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0234608-10.mp4"
+      },
+      {
+        "stem": "Z0234608-12",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0234608-12.mp4"
+      },
+      {
+        "stem": "Z0234608-9",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0234608-9.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-091",
+    "display_id": "P091",
+    "arm": "A_ai_clean",
+    "patient_id": "782478",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.9318,
+    "ai_frame_recall": 0.9167,
+    "videos": [
+      {
+        "stem": "782478-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/782478-1.mp4"
+      },
+      {
+        "stem": "782478-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/782478-3.mp4"
+      },
+      {
+        "stem": "782478_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/782478_(1).mp4"
+      },
+      {
+        "stem": "782478_(3)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/782478_(3).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-092",
+    "display_id": "P092",
+    "arm": "B_ai_uncertain",
+    "patient_id": "dhwa10",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.3672,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "dhwa10-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa10-1.avi"
+      },
+      {
+        "stem": "dhwa10-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa10-3.avi"
+      },
+      {
+        "stem": "dhwa10-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa10-1.avi"
+      },
+      {
+        "stem": "dhwa10-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa10-2.avi"
+      },
+      {
+        "stem": "dhwa10-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa10-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-093",
+    "display_id": "P093",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd33",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.4779,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd33-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd33-1.avi"
+      },
+      {
+        "stem": "hbd33-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd33-2.avi"
+      },
+      {
+        "stem": "hbd33-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd33-1.avi"
+      },
+      {
+        "stem": "hbd33-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd33-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-094",
+    "display_id": "P094",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd39",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.3993,
+    "ai_frame_recall": 0.4,
+    "videos": [
+      {
+        "stem": "hbd39-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd39-1.avi"
+      },
+      {
+        "stem": "hbd39-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd39-2.avi"
+      },
+      {
+        "stem": "hbd39-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd39-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-095",
+    "display_id": "P095",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd45",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.4425,
+    "ai_frame_recall": 0.4,
+    "videos": [
+      {
+        "stem": "hbd45-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd45-1.avi"
+      },
+      {
+        "stem": "hbd45-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd45-2.avi"
+      },
+      {
+        "stem": "hbd45-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd45-1.avi"
+      },
+      {
+        "stem": "hbd45-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd45-2.avi"
+      },
+      {
+        "stem": "hbd45-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd45-3.avi"
+      },
+      {
+        "stem": "hbd45-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd45-4.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-096",
+    "display_id": "P096",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd6",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.3354,
+    "ai_frame_recall": 0.25,
+    "videos": [
+      {
+        "stem": "hbd6-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd6-1.avi"
+      },
+      {
+        "stem": "hbd6-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd6-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-097",
+    "display_id": "P097",
+    "arm": "B_ai_uncertain",
+    "patient_id": "11207481",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.4231,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "11207481-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/11207481-4.wmv"
+      },
+      {
+        "stem": "11207481-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/11207481-5.wmv"
+      },
+      {
+        "stem": "11207481-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/11207481-4.wmv"
+      },
+      {
+        "stem": "11207481-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/11207481-5.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-098",
+    "display_id": "P098",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1234674",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.4951,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "1234674-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1234674-3.wmv"
+      },
+      {
+        "stem": "1234674-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/1234674-3.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-099",
+    "display_id": "P099",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd24",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.4929,
+    "ai_frame_recall": 0.3333,
+    "videos": [
+      {
+        "stem": "hbd24-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd24-1.avi"
+      },
+      {
+        "stem": "hbd24-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd24-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-100",
+    "display_id": "P100",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd36",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.3583,
+    "ai_frame_recall": 0.3333,
+    "videos": [
+      {
+        "stem": "hbd36-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd36-1.avi"
+      },
+      {
+        "stem": "hbd36-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd36-2.avi"
+      },
+      {
+        "stem": "hbd36-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd36-1.avi"
+      },
+      {
+        "stem": "hbd36-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd36-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-101",
+    "display_id": "P101",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd67",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.4424,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd67-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd67-1.avi"
+      },
+      {
+        "stem": "hbd67-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd67-2.avi"
+      },
+      {
+        "stem": "hbd67-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd67-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-102",
+    "display_id": "P102",
+    "arm": "B_ai_uncertain",
+    "patient_id": "dhwa13",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.4641,
+    "ai_frame_recall": 0.1667,
+    "videos": [
+      {
+        "stem": "dhwa13-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa13-1.avi"
+      },
+      {
+        "stem": "dhwa13-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa13-4.avi"
+      },
+      {
+        "stem": "dhwa13-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa13-1.avi"
+      },
+      {
+        "stem": "dhwa13-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa13-2.avi"
+      },
+      {
+        "stem": "dhwa13-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa13-3.avi"
+      },
+      {
+        "stem": "dhwa13-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa13-4.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-103",
+    "display_id": "P103",
+    "arm": "B_ai_uncertain",
+    "patient_id": "dhwa4",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.4998,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "dhwa4-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa4-1.avi"
+      },
+      {
+        "stem": "dhwa4-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa4-2.avi"
+      },
+      {
+        "stem": "dhwa4-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa4-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-104",
+    "display_id": "P104",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1499097",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.4695,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "1499097-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1499097-1.mp4"
+      },
+      {
+        "stem": "1499097-4",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1499097-4.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-105",
+    "display_id": "P105",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1539220",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.4622,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "1539220-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1539220-1.mp4"
+      },
+      {
+        "stem": "1539220-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1539220-2.mp4"
+      },
+      {
+        "stem": "1539220-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1539220-1.mp4"
+      },
+      {
+        "stem": "1539220-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1539220-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-106",
+    "display_id": "P106",
+    "arm": "B_ai_uncertain",
+    "patient_id": "237432",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.4341,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "Z0237432-12",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0237432-12.mp4"
+      },
+      {
+        "stem": "Z0237432-15",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0237432-15.mp4"
+      },
+      {
+        "stem": "Z0237432-9",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0237432-9.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-107",
+    "display_id": "P107",
+    "arm": "B_ai_uncertain",
+    "patient_id": "205131",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.4721,
+    "ai_frame_recall": 0.3333,
+    "videos": [
+      {
+        "stem": "Z0205131-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0205131-1.mp4"
+      },
+      {
+        "stem": "Z0205131-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0205131-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-108",
+    "display_id": "P108",
+    "arm": "B_ai_uncertain",
+    "patient_id": "206757",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.4299,
+    "ai_frame_recall": 0.4,
+    "videos": [
+      {
+        "stem": "Z0206757-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0206757-1.mp4"
+      },
+      {
+        "stem": "Z0206757-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0206757-2.mp4"
+      },
+      {
+        "stem": "Z0206757-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0206757-1.mp4"
+      },
+      {
+        "stem": "Z0206757-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0206757-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-109",
+    "display_id": "P109",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd37",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.501,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd37-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd37-1.avi"
+      },
+      {
+        "stem": "hbd37-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd37-2.avi"
+      },
+      {
+        "stem": "hbd37-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd37-3.avi"
+      },
+      {
+        "stem": "hbd37-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd37-4.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-110",
+    "display_id": "P110",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1503674",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5024,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "1503674-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1503674-1.mp4"
+      },
+      {
+        "stem": "1503674-10",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1503674-10.mp4"
+      },
+      {
+        "stem": "1503674-8",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1503674-8.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-111",
+    "display_id": "P111",
+    "arm": "B_ai_uncertain",
+    "patient_id": "t2146232",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5029,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "t2146232-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/t2146232-1.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-112",
+    "display_id": "P112",
+    "arm": "B_ai_uncertain",
+    "patient_id": "pt147",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T1",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.5038,
+    "ai_frame_recall": 0.4118,
+    "videos": [
+      {
+        "stem": "pt147-22",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt147-22.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-113",
+    "display_id": "P113",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd63",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.5039,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd63-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd63-1.avi"
+      },
+      {
+        "stem": "hbd63-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd63-2.avi"
+      },
+      {
+        "stem": "hbd63-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd63-1.avi"
+      },
+      {
+        "stem": "hbd63-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd63-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-114",
+    "display_id": "P114",
+    "arm": "B_ai_uncertain",
+    "patient_id": "234794",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.5073,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "Z0234794-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0234794-1.mp4"
+      },
+      {
+        "stem": "Z0234794-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0234794-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-115",
+    "display_id": "P115",
+    "arm": "B_ai_uncertain",
+    "patient_id": "dhwa16",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5081,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "dhwa16-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa16-2.avi"
+      },
+      {
+        "stem": "dhwa16-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa16-3.avi"
+      },
+      {
+        "stem": "dhwa16-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa16-1.avi"
+      },
+      {
+        "stem": "dhwa16-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa16-2.avi"
+      },
+      {
+        "stem": "dhwa16-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa16-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-116",
+    "display_id": "P116",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1502967",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.5085,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "1502967-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1502967-2.mp4"
+      },
+      {
+        "stem": "1502967-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1502967-3.mp4"
+      },
+      {
+        "stem": "1502967-6",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1502967-6.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-117",
+    "display_id": "P117",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd54",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5092,
+    "ai_frame_recall": 0.3333,
+    "videos": [
+      {
+        "stem": "hbd54-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd54-1.avi"
+      },
+      {
+        "stem": "hbd54-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd54-2.avi"
+      },
+      {
+        "stem": "hbd54-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd54-1.avi"
+      },
+      {
+        "stem": "hbd54-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd54-2.avi"
+      },
+      {
+        "stem": "hbd54-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd54-3.avi"
+      },
+      {
+        "stem": "hbd54-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd54-4.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-118",
+    "display_id": "P118",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd50",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5214,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd50-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd50-1.avi"
+      },
+      {
+        "stem": "hbd50-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd50-2.avi"
+      },
+      {
+        "stem": "hbd50-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd50-1.avi"
+      },
+      {
+        "stem": "hbd50-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd50-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-119",
+    "display_id": "P119",
+    "arm": "B_ai_uncertain",
+    "patient_id": "222130",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.5215,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "Z0222130-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0222130-1.mp4"
+      },
+      {
+        "stem": "Z0222130-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0222130-1.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-120",
+    "display_id": "P120",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd4",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5225,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd4-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd4-1.avi"
+      },
+      {
+        "stem": "hbd4-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd4-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-121",
+    "display_id": "P121",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd8",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5236,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd8-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd8-1.avi"
+      },
+      {
+        "stem": "hbd8-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd8-2.avi"
+      },
+      {
+        "stem": "hbd8-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd8-1.avi"
+      },
+      {
+        "stem": "hbd8-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd8-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-122",
+    "display_id": "P122",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd56",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5305,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd56-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd56-1.avi"
+      },
+      {
+        "stem": "hbd56-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd56-2.avi"
+      },
+      {
+        "stem": "hbd56-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd56-1.avi"
+      },
+      {
+        "stem": "hbd56-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd56-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-123",
+    "display_id": "P123",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd51",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5323,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd51-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd51-1.avi"
+      },
+      {
+        "stem": "hbd51-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd51-2.avi"
+      },
+      {
+        "stem": "hbd51-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd51-3.avi"
+      },
+      {
+        "stem": "hbd51-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd51-4.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-124",
+    "display_id": "P124",
+    "arm": "B_ai_uncertain",
+    "patient_id": "7207986",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5386,
+    "ai_frame_recall": 0.2,
+    "videos": [
+      {
+        "stem": "7207986-11",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/7207986-11.wmv"
+      },
+      {
+        "stem": "7207986-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/7207986-5.wmv"
+      },
+      {
+        "stem": "7207986-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-1.wmv"
+      },
+      {
+        "stem": "7207986-11",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-11.wmv"
+      },
+      {
+        "stem": "7207986-12",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-12.wmv"
+      },
+      {
+        "stem": "7207986-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-2.wmv"
+      },
+      {
+        "stem": "7207986-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-3.wmv"
+      },
+      {
+        "stem": "7207986-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-4.wmv"
+      },
+      {
+        "stem": "7207986-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7207986-5.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-125",
+    "display_id": "P125",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd60",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5393,
+    "ai_frame_recall": 0.25,
+    "videos": [
+      {
+        "stem": "hbd60-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd60-1.avi"
+      },
+      {
+        "stem": "hbd60-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd60-2.avi"
+      },
+      {
+        "stem": "hbd60-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd60-1.avi"
+      },
+      {
+        "stem": "hbd60-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd60-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-126",
+    "display_id": "P126",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd62",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5434,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd62-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd62-1.avi"
+      },
+      {
+        "stem": "hbd62-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd62-3.avi"
+      },
+      {
+        "stem": "hbd62-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd62-1.avi"
+      },
+      {
+        "stem": "hbd62-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd62-2.avi"
+      },
+      {
+        "stem": "hbd62-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd62-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-127",
+    "display_id": "P127",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd2",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5467,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd2-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd2-1.avi"
+      },
+      {
+        "stem": "hbd2-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd2-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-128",
+    "display_id": "P128",
+    "arm": "B_ai_uncertain",
+    "patient_id": "t2100966",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5561,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "t2100966-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/t2100966-4.wmv"
+      },
+      {
+        "stem": "t2100966-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/t2100966-4.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-129",
+    "display_id": "P129",
+    "arm": "B_ai_uncertain",
+    "patient_id": "pt245",
+    "cohort": "external",
+    "source": "ext/putian",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5679,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "pt245-10",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt245-10.Avi"
+      },
+      {
+        "stem": "pt245-11",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt245-11.Avi"
+      },
+      {
+        "stem": "pt245-12",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt245-12.Avi"
+      },
+      {
+        "stem": "pt245-13",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt245-13.Avi"
+      },
+      {
+        "stem": "pt245-14",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/莆田学院附属医院/直接手术视频/pt245-14.Avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-130",
+    "display_id": "P130",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd44",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.5899,
+    "ai_frame_recall": 0.4,
+    "videos": [
+      {
+        "stem": "hbd44-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd44-1.avi"
+      },
+      {
+        "stem": "hbd44-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd44-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-131",
+    "display_id": "P131",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd34",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5945,
+    "ai_frame_recall": 0.3333,
+    "videos": [
+      {
+        "stem": "hbd34-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd34-1.avi"
+      },
+      {
+        "stem": "hbd34-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd34-2.avi"
+      },
+      {
+        "stem": "hbd34-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd34-3.avi"
+      },
+      {
+        "stem": "hbd34-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd34-4.avi"
+      },
+      {
+        "stem": "hbd34-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd34-5.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-132",
+    "display_id": "P132",
+    "arm": "B_ai_uncertain",
+    "patient_id": "234093",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.5993,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "Z0234093-11",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0234093-11.mp4"
+      },
+      {
+        "stem": "Z0234093-23",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0234093-23.mp4"
+      },
+      {
+        "stem": "Z0234093-9",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0234093-9.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-133",
+    "display_id": "P133",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd10",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6034,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd10-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd10-1.avi"
+      },
+      {
+        "stem": "hbd10-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd10-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-134",
+    "display_id": "P134",
+    "arm": "B_ai_uncertain",
+    "patient_id": "6378852",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6064,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "6378852-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/6378852-5.wmv"
+      },
+      {
+        "stem": "6378852-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/6378852-6.wmv"
+      },
+      {
+        "stem": "6378852-7",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/6378852-7.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-135",
+    "display_id": "P135",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd30",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6066,
+    "ai_frame_recall": 0.2,
+    "videos": [
+      {
+        "stem": "hbd30-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd30-2.avi"
+      },
+      {
+        "stem": "hbd30-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd30-3.avi"
+      },
+      {
+        "stem": "hbd30-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd30-1.avi"
+      },
+      {
+        "stem": "hbd30-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd30-2.avi"
+      },
+      {
+        "stem": "hbd30-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd30-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-136",
+    "display_id": "P136",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd48",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6126,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd48-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd48-1.avi"
+      },
+      {
+        "stem": "hbd48-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd48-5.avi"
+      },
+      {
+        "stem": "hbd48-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd48-1.avi"
+      },
+      {
+        "stem": "hbd48-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd48-2.avi"
+      },
+      {
+        "stem": "hbd48-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd48-3.avi"
+      },
+      {
+        "stem": "hbd48-4",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd48-4.avi"
+      },
+      {
+        "stem": "hbd48-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd48-5.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-137",
+    "display_id": "P137",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd7",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.6187,
+    "ai_frame_recall": 0.5,
+    "videos": [
+      {
+        "stem": "hbd7-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd7-1.avi"
+      },
+      {
+        "stem": "hbd7-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd7-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-138",
+    "display_id": "P138",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd29",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.636,
+    "ai_frame_recall": 0.4,
+    "videos": [
+      {
+        "stem": "hbd29-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd29-1.avi"
+      },
+      {
+        "stem": "hbd29-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd29-2.avi"
+      },
+      {
+        "stem": "hbd29-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd29-1.avi"
+      },
+      {
+        "stem": "hbd29-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd29-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-139",
+    "display_id": "P139",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd20",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 1.0,
+    "ai_max_prob": 0.6429,
+    "ai_frame_recall": 0.3333,
+    "videos": [
+      {
+        "stem": "hbd20-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd20-1.avi"
+      },
+      {
+        "stem": "hbd20-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd20-1.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-140",
+    "display_id": "P140",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd23",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6437,
+    "ai_frame_recall": 0.25,
+    "videos": [
+      {
+        "stem": "hbd23-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd23-1.avi"
+      },
+      {
+        "stem": "hbd23-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd23-2.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-141",
+    "display_id": "P141",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1499092",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.649,
+    "ai_frame_recall": 0.2,
+    "videos": [
+      {
+        "stem": "1499092-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1499092-1.mp4"
+      },
+      {
+        "stem": "1499092-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1499092-2.mp4"
+      },
+      {
+        "stem": "1499092-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1499092-1.mp4"
+      },
+      {
+        "stem": "1499092-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1499092-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-142",
+    "display_id": "P142",
+    "arm": "B_ai_uncertain",
+    "patient_id": "dhwa2",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.6519,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "dhwa2-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa2-1.avi"
+      },
+      {
+        "stem": "dhwa2-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/dhwa2-2.avi"
+      },
+      {
+        "stem": "dhwa2-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa2-1.avi"
+      },
+      {
+        "stem": "dhwa2-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa2-2.avi"
+      },
+      {
+        "stem": "dhwa2-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa2-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-143",
+    "display_id": "P143",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd57",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T2",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6585,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd57-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd57-2.avi"
+      },
+      {
+        "stem": "hbd57-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd57-3.avi"
+      },
+      {
+        "stem": "hbd57-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd57-1.avi"
+      },
+      {
+        "stem": "hbd57-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd57-2.avi"
+      },
+      {
+        "stem": "hbd57-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd57-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-144",
+    "display_id": "P144",
+    "arm": "B_ai_uncertain",
+    "patient_id": "215178",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T2",
+    "ai_pred": 0.0,
+    "ai_max_prob": 0.6676,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "Z0215178-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0215178-1.mp4"
+      },
+      {
+        "stem": "Z0215178-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/Z0215178-2.mp4"
+      },
+      {
+        "stem": "Z0215178-6",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0215178-6.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-145",
+    "display_id": "P145",
+    "arm": "B_ai_uncertain",
+    "patient_id": "230765",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6728,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "Z0230765-1",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0230765-1.mp4"
+      },
+      {
+        "stem": "Z0230765-2",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/Z0230765-2.mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-146",
+    "display_id": "P146",
+    "arm": "B_ai_uncertain",
+    "patient_id": "1478783",
+    "cohort": "prospective",
+    "source": "int/prospective",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.6749,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "1478783-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1478783-1.mp4"
+      },
+      {
+        "stem": "1478783-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/1478783-2.mp4"
+      },
+      {
+        "stem": "1478783_(1)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1478783_(1).mp4"
+      },
+      {
+        "stem": "1478783_(2)",
+        "path": "/data/research/gastric/GastricTstaging/dataset/internal/prospective_2025/2025/crop_ui/videos/1478783_(2).mp4"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-147",
+    "display_id": "P147",
+    "arm": "B_ai_uncertain",
+    "patient_id": "6042105",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.6813,
+    "ai_frame_recall": 0.4,
+    "videos": [
+      {
+        "stem": "6042105-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/6042105-1.wmv"
+      },
+      {
+        "stem": "6042105-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/6042105-2.wmv"
+      },
+      {
+        "stem": "6042105-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/6042105-1.wmv"
+      },
+      {
+        "stem": "6042105-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/6042105-2.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-148",
+    "display_id": "P148",
+    "arm": "B_ai_uncertain",
+    "patient_id": "hbd40",
+    "cohort": "external",
+    "source": "ext/中核五〇四医院",
+    "pathology_t_stage": "T1",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.7125,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "hbd40-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd40-2.avi"
+      },
+      {
+        "stem": "hbd40-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/hbd40-3.avi"
+      },
+      {
+        "stem": "hbd40-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd40-1.avi"
+      },
+      {
+        "stem": "hbd40-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd40-2.avi"
+      },
+      {
+        "stem": "hbd40-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/中核五O四医院/视频/hbd40-3.avi"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-149",
+    "display_id": "P149",
+    "arm": "B_ai_uncertain",
+    "patient_id": "7530288",
+    "cohort": "external",
+    "source": "ext/佛山市第一人民医院",
+    "pathology_t_stage": "T4+",
+    "ai_pred": 2.0,
+    "ai_max_prob": 0.7267,
+    "ai_frame_recall": 0.0,
+    "videos": [
+      {
+        "stem": "7530288-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/7530288-5.wmv"
+      },
+      {
+        "stem": "7530288-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/qualified_reader_videos/7530288-6.wmv"
+      },
+      {
+        "stem": "7530288-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7530288-5.wmv"
+      },
+      {
+        "stem": "7530288-6",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/佛山市第一人民医院/视频/7530288-6.wmv"
+      }
+    ]
+  },
+  {
+    "case_id": "CASE-150",
+    "display_id": "P150",
+    "arm": "B_ai_uncertain",
+    "patient_id": "dhwa15",
+    "cohort": "external",
+    "source": "ext/福建省德化县医院",
+    "pathology_t_stage": "T3",
+    "ai_pred": 3.0,
+    "ai_max_prob": 0.7268,
+    "ai_frame_recall": 0.2857,
+    "videos": [
+      {
+        "stem": "dhwa15-1",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa15-1.avi"
+      },
+      {
+        "stem": "dhwa15-2",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa15-2.avi"
+      },
+      {
+        "stem": "dhwa15-3",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa15-3.avi"
+      },
+      {
+        "stem": "dhwa15-5",
+        "path": "/data/research/gastric/GastricTstaging/data/raw/legacy_external_direct_surgery/直接手术视频/福建省德化县医院/视频/dhwa15-5.avi"
+      }
+    ]
+  }
+]

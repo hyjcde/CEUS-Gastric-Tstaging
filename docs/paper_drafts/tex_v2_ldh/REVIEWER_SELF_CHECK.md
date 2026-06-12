@@ -1,6 +1,6 @@
-# Reviewer Self-Check — 5 Rounds + v2.2 + v2.3 修复闭环
+# Reviewer Self-Check — 5 Rounds + v2.2 + v2.3 + v2.4 修复闭环
 
-> 状态：2026-06-10 v2.3 修订（4-agent 审核 round 2→统一修复）  
+> 状态：2026-06-12 v2.4 修订（reader study 2-arm 视频优先重设计）  
 > 卡：t_2f4f1d95（T6 LaTeX 编译 + 审稿人自检）  
 > 注：pdflatex **not in PATH** (verified `which pdflatex` empty)。编译验证无法跑；自检靠 `read_file` + Python 脚本扫。
 
@@ -123,14 +123,34 @@
 
 **v2.3 字数**：Summary 241 / Introduction 470 (净化后) / Methods 1096 / Results 1063 / Discussion 1143 / Total 4013（target 3500-4500 ✅）。9/9 结构 PASS，27/27 cite↔bibitem 解析。
 
----
+## v2.4 修复闭环（2026-06-12 round 3 — Reader study 2-arm 视频优先重设计）
 
-**v2.2 仍待办**（编译依赖 + 真跑）：
+| ID | 修复项 | 来源 | 状态 |
+|----|--------|------|------|
+| **G33** | Reader study 2-arm 视频优先重设计 (n=150: 91 AI-clean + 59 AI-uncertain) | boss + 卓医生 2026-06-12 微信 | ✅ |
+| G33-1 | Appendix S10 §app:reader (L554) 完全重写：2-arm + 2-pass + 3 reader + a priori 80% power | v2.3 单臂 → v2.4 双臂 | ✅ |
+| G33-2 | §Discussion Clinical deployment (L394) 增 Dr. Zhuo 归属 + "video-first 2-arm subset n=150" | v2.3 泛指 → v2.4 3 reader 名单 | ✅ |
+| G33-3 | §Limitations #3 (L402) 加 patient-level 0.69/0.64 低于 0.78 surgical-decision threshold 的说明 + 子集算法准确率不直接代表全队列 | v2.3 → v2.4 | ✅ |
+| G33-4 | §Summary Findings (L75) 加 "n=150: 91 AI-clean + 59 AI-uncertain cases; 2 passes; 3 readers including the site PI" | v2.3 "registered and in preparation" → v2.4 量化 | ✅ |
+| G33-5 | §Methods (L201) 加 Dr. Zhuo, Fujian Medical University Xiehe Hospital 完整归属 | v2.3 泛指 → v2.4 具体姓名 + 医院 | ✅ |
+| G33-6 | `apps/tstage_reader_study/` 极简阅片包搭建：4 选 1 T-stage + 0.25/0.5/1/2× 倍速 + scrubber + 2-pass 流程 | 卓医生微信 "界面简单一点，除了选择题分期其他都不要了；动图最好滚动条可以自己控制；几倍数播放" | ✅ |
+| G33-7 | `scripts/select_reader_study_subset.py` 注册到 script_registry.csv | 与 §app:reader 协议对齐 | ✅ |
+| G33-8 | `docs/clinical_validation/reader_study_150/reader_subset_v2.csv` 真 150 例 (T1=18 / T2=28 / T3=44 / T4+=60) | 由 06-03 frozen primary 从 185 视频患者中选 | ✅ |
+| G33-9 | 治理链：SSOT_MAP / GAP_TRACKER / MASTER_LOGIC / LDH_BENCHMARK 全部 v2.4 row + G33 行 | 关闭流程 | ✅ |
+
+**v2.4 字数**：字数 +0（§Summary L75 + ~40 字 / §Methods L201 + ~30 字 / §Discussion L394 + ~10 字 / §Limitations #3 + ~30 字 / Appendix S10 §app:reader 完全重写 ~+150 字）。结构 9/9 PASS 保持；27/27 cite↔bibitem 保持；新增 1 处引用（app:reader 显式 L201 mention）。
+
+**v2.4 关键策略变更**（对审稿人透明）：
+- **主文不报 AI raw test-set 数字**（test_external AUC 0.8572 / test_prospective AUC 0.8655 仍保留，但**不报** 91 Arm A + 17% Arm B 这种"按 AI 筛过"的子集准确率作为论文主结论）。
+- 论文主结论 = 全队列 frame-level / patient-level 指标（与 v2.3 一致）。
+- 子集 n=150 = 单纯为 reader study 准备，不在主文出现整体准确率；§Limitations #3 明示"子集算法准确率不直接代表全队列"。
+
+**v2.4 待办**（与 v2.3 相同）：
 1. **pdflatex 编译验证** — `which pdflatex` 空，必须在有 LaTeX 引擎的机器上跑
 2. **ChiCTR 实号** — 占位保留（GAP G03）
 3. **Funding 实号** — 占位保留（GAP G12）
 4. **Contributors 真名 + CRediT** — 占位保留（GAP G11）
-5. **Reader study 实测数据** — planned（GAP G01）
+5. **Reader study 3 reader 跑通拿数** — 子集 + UI 完成，等待 Dr. Zhuo + 2 sonographer 执行（GAP G01，已进入子集/UI 已交付阶段）
 
 **G04 (Bootstrap 2000) 已闭环 (2026-06-10, v2.3 round 2)**：
 - `scripts/bootstrap_tstaging_ci.py` 提交；8 metric × 2 cohort 真 95% CI
@@ -139,7 +159,13 @@
 - Appendix S5 删除 "in progress" 声明，指向已 commit 的 script
 - 审计：`pipeline/experiments/tree/.../eval/bootstrap_ci_2000.json`
 
-**结论**：稿件**结构 + 数字 + 引用 + 图**均已与 LDH Original Research 对齐；剩余待办为 author-side 信息（ChiCTR、Funding、Contributors、Reader study 数据）。
+**G33 (Reader study 2-arm 视频优先重设计) 已闭环 (2026-06-12, v2.4 round 3)**：
+- `scripts/select_reader_study_subset.py` + `docs/clinical_validation/reader_study_150/reader_subset_v2.csv` 提交
+- `apps/tstage_reader_study/` 完整应用（index.html / reader.js / reader.css / start.sh / start.bat / public/cases.json / README.md）提交
+- §Summary L75 / §Methods L201 / §Discussion L394 / §Limitations #3 / Appendix S10 §app:reader (L554) 5 处全文更新一致
+- 治理链 SSOT_MAP / GAP_TRACKER / MASTER_LOGIC / LDH_BENCHMARK 全部 v2.4 row
+
+**结论**：稿件**结构 + 数字 + 引用 + 图 + reader study 协议**均已与 LDH Original Research 对齐；剩余待办为 author-side 信息（ChiCTR、Funding、Contributors）+ reader study 执行（子集 + UI 已就位）。
 
 ---
 
