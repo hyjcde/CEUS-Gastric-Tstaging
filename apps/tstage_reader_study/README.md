@@ -40,14 +40,33 @@ Windows：`start.bat`
 
 ```
 apps/tstage_reader_study/
-├── index.html         # 单页（视频 + 4 选 1 + 顶栏 pass/case/arm/AI）
-├── reader.js          # 2-pass 流程 + 倍速 + scrubber + localStorage
-├── reader.css         # 暗色主题，无干扰
+├── index.html         # 单页（视频 + 4 选 1 + 顶栏 pass/case/arm/reader/AI + 进度条 + 操作弹窗 + 完成页）
+├── reader.js          # 2-pass 流程 + 倍速 + scrubber + 进度 + 键盘 + 真值表 + localStorage
+├── reader.css         # 暗色主题，含进度条 / 弹窗 / AI 一致反馈 / 完成真值表样式
 ├── public/
 │   └── cases.json     # 150 例 + 视频绝对路径
 ├── start.sh / start.bat
 └── README.md
 ```
+
+## 键盘快捷键
+
+| 键 | 动作 |
+|----|------|
+| `1` `2` `3` `4` | 选 T1 / T2 / T3 / T4+ |
+| `Space` | 播放/暂停 |
+| `S` | 跳过本例 |
+| `→` | 强制下一例（不记录） |
+| `?` / `Esc` | 打开/关闭操作说明弹窗 |
+| `Enter`（弹窗打开时） | 关闭弹窗开始阅片 |
+
+## Pass 2 反馈
+
+Pass 2 选定一选项后立即显示 **AI 一致 / 不一致** 反馈条（带 AI 预测 + 置信度），停留 900 ms 后跳下一例。Pass 2 全部完成后，结束页额外显示 **per-case 医生 vs AI vs 病理真值表**（含 一致率 统计），用于 reader 自检 + 研究团队核对。
+
+## 进度条
+
+顶部进度条 + `N / 150` 计数器实时更新（每次选定后 +1），同时反映 localStorage 已存结果。
 
 ## 视频文件
 

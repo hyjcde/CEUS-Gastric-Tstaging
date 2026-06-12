@@ -14,6 +14,7 @@
     <span id="armBadge" class="badge arm">Arm</span>
   </div>
   <div class="bar-right">
+    <span id="readerBadge" class="badge reader">Reader</span>
     <span id="aiReveal" class="ai-reveal" hidden>
       <span class="ai-label">AI 判断：</span>
       <span id="aiValue" class="ai-value">—</span>
@@ -21,6 +22,11 @@
     </span>
   </div>
 </header>
+
+<div class="progress" aria-label="阅片进度">
+  <div class="progress-track"><div id="progressFill" class="progress-fill" style="width:0%"></div></div>
+  <span id="progressText" class="progress-text">0 / 150</span>
+</div>
 
 <main>
   <section class="video-pane">
@@ -45,17 +51,52 @@
   <section class="choice-pane">
     <h2 class="prompt">该患者的 T 分期是：</h2>
     <div class="choices">
-      <button class="choice" data-value="T1" type="button"><span class="tag">T1</span><span class="hint">黏膜/黏膜下</span></button>
-      <button class="choice" data-value="T2" type="button"><span class="tag">T2</span><span class="hint">固有肌层</span></button>
-      <button class="choice" data-value="T3" type="button"><span class="tag">T3</span><span class="hint">浆膜下</span></button>
-      <button class="choice" data-value="T4" type="button"><span class="tag">T4+</span><span class="hint">穿透浆膜/侵犯邻近结构</span></button>
+      <button class="choice" data-value="T1" type="button"><span class="tag">T1</span><span class="hint">黏膜/黏膜下</span><span class="kbd">1</span></button>
+      <button class="choice" data-value="T2" type="button"><span class="tag">T2</span><span class="hint">固有肌层</span><span class="kbd">2</span></button>
+      <button class="choice" data-value="T3" type="button"><span class="tag">T3</span><span class="hint">浆膜下</span><span class="kbd">3</span></button>
+      <button class="choice" data-value="T4" type="button"><span class="tag">T4+</span><span class="hint">穿透浆膜/侵犯邻近结构</span><span class="kbd">4</span></button>
     </div>
+    <div id="aiFeedback" class="ai-feedback" hidden></div>
     <div class="footer-row">
-      <button id="btnSkip" class="ghost" type="button">跳过</button>
-      <button id="btnExport" class="ghost" type="button">导出结果</button>
+      <button id="btnSkip" class="ghost" type="button" title="跳过本例 (S)">跳过 (S)</button>
+      <button id="btnExport" class="ghost" type="button" title="下载当前已完成的结果">导出结果</button>
+      <button id="btnHelp" class="ghost" type="button" title="查看操作说明 (?)">操作说明 (?)</button>
     </div>
   </section>
 </main>
+
+<!-- instructions modal (auto-shown on first load) -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <h2 class="modal-title">胃癌 CEUS T 分期独立阅片</h2>
+    <p class="modal-sub">极简流程：<b>看视频 → 选 T 分期 → 下一例</b>。无其他个人信息收集。</p>
+    <ol class="modal-steps">
+      <li><b>看视频</b>：点击"播放"开始；可拖动 <span class="kbd inline">▬▬▬</span> scrubber 跳到任意时刻；可在 <b>0.25× / 0.5× / 1× / 2×</b> 间切换倍速。</li>
+      <li><b>选 T 分期</b>：4 选 1（T1 黏膜/黏膜下 / T2 固有肌层 / T3 浆膜下 / T4+ 穿透浆膜）。键盘快捷键 <span class="kbd inline">1</span> <span class="kbd inline">2</span> <span class="kbd inline">3</span> <span class="kbd inline">4</span>。</li>
+      <li><b>下一例</b>：选定后 220 ms 自动跳转。"跳过"将记录为 SKIP（不计入有效）。</li>
+      <li><b>2-pass 设计</b>：本 URL 的 <code>?pass=1</code> 为独立判断（不展示 AI）；<code>?pass=2</code> 为同一 150 例的 AI 辅助轮（顺序与 Pass 1 不同）。</li>
+    </ol>
+    <p class="modal-tip"><b>提示</b>：结果实时存本机 localStorage；完成 150 例会自动下载 JSON。可随时点"导出结果"下载部分结果。</p>
+    <div class="modal-actions">
+      <button id="btnModalStart" class="ctl" type="button">开始阅片</button>
+    </div>
+  </div>
+</div>
+
+<!-- completion screen (replaces body on finish) -->
+<div id="finishScreen" class="finish" hidden>
+  <div class="finish-card">
+    <h1 id="finishTitle">Pass 完成</h1>
+    <p id="finishSummary"></p>
+    <div id="finishStats" class="finish-stats"></div>
+    <div id="finishTruth" class="finish-truth"></div>
+    <p class="finish-note">结果已自动下载；请将 JSON 文件发给研究团队。</p>
+    <div class="finish-actions">
+      <button id="btnFinishExport" class="ctl" type="button">再下载一次 JSON</button>
+      <a id="btnFinishPass2" class="ctl as-link" href="#" hidden>前往 Pass 2（有 AI）</a>
+    </div>
+  </div>
+</div>
 
 <script src="reader.js"></script>
 </body>
