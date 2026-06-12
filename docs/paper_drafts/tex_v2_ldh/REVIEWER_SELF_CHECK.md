@@ -145,6 +145,25 @@
 - 论文主结论 = 全队列 frame-level / patient-level 指标（与 v2.3 一致）。
 - 子集 n=150 = 单纯为 reader study 准备，不在主文出现整体准确率；§Limitations #3 明示"子集算法准确率不直接代表全队列"。
 
+**v2.4 UI 打磨（2026-06-12, dc28480）**：
+
+| 改进 | 实现 |
+|------|------|
+| 进度条 (N/150 实时) | 顶部 `progress-track` + `progress-fill` + `progressText`，每次选定后 +1；反映 localStorage |
+| 首次访问自动弹操作说明 | `sessionStorage` 记住 per-reader；按 `?` 或 `Esc` 重看；含 4 步流程 + 2-pass 解释 |
+| 键盘快捷键 | `1`/`2`/`3`/`4` 选 T-stage；`Space` 播放/暂停；`S` 跳过；`→` 强制下一例；`?`/`Esc` 弹窗 |
+| Pass 2 选完 AI 反馈 | 立即显示「✓ 与 AI 一致 / × 与 AI 不一致」+ AI 预测 + 置信度；停留 900 ms 后跳下一例 |
+| Pass 2 完成页真值表 | per-case 医生 vs AI vs 病理三列对照 + 医生-病理一致率 + 医生-AI 一致率 2 stat 卡片 |
+
+**v2.4 第 4 波（2026-06-12, aggregator + 临床规则）**：
+
+| 改进 | 实现 |
+|------|------|
+| 聚合脚本 | `scripts/aggregate_reader_results.py` 收 reader JSON 跑出 per-case CSV（reader × pass × case）+ cross-reader MD/JSON（含 accuracy vs truth, agree_with_ai, paired AI uplift, Cohen's κ） |
+| 完成页真值表改 opt-in | "查看医生-AI-病理对照表" 按钮显式点击；不再自动展示（响应 `.claude/rules/clinical-validation.md` "不展示/写入病理分期到阅片界面"）；Pass 1 提示"无对照表，跑完 Pass 2 再来" |
+| Appendix S10 §app:reader 同步 | 加 进度/弹窗/键盘/反馈/真值表 opt-in/聚合脚本 6 项 UI 描述；明示"按规则不展示临床信息/AI/病理；唯一例外是 Pass 2 的 AI（实验条件）+ 完成自检 opt-in" |
+| 收集路径登记 | `docs/clinical_validation/reader_study_150/collected_results/` + `aggregate/` 目录 + `.gitkeep` 落位；`script_registry.csv` 登记 aggregator；`SSOT_MAP.md` 加 reader study 收集/聚合 2 行 |
+
 **v2.4 待办**（与 v2.3 相同）：
 1. **pdflatex 编译验证** — `which pdflatex` 空，必须在有 LaTeX 引擎的机器上跑
 2. **ChiCTR 实号** — 占位保留（GAP G03）

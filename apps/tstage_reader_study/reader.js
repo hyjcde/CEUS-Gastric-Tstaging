@@ -44,6 +44,7 @@
     finishTruth: document.getElementById("finishTruth"),
     btnFinishExport: document.getElementById("btnFinishExport"),
     btnFinishPass2: document.getElementById("btnFinishPass2"),
+    btnRevealTruth: document.getElementById("btnRevealTruth"),
   };
 
   // ---------- session state ----------
@@ -305,6 +306,18 @@
 
     // wire download / pass-2 link
     els.btnFinishExport.onclick = () => downloadSummary();
+    // truth table is opt-in (per clinical-validation rule: don't surface pathology
+    // automatically; only reveal after explicit reader click for self-check)
+    els.btnRevealTruth.onclick = () => {
+      if (pass === 2) {
+        els.finishTruth.hidden = false;
+        els.btnRevealTruth.disabled = true;
+        els.btnRevealTruth.textContent = "已显示";
+      } else {
+        els.btnRevealTruth.textContent = "（Pass 1 不含 AI, 无对照表可显示; 跑完 Pass 2 再来）";
+        els.btnRevealTruth.disabled = true;
+      }
+    };
     if (pass === 1) {
       const url = new URL(location.href);
       url.searchParams.set("pass", "2");

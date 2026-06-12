@@ -181,4 +181,5 @@ main {
 .finish-truth td.match { color: #b8e6c9; }
 .finish-truth td.miss { color: #f3c98a; }
 .finish-note { color: var(--muted); font-size: 13px; margin: 12px 0 0 0; }
+.finish-reveal { display: flex; justify-content: center; margin: 6px 0 0 0; }
 .finish-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }

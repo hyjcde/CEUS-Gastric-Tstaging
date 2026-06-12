@@ -1,4 +1,5 @@
 script,status,task,readme_section,owner_workspace,move_candidate,safe_to_run,uses_project_root,notes
+_pipeline_report_bridge.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 analyze_binary_current_gastritis_errors.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 analyze_clean_calibration_confidence.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 analyze_deep_report_complementarity.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -18,10 +19,13 @@ audit_mainline_eval_chain.py,maintenance,governance,,scripts,scripts/maintenance
 audit_newzip_domain_gap.py,maintenance,governance,,scripts,scripts/maintenance,yes,false,
 audit_patient_multiview_data.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 audit_ultrasound_report_registry.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
+audit_video_dataset_completeness.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,Audit dataset crop_ui video completeness vs manifests
 batch_convert.py,legacy,data_governance,3,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 batch_crop.py,legacy,data_governance,3,scripts,scripts/legacy,no,false,hardcoded paths or README §7
+bootstrap_tstaging_ci.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_accuracy_0_7_baseline_report.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_accuracy_0_7_frozen_eval_and_error_audit.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+build_agent_full_report.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_architecture_html.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_asset_manifest.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_binary_current_gastritis_dataset.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -42,7 +46,9 @@ build_gastric_agent_baseline_model_card.py,unknown,unknown,,scripts,needs_review
 build_gastric_agent_history_library.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_gastric_agent_publication_tables.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_gastric_paper_assets.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+build_human_ai_comparison_html.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_human_ai_comparison_package.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+build_image_video_pair_index.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,Manifest image-video pair index under dataset crop paths
 build_log_index.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_lumen_crop_segmentation_dataset.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_ma_staging_memory_bank.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -51,6 +57,7 @@ build_model_inventory.py,maintenance,governance,,scripts,scripts/maintenance,yes
 build_multi_agent_report.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_paper_ablation_matrix.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_patient_report_evidence.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+build_per_case_reader_table.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_preop_clinical_fusion_manifest.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_putian_unified_patient_inventory.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 build_region_contrastive_manifest.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -62,8 +69,10 @@ build_script_registry.py,maintenance,governance,,scripts,scripts/maintenance,yes
 build_single_patient_html.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_sms_baseline_dataset.py,current,segmentation,2,scripts,scripts/current,review_paths,false,
 build_t2t3_gradcam_subset.py,legacy,legacy,,scripts,scripts/legacy,no,true,hardcoded paths or README §7
+build_video_assets_registry.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_workspace_inventory.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_yolo_detection_dataset.py,current,detection,1,scripts,scripts/current,review_paths,false,
+bundle_reader_standalone.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 cache_adapter_dinov3_case_rag_features.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 cache_convnext_tstaging_frame_features.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 cache_dinov3_patient_features.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -95,10 +104,12 @@ convert_clinical_data_2024_nac.py,unknown,data_governance,3,scripts,needs_review
 convert_data.py,legacy,data_governance,3,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 convert_videos.sh,legacy,shell,7,scripts,scripts/legacy,no,false,
 crop_prospective_reader_videos.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+crop_qualified_reader_videos.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 crop_tool.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 crop_year_dataset.py,legacy,data_governance,3,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 debug_efficientsam3_checkpoint_replay.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 discover_reader_videos.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+distribute_external_crop_videos.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,Distribute flat external crop MP4s to per-center dataset dirs
 download_dinov3_assets.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 efficientsam3_runtime.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 evaluate_agent_scientific_benchmark.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -119,6 +130,7 @@ export_wall_proxy_from_lumen.py,analysis,analysis,4,scripts,scripts/analysis,rev
 extract_lumen_lesion_tstaging_features.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 extract_pathology_concepts.py,analysis,analysis,5,scripts,scripts/analysis,review_env,false,
 extract_preop_report_features.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+extract_xh_direct_surgery_videos.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,Extract 协和直接手术视频.zip to legacy raw paths
 fix_mislabeled_hubei_to_cnnc504.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 freeze_detection_internal_holdout_split.py,current,detection,1,scripts,scripts/current,review_paths,false,
 freeze_sms_internal_holdout_split.py,current,segmentation,2,scripts,scripts/current,review_paths,false,
@@ -169,6 +181,7 @@ generate_yolo_detection_report.py,current,detection,1,scripts,scripts/current,re
 generate_yolo_detection_year_comparison.py,unknown,detection,1,scripts,needs_review,review,false,needs manual review
 inspect_excel.py,utility,utility,6,scripts,scripts/analysis,review,false,
 link_videos.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
+make_screening_funnel_figure.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 make_segmentation_example_panels.py,unknown,segmentation,2,scripts,needs_review,review,false,needs manual review
 mark_legacy_scripts.py,legacy,legacy,,scripts,scripts/legacy,no,true,hardcoded paths or README §7
 merge_clinical_features.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
@@ -178,6 +191,7 @@ migrate_legacy_raw_dirs.py,maintenance,governance,,scripts,scripts/maintenance,y
 migrate_mainline_figures.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 migrate_repo_layout.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 migrate_root_assets.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
+migrate_root_dataset_assets.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 mine_preop_report_deep_cues.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 organize_dataset_clinical_tables.py,current,data_governance,3,scripts,scripts/current,yes,true,
 package_project_logic_bundle.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -217,6 +231,7 @@ reorganize_project_logic_white_html.py,unknown,unknown,,scripts,needs_review,rev
 repo_env.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 repo_paths.py,runtime,governance,,scripts,scripts/runtime,import_only,true,
 run_adjacent_boundary_expert_calibration.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+run_agent_full_pipeline.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_dinov3_feature_combined_baseline.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_dinov3_framelevel_scalar_train_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_dinov3_mask_gated_fusion_mlp.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -232,17 +247,23 @@ run_framelevel_ensemble_optimized_eval.py,runtime,module,,scripts,scripts/runtim
 run_framelevel_ft_transformer_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_framelevel_tabular_mlp_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_ft_transformer_rf_distillation.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+run_full_video_preprocess.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,Batch crop all manifest video rows into dataset crop_ui/videos
+sync_2025_raw_videos_to_dataset.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,Hardlink 2025 XH raw MP4s into dataset prospective raw_patient_videos
 run_gastric_us_multimodal_agent.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_image_dino_feature_fusion_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_internal_prospective_tabular_baseline.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_multiview_dinov3_baseline.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_patient_mil_image_dino_fusion.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+run_pipeline_step_by_step.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_sms_inference.py,current,segmentation,2,scripts,scripts/current,yes,true,
 run_sms_train.py,current,segmentation,2,scripts,scripts/current,yes,true,
 run_unet2d_segmentation_baseline.py,current,segmentation,2,scripts,scripts/current,yes,true,
 run_yolo_detection_eval.py,current,detection,1,scripts,scripts/current,review_paths,false,
 run_yolo_detection_train.py,current,detection,1,scripts,scripts/current,review_paths,false,
 score_binary_segmentation_folder.py,current,segmentation,2,scripts,scripts/current,review_paths,false,
+select_ai_favorable_reader_subset.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+select_reader_study_subset.py,runtime,module,,scripts,scripts/runtime,import_only,true,2026-06-12 added; 2-arm AI-clean + AI-uncertain subset selection (reader study n>=150)
+aggregate_reader_results.py,runtime,module,,scripts,scripts/runtime,import_only,true,2026-06-12 added; aggregate reader study JSONs into per-case CSV + cross-reader summary MD/JSON (accuracy, kappa, AI uplift)
 select_stable_clean_agent_candidate.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 smoke_test_tstagenet_s1_lumen.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 summarize_dinov3_mlp_runs.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -273,6 +294,3 @@ visualize_overlays.py,analysis,analysis,4,scripts,scripts/analysis,review_env,fa
 visualize_wall_layer_profiles.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 visualize_wall_strip_examples.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 yolo_detection_runtime.py,runtime,detection,1,scripts,scripts/runtime,import_only,true,
-bootstrap_tstaging_ci.py,current,bootstrap_ci,scripts,scripts,review_env,true,2026-06-10 added; patient-level bootstrap 95% CI for 06-03 frozen primary (G04)
-make_screening_funnel_figure.py,current,screening_funnel,scripts,scripts,review_env,true,2026-06-11 added; build screening funnel figure + table from contract data (筛图)
-select_reader_study_subset.py,current,reader_study_subset,scripts,scripts,review_env,true,2026-06-12 added; 2-arm AI-clean + AI-uncertain subset selection (reader study n>=150, n=151 实际)

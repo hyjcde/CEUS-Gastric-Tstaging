@@ -89,7 +89,10 @@
     <h1 id="finishTitle">Pass 完成</h1>
     <p id="finishSummary"></p>
     <div id="finishStats" class="finish-stats"></div>
-    <div id="finishTruth" class="finish-truth"></div>
+    <div class="finish-reveal">
+      <button id="btnRevealTruth" class="ghost" type="button">查看医生-AI-病理对照表（Pass 2 完成后可选，用于自检）</button>
+    </div>
+    <div id="finishTruth" class="finish-truth" hidden></div>
     <p class="finish-note">结果已自动下载；请将 JSON 文件发给研究团队。</p>
     <div class="finish-actions">
       <button id="btnFinishExport" class="ctl" type="button">再下载一次 JSON</button>

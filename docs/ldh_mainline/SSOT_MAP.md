@@ -27,6 +27,9 @@
 | 筛图 funnel 数字 | ext 2966→2458 (508, 17.1%) / pro 2430→1659 (771, 31.7%) | `pipeline/data/tstaging_4class_screened_latest_external_2966_20260529/test_external_with_reject_flag.csv` (ext) + `screened_build_summary.json` (pro) |
 | reader study 子集 n=150 (2-arm) | Arm A 91 AI-clean + Arm B 59 AI-uncertain | `docs/clinical_validation/reader_study_150/reader_subset_v2.csv` (由 `scripts/select_reader_study_subset.py` 跑出) |
 | reader study 视频源 | 185 视频患者池 + 701 video stems 库 | `docs/clinical_validation/reader_study_150/video_screening_pool.csv` + `video_label_inventory.csv` |
+| reader study 收集路径 | 3 reader × 2 pass 跑完下载 JSON → `collected_results/` | `docs/clinical_validation/reader_study_150/collected_results/` (待 reader 执行; 当前空) |
+| reader study 聚合产物 | per-case CSV + cross-reader MD/JSON (acc, κ, AI uplift) | `scripts/aggregate_reader_results.py` → `docs/clinical_validation/reader_study_150/aggregate/` |
+| reader study app 工具 | 极简 HTML5 阅片包: 进度 + 弹窗 + 键盘 + Pass 2 AI 反馈 + 完成页真值表 opt-in | `apps/tstage_reader_study/` (index.html / reader.js / reader.css) |
 
 ---
 
