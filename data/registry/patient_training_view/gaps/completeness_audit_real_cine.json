@@ -1,0 +1,131 @@
+{
+  "checks": [
+    {
+      "name": "supervised sample count match",
+      "ok": true,
+      "detail": "aligned=2731 ptv=2731"
+    },
+    {
+      "name": "supervised patient count",
+      "ok": true,
+      "detail": "n=557"
+    },
+    {
+      "name": "eval_role rows",
+      "ok": true,
+      "detail": "role=557 sup=557"
+    },
+    {
+      "name": "supervised 5-asset on disk",
+      "ok": true,
+      "detail": "all present"
+    },
+    {
+      "name": "cached patients = supervised ∪ unlabeled",
+      "ok": true,
+      "detail": "cached_p=1184 union=1184 only_cached=0 only_tables=0"
+    },
+    {
+      "name": "by_patient supervised symlinks",
+      "ok": true,
+      "detail": "checked=13655 broken=0 miss_dirs={}"
+    },
+    {
+      "name": "by_split symlinks",
+      "ok": true,
+      "detail": "exists=True n=557 broken=0"
+    },
+    {
+      "name": "eval_role leakage",
+      "ok": true,
+      "detail": "remapped=59 external_in_fit=41"
+    },
+    {
+      "name": "patient n_clips == sample rows",
+      "ok": true,
+      "detail": "mismatches=0 eg=[]"
+    },
+    {
+      "name": "pathology.json for supervised",
+      "ok": true,
+      "detail": "missing=0"
+    },
+    {
+      "name": "labeling_queue == unlabeled",
+      "ok": true,
+      "detail": "queue=627 unlabeled=627"
+    },
+    {
+      "name": "usable = real_cine ∪ only_loop",
+      "ok": true,
+      "detail": "usable=1745 only_loop=1188 with_real=557 sum=1745"
+    },
+    {
+      "name": "all cached image+video exist",
+      "ok": true,
+      "detail": "bad=0 eg=[]"
+    },
+    {
+      "name": "no live external/{{center}}",
+      "ok": true,
+      "detail": "exists=False"
+    },
+    {
+      "name": "quarantine dir present",
+      "ok": true,
+      "detail": "exists=True"
+    },
+    {
+      "name": "no gastritis in supervised real_cine",
+      "ok": true,
+      "detail": "n=0"
+    },
+    {
+      "name": "supervised all have t_stage",
+      "ok": true,
+      "detail": "empty=0"
+    },
+    {
+      "name": "by_modality counts ~6234",
+      "ok": true,
+      "detail": {
+        "images": [
+          6234,
+          0
+        ],
+        "videos": [
+          6234,
+          0
+        ],
+        "roi_masks": [
+          6234,
+          0
+        ],
+        "annotations": [
+          6234,
+          0
+        ],
+        "overlays": [
+          6234,
+          0
+        ]
+      }
+    },
+    {
+      "name": "t_staging videos_real count",
+      "ok": true,
+      "detail": "n=6234 broken=0"
+    },
+    {
+      "name": "multiple canonical keys",
+      "ok": false,
+      "detail": "n=113"
+    }
+  ],
+  "gaps": {
+    "patients_no_t_stage.csv": 848,
+    "patients_usable_only_loop_still.csv": 1188,
+    "patients_usable_with_real_cine.csv": 557,
+    "patients_multiple_canonical_keys.csv": 113
+  }
+}

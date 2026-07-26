@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nature 系相关论文速览 · 胃癌分期 / 超声 / 内镜 AI</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181f;
+    --line: #2a3140;
+    --text: #e8eaed;
+    --muted: #9aa3b2;
+    --accent: #6cb6ff;
+    --ok: #3dd68c;
+    --warn: #f0b429;
+    --hot: #f07178;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Times New Roman", Times, "Noto Serif CJK SC", serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 1.75rem; margin: 0 0 8px; }
+  h2 { font-size: 1.2rem; margin: 36px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    padding: 14px 16px;
+    margin: 16px 0;
+  }
+  .callout.hot { border-left-color: var(--hot); }
+  .callout.ok { border-left-color: var(--ok); }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 18px; }
+  .tag {
+    border: 1px solid var(--line);
+    padding: 2px 8px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .tag.p0 { color: var(--hot); border-color: #5a3038; }
+  .tag.p1 { color: var(--warn); border-color: #5a4a20; }
+  .tag.p2 { color: var(--accent); border-color: #2a4058; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 16px 18px;
+    margin: 12px 0;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .meta { color: var(--muted); font-size: 0.88rem; margin-bottom: 8px; }
+  .meta a { color: var(--accent); }
+  .why { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); color: #c5cad3; font-size: 0.95rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 12px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #1a2030; color: var(--muted); }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.88em; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Nature Portfolio 相关论文速览</h1>
+  <p class="sub">
+    范围：Nature Biomedical Engineering · Nature Medicine · npj Digital Medicine · Nature Communications ·
+    npj Precision Oncology · Scientific Reports（Nature 旗下）· 时间以 2025–2026 为主 ·
+    对齐本仓库主线：胃癌 T 分期 / 胃超声·EUS / 真视频·阅片 Agent
+  </p>
+
+  <div class="callout hot">
+    <b>与本仓库最贴的三条</b><br />
+    ① <b>GTRNet</b>（npj Digit. Med.）— CT 上直接做 T1–T4，多中心、可解释，文中明确拿 EUS 作对照语境。<br />
+    ② <b>GRAPE</b>（Nat. Med.）— 平扫 CT 大规模筛胃癌，按 T 分期亚组分析检测率。<br />
+    ③ <b>Sonomate / BUSGen / Pathology-CoT</b>（Nat. Biomed. Eng.）— 见 NBE 专页
+    <a href="./nbe_ultrasound_agent_papers.html" style="color:var(--accent)">nbe_ultrasound_agent_papers.html</a>。
+  </div>
+
+  <div class="tags">
+    <span class="tag p0">P0 直接相关：胃癌 T / 分期</span>
+    <span class="tag p1">P1 方法可迁移：超声视频 / EUS / Agent</span>
+    <span class="tag p2">P2 周边：病理 / 内镜报告 / 腹腔镜</span>
+  </div>
+
+  <h2>P0 · 胃癌分期 / 筛查（Nature 系）</h2>
+
+  <div class="card">
+    <h3>Interpretable deep learning for multicenter gastric cancer T staging from CT images</h3>
+    <div class="meta">
+      Zheng et al. · <b>npj Digital Medicine</b> · 2026 ·
+      <a href="https://doi.org/10.1038/s41746-025-02002-5">10.1038/s41746-025-02002-5</a>
+      · <span class="tag p0">P0</span>
+    </div>
+    <p>
+      <b>GTRNet</b>：端到端四分类 T1–T4，输入门静脉期 CT 最大肿瘤轴位切片，无需手工分割；
+      多中心 1792 例，外推 AUC 约 0.86–0.95、准确率约 81–85%，优于放射科医生；
+      Grad-CAM 聚焦胃壁/浆膜；联合肿瘤大小、分化、Lauren 做列线图。
+    </p>
+    <div class="why">
+      <b>对本项目</b>：同是胃癌术前 T 分期任务，但模态是 CT 不是 EUS。可对标「病例级外推 + 可解释热图 + 与临床变量融合」写法；
+      文中承认 EUS 分层清晰但依赖操作者、晚期/近端病变变差——正好是本仓库超声/真视频线要补的叙事。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>AI-based large-scale screening of gastric cancer from noncontrast CT imaging</h3>
+    <div class="meta">
+      Hu et al. · <b>Nature Medicine</b> · 2025 ·
+      <a href="https://doi.org/10.1038/s41591-025-03785-6">10.1038/s41591-025-03785-6</a>
+      · <span class="tag p0">P0</span>
+    </div>
+    <p>
+      <b>GRAPE</b>：平扫 CT + 深度学习做胃癌筛查；2 中心训练、16 中心外测（AUC 0.927）；
+      阅片研究较放射科医生灵敏度 +21.8%、特异度 +14.0%；真实世界约 7.8 万次连续 CT 机会性筛查；
+      亚组：检测率随 T 分期升高而升。
+    </p>
+    <div class="why">
+      <b>对本项目</b>：顶级期刊「胃癌 AI」标杆写法（多中心 + 人机对比 + 真实世界部署）。
+      模态不同；可借「按 T 分期分层报告」与「机会性筛查」结构设计讨论。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Multimodal digital biopsy for preoperative prediction of occult peritoneal metastasis in gastric cancer</h3>
+    <div class="meta">
+      Chen et al. · <b>npj Digital Medicine</b> · 2026-01 ·
+      <a href="https://doi.org/10.1038/s41746-025-02268-9">10.1038/s41746-025-02268-9</a>
+      · <span class="tag p0">P0</span>
+    </div>
+    <p>
+      CT radiomics + 临床变量预测隐匿腹膜转移（OPM）；多中心外推 + 前瞻试验队列（NCT06478368）；
+      并做转录组解释高低风险免疫微环境差异。
+    </p>
+    <div class="why">
+      <b>对本项目</b>：同属胃癌术前风险分层；强调「影像数字活检 + 生物机制」双叙事，可借鉴论文结构，非直接 T 分期超声。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Development of a deep learning model for T1N0 gastric cancer diagnosis using 2.5D radiomic data in preoperative CT images</h3>
+    <div class="meta">
+      · <b>npj Precision Oncology</b> · 2025 ·
+      <a href="https://doi.org/10.1038/s41698-025-01055-9">10.1038/s41698-025-01055-9</a>
+      · <span class="tag p0">P0</span>
+    </div>
+    <p>CT 2.5D radiomics 识别 pT1N0（早期且无淋巴结转移）联合终点，服务 ESD/手术路径选择。</p>
+    <div class="why"><b>对本项目</b>：早期分层相关；仍是 CT，不是壁层超声。</div>
+  </div>
+
+  <h2>P1 · 超声 / 视频 / Agent（Nature Biomedical Engineering）</h2>
+
+  <div class="card">
+    <h3>A visually grounded language model for fetal ultrasound understanding（Sonomate）</h3>
+    <div class="meta">
+      · <b>Nature Biomedical Engineering</b> ·
+      <a href="https://doi.org/10.1038/s41551-025-01578-3">10.1038/s41551-025-01578-3</a>
+      · <span class="tag p1">P1</span>
+    </div>
+    <p>
+      525 条真实扫查视频–音频对；粗粒度 video–text + 细粒度 frame–sentence 对齐；
+      处理「说话与画面不同步 / 闲聊噪声」；解剖检测与图像/视频 VQA；部署 guardrail；实时交互助手。
+    </p>
+    <div class="why">
+      <b>对本项目</b>：强相关方法——<b>真 cine 视频</b> + 交互式助手（对照本仓库阅片 Agent）。
+      领域是胎儿超声，但「视频–语言对齐 / 时序异步」可直接借鉴；再次说明 loop_still 无意义。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>A foundation generative model for breast ultrasound image analysis（BUSGen）</h3>
+    <div class="meta">
+      Yu et al. · <b>Nature Biomedical Engineering</b> · 2026-04 ·
+      <a href="https://doi.org/10.1038/s41551-026-01639-1">10.1038/s41551-026-01639-1</a>
+      · <span class="tag p1">P1</span>
+    </div>
+    <p>
+      350 万+ 乳腺超声预训练的生成式基础模型；few-shot 适配生成任务数据；
+      筛查/诊断/预后均超真实数据训练基线；早期诊断敏感度较 9 名认证放射科医生平均 +16.5%。
+    </p>
+    <div class="why">
+      <b>对本项目</b>：超声 foundation / 合成数据增强的顶刊样板；器官不同，但「大规模超声预训练 → 下游分期」路线可参考。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Pathology-CoT: learning visual chain-of-thought agents from expert WSI diagnosis behaviour</h3>
+    <div class="meta">
+      Wang et al. · <b>Nature Biomedical Engineering</b> · 2026-07-24 ·
+      <a href="https://doi.org/10.1038/s41551-026-01739-y">10.1038/s41551-026-01739-y</a>
+      · arXiv: <a href="https://arxiv.org/abs/2510.04587">2510.04587</a>
+      · <span class="tag p1">P1</span>
+    </div>
+    <p>
+      记录病理专家阅片轨迹 → 行为级 CoT 监督；两阶段 agent Pathology-o3；
+      GI 淋巴结转移检测：Stanford 内部 recall 100%，瑞典外部 97.6%；标注效率约 6×。
+    </p>
+    <div class="why">
+      <b>对本项目</b>：与阅片 Agent /「跟人看哪里」高度同构。病理 WSI ≠ 胃超声，但
+      <b>把专家操作日志变成可训练监督</b> 是可迁移核心。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Voice-controlled super-resolution ultrasound imaging and reporting（MLLM）</h3>
+    <div class="meta">
+      Guo et al. · <b>npj Digital Medicine</b> · 2026-06 ·
+      <a href="https://doi.org/10.1038/s41746-026-02924-8">10.1038/s41746-026-02924-8</a>
+      · <span class="tag p1">P1</span>
+    </div>
+    <p>语音驱动超分辨超声 + DeepSeek-R1 / MiniCPM-V；约 4 分钟结构化报告；14 名临床评价。</p>
+    <div class="why"><b>对本项目</b>：超声工作流 + 多模态 LLM 报告，偏工程产品向。</div>
+  </div>
+
+  <h2>P1–P2 · 内镜 / 报告 / 手术视频（Nature 系）</h2>
+
+  <div class="card">
+    <h3>Bootstrapping MLLM with medical knowledge for automatic EGD diagnosis and reporting</h3>
+    <div class="meta">
+      Shi et al. · <b>Nature Communications</b> · 2026-07 ·
+      <a href="https://doi.org/10.1038/s41467-026-75377-y">10.1038/s41467-026-75377-y</a>
+      · <span class="tag p1">P1</span>
+    </div>
+    <p>
+      多中心 EGD：4461 人 / 20 万+ 图；19 类 GI 疾病平均诊断准确率 0.882，超 SOTA AI 与初级内镜医生；
+      报告完整度接近高年资；写报告时间从约 7 min → 13.5 s。
+    </p>
+    <div class="why"><b>对本项目</b>：消化道内镜多中心 + 报告生成；与超声 T 分期任务不同，可借鉴数据规模与人机对照设计。</div>
+  </div>
+
+  <div class="card">
+    <h3>Comparing AI and healthcare professionals in surgical/interventional video analysis（meta-analysis）</h3>
+    <div class="meta">
+      Rafati Fard et al. · <b>npj Digital Medicine</b> · 2026 ·
+      <a href="https://doi.org/10.1038/s41746-026-02401-2">10.1038/s41746-026-02401-2</a>
+      · <span class="tag p2">P2</span>
+    </div>
+    <p>146 项研究系统综述：AI 辅助显著提升敏感度/特异度；强调「辅助」优于「纯对抗」研究设计。</p>
+    <div class="why"><b>对本项目</b>：写人机阅片研究时的设计依据（本仓库 reader study 可对齐）。</div>
+  </div>
+
+  <div class="card">
+    <h3>AI assisted real-time recognition of intra-abdominal metastasis during laparoscopic GC surgery</h3>
+    <div class="meta">
+      · <b>npj Digital Medicine</b> · 2025 ·
+      <a href="https://doi.org/10.1038/s41746-024-01372-6">10.1038/s41746-024-01372-6</a>
+      · <span class="tag p2">P2</span>
+    </div>
+    <p>AiLES 腹腔镜探查中实时分割隐匿转移；Dice 0.76，~11 FPS。</p>
+    <div class="why"><b>对本项目</b>：胃癌分期链条下游（M 分期/腹腔镜），视频实时，非 EUS T。</div>
+  </div>
+
+  <h2>Scientific Reports（Nature 旗下，相关但层级不同）</h2>
+  <table>
+    <thead>
+      <tr><th>题目要点</th><th>DOI</th><th>与本仓库</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>床旁胃窦超声 CSA + 蠕动节律实时 AI</td>
+        <td class="mono"><a href="https://doi.org/10.1038/s41598-025-98974-1">s41598-025-98974-1</a></td>
+        <td>胃超声视频动态，非肿瘤 T</td>
+      </tr>
+      <tr>
+        <td>微探头 EUS 可解释模型诊 GIST / 起源层 / 回声</td>
+        <td class="mono"><a href="https://doi.org/10.1038/s41598-025-17018-w">s41598-025-17018-w</a></td>
+        <td>EUS 分层特征，贴近壁层语义</td>
+      </tr>
+      <tr>
+        <td>EUS+临床评分诊小 GIST</td>
+        <td class="mono"><a href="https://doi.org/10.1038/s41598-026-41599-9">s41598-026-41599-9</a></td>
+        <td>EUS 临床，非深度学习主线</td>
+      </tr>
+      <tr>
+        <td>AI 辅助内镜诊异型增生 / IM</td>
+        <td class="mono"><a href="https://doi.org/10.1038/s41598-026-43149-9">s41598-026-43149-9</a></td>
+        <td>胃镜黏膜，非超声 T</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok">
+    <b>空缺（对本仓库有利）</b><br />
+    Nature 系 2025–2026 里，<b>几乎没有「胃周 EUS/体表胃超声 cine → T1–T4+」的顶刊直接竞品</b>。
+    现有顶刊胃癌 AI 多在 <b>CT / 白光内镜 / 病理 WSI / 腹腔镜</b>。
+    本仓库「真视频 + 壁层/腔关系 + 病例级外推」仍有差异化空间；写作时应主动对标 GTRNet/GRAPE，并声明模态优势（壁层可视化）。
+  </div>
+
+  <h2>建议精读顺序</h2>
+  <table>
+    <thead><tr><th>#</th><th>论文</th><th>目的</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>GTRNet（npj Digit. Med.）</td><td>对标胃癌 T 分期实验与叙述</td></tr>
+      <tr><td>2</td><td>GRAPE（Nat. Med.）</td><td>学顶刊多中心 + 人机 + 真实世界结构</td></tr>
+      <tr><td>3</td><td>Sonomate（Nat. Biomed. Eng.）</td><td>真超声视频 + 助手交互方法</td></tr>
+      <tr><td>4</td><td>Pathology-CoT（Nat. Biomed. Eng.）</td><td>专家行为 → Agent 监督</td></tr>
+      <tr><td>5</td><td>BUSGen（Nat. Biomed. Eng.）</td><td>超声 foundation / 合成数据</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    整理于 2026-07 · 以 DOI 页摘要为准 · 非全文翻译。
+    若要对某一篇做双语精读 Markdown，指定 DOI 即可。
+  </footer>
+</div>
+</body>
+</html>

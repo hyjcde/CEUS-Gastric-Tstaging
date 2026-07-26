@@ -1,0 +1,24 @@
+{
+  "note": "T-staging crop_ui only; excludes gastritis_external and dataset/external/{center} duplicates",
+  "mp4_unique_files": 13763,
+  "mp4_basename_collisions_after_excluding_center": 0,
+  "patients_total": 2593,
+  "patients_by_cohort": {
+    "internal": 1522,
+    "external": 560,
+    "prospective": 511
+  },
+  "patients_with_real_cine": 1185,
+  "patients_only_loop_still": 1408,
+  "patients_both_real_and_loop": 3,
+  "samples_total": 13763,
+  "samples_cached_real_cine": 6234,
+  "samples_loop_still": 7527,
+  "registry_sum_real_video_count": 6237,
+  "registry_sum_loop_still_count": 7527,
+  "all_samples_have_patient_id": true,
+  "all_samples_image_crop_roi_ann_exist": true,
+  "all_samples_overlay_on_disk": true,
+  "usable_for_training_patients": 1745,
+  "organization": "organized under dataset/**/crop_ui/{images,videos,overlays,roi_masks,annotations}; indexed by patient_media_*.csv"
+}

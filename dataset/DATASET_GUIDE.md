@@ -10,10 +10,14 @@
 - `dataset/external/`：外部多中心直接手术数据
 - `dataset/tables/`：与当前正式数据集对应的临床表整理层
 
+独立良性/炎症口径已整理到：
+
+- `dataset/gastritis_external/`：从 `胃炎外部测试集.zip` 解码整理，包含完整原始文件、静态图像预处理结果、视频清单和临床表记录。
+
 这意味着：
 
 - 旧文档中的 `patients/`、`metadata/` 和患者级 `patient_info.json` 口径，**已经不适用于当前 `dataset/`**
-- 良性/炎症/胃溃疡数据仍然存在，但属于 **良恶性分类、炎症分割、负例/筛查或视频泛化任务**，不能直接并入 T1/T2/T3/T4+ 分期 split
+- 良性/炎症/胃溃疡数据属于 **良恶性分类、炎症分割、负例/筛查或视频泛化任务**，不能直接并入 T1/T2/T3/T4+ 分期 split
 - 当前最可靠的统计主口径是：
   - 样本级正式统计：`dataset/internal/manifest.csv`、`dataset/external/manifest.csv`
   - 问题样本统计：`unmatched_files.csv`、`errors.csv`
@@ -171,6 +175,75 @@ dataset/
 | 建模 CSV + 新增 zip 全量工作量口径        | 建模 CSV 行 + 新增 zip 未入 split 图像                                                  | 12,908                               | 11,815  | 约 2,083 + 19 个未标注病例前缀 | 混合来源                                         | 估算当前可分析切面总工作量                                        |
 | 正式 manifest + 新增 zip 物理口径      | 正式预处理样本 + 新增 zip 图像                                                            | 14,067                               | 14,067  | 暂无统一患者注册              | 14,067                                       | 估算当前磁盘中可用标注图像规模                                      |
 
+### 建模数据 contract 与 external 隔离
+
+T 分期 external 泛化实验必须先确认数据集 contract，而不是只在训练后剔除重叠病例。当前约定如下：
+
+| Contract | 推荐状态 | 目录 | train/val external 策略 | external UID overlap | 用途 |
+| --- | --- | --- | --- | --- | --- |
+| Screened Phase 0 | **clean / 默认** | `pipeline/data/tstaging_4class_screened_eval_phase0_xiehe_20260610/` | train/val 仅 `int/*`，`ext_rows=0` | 0 | ConvNeXt / L1 / fusion 的合规 external 泛化训练入口 |
+| Anatomic Phase 0 | **clean / 默认** | `pipeline/data/tstaging_4class_anatomic_region_contrastive_phase0/regions/` | train/val 仅 `int/*`，`ext_rows=0` | 0 | DINO scalar、DINO anatomic adapter、mask-guided attention 的合规 external 泛化训练入口 |
+| Screened 20260531 | legacy audit only | `pipeline/data/tstaging_4class_screened_eval_20260531/` | train/val 含 `ext/*` | 有重叠 | 只用于历史模型追溯和 overlap-corrected audit |
+| Anatomic region legacy | legacy audit only | `pipeline/data/tstaging_4class_anatomic_region_contrastive/regions/` | train/val 含 `ext/*` | 有重叠风险 | 只用于重建 Phase 0 或复核旧实验 |
+
+自动审计入口：
+
+```bash
+python scripts/audit_modeling_dataset_contracts.py
+```
+
+该脚本会输出 `data/metadata/modeling_dataset_contract_audit_YYYYMMDD.{json,csv}`；clean contract 若出现 train/val `ext/*` 行或与 external clinical patient UID 重叠，应直接视为数据集 contract 失败。
+
+2026-06-13 最新审计结果：
+
+| Contract | train/val `ext/*` rows | max external UID overlap | 审计结论 |
+| --- | ---: | ---: | --- |
+| Screened Phase 0 | 0 | 0 | 通过，允许用于 external 泛化训练 |
+| Anatomic Phase 0 | 0 | 0 | 通过，允许用于 DINO / adapter external 泛化训练 |
+| Screened 20260531 legacy | 1,477 | 98 | 不通过 clean 标准；仅历史追溯 / overlap-corrected audit |
+| Anatomic region legacy | 1,254 | 0 | 不通过 clean 标准；仅用于重建 Phase 0 或复核旧实验 |
+
+
+### 医生标注监督资产：胃腔与病灶（2026-06-13 复核）
+
+除 `dataset/manifest.csv` 的正式物理样本口径外，项目里还保留了大量可用于监督训练的医生/人工标注。做 DINO/anatomic adapter、检测/分割预训练或 ROI 约束时，优先读取下表中的 **manifest/CSV**，不要直接从零散目录猜路径。
+
+| 标注资产 | 推荐入口 | 原始/来源位置 | 数量口径 | 数量 | 主要字段/产物 | 建议用途 |
+| --- | --- | --- | --- | ---: | --- | --- |
+| 胃腔检测标注（YOLO） | `data/processed/detection/yolo11_lumen_locator_cropui_combined_plus_zip2/dataset_manifest.json` | `200.zip`、`2024_crop_ui_unlabeled_lumen_for_labelme(1).zip`、`2024_crop_ui_unlabeled_lumen_for_labelme(2).zip`、`data/raw/legacy_lumen/` | 去重后图像 / label | 1,833 | `images/`、`labels/`，class=`lumen` | 胃腔框检测、去全图干扰、DINO ROI 内外侧方向先验 |
+| 胃腔检测 split | 同上 | 同上 | train / val 图像 | 1,650 / 183 | train patients 427，val patients 48 | 训练/验证 YOLO lumen locator |
+| 胃腔原始 LabelMe zip | `artifacts/raw_imports/incoming/` | `200.zip`、`2024_crop_ui_unlabeled_lumen_for_labelme(1).zip`、`2024_crop_ui_unlabeled_lumen_for_labelme(2).zip` | JSON（逐包） | 197 / 444 / 1,115 | LabelMe JSON + 对应 JPG；`(2)` 包含中文路径修正版 | 追溯新增胃腔标注来源；重建 processed manifest 时使用 |
+| 胃腔 legacy LabelMe | `data/raw/legacy_lumen/` | 原 `胃腔/` 兼容口径 | JSON / 图像文件 | 102 / 103 | `.json` 标注；label=`1`；与 `200.zip` 有 25 个重复 sample | 追溯早期胃腔标注来源；正式训练以 processed manifest 为准 |
+| 病灶检测标注（YOLO bbox） | `data/processed/detection/yolo11_lesion_holdout_cropui/dataset_manifest.json` | `dataset/internal/**/crop_ui/annotations/`、`dataset/external/**/crop_ui/annotations/` | train / val / internal_test | 6,621 / 795 / 813 | lesion bbox，empty label=0 | 病灶检测、自动 ROI、视频关键帧候选 |
+| 病灶检测评估 | 同上 | 前瞻与外部 crop_ui 标注 | prospective / external | 2,430 / 2,856 | lesion bbox | 前瞻/外部检测泛化评估 |
+| 病灶分割标注（UNet/SMS） | `data/processed/sms/baseline_2d_unet_holdout_crop_ui/dataset_manifest.json` | `dataset/**/crop_ui/roi_masks/*.png` | training / holdout | 7,376 / 853 | `original_image`、`original_label`、`prepared_image`、`prepared_label` | 病灶 mask 监督、分割预训练、DINO lesion token pooling |
+| GT 病灶 crop 上限 | `data/processed/sms/gt_lesion_crop_upper_bound_v1/dataset_manifest.json` | 基于 SMS manifest 的 GT lesion mask/crop | cases / empty mask | 13,515 / 0 | `crop_box`、`gt_lesion_box`、`original_label` | ROI-crop 上限实验；训练 DINO adapter 的 lesion-mask teacher |
+| 正式 dataset 病灶 polygon/mask | `dataset/internal/manifest.csv`、`dataset/external/manifest.csv` | `dataset/internal/**/crop_ui/annotations/*.json`、`dataset/external/**/crop_ui/annotations/*.json`、`roi_masks/*.png` | internal + external JSON / mask 物理文件 | 10,659 + 3,104 | LabelMe polygon JSON、ROI mask PNG | 原始病灶勾画追溯；重建 detection/segmentation manifest |
+| 壁层/内外侧派生监督（Phase 0 clean） | `pipeline/data/tstaging_4class_anatomic_region_contrastive_phase0/regions/*_clinical.csv` | 由 `pipeline/data/tstaging_4class_anatomic_region_contrastive/regions/` 过滤 `ext/*` train/val 得到 | train / val / external overlap | 7,531 / 836 / 0 UID | `anatomic_inner_lumen_mask_path`、`anatomic_outer_wall_mask_path`、`anatomic_bridge_mask_path`、`direction_outward_angle_deg`、`lumen_box_*` | DINO anatomic adapter、outer-inner / boundary-lesion 对比、T2/T3/T4+ 壁层判别；**external 泛化训练默认入口** |
+
+注意：
+
+- 表中的 `dataset/**/crop_ui/annotations` 与 `roi_masks` 是医生病灶勾画的物理追溯口径；进入训练时应使用 `data/processed/detection/` 或 `data/processed/sms/` 的 manifest，避免重复文件和残留文件影响统计。
+- 胃腔本次复核的独立原始来源为 3 个 zip + `data/raw/legacy_lumen/`；`_compat/胃腔` 是兼容入口，不作为新增来源计数。四个来源原始 JSON 合计 1,858 个，去重后进入稳定检测入口 1,833 个。
+- 胃腔标注数量小于病灶标注，但对 **去除全图背景/标尺干扰** 和 **判断病灶相对胃腔的内外侧方向** 很关键。
+- `pipeline/data/tstaging_4class_anatomic_region_contrastive/regions/*_clinical.csv` 是 legacy anatomic 入口，train/val 含 `ext/*` 行；只用于追溯或重建，不再作为 external 泛化训练入口。正式 DINO adapter / mask-guided attention 训练使用 `pipeline/data/tstaging_4class_anatomic_region_contrastive_phase0/regions/`，由 `scripts/build_phase0_anatomic_region_splits.py` 生成，train/val 的 `ext_rows=0`。
+
+### 胃腔/病灶标注使用计划
+
+1. **短期：DINO ROI 约束与复检**
+   - 用 `yolo11_lumen_locator_cropui_combined_plus_zip2` 的胃腔框去掉全图标尺、体表图标和远场背景。
+   - 用 SMS/GT lesion mask 构建 `lesion`、`boundary ring`、`outer-side`、`inner/lumen-side` 四类区域。
+   - 对 DINO token map 只做 ROI 内复检，避免全图 `token_norm` 高亮区被无关组织稀释。
+
+2. **中期：DINO anatomic adapter**
+   - 以 `gt_lesion_crop_upper_bound_v1` 的 `original_label` / `crop_box` 作为 lesion teacher。
+   - 以 `anatomic_inner_lumen_masks`、`anatomic_outer_wall_masks`、`anatomic_bridge_masks` 和 `direction_outward_angle_deg` 作为胃腔-外壁-突破方向 teacher。
+   - 冻结 DINO backbone，训练轻量 decoder / adapter 同时预测 lesion、inner lumen、outer wall、bridge/breakthrough 与 T stage。
+
+3. **长期：病例级视频聚合**
+   - 对视频关键帧先跑 lumen + lesion 检测，只保留可解释 ROI。
+   - 用 adapter 输出的 `outer-side risk`、`boundary-minus-lesion`、`bridge probability` 选择 top-k 帧。
+   - 病例级聚合时以患者为单位划分 train/val/test，禁止图像级泄漏。
 
 ### 良性数据现状
 
@@ -611,7 +684,77 @@ newzip 追加中心（不在 `dataset/external/manifest.csv` 主清单内，而�
 - `clinical_table_registry.csv` 里的 `record_key_raw` 去重数，只能看作**临床表层面的病例键数量**
 - 它可以辅助理解规模，但**不能直接当作最终实验口径的患者数**
 
-如果后面要恢复患者级统计，建议先在 `tables/` 这一层基础上重建正式患者注册表。
+如果后面要恢复患者级统计，优先读取 `data/registry/patient_media_registry.csv`，不要重新扫描 `dataset/` 物理目录。
+
+## 患者级图片+视频注册表（2026-06-13）
+
+`dataset/` 继续保存物理样本；患者级图片/视频管理入口已经补到 `data/registry/` 与 `pipeline/data/patient_media_tstaging_v1/`。
+
+### 三层口径
+
+| 层级 | 路径 | 粒度 | 用途 |
+| --- | --- | --- | --- |
+| 物理样本层 | `dataset/internal/manifest.csv`、`dataset/external/manifest.csv` | 单张图像/切面 | 预处理、分割、ROI、物理文件统计 |
+| 患者注册层 | `data/registry/patient_media_registry.csv`、`patient_media_sample_index.csv` | 患者 / 样本 | 病例管理、图片+视频聚合、覆盖率审计 |
+| 训练导出层 | `pipeline/data/patient_media_tstaging_v1/*_clinical.csv` | 样本（带患者字段） | 模型训练与评估；兼容现有 T 分期 pipeline（含 loop） |
+| 真视频对齐层 | `dataset/training_views/t_staging_real_cine/` | 病人 / 样本（仅 `cached`） | **视频 T 分期推荐入口**：监督表 + `splits/by_eval_role/` + 标注队列 |
+
+真视频训练读法（2026-07）：
+
+```bash
+python3 scripts/build_real_cine_aligned_view.py --clean
+python3 scripts/freeze_real_cine_training_package.py
+```
+
+- 监督病人/样本：`t_staging_real_cine/alignment/patients_aligned_supervised.csv`（557 / 2731）
+- 汇报拆分：`t_staging_real_cine/splits/by_eval_role/`（prospective 误落 `test_external` 已纠正为 `test_prospective`）
+- 无 T 真视频队列：`t_staging_real_cine/labeling_queue/`
+- 图像泛化评测仍优先 Phase0 screened contracts，不要用本视图替代
+
+### 核心 registry
+
+- `data/registry/patient_media_sample_index.csv`：每个 manifest 样本一行，连接图像路径、crop 视频、raw 视频、split、T 分期与质量标记。
+- `data/registry/patient_media_registry.csv`：每个 `patient_id` 一行，汇总该患者的图像数、视频数、真实视频数、loop 视频数、split 与临床可用性。
+- `data/registry/patient_media_registry_summary.json`：构建统计与患者级 split 泄漏检查结果。
+- `data/registry/patient_split_leakage_report.json`：独立的 split 泄漏审计报告。
+
+### 视频语义
+
+| 字段/模式 | 含义 |
+| --- | --- |
+| `video_mode=cached` | 由真实 cine/源视频转换得到的 crop MP4 |
+| `video_mode=loop_still` | 由静态截图生成的循环 MP4，不是真实录像 |
+| `video_match_status=raw+crop` | 同时找到源视频与 crop 视频 |
+| `video_match_status=crop_only` | 只有 crop MP4，未匹配到源视频 |
+
+训练视频模型时，**只使用 `cached`（真 cine）**。全部 `loop_still` crop MP4（7527）已于 2026-07-27 隔离至 `dataset/_quarantine/loop_still/`（见 `path_migration_log.csv`），活跃 `crop_ui/videos` 中不再保留。
+
+### 构建与导出
+
+```bash
+python scripts/build_patient_media_registry.py
+python scripts/export_patient_media_splits.py
+python scripts/verify_patient_split_leakage.py
+```
+
+当前复核规模（2026-06-13）：
+
+| 指标 | 数量 |
+| --- | ---: |
+| 样本索引行数 | 13,763 |
+| 患者注册行数 | 2,593 |
+| 已链接训练 CSV 的样本 | 9,436 |
+| 真实视频样本 | 6,237 |
+| 静帧 loop 样本 | 7,527 |
+| 患者级 split 冲突 | 0 |
+
+### 训练读取约定
+
+- 做 **T 分期图像训练/评估**：继续优先读 `pipeline/data/tstaging_4class_region_contrastive_full/regions/*_clinical.csv`。
+- 做 **患者管理、视频覆盖审计、病例级聚合**：读 `data/registry/patient_media_*.csv`。
+- 做 **带视频列的训练导出**：读 `pipeline/data/patient_media_tstaging_v1/*_clinical.csv`；新增列为 `crop_video_path`、`raw_video_path`、`video_mode`、`video_match_status`、`patient_media_count`。
+
+一个患者可以对应多张图像和多个视频；**split 必须按 `patient_id` 分配**，禁止同一患者跨 `train/val/test`。
 
 ## 命名与文件格式说明
 

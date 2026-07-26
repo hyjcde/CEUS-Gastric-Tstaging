@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>真视频数据盘点 · loop_still 是什么</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181f;
+    --line: #2a3140;
+    --text: #e8eaed;
+    --muted: #9aa3b2;
+    --accent: #6cb6ff;
+    --ok: #3dd68c;
+    --warn: #f0b429;
+    --bad: #f07178;
+    --loop: #8b93a7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Times New Roman", Times, "Noto Serif CJK SC", serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 1.85rem; font-weight: 700; margin: 0 0 8px; letter-spacing: 0.02em; }
+  h2 { font-size: 1.25rem; margin: 36px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  h3 { font-size: 1.05rem; margin: 20px 0 8px; color: var(--accent); }
+  p, li { color: var(--text); }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 0.95rem; }
+  .grid { display: grid; gap: 12px; }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 800px) {
+    .g4, .g2 { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 520px) {
+    .g4, .g2 { grid-template-columns: 1fr; }
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+  }
+  .stat b { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 0.85rem; }
+  .ok b { color: var(--ok); }
+  .warn b { color: var(--warn); }
+  .loop b { color: var(--loop); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 16px 18px;
+  }
+  .card canvas { max-height: 280px; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    padding: 14px 16px;
+    margin: 16px 0;
+  }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.ok { border-left-color: var(--ok); }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  code {
+    background: #0f1318;
+    padding: 1px 6px;
+    border: 1px solid var(--line);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+    margin: 10px 0 16px;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #1a2030; color: var(--muted); font-weight: 600; }
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 8px;
+    align-items: center;
+    margin: 16px 0;
+  }
+  @media (max-width: 700px) {
+    .flow { grid-template-columns: 1fr; }
+    .arrow { transform: rotate(90deg); text-align: center; }
+  }
+  .box {
+    border: 1px solid var(--line);
+    background: #10141b;
+    padding: 12px;
+    min-height: 88px;
+  }
+  .box.bad { border-color: var(--loop); }
+  .box.good { border-color: var(--ok); }
+  .arrow { color: var(--muted); font-size: 1.4rem; text-align: center; }
+  .tag {
+    display: inline-block;
+    border: 1px solid var(--line);
+    padding: 2px 8px;
+    margin-right: 6px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .tag.ok { color: var(--ok); border-color: #2a5a40; }
+  .tag.warn { color: var(--warn); border-color: #5a4a20; }
+  .tag.loop { color: var(--loop); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
+  pre.cmd {
+    background: #10141b;
+    border: 1px solid var(--line);
+    padding: 12px 14px;
+    overflow-x: auto;
+    color: #c9d1d9;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>胃癌 T 分期 · 真视频数据盘点</h1>
+  <p class="sub">
+    口径：<span class="mono">patient_media_*.csv</span> +
+    <span class="mono">dataset/training_views/t_staging_real_cine/</span>
+    · 视频训练排除 <span class="mono">loop_still</span>
+    · 划分按 <span class="mono">patient_id</span>
+  </p>
+
+  <div class="callout warn">
+    <b>已清理（2026-07-27）</b>：全部 <span class="mono">loop_still</span> crop MP4（7527）已移出活跃数据，
+    隔离至 <span class="mono">dataset/_quarantine/loop_still/</span>，并写入
+    <span class="mono">data/metadata/path_migration_log.csv</span>。图像/mask 保留。registry 中
+    <span class="mono">loop_still_samples=0</span>。
+  </div>
+
+  <div class="callout ok">
+    <b>训练入口（推荐）</b><br />
+    <span class="mono">dataset/training_views/t_staging_real_cine/splits/by_eval_role/</span><br />
+    监督集：<b>557 病人 / 2731 样本</b>（图 + crop 真视频标签 + roi/ann/overlay 全齐）
+  </div>
+
+  <div class="grid g4">
+    <div class="stat"><b>2,593</b><span>注册病人</span></div>
+    <div class="stat"><b>13,763</b><span>样本（图侧）</span></div>
+    <div class="stat ok"><b>6,234</b><span>标记为 cached 的 crop MP4</span></div>
+    <div class="stat loop"><b>7,527</b><span>loop_still（已隔离删除）</span></div>
+  </div>
+  <div class="grid g4" style="margin-top:12px">
+    <div class="stat ok"><b>557</b><span>可监督：真视频标记 + T</span></div>
+    <div class="stat ok"><b>2,731</b><span>监督样本</span></div>
+    <div class="stat warn"><b>627</b><span>真视频标记、无 T</span></div>
+    <div class="stat loop"><b>1,188</b><span>可训练但仅有 loop</span></div>
+  </div>
+
+  <h2>1. loop 到底是什么？</h2>
+
+  <p>
+    <b>loop_still</b> = <b>静图循环伪视频</b>：没有真实超声 cine 录像时，预处理把
+    <b>一张 JPG/BMP/静帧</b>用 ffmpeg 的 <span class="mono">-loop 1</span>
+    重复编码成短 MP4，好让前端/管线统一读“视频文件”。
+  </p>
+
+  <div class="flow">
+    <div class="box bad">
+      <div class="tag loop">源</div>
+      <div><b>单张静图</b></div>
+      <div class="mono" style="color:var(--muted);font-size:0.85rem">例：1000012-1.jpg</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box bad">
+      <div class="tag loop">ffmpeg</div>
+      <div><b>-loop 1 · 约 5s · 10 fps</b></div>
+      <div class="mono" style="color:var(--muted);font-size:0.85rem">50 帧内容完全相同</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box bad">
+      <div class="tag loop">产物</div>
+      <div><b>crop_ui/videos/*.mp4</b></div>
+      <div class="mono" style="color:var(--muted);font-size:0.85rem">mode=loop_still · ~70 KB</div>
+    </div>
+  </div>
+
+  <div class="flow">
+    <div class="box good">
+      <div class="tag ok">源</div>
+      <div><b>真实 cine / AVI / MP4</b></div>
+      <div class="mono" style="color:var(--muted);font-size:0.85rem">有时间维、探头运动</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box good">
+      <div class="tag ok">ffmpeg crop</div>
+      <div><b>按 ROI 裁切转码</b></div>
+      <div class="mono" style="color:var(--muted);font-size:0.85rem">帧间有变化</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box good">
+      <div class="tag ok">产物</div>
+      <div><b>crop_ui/videos/*.mp4</b></div>
+      <div class="mono" style="color:var(--muted);font-size:0.85rem">mode=cached · 常配 raw</div>
+    </div>
+  </div>
+
+  <h3>生成代码（仓库内）</h3>
+  <p>
+    <span class="mono">scripts/crop_prospective_reader_videos.py</span> →
+    <span class="mono">write_loop_mp4_from_still()</span>：
+  </p>
+  <pre class="cmd">ffmpeg -loop 1 -framerate 10 -i frame.png -t 5 \
+  -vf format=yuv420p -c:v libx264 -an out.mp4</pre>
+
+  <h3>实测对比（抽检）</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>类型</th>
+        <th>典型时长</th>
+        <th>帧数</th>
+        <th>体积</th>
+        <th>帧间平均差分</th>
+        <th>含义</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag loop">loop_still</span></td>
+        <td>5.00 s</td>
+        <td>50</td>
+        <td>~0.07 MB</td>
+        <td>≈ 0（25/25 样本）</td>
+        <td><b>静图重复，无时间信息</b></td>
+      </tr>
+      <tr>
+        <td><span class="tag ok">cached + raw+crop</span></td>
+        <td>~3–6 s</td>
+        <td>可变</td>
+        <td>常 &gt;0.3 MB</td>
+        <td>中位 ~3.3（多数有运动）</td>
+        <td><b>更像真 cine</b></td>
+      </tr>
+      <tr>
+        <td><span class="tag warn">cached + crop_only</span></td>
+        <td>常 5.00 s</td>
+        <td>常 50</td>
+        <td>常 ~0.07 MB</td>
+        <td>抽检也常 ≈ 0</td>
+        <td>标签写 cached，但部分仍可能是静帧产物</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <b>注意</b>：registry 里 <span class="mono">video_mode=cached</span> 来自
+    <span class="mono">dataset/video_crop_report_*.csv</span> 的预处理
+    <span class="mono">mode</span> 字段，表示「当时按视频缓存路径写出」，
+    <b>不等于已经过运动检测</b>。
+    更强信号是 <span class="mono">video_match_status=raw+crop</span>（能对上原始录像）。
+    监督集 2731 里：raw+crop <b>1297</b>，crop_only <b>1434</b>。
+  </div>
+
+  <p><b>为什么训练不用 loop？</b> 模型若当视频吃，学到的是「同一帧重复」，不是胃壁随时间的动态；会污染时序特征。图像模型仍可直接用对应 JPG。</p>
+
+  <h2>2. 现在有哪些数据</h2>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">样本：cached vs loop（按队列）</h3>
+      <canvas id="chartMode"></canvas>
+      <p class="sub" style="margin:8px 0 0">internal 几乎全是 loop；prospective / external 以 cached 为主。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">病人构成（视频相关）</h3>
+      <canvas id="chartFunnel"></canvas>
+      <p class="sub" style="margin:8px 0 0">全库 2593 人拆成四块（见下表）。</p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>子集</th><th>病人</th><th>含义</th><th>视频训练？</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>可监督（cached 标记 + T）</td><td>557</td><td>主训练/评测集</td><td class="ok">用</td></tr>
+      <tr><td>cached 标记、无 T</td><td>627</td><td>labeling_queue</td><td>先标再训</td></tr>
+      <tr><td>可训练但仅 loop</td><td>1,188</td><td>有 T，无真视频标记</td><td class="loop">不用（可做图像）</td></tr>
+      <tr><td>其余</td><td>221</td><td>多无可用标签</td><td>不用</td></tr>
+    </tbody>
+  </table>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">监督集 T 分期（557 病人）</h3>
+      <canvas id="chartT"></canvas>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">监督集 eval_role</h3>
+      <canvas id="chartSplit"></canvas>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>eval_role</th><th>病人</th><th>样本</th><th>用途</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>train</td><td>280</td><td>1537</td><td>拟合</td></tr>
+      <tr><td>val</td><td>28</td><td>146</td><td>调参（偏小）</td></tr>
+      <tr><td>test_external</td><td>58</td><td>245</td><td>外院</td></tr>
+      <tr><td>test_external_newzip</td><td>132</td><td>486</td><td>新外院</td></tr>
+      <tr><td>test_prospective</td><td>46</td><td>234</td><td>前瞻（含 remap）</td></tr>
+      <tr><td>test_internal_holdout</td><td>13</td><td>83</td><td>内部 holdout，勿并入 external</td></tr>
+    </tbody>
+  </table>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">监督集医院（有 T）</h3>
+      <canvas id="chartHosp"></canvas>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">无 T 标注队列医院（627）</h3>
+      <canvas id="chartUnlab"></canvas>
+    </div>
+  </div>
+
+  <h2>3. 资产分层</h2>
+  <table>
+    <thead>
+      <tr><th>层</th><th>路径</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>物理</td>
+        <td class="mono">dataset/**/crop_ui/</td>
+        <td>像素 SSOT；loop 的 mp4 仍在磁盘，只是训练视图不链</td>
+      </tr>
+      <tr>
+        <td>模式报告</td>
+        <td class="mono">dataset/video_crop_report_{internal,prospective,external}.csv</td>
+        <td>写出 mode=loop_still / cached 的来源</td>
+      </tr>
+      <tr>
+        <td>注册</td>
+        <td class="mono">data/registry/patient_media_*.csv</td>
+        <td>病人 ↔ 图 ↔ 视频索引</td>
+      </tr>
+      <tr>
+        <td>真视频对齐</td>
+        <td class="mono">dataset/training_views/t_staging_real_cine/</td>
+        <td>仅 cached；含 splits / labeling_queue</td>
+      </tr>
+      <tr>
+        <td>良恶性（另任务）</td>
+        <td class="mono">training_views/benign_malignant/</td>
+        <td>2746 图 / 259 视频；勿混进 T1–T4+</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. 复跑命令</h2>
+  <pre class="cmd">python3 scripts/build_real_cine_aligned_view.py --clean
+python3 scripts/freeze_real_cine_training_package.py
+python3 scripts/build_training_media_view.py --clean   # 默认不链 loop</pre>
+
+  <footer>
+    生成说明页 · 数据快照与抽检基于当前仓库 registry / crop report ·
+    相关：<span class="mono">data/registry/patient_training_view/gaps/COMPLETENESS_GAPS.md</span>
+  </footer>
+</div>
+
+<script>
+const colors = {
+  ok: "#3dd68c",
+  warn: "#f0b429",
+  loop: "#8b93a7",
+  accent: "#6cb6ff",
+  a: "#6cb6ff",
+  b: "#a78bfa",
+  c: "#f471b5",
+  d: "#38bdf8",
+  e: "#fbbf24",
+  f: "#94a3b8",
+};
+const tick = { color: "#9aa3b2" };
+const grid = { color: "#2a3140" };
+
+new Chart(document.getElementById("chartMode"), {
+  type: "bar",
+  data: {
+    labels: ["internal", "prospective", "external"],
+    datasets: [
+      { label: "cached", data: [710, 2429, 3095], backgroundColor: colors.ok, stack: "s" },
+      { label: "loop_still", data: [7519, 1, 7], backgroundColor: colors.loop, stack: "s" },
+    ],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: "#e8eaed" } } },
+    scales: {
+      x: { stacked: true, ticks: tick, grid },
+      y: { stacked: true, ticks: tick, grid, title: { display: true, text: "样本数", color: "#9aa3b2" } },
+    },
+  },
+});
+
+new Chart(document.getElementById("chartFunnel"), {
+  type: "doughnut",
+  data: {
+    labels: ["可监督 557", "无T真视频 627", "仅loop 1188", "其余 221"],
+    datasets: [{
+      data: [557, 627, 1188, 221],
+      backgroundColor: [colors.ok, colors.warn, colors.loop, "#5a3140"],
+      borderWidth: 0,
+    }],
+  },
+  options: {
+    plugins: { legend: { position: "bottom", labels: { color: "#e8eaed" } } },
+  },
+});
+
+new Chart(document.getElementById("chartT"), {
+  type: "doughnut",
+  data: {
+    labels: ["T1", "T2", "T3", "T4a", "T4b", "T4+"],
+    datasets: [{
+      data: [88, 63, 155, 126, 75, 50],
+      backgroundColor: [colors.a, colors.b, colors.c, colors.d, colors.e, colors.f],
+      borderWidth: 0,
+    }],
+  },
+  options: { plugins: { legend: { position: "bottom", labels: { color: "#e8eaed" } } } },
+});
+
+new Chart(document.getElementById("chartSplit"), {
+  type: "bar",
+  data: {
+    labels: ["train", "val", "test_ext", "newzip", "prospective", "int_holdout"],
+    datasets: [
+      { label: "病人", data: [280, 28, 58, 132, 46, 13], backgroundColor: colors.accent },
+      { label: "样本", data: [1537, 146, 245, 486, 234, 83], backgroundColor: colors.ok },
+    ],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: "#e8eaed" } } },
+    scales: {
+      x: { ticks: tick, grid },
+      y: { ticks: tick, grid },
+    },
+  },
+});
+
+new Chart(document.getElementById("chartHosp"), {
+  type: "bar",
+  data: {
+    labels: ["协和", "肿瘤", "中核504", "佛山一", "友谊", "德化"],
+    datasets: [{
+      label: "监督病人",
+      data: [326, 99, 63, 31, 22, 16],
+      backgroundColor: colors.accent,
+    }],
+  },
+  options: {
+    indexAxis: "y",
+    plugins: { legend: { display: false } },
+    scales: { x: { ticks: tick, grid }, y: { ticks: tick, grid } },
+  },
+});
+
+new Chart(document.getElementById("chartUnlab"), {
+  type: "bar",
+  data: {
+    labels: ["协和", "莆田学院", "肿瘤", "省立", "佛山一", "其他"],
+    datasets: [{
+      label: "无 T 病人",
+      data: [302, 233, 36, 25, 17, 14],
+      backgroundColor: colors.warn,
+    }],
+  },
+  options: {
+    indexAxis: "y",
+    plugins: { legend: { display: false } },
+    scales: { x: { ticks: tick, grid }, y: { ticks: tick, grid } },
+  },
+});
+</script>
+</body>
+</html>

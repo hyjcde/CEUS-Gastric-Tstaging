@@ -1,0 +1,62 @@
+{
+  "broken_symlinks": [
+    {
+      "tree": "t_staging",
+      "sample": [],
+      "note": "first 30 only"
+    },
+    {
+      "tree": "benign_malignant",
+      "sample": [],
+      "note": "first 30 only"
+    }
+  ],
+  "counts": {
+    "broken_t_staging": 0,
+    "broken_benign_malignant": 0,
+    "registry": {
+      "samples": 13763,
+      "videos_real": 6234,
+      "videos_loop": 7527
+    },
+    "t_staging_by_modality": {
+      "images": 13763,
+      "roi_masks": 13763,
+      "annotations": 13763,
+      "overlays": 13763,
+      "videos_real": 6234,
+      "videos_loop": 7527
+    },
+    "t_staging_delta": {
+      "images": 0,
+      "roi_masks": 0,
+      "annotations": 0,
+      "overlays": 0,
+      "videos_real": 0,
+      "videos_loop": 0
+    },
+    "patient_dirs": 2656,
+    "benign_malignant": {
+      "source_images": 2746,
+      "source_videos": 259,
+      "view_images": 2746,
+      "view_roi": 2746,
+      "view_videos": 247
+    }
+  },
+  "gaps": {
+    "by_patient_asset_gaps": {},
+    "examples": {},
+    "external_center_placeholder_exists": true,
+    "external_center_mp4": 92
+  },
+  "summary": {
+    "t_staging_view_aligned": true,
+    "benign_images_aligned": true,
+    "benign_videos_note": "view 247 vs source 259 (may differ if path resolve fails)",
+    "patients_with_image_and_clinical": 1745,
+    "patients_usable_with_real_cine": 557,
+    "patients_usable_only_loop": 1188,
+    "patients_no_t_stage": 848
+  }
+}

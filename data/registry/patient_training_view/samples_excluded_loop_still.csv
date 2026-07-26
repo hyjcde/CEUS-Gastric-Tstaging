@@ -1,0 +1,1 @@
+patient_id,canonical_patient_key,sample_id,cohort,year,center_id,split,t_stage,class_label,video_mode,video_match_status,image_path,roi_mask_path,annotation_path,overlay_path_resolved,crop_video_path,raw_video_path,usable,is_real_cine,paths_ok,usable_for_training,quality_flags

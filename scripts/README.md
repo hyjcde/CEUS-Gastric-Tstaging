@@ -11,6 +11,10 @@
 
 脚本状态登记见 [script_registry.csv](script_registry.csv)（`current` / `legacy` / `runtime`）。
 
+**内部归位：** [INTERNAL_LAYOUT.md](INTERNAL_LAYOUT.md) · 扩展字段：`owner_workspace`, `move_candidate`, `safe_to_run`, `uses_project_root` · 刷新：`python scripts/build_script_registry.py`
+
+**Legacy 查询：** `grep ',legacy,' scripts/script_registry.csv` 或 `grep '# STATUS: legacy' scripts/*.py`
+
 ---
 
 ## 1. 病灶检测（YOLO）— Stage 1 主线
@@ -66,6 +70,21 @@
 | 脚本 | 备注 |
 |------|------|
 | `organize_dataset_clinical_tables.py` | 将各来源 Excel 临床表整理到 `dataset/tables/` 结构。 |
+| `build_patient_media_registry.py` | 从 manifest + 视频索引生成 `data/registry/patient_media_*.csv` 患者级图片/视频注册表。 |
+| `build_patient_training_view.py` | 病人级训练 CSV/缺口清单 → `data/registry/patient_training_view/`。 |
+| `build_training_media_view.py` | 按任务/模态软链视图 → `dataset/training_views/`（含 loop）。 |
+| `build_real_cine_aligned_view.py` | **仅真视频**对齐视图 → `dataset/training_views/t_staging_real_cine/`（监督表 + by_patient）。 |
+| `quarantine_loop_still_videos.py` | 将全部 `loop_still` crop MP4 隔离到 `dataset/_quarantine/loop_still/`（先登记后移动）。 |
+| `freeze_real_cine_training_package.py` | 冻结 eval_role 拆分、泄漏检查、标注队列、`by_split/` 软链。 |
+| `export_patient_media_splits.py` | 导出 `pipeline/data/patient_media_tstaging_v1/*_clinical.csv`（含视频列）。 |
+| `verify_patient_split_leakage.py` | 检查患者级 split 是否跨 train/val/test 泄漏。 |
+| `audit_modeling_dataset_contracts.py` | 审计正式建模数据 contract，确认 clean train/val 无 `ext/*` 且不与 external test 患者重叠。 |
+| `build_phase0_anatomic_region_splits.py` | 从 anatomic region CSV 重建 Phase 0 no-external train/val，供 DINO scalar / adapter / mask-guided attention 使用。 |
+| `build_dataset_registry.py` | 生成 `data/registry/dataset_registry.csv` 等基础登记。 |
+| `build_image_video_pair_index.py` | 构建 manifest 样本与 raw/crop 视频的配对索引。 |
+| `build_video_assets_registry.py` | 扫描并登记原始/裁剪视频资产。 |
+| `run_full_video_preprocess.py` | 批量生成 `dataset/**/crop_ui/videos`（含静帧 loop 回退）。 |
+| `crop_prospective_reader_videos.py` | 前瞻/多中心视频裁剪与 `video_crop_report_*.csv` 生成。 |
 | `merge_clinical_features.py` | 临床特征合并（常与概念提取流水线配合）。 |
 | `convert_clinical_data.py`、`convert_clinical_data_2019.py`、`convert_clinical_data_2019_nac.py`、`convert_clinical_data_2024.py`、`convert_clinical_data_2024_nac.py` | 各队列/年份临床数据转换入口。 |
 | `patient_split.py` | 胃癌数据集患者级划分。 |

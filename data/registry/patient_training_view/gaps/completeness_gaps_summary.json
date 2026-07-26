@@ -1,0 +1,125 @@
+{
+  "created_at": "2026-07-26T16:24:48Z",
+  "items": [
+    {
+      "id": "M1",
+      "layer": "media",
+      "status": "OK",
+      "item": "真视频监督集 图/视频/roi/ann/overlay",
+      "count": "557人 / 2731样本 全齐，断链0"
+    },
+    {
+      "id": "M2",
+      "layer": "media",
+      "status": "OK",
+      "item": "全部 cached 样本 (6234) by_modality 软链",
+      "count": "6234×5 全齐"
+    },
+    {
+      "id": "M3",
+      "layer": "media",
+      "status": "PARTIAL",
+      "item": "监督真视频缺 raw 源（仅 crop_only）",
+      "count": "280 人仅有 crop；样本级 crop_only=1434/2731",
+      "csv": "gaps/supervised_real_cine_crop_only_no_raw.csv"
+    },
+    {
+      "id": "M4",
+      "layer": "media",
+      "status": "GAP",
+      "item": "良恶性/胃炎 有图无视频",
+      "count": "图 2746 / 视频 259；sample_gaps=2746",
+      "csv": "data/registry/crop_ui_asset_audit/sample_gaps.csv"
+    },
+    {
+      "id": "L1",
+      "layer": "label",
+      "status": "GAP",
+      "item": "真视频无 T（标注队列）",
+      "count": "627 人 / 3503 样本（媒体齐）",
+      "csv": "dataset/training_views/t_staging_real_cine/labeling_queue/patients.csv"
+    },
+    {
+      "id": "L2",
+      "layer": "label",
+      "status": "GAP",
+      "item": "全库无 T/临床",
+      "count": "848 人（含真视频≈627 + 其余 loop/无可用）",
+      "csv": "gaps/patients_no_t_stage.csv"
+    },
+    {
+      "id": "L3",
+      "layer": "label",
+      "status": "INFO",
+      "item": "T4+ 粗标签（未分 T4a/T4b）",
+      "count": "50 人监督集",
+      "csv": "gaps/supervised_t4plus_coarse_label.csv"
+    },
+    {
+      "id": "L4",
+      "layer": "label",
+      "status": "OK_LEGACY",
+      "item": "可训练但仅有 loop_still（无真 cine）",
+      "count": "1188 人（图像训练可用，视频训练不可）",
+      "csv": "gaps/patients_usable_only_loop_still.csv"
+    },
+    {
+      "id": "S1",
+      "layer": "split",
+      "status": "OK",
+      "item": "eval_role 病人级泄漏",
+      "count": "PASS（已 remap prospective/internal 错位）"
+    },
+    {
+      "id": "S2",
+      "layer": "split",
+      "status": "INFO",
+      "item": "外部医院在 train/val（福建省肿瘤医院遗留）",
+      "count": "41 人"
+    },
+    {
+      "id": "S3",
+      "layer": "split",
+      "status": "INFO",
+      "item": "val 较小",
+      "count": "28 人 / 146 样本"
+    },
+    {
+      "id": "Q1",
+      "layer": "quality",
+      "status": "INFO",
+      "item": "同一 patient_id 多个 canonical_key（DICOM1/2 系列）",
+      "count": "113 人（监督真视频仅 4）；非缺文件",
+      "csv": "gaps/patients_multiple_canonical_keys_annotated.csv"
+    },
+    {
+      "id": "Q2",
+      "layer": "quality",
+      "status": "GAP",
+      "item": "registry real_video_count 与 sample video_mode 不一致",
+      "count": "2 人（例：标成 real 实际 loop_still）",
+      "csv": "gaps/registry_video_mode_mismatch.csv",
+      "action": "重跑 build_patient_media_registry.py 或修计数逻辑"
+    },
+    {
+      "id": "Q3",
+      "layer": "quality",
+      "status": "OK",
+      "item": "{center} 重复模板目录",
+      "count": "已 quarantine，live 路径不存在"
+    }
+  ],
+  "counts": {
+    "supervised_patients": 557,
+    "supervised_samples": 2731,
+    "unlabeled_real_cine_patients": 627,
+    "no_t_patients": 848,
+    "usable_only_loop": 1188,
+    "registry_video_mode_mismatch": 2,
+    "supervised_crop_only_patients": 280,
+    "supervised_t4plus": 50,
+    "multi_canonical_keys": 113,
+    "benign_images": 2746,
+    "benign_videos": 259
+  }
+}

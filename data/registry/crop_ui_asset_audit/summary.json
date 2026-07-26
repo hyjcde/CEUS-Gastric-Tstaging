@@ -1,0 +1,759 @@
+{
+  "created_at": "2026-07-24T06:39:22Z",
+  "dataset_root": "dataset",
+  "crop_ui_roots": 22,
+  "totals": {
+    "images": 16509,
+    "videos": 13855,
+    "overlays": 16509,
+    "roi_masks": 16509,
+    "annotations": 16509
+  },
+  "coverage_sum": {
+    "images_with_video": 13763,
+    "images_with_overlay": 16509,
+    "images_with_roi_mask": 16509,
+    "images_with_annotation": 16509,
+    "images_complete_quad": 13763,
+    "orphan_videos": 92
+  },
+  "complete_rate_images": 0.8337,
+  "video_image_match_rate": 0.8337,
+  "duplicates": {
+    "total_videos": 13855,
+    "unique_basenames": 13763,
+    "basename_collision_groups": 92,
+    "basename_collision_extra_copies": 92,
+    "content_duplicate_groups": 92,
+    "content_duplicate_extra_copies": 92,
+    "hardlink_or_same_inode_groups": 0,
+    "files_hashed": 184
+  },
+  "per_root": [
+    {
+      "crop_ui": "dataset/external/crop_ui",
+      "counts": {
+        "images": 0,
+        "videos": 0,
+        "overlays": 0,
+        "roi_masks": 0,
+        "annotations": 0
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 0,
+        "images_with_roi_mask": 0,
+        "images_with_annotation": 0,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/{center}/crop_ui",
+      "counts": {
+        "images": 0,
+        "videos": 92,
+        "overlays": 0,
+        "roi_masks": 0,
+        "annotations": 0
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 0,
+        "images_with_roi_mask": 0,
+        "images_with_annotation": 0,
+        "images_complete_quad": 0,
+        "orphan_videos": 92
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": [
+        "hbd46-1.mp4",
+        "hbd40-3.mp4",
+        "hbd5-2.mp4",
+        "hbd30-3.mp4",
+        "11207481-5.mp4",
+        "6042105-7.mp4",
+        "hbd10-1.mp4",
+        "7530288-4.mp4",
+        "hbd45-2.mp4",
+        "hbd46-2.mp4",
+        "dhwa13-4.mp4",
+        "hbd40-2.mp4",
+        "hbd60-1.mp4",
+        "dhwa9-2.mp4",
+        "hbd38-1.mp4",
+        "hbd60-2.mp4",
+        "hbd63-1.mp4",
+        "dhwa1-1.mp4",
+        "dhwa16-2.mp4",
+        "hbd57-2.mp4"
+      ]
+    },
+    {
+      "crop_ui": "dataset/external/三明市第二医院/crop_ui",
+      "counts": {
+        "images": 19,
+        "videos": 19,
+        "overlays": 19,
+        "roi_masks": 19,
+        "annotations": 19
+      },
+      "coverage": {
+        "images_with_video": 19,
+        "images_with_overlay": 19,
+        "images_with_roi_mask": 19,
+        "images_with_annotation": 19,
+        "images_complete_quad": 19,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/中核五〇四医院/crop_ui",
+      "counts": {
+        "images": 216,
+        "videos": 216,
+        "overlays": 216,
+        "roi_masks": 216,
+        "annotations": 216
+      },
+      "coverage": {
+        "images_with_video": 216,
+        "images_with_overlay": 216,
+        "images_with_roi_mask": 216,
+        "images_with_annotation": 216,
+        "images_complete_quad": 216,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/佛山市第一人民医院/crop_ui",
+      "counts": {
+        "images": 112,
+        "videos": 112,
+        "overlays": 112,
+        "roi_masks": 112,
+        "annotations": 112
+      },
+      "coverage": {
+        "images_with_video": 112,
+        "images_with_overlay": 112,
+        "images_with_roi_mask": 112,
+        "images_with_annotation": 112,
+        "images_complete_quad": 112,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/北京友谊医院/crop_ui",
+      "counts": {
+        "images": 124,
+        "videos": 124,
+        "overlays": 124,
+        "roi_masks": 124,
+        "annotations": 124
+      },
+      "coverage": {
+        "images_with_video": 124,
+        "images_with_overlay": 124,
+        "images_with_roi_mask": 124,
+        "images_with_annotation": 124,
+        "images_complete_quad": 124,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/福建省德化县医院/crop_ui",
+      "counts": {
+        "images": 100,
+        "videos": 100,
+        "overlays": 100,
+        "roi_masks": 100,
+        "annotations": 100
+      },
+      "coverage": {
+        "images_with_video": 100,
+        "images_with_overlay": 100,
+        "images_with_roi_mask": 100,
+        "images_with_annotation": 100,
+        "images_complete_quad": 100,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/福建省立医院/crop_ui",
+      "counts": {
+        "images": 220,
+        "videos": 220,
+        "overlays": 220,
+        "roi_masks": 220,
+        "annotations": 220
+      },
+      "coverage": {
+        "images_with_video": 220,
+        "images_with_overlay": 220,
+        "images_with_roi_mask": 220,
+        "images_with_annotation": 220,
+        "images_complete_quad": 220,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/福建省肿瘤医院/crop_ui",
+      "counts": {
+        "images": 436,
+        "videos": 436,
+        "overlays": 436,
+        "roi_masks": 436,
+        "annotations": 436
+      },
+      "coverage": {
+        "images_with_video": 436,
+        "images_with_overlay": 436,
+        "images_with_roi_mask": 436,
+        "images_with_annotation": 436,
+        "images_complete_quad": 436,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/莆田学院附属医院/crop_ui",
+      "counts": {
+        "images": 1852,
+        "videos": 1852,
+        "overlays": 1852,
+        "roi_masks": 1852,
+        "annotations": 1852
+      },
+      "coverage": {
+        "images_with_video": 1852,
+        "images_with_overlay": 1852,
+        "images_with_roi_mask": 1852,
+        "images_with_annotation": 1852,
+        "images_complete_quad": 1852,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/external/莆田市第一医院/crop_ui",
+      "counts": {
+        "images": 25,
+        "videos": 25,
+        "overlays": 25,
+        "roi_masks": 25,
+        "annotations": 25
+      },
+      "coverage": {
+        "images_with_video": 25,
+        "images_with_overlay": 25,
+        "images_with_roi_mask": 25,
+        "images_with_annotation": 25,
+        "images_complete_quad": 25,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/gastritis_external/processed_images/三明市第二医院/crop_ui",
+      "counts": {
+        "images": 342,
+        "videos": 0,
+        "overlays": 342,
+        "roi_masks": 342,
+        "annotations": 342
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 342,
+        "images_with_roi_mask": 342,
+        "images_with_annotation": 342,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 342,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [
+        "三明市第二医院__图片__三明市第二医院__图片__smyz6-7.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz23-3.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz4-3.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz40-3.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz2-3.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz29-3.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz54-2.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz24-1.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz2-1.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz71-5.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz28-3.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz16-1.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz59-2.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz25-2.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz34-2.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz62-4.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz5-4.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz33-6.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz46-2.jpg",
+        "三明市第二医院__图片__三明市第二医院__图片__smyz57-5.jpg"
+      ],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/gastritis_external/processed_images/中核五〇四医院/crop_ui",
+      "counts": {
+        "images": 280,
+        "videos": 0,
+        "overlays": 280,
+        "roi_masks": 280,
+        "annotations": 280
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 280,
+        "images_with_roi_mask": 280,
+        "images_with_annotation": 280,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 280,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz38-2.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz150-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz57.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz129-2.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz16-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz51.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz80-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz18.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz3-2.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz33.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz160-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz132.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz79-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz9-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz158-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz39-1.jpg",
+        "中核五〇四医院__图片__湖北中西医结合医院__湖北中西医结合医院(1)__hbzxy9-4.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz9-2.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz60-1.jpg",
+        "中核五〇四医院__图片__中核五O四医院__湖北炎症__hbyz10-1.jpg"
+      ],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/gastritis_external/processed_images/宁德市医院/crop_ui",
+      "counts": {
+        "images": 51,
+        "videos": 0,
+        "overlays": 51,
+        "roi_masks": 51,
+        "annotations": 51
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 51,
+        "images_with_roi_mask": 51,
+        "images_with_annotation": 51,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 51,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz11-1.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz43.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz15-1.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz42.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz12-2.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz135.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz126.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz41.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz193.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz148.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz184.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz183.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz17-1.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz32-1.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz38-1.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz04-3.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz16-2.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz40-1.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz232.jpg",
+        "宁德市医院__图片__宁德市医院__ndyz(1)__ndyz__ndyz151.jpg"
+      ],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/gastritis_external/processed_images/福建省德化县医院/crop_ui",
+      "counts": {
+        "images": 200,
+        "videos": 0,
+        "overlays": 200,
+        "roi_masks": 200,
+        "annotations": 200
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 200,
+        "images_with_roi_mask": 200,
+        "images_with_annotation": 200,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 200,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh42-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh10-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh40-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh11-4.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh17-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh44-1.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh55-1.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh61-1.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh49-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh07-2.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh52-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh52-1.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh22-2.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh40-2.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh12-2.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh15-3.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh09-2.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh25-2.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh49-1.jpg",
+        "福建省德化县医院__图片__福建省德化县医院__dhyz(1)__dhyz__dh48-4.jpg"
+      ],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/gastritis_external/processed_images/福建省肿瘤医院/crop_ui",
+      "counts": {
+        "images": 199,
+        "videos": 0,
+        "overlays": 199,
+        "roi_masks": 199,
+        "annotations": 199
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 199,
+        "images_with_roi_mask": 199,
+        "images_with_annotation": 199,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 199,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz47-3.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz20-13.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz33-3.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz37-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz20-4.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz44-3.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz11-4.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz11-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz31-7.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz9-1.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz11-5.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz14-1.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz33-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz19-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz31-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz20-6.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz24-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz41-2.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz16-3.jpg",
+        "福建省肿瘤医院__图片__福建省肿瘤医院__图片__zlyz26-3.jpg"
+      ],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/gastritis_external/processed_images/莆田学院附属医院/crop_ui",
+      "counts": {
+        "images": 1674,
+        "videos": 0,
+        "overlays": 1674,
+        "roi_masks": 1674,
+        "annotations": 1674
+      },
+      "coverage": {
+        "images_with_video": 0,
+        "images_with_overlay": 1674,
+        "images_with_roi_mask": 1674,
+        "images_with_annotation": 1674,
+        "images_complete_quad": 0,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 1674,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz132-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz386-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz105-4.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz426-5.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz242-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz18-6.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz1-4.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz314-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz281-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz263-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz43-1.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz95-4.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz197-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz36-6.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz92-1.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz11-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz299-1.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz128-2.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz94-1.jpg",
+        "莆田学院附属医院__图片__莆田学院附属医院__莆田炎症图片__ptyz312-2.jpg"
+      ],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/internal/prospective_2025/2025/crop_ui",
+      "counts": {
+        "images": 2430,
+        "videos": 2430,
+        "overlays": 2430,
+        "roi_masks": 2430,
+        "annotations": 2430
+      },
+      "coverage": {
+        "images_with_video": 2430,
+        "images_with_overlay": 2430,
+        "images_with_roi_mask": 2430,
+        "images_with_annotation": 2430,
+        "images_complete_quad": 2430,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/internal/training_2018_2024/2018/crop_ui",
+      "counts": {
+        "images": 3638,
+        "videos": 3638,
+        "overlays": 3638,
+        "roi_masks": 3638,
+        "annotations": 3638
+      },
+      "coverage": {
+        "images_with_video": 3638,
+        "images_with_overlay": 3638,
+        "images_with_roi_mask": 3638,
+        "images_with_annotation": 3638,
+        "images_complete_quad": 3638,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/internal/training_2018_2024/2019/crop_ui",
+      "counts": {
+        "images": 2853,
+        "videos": 2853,
+        "overlays": 2853,
+        "roi_masks": 2853,
+        "annotations": 2853
+      },
+      "coverage": {
+        "images_with_video": 2853,
+        "images_with_overlay": 2853,
+        "images_with_roi_mask": 2853,
+        "images_with_annotation": 2853,
+        "images_complete_quad": 2853,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/internal/training_2018_2024/2020_2023/crop_ui",
+      "counts": {
+        "images": 199,
+        "videos": 199,
+        "overlays": 199,
+        "roi_masks": 199,
+        "annotations": 199
+      },
+      "coverage": {
+        "images_with_video": 199,
+        "images_with_overlay": 199,
+        "images_with_roi_mask": 199,
+        "images_with_annotation": 199,
+        "images_complete_quad": 199,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    },
+    {
+      "crop_ui": "dataset/internal/training_2018_2024/2024/crop_ui",
+      "counts": {
+        "images": 1539,
+        "videos": 1539,
+        "overlays": 1539,
+        "roi_masks": 1539,
+        "annotations": 1539
+      },
+      "coverage": {
+        "images_with_video": 1539,
+        "images_with_overlay": 1539,
+        "images_with_roi_mask": 1539,
+        "images_with_annotation": 1539,
+        "images_complete_quad": 1539,
+        "orphan_videos": 0
+      },
+      "missing_counts": {
+        "video": 0,
+        "overlay": 0,
+        "roi_mask": 0,
+        "annotation": 0
+      },
+      "sample_missing_video": [],
+      "sample_orphan_video": []
+    }
+  ],
+  "outputs": {
+    "per_root_summary": "data/registry/crop_ui_asset_audit/per_root_summary.csv",
+    "sample_gaps": "data/registry/crop_ui_asset_audit/sample_gaps.csv",
+    "video_basename_duplicates": "data/registry/crop_ui_asset_audit/video_basename_duplicates.csv",
+    "video_content_duplicates": "data/registry/crop_ui_asset_audit/video_content_duplicates.csv"
+  }
+}

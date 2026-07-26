@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nature Biomedical Engineering 精读速览 · 超声 / Agent / 内镜</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181f;
+    --line: #2a3140;
+    --text: #e8eaed;
+    --muted: #9aa3b2;
+    --accent: #6cb6ff;
+    --ok: #3dd68c;
+    --warn: #f0b429;
+    --hot: #f07178;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Times New Roman", Times, "Noto Serif CJK SC", serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 72px; }
+  h1 { font-size: 1.7rem; margin: 0 0 8px; }
+  h2 {
+    font-size: 1.2rem;
+    margin: 40px 0 12px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+    color: var(--accent);
+  }
+  h3 { font-size: 1.05rem; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    padding: 14px 16px;
+    margin: 14px 0;
+  }
+  .callout.hot { border-left-color: var(--hot); }
+  .callout.ok { border-left-color: var(--ok); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  .meta { color: var(--muted); font-size: 0.88rem; margin-bottom: 10px; }
+  .meta a { color: var(--accent); }
+  .pill {
+    display: inline-block;
+    border: 1px solid var(--line);
+    padding: 1px 8px;
+    margin-right: 6px;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .pill.hot { color: var(--hot); border-color: #5a3038; }
+  .pill.ok { color: var(--ok); border-color: #2a5a40; }
+  .pill.warn { color: var(--warn); border-color: #5a4a20; }
+  ul { margin: 8px 0 8px 1.2em; padding: 0; }
+  li { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 12px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #1a2030; color: var(--muted); }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.86em; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  footer { margin-top: 36px; color: var(--muted); font-size: 0.85rem; }
+  .takeaway {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #10141b;
+    border: 1px dashed var(--line);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Nature Biomedical Engineering 精读速览</h1>
+  <p class="sub">
+    聚焦与「胃超声 / 真视频 / 阅片 Agent / 医学成像 AI」相关的 NBE 近作（2024–2026）。
+    总览页见
+    <a href="./nature_portfolio_gastric_ai_papers.html" style="color:var(--accent)">nature_portfolio_gastric_ai_papers.html</a>。
+  </p>
+
+  <div class="callout hot">
+    <b>一句话结论</b>：NBE 近期没有「胃 EUS/体表超声 → T1–T4+」的直接论文，但有三条可迁移主线——
+    <b>① 真超声视频–语言交互（Sonomate）</b>、
+    <b>② 超声生成式基础模型（BUSGen）</b>、
+    <b>③ 专家阅片行为 → Agent（Pathology-CoT）</b>。
+    硬件向还有食管胶囊 OCT+光声、全身旋转超声–光声。
+  </div>
+
+  <!-- ========== 1 Sonomate ========== -->
+  <h2>1. Sonomate — 胎儿超声视频视觉接地语言模型</h2>
+  <div class="card">
+    <h3>A visually grounded language model for fetal ultrasound understanding</h3>
+    <div class="meta">
+      <span class="pill hot">最贴本仓库方法</span>
+      Nat. Biomed. Eng. ·
+      <a href="https://doi.org/10.1038/s41551-025-01578-3">10.1038/s41551-025-01578-3</a>
+    </div>
+    <p><b>做什么</b>：给扫查者一个实时「超声伴侣」——理解正在扫的视频，并用文本交互（解剖识别、反馈、VQA）。</p>
+    <p><b>数据</b>：525 条真实扫查 <b>视频–音频</b>对（PULSE）；音频转写为文本；按时序切分训练/验证/测试。</p>
+    <p><b>方法要点</b></p>
+    <ul>
+      <li><b>粗粒度</b> video–text 对比对齐（整段视频 ↔ 整段转写）</li>
+      <li><b>细粒度</b> frame–sentence 对齐（哪一帧对应哪句）</li>
+      <li>难点：闲聊/非视觉相关句；说话与画面<b>时间不同步</b></li>
+      <li>对策：解剖词表引导的 anatomy-aware alignment + context label correction（用上下文帧纠偏）</li>
+      <li>下游：零/少标注解剖检测、图像级与视频级 VQA；部署 guardrail（拒答 OOD）</li>
+    </ul>
+    <div class="takeaway">
+      <b>对本仓库</b>：这是 NBE 里与「真 cine + 交互阅片」最同构的一篇。<br />
+      · 必须用有运动的真实视频，不能用 loop_still。<br />
+      · 若做「扫查语音/操作轨迹 ↔ 画面」对齐，可抄其粗+细两级结构。<br />
+      · 安全护栏（不答域外问题）可挂到阅片 Agent。
+    </div>
+  </div>
+
+  <!-- ========== 2 BUSGen ========== -->
+  <h2>2. BUSGen — 乳腺超声生成式基础模型</h2>
+  <div class="card">
+    <h3>A foundation generative model for breast ultrasound image analysis</h3>
+    <div class="meta">
+      <span class="pill warn">超声 foundation</span>
+      Yu et al. · Nat. Biomed. Eng. · 2026-04-07 ·
+      <a href="https://doi.org/10.1038/s41551-026-01639-1">10.1038/s41551-026-01639-1</a>
+      · demo: <span class="mono">aibus.bio</span>
+    </div>
+    <p><b>做什么</b>：在 <b>&gt;3.5M</b> 乳腺超声上预训练生成式 foundation（BUSGen）；few-shot 适配后生成任务专用合成库，再训下游筛查/诊断/预后模型。</p>
+    <p><b>结果亮点</b></p>
+    <ul>
+      <li>合成数据路线显著优于「仅真实数据」训的同类基础模型</li>
+      <li>早期诊断：敏感度较 9 名认证放射科医生平均 <b>+16.5%</b>（P&lt;0.0001）</li>
+      <li>刻画合成数据的 scaling effect；推动去标识数据共享</li>
+    </ul>
+    <div class="takeaway">
+      <b>对本仓库</b>：器官不同，但叙事可借——「大规模超声预训练 → 合成增强 → 下游临床任务超专家」。
+      若真视频监督仅 557 人，合成/生成增强是顶刊认可的补数据路径（注意仍要病例级划分、防泄漏）。
+    </div>
+  </div>
+
+  <!-- ========== 3 Pathology-CoT ========== -->
+  <h2>3. Pathology-CoT — 专家阅片行为驱动的视觉 CoT Agent</h2>
+  <div class="card">
+    <h3>Pathology-CoT: learning visual chain-of-thought agents from expert WSI diagnosis behaviour</h3>
+    <div class="meta">
+      <span class="pill hot">最贴阅片 Agent</span>
+      Wang, Wu, Huang et al. · Nat. Biomed. Eng. · 2026-07-24 ·
+      <a href="https://doi.org/10.1038/s41551-026-01739-y">10.1038/s41551-026-01739-y</a>
+      · arXiv <a href="https://arxiv.org/abs/2510.04587">2510.04587</a>
+    </div>
+    <p><b>核心洞见</b>：病理诊断是「先决定看哪里、再解释看到什么」；现有 VLM 擅分析静态裁剪，<b>不会导航</b>——缺的是专家行为数据，不是更大模型。</p>
+    <p><b>三件套</b></p>
+    <ul>
+      <li><b>AI Session Recorder</b>：无感记录 viewer 平移/缩放 → 离散成 inspect/peek + ROI 框</li>
+      <li><b>人在环校对</b>：VLM 起草「为何看这里」→ 病理医生快审；标注效率约 <b>6×</b></li>
+      <li><b>Pathology-o3</b>：先行为预测 ROI，再行为引导推理 → 病例级诊断</li>
+    </ul>
+    <p><b>任务与结果</b>（结直肠癌淋巴结转移 / N 分期相关）</p>
+    <ul>
+      <li>内部（Stanford）：recall <b>100%</b>，精度约 84.5%，准确率约 75.4%（优于 OpenAI o3）</li>
+      <li>外部（瑞典 LNCO2，321 WSI）：recall <b>97.6%</b></li>
+      <li>跨 backbone：行为引导平均提升 precision ~11.8%、recall ~17.9%</li>
+      <li>数据：8 名病理医生、10.6h、5222 轮对话式 CoT</li>
+    </ul>
+    <div class="takeaway">
+      <b>对本仓库</b>：可直接映射到胃超声阅片 Agent——<br />
+      · 记录医生在 crop 视频/帧上的点击、ROI、分层操作（类似 Session Recorder）<br />
+      · 训「先提案关键帧/壁层区域 → 再推理 T 分期」两阶段 agent<br />
+      · 强调病例级外推；GI 淋巴结任务说明消化道场景已被 NBE 接受<br />
+      · 模态是 WSI 不是超声，但「行为监督」是可迁移的数据引擎
+    </div>
+  </div>
+
+  <!-- ========== 4 Hardware ========== -->
+  <h2>4. 硬件 / 新成像（NBE，偏设备）</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>Rotational ultrasound + photoacoustic tomography</h3>
+      <div class="meta">
+        Zhang / Wang et al. · ~2026-01 ·
+        <a href="https://doi.org/10.1038/s41551-025-01603-5">10.1038/s41551-025-01603-5</a>
+        · <span class="pill">硬件</span>
+      </div>
+      <p>全身尺度旋转超声断层 + 光声；约 10s/模态，亚毫米各向同性；头/乳/手足验证。与 AI 分期弱相关，属成像平台突破。</p>
+    </div>
+    <div class="card">
+      <h3>O2E：系留胶囊 OCT + 光声内镜（Barrett 食管）</h3>
+      <div class="meta">
+        Li / Ntziachristos et al. · 2025 ·
+        <a href="https://doi.org/10.1038/s41551-025-01462-0">10.1038/s41551-025-01462-0</a>
+        · <span class="pill">消化道内镜硬件</span>
+      </div>
+      <p>12.5 mm 胶囊，100 MHz 超宽带超声探测 + OCT；无标记评估 Barrett 相关瘤变。与胃壁分层超声不同模态，但同属消化道深度成像。</p>
+    </div>
+  </div>
+
+  <!-- ========== 5 RoentGen ========== -->
+  <h2>5. RoentGen — 胸片文生图（生成式对照）</h2>
+  <div class="card">
+    <h3>A vision–language foundation model for realistic chest X-ray generation</h3>
+    <div class="meta">
+      Bluethgen et al. · Nat. Biomed. Eng. 9, 494–506 (2025) ·
+      <a href="https://doi.org/10.1038/s41551-024-01246-y">10.1038/s41551-024-01246-y</a>
+      · <span class="pill ok">生成增强先例</span>
+    </div>
+    <p>Stable Diffusion 域适应到 CXR+报告；自由文本控图；合成增强可略提分类。BUSGen 把同类思路推到超声。</p>
+    <div class="takeaway"><b>对本仓库</b>：引用链「RoentGen（CXR）→ BUSGen（超声）」说明生成增强在 NBE 连续被认证；胃超声若做合成需病例级防泄漏。</div>
+  </div>
+
+  <h2>对本仓库的迁移地图</h2>
+  <table>
+    <thead>
+      <tr><th>NBE 论文</th><th>可抄什么</th><th>不要硬抄什么</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Sonomate</td>
+        <td>视频–文本两级对齐；时序异步处理；交互+guardrail</td>
+        <td>胎儿解剖任务本身</td>
+      </tr>
+      <tr>
+        <td>BUSGen</td>
+        <td>超声 foundation + 合成数据 scaling；人机对照写法</td>
+        <td>乳腺 BI-RADS 标签体系</td>
+      </tr>
+      <tr>
+        <td>Pathology-CoT</td>
+        <td>Session Recorder；行为→ROI→推理两阶段 Agent；外推 recall</td>
+        <td>WSI 倍率体系；MIL 穷举扫片</td>
+      </tr>
+      <tr>
+        <td>O2E / RUS-PAT</td>
+        <td>「深度结构成像」叙事（壁层/血管）</td>
+        <td>硬件平台本身</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok">
+    <b>差异化叙事（写论文时）</b><br />
+    NBE/Nature 系胃癌 AI 多在 CT、白光内镜、病理；NBE 超声 AI 多在胎儿/乳腺。
+    本仓库可主张：<b>胃肿瘤 T 分期 × 真 cine 超声 × 壁层/腔关系 × 病例级多中心</b>——在 NBE 近作中尚无直接竞品。
+  </div>
+
+  <h2>建议精读顺序（只 NBE）</h2>
+  <ol>
+    <li><b>Pathology-CoT</b> — 定阅片 Agent 数据引擎与两阶段结构</li>
+    <li><b>Sonomate</b> — 定真视频对齐与交互</li>
+    <li><b>BUSGen</b> — 定超声 foundation / 合成数据故事</li>
+    <li>RoentGen — 生成增强引用链</li>
+    <li>O2E — 若强调消化道深度成像硬件语境</li>
+  </ol>
+
+  <footer>
+    基于 DOI / 出版摘要与 arXiv 全文（Pathology-CoT）整理 · 非逐段翻译。
+    指定某一篇做双语全文 Markdown 精读即可继续。
+  </footer>
+</div>
+</body>
+</html>

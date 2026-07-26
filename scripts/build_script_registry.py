@@ -48,6 +48,7 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "check_repo_root.py": ("maintenance", "governance"),
     "build_asset_manifest.py": ("maintenance", "governance"),
     "build_dataset_registry.py": ("maintenance", "governance"),
+    "build_phase0_anatomic_region_splits.py": ("maintenance", "data_governance"),
     "build_script_registry.py": ("maintenance", "governance"),
     "build_experiments_registry.py": ("maintenance", "governance"),
     "repo_paths.py": ("runtime", "governance"),
@@ -57,6 +58,24 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "consolidate_compat_links.py": ("maintenance", "governance"),
     "cleanup_migration_backups.py": ("maintenance", "governance"),
     "audit_current_dataset_assets.py": ("maintenance", "governance"),
+    "build_workspace_inventory.py": ("maintenance", "governance"),
+    "classify_git_status.py": ("maintenance", "governance"),
+    "build_experiments_tree_index.py": ("maintenance", "governance"),
+    "build_paper_ablation_matrix.py": ("maintenance", "governance"),
+    "build_report_index.py": ("maintenance", "governance"),
+    "audit_mainline_eval_chain.py": ("maintenance", "governance"),
+    "audit_modeling_dataset_contracts.py": ("maintenance", "data_governance"),
+    "build_patient_training_view.py": ("current", "data_governance"),
+    "build_training_media_view.py": ("current", "data_governance"),
+    "build_real_cine_aligned_view.py": ("current", "data_governance"),
+    "freeze_real_cine_training_package.py": ("current", "data_governance"),
+    "quarantine_loop_still_videos.py": ("current", "data_governance"),
+    "build_model_inventory.py": ("maintenance", "governance"),
+    "build_log_index.py": ("maintenance", "governance"),
+    "cache_dinov3_roi_green_scalars.py": ("current", "analysis"),
+    "probe_dino_green_maps.py": ("current", "analysis"),
+    "run_dinov3_framelevel_scalar_train_eval.py": ("current", "analysis"),
+    "train_dinov3_anatomic_adapter.py": ("current", "analysis"),
 }
 
 LEGACY_PATTERNS = (
@@ -130,6 +149,52 @@ def infer_status(name: str, path: Path, readme_sec: str) -> tuple[str, str, str]
     return "unknown", "unknown", readme_sec
 
 
+def move_candidate(status: str, task: str) -> str:
+    if status == "current":
+        return "scripts/current"
+    if status == "maintenance":
+        return "scripts/maintenance"
+    if status in ("analysis", "utility"):
+        return "scripts/analysis"
+    if status == "legacy":
+        return "scripts/legacy"
+    if status == "runtime":
+        return "scripts/runtime"
+    return "needs_review"
+
+
+def safe_to_run(status: str, uses_root: bool, name: str) -> str:
+    if status == "legacy":
+        return "no"
+    if status == "unknown":
+        return "review"
+    if status == "current" and uses_root:
+        return "yes"
+    if status == "current" and not uses_root:
+        return "review_paths"
+    if status == "maintenance":
+        return "yes"
+    if status == "runtime":
+        return "import_only"
+    if status == "analysis":
+        return "review_env"
+    return "review"
+
+
+def uses_project_root(path: Path) -> bool:
+    try:
+        body = path.read_text(encoding="utf-8", errors="ignore")[:12000]
+    except OSError:
+        return False
+    if "repo_paths" in body and "PROJECT_ROOT" in body:
+        return True
+    if HARDCODED_ROOT.search(body):
+        return False
+    if "Path(__file__).resolve().parents[1]" in body:
+        return True
+    return False
+
+
 def main() -> None:
     readme_map = parse_readme_sections()
     rows: list[dict[str, str]] = []
@@ -146,12 +211,17 @@ def main() -> None:
             notes = "hardcoded paths or README §7"
         elif status == "unknown":
             notes = "needs manual review"
+        upr = uses_project_root(path)
         rows.append(
             {
                 "script": name,
                 "status": status,
                 "task": task,
                 "readme_section": sec_out or sec,
+                "owner_workspace": "scripts",
+                "move_candidate": move_candidate(status, task),
+                "safe_to_run": safe_to_run(status, upr, name),
+                "uses_project_root": str(upr).lower(),
                 "notes": notes,
             }
         )
@@ -163,24 +233,44 @@ def main() -> None:
             "status": "maintenance",
             "task": "governance",
             "readme_section": "",
+            "owner_workspace": "scripts",
+            "move_candidate": "scripts/maintenance",
+            "safe_to_run": "yes",
+            "uses_project_root": "true",
             "notes": "generates this file",
         }
     )
 
     for sh in sorted(SCRIPTS_DIR.glob("*.sh")):
+        st = "legacy" if "convert_videos" in sh.name else "utility"
         rows.append(
             {
                 "script": sh.name,
-                "status": "legacy" if "convert_videos" in sh.name else "utility",
+                "status": st,
                 "task": "shell",
                 "readme_section": readme_map.get(sh.name, "7"),
+                "owner_workspace": "scripts",
+                "move_candidate": move_candidate(st, "shell"),
+                "safe_to_run": "no" if st == "legacy" else "review",
+                "uses_project_root": "false",
                 "notes": "",
             }
         )
 
     rows.sort(key=lambda r: r["script"])
+    fieldnames = [
+        "script",
+        "status",
+        "task",
+        "readme_section",
+        "owner_workspace",
+        "move_candidate",
+        "safe_to_run",
+        "uses_project_root",
+        "notes",
+    ]
     with OUT.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["script", "status", "task", "readme_section", "notes"])
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(rows)
     print(f"Wrote {len(rows)} rows -> {OUT} ({date.today().isoformat()})")

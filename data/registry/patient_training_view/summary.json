@@ -1,0 +1,34 @@
+{
+  "created_at": "2026-07-26T16:34:04Z",
+  "source_registry": "data/registry/patient_media_sample_index.csv + patient_media_registry.csv",
+  "patients_total": 2593,
+  "patients_usable_registry": 1745,
+  "patients_with_image_train_samples": 557,
+  "patients_with_real_cine_train_samples": 557,
+  "samples_image_train": 2733,
+  "samples_video_real_cine": 2731,
+  "samples_excluded_loop_still": 0,
+  "exclude_loop_still_from_video": true,
+  "patients_no_clinical_or_t": 848,
+  "patients_only_loop_still": 0,
+  "still_needs_organizing": [
+    "DONE: quarantine dataset/external/{center} → dataset/_quarantine/external__center_placeholder/",
+    "DONE: real-cine supervised package → dataset/training_views/t_staging_real_cine/",
+    "DONE: exclude loop_still from video training views (samples_excluded_loop_still.csv; no videos_loop links)",
+    "DONE: prospective/internal mislabeled as test_external* → eval_role remap in t_staging_real_cine/splits/",
+    "OPEN: 848 patients lack T/clinical — see t_staging_real_cine/labeling_queue/ for real-cine subset (627)",
+    "OPEN: Rebuild joins for Putian/external into legacy region CSVs (path drift; prefer patient_media_*)",
+    "KEEP: Prefer Phase0 screened contracts for clean image generalization eval",
+    "KEEP: Do not mix gastritis_external into T-stage splits",
+    "KEEP: loop_still is NOT training video — use t_staging_real_cine only"
+  ],
+  "how_to_train": {
+    "image_model_sample_csv": "data/registry/patient_training_view/samples_image_train.csv",
+    "video_model_sample_csv": "data/registry/patient_training_view/samples_video_real_cine.csv",
+    "excluded_loop_still_csv": "data/registry/patient_training_view/samples_excluded_loop_still.csv",
+    "patient_table": "data/registry/patient_training_view/patients.csv",
+    "patient_bundles_jsonl": "data/registry/patient_training_view/patient_bundles.jsonl",
+    "split_rule": "ALWAYS split by patient_id, never by sample_id/image",
+    "video_rule": "cached only; loop_still excluded"
+  }
+}
