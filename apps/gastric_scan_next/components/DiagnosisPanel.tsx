@@ -14,9 +14,11 @@ interface DiagnosisPanelProps {
   patient: Patient | null;
   agentAnalysis?: AgentAnalysisResponse | null;
   onExpandedChange?: (expanded: boolean) => void;
-}
+  /** GC-US imaging paragraph from SAM + wall features */
+  imagingNarrative?: string | null;
+};
 
-export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state, patient, agentAnalysis = null, onExpandedChange }) => {
+export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state, patient, agentAnalysis = null, onExpandedChange, imagingNarrative = null }) => {
   const { t, language } = useSettings();
   const [reportText, setReportText] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
@@ -118,6 +120,13 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
         : 'Current output is suitable as assistive evidence and should be reviewed together with the physician assessment.';
 
     return [
+      ...(imagingNarrative
+        ? [{
+            key: 'us_findings',
+            label: language === 'zh' ? '超声所见（影像描述）' : 'Ultrasound findings',
+            value: imagingNarrative,
+          }]
+        : []),
       {
         key: 'findings',
         label: language === 'zh' ? '病理特征' : 'Pathological Features',
@@ -145,6 +154,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
       }
     ];
   }, [
+    imagingNarrative,
     descriptions,
     language,
     patient?.clinical?.tumorSize,

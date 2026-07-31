@@ -8,6 +8,7 @@ import {
 } from '@/lib/agent-server';
 import { DatasetType, CohortYear, TreatmentType, PROJECT_ROOT } from '@/lib/config';
 import { Patient } from '@/types';
+import { buildPythonAgentEnv } from '@/lib/agent-python-env';
 
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
 const ANALYZE_SCRIPT = `${PROJECT_ROOT}/pipeline/agent/product/analyze_case.py`;
@@ -21,10 +22,24 @@ interface AnalyzeRequestBody {
   cohortYear: CohortYear;
   treatmentType: TreatmentType;
   sessionId?: string;
+  memory_enabled?: boolean;
+  memory_store?: string;
+  use_mask_override?: boolean;
+  mask_override?: {
+    mask_polygon?: number[][];
+    roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
+    image_width?: number;
+    image_height?: number;
+    source?: string;
+  };
+  roi_mode?: 'predicted' | 'doctor' | 'auto';
 }
 
 function buildPayload(body: AnalyzeRequestBody) {
-  const { patient, dataset, cohortYear, treatmentType, sessionId } = body;
+  const {
+    patient, dataset, cohortYear, treatmentType, sessionId, memory_enabled, memory_store,
+    use_mask_override, mask_override, roi_mode,
+  } = body;
   const resolvedPaths = resolvePatientAgentPaths(patient, cohortYear, treatmentType, dataset);
   if (!resolvedPaths.image_path) {
     throw new Error('Could not resolve patient image path');
@@ -46,6 +61,11 @@ function buildPayload(body: AnalyzeRequestBody) {
     clinical: mapClinicalToAgentInput(patient),
     report_text: mapReportToAgentInput(patient),
     segmentation: patient.segmentation,
+    memory_enabled: memory_enabled ?? process.env.AGENT_MEMORY_ENABLED === '1',
+    memory_store: memory_store ?? process.env.AGENT_MEMORY_STORE,
+    use_mask_override: Boolean(use_mask_override && mask_override),
+    mask_override: use_mask_override ? mask_override : undefined,
+    roi_mode: roi_mode || 'predicted',
     ...resolvedPaths,
   };
 }
@@ -68,12 +88,7 @@ export async function POST(request: NextRequest) {
       start(controller) {
         const child = spawn(PYTHON_BIN, [ANALYZE_SCRIPT], {
           cwd: PROJECT_ROOT,
-          env: {
-            ...process.env,
-            GASTRIC_ROOT: PROJECT_ROOT,
-            PYTHONPATH: `${PROJECT_ROOT}/pipeline${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
-            AGENT_STREAM_EVENTS: '1',
-          },
+          env: buildPythonAgentEnv({ AGENT_STREAM_EVENTS: '1' }),
           stdio: ['pipe', 'pipe', 'pipe'],
         });
 

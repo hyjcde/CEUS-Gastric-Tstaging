@@ -45,3 +45,11 @@ next-env.d.ts
 
 # local CBM overrides (per-user edits)
 /data/concept_overrides.json
+/data/reader_agent_results.json
+/data/mask_overrides.json
+
+# Local clinical sidecars & temp (keep on disk, not in git)
+/data/clinical_data*.json
+/data/keyframe_tmp/
+.env
+.env.local

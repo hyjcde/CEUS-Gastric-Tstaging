@@ -26,7 +26,14 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_DIR = PROJECT_ROOT / "pipeline"
 
-# Frozen mainline (scoreboard Promote): mask4ch + clinical22 full data, 20260423.
+# Frozen mainline (2026-06-03 L1): acc_boost2 screened eval — dual ConvNeXt + mask4ch + clinical22.
+_ACC_BOOST2_RUN = (
+    PIPELINE_DIR / "experiments" / "tree" / "gastric_tstage_4class"
+    / "classification" / "dual_convnext"
+    / "tstaging_4class_acc_boost2_multitask_screened_eval_20260603_162955"
+)
+
+# Legacy frozen mask4ch (20260423) — kept as fallback only.
 _FROZEN_MASK4CH_RUN = (
     PIPELINE_DIR / "experiments" / "tree" / "gastric_tstage_4class"
     / "classification" / "dual_mask4ch"
@@ -34,12 +41,10 @@ _FROZEN_MASK4CH_RUN = (
 )
 
 DEFAULT_EXP_DIR = first_existing_path(
+    _ACC_BOOST2_RUN,
     _FROZEN_MASK4CH_RUN,
     PIPELINE_DIR / "experiments" / "tstaging_4class_dual_v2_mask4ch_20260302_201944",
-    PROJECT_ROOT / "pipeline" / "experiments" / "tree" / "gastric_tstage_4class"
-    / "classification" / "dual_convnext"
-    / "tstaging_4class_dual_v2_multitask_lumen_lesion_features_20260416_161710",
-) or _FROZEN_MASK4CH_RUN
+) or _ACC_BOOST2_RUN
 
 CLASS_NAMES = ["T1", "T2", "T3", "T4+"]
 CLINICAL_FEATURE_NAMES = [
@@ -110,49 +115,174 @@ def _load_classifier(exp_dir: Path, device: torch.device):
     return model, cfg, g_transform, l_transform
 
 
-def _prepare_global_input(image_path: str, mask_path: Optional[str],
-                          transform, use_mask_channel: bool,
-                          device: torch.device) -> torch.Tensor:
+def mask_from_array(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    arr = np.asarray(mask)
+    if arr.ndim == 3:
+        arr = arr[..., 0]
+    if arr.shape[:2] != shape:
+        arr = cv2.resize(arr.astype(np.uint8), (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+    return (arr > 0).astype(np.uint8)
+
+
+def _prepare_global_input(
+    image_path: str,
+    mask_path: Optional[str],
+    transform,
+    use_mask_channel: bool,
+    device: torch.device,
+    *,
+    mask_array: Optional[np.ndarray] = None,
+    lumen_bbox: Optional[Dict[str, Any]] = None,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> torch.Tensor:
     """Prepare 3-ch or 4-ch global input tensor."""
     img = Image.open(image_path).convert("RGB")
     img_t = transform(img)  # (3, H, W)
+    h, w = img_t.shape[1], img_t.shape[2]
 
-    if use_mask_channel and mask_path:
-        mask = Image.open(mask_path).convert("L")
-        # Resize mask to match the transformed image size
-        h, w = img_t.shape[1], img_t.shape[2]
-        mask_resized = mask.resize((w, h), Image.NEAREST)
-        mask_t = torch.from_numpy(
-            np.array(mask_resized, dtype=np.float32) / 255.0
-        ).unsqueeze(0)  # (1, H, W)
-        img_t = torch.cat([img_t, mask_t], dim=0)  # (4, H, W)
-    elif use_mask_channel:
-        # No mask available: use zeros
-        h, w = img_t.shape[1], img_t.shape[2]
-        img_t = torch.cat([img_t, torch.zeros(1, h, w)], dim=0)
+    if use_mask_channel:
+        mask_pil = None
+        if cfg and cfg.get("anatomic_focus_mask"):
+            sys_path = str(PIPELINE_DIR)
+            if sys_path not in __import__("sys").path:
+                __import__("sys").path.insert(0, sys_path)
+            from lib.anatomic_focus import (
+                anatomic_focus_float,
+                focus_mask_to_pil,
+                lumen_box_from_bbox_dict,
+            )
+
+            img_np = np.array(img)
+            focus_f = anatomic_focus_float(
+                img_np.shape[:2],
+                lesion_mask=mask_array,
+                lumen_box=lumen_box_from_bbox_dict(lumen_bbox),
+                outer_px=int(cfg.get("anatomic_wall_outer_px", 14)),
+                inner_px=int(cfg.get("anatomic_wall_inner_px", 6)),
+                lumen_rim_px=int(cfg.get("anatomic_lumen_rim_px", 10)),
+                lumen_corridor_expand=float(cfg.get("anatomic_lumen_corridor_expand", 0.30)),
+                prefer_precomputed=False,
+            )
+            if float(focus_f.sum()) > 0:
+                mask_pil = focus_mask_to_pil(focus_f)
+        elif mask_path and Path(mask_path).exists():
+            mask_pil = Image.open(mask_path).convert("L")
+        elif mask_array is not None:
+            img_shape = np.array(img).shape[:2]
+            mask_pil = Image.fromarray(
+                (mask_from_array(mask_array, img_shape) * 255).astype(np.uint8), mode="L"
+            )
+
+        if mask_pil is not None:
+            mask_resized = mask_pil.resize((w, h), Image.NEAREST)
+            mask_t = torch.from_numpy(
+                np.array(mask_resized, dtype=np.float32) / 255.0
+            ).unsqueeze(0)
+            img_t = torch.cat([img_t, mask_t], dim=0)
+        else:
+            img_t = torch.cat([img_t, torch.zeros(1, h, w)], dim=0)
 
     return img_t.unsqueeze(0).to(device)
 
 
-def _prepare_local_input(roi_path: Optional[str], image_path: str,
-                         roi_bbox: Optional[Dict],
-                         transform, device: torch.device) -> torch.Tensor:
-    """Prepare ROI local input. Falls back to center crop."""
-    if roi_path and Path(roi_path).exists():
+def resolve_local_roi_pil(
+    image_path: str,
+    roi_path: Optional[str] = None,
+    roi_bbox: Optional[Dict] = None,
+    *,
+    mask_array: Optional[np.ndarray] = None,
+    lumen_bbox: Optional[Dict[str, Any]] = None,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> tuple[Image.Image, Optional[Dict[str, int]], Image.Image]:
+    """
+    Resolve the local-branch ROI crop (same logic as _prepare_local_input).
+
+    Returns (roi_pil, bbox_on_full_image_or_None, full_pil).
+    bbox_on_full is None when roi_path is an external crop file.
+    """
+    img = Image.open(image_path).convert("RGB")
+    bbox_on_full: Optional[Dict[str, int]] = None
+
+    if cfg and cfg.get("anatomic_focus_local"):
+        sys_path = str(PIPELINE_DIR)
+        if sys_path not in __import__("sys").path:
+            __import__("sys").path.insert(0, sys_path)
+        from lib.anatomic_focus import (
+            anatomic_focus_float,
+            bbox_from_mask_u8,
+            crop_pil_by_bbox,
+            lumen_box_from_bbox_dict,
+        )
+
+        img_np = np.array(img)
+        focus_f = anatomic_focus_float(
+            img_np.shape[:2],
+            lesion_mask=mask_array,
+            lumen_box=lumen_box_from_bbox_dict(lumen_bbox),
+            outer_px=int(cfg.get("anatomic_wall_outer_px", 14)),
+            inner_px=int(cfg.get("anatomic_wall_inner_px", 6)),
+            lumen_rim_px=int(cfg.get("anatomic_lumen_rim_px", 10)),
+            lumen_corridor_expand=float(cfg.get("anatomic_lumen_corridor_expand", 0.30)),
+            prefer_precomputed=False,
+        )
+        focus_u8 = (focus_f > 0.08).astype(np.uint8)
+        bbox = bbox_from_mask_u8(
+            focus_u8, margin_ratio=float(cfg.get("anatomic_local_margin", 0.08))
+        )
+        if bbox is not None:
+            roi_img = crop_pil_by_bbox(img, bbox)
+            bbox_on_full = dict(bbox)
+        else:
+            w, h = img.size
+            cw, ch = int(w * 0.6), int(h * 0.6)
+            left = (w - cw) // 2
+            top = (h - ch) // 2
+            roi_img = img.crop((left, top, left + cw, top + ch))
+            bbox_on_full = {"x1": left, "y1": top, "x2": left + cw, "y2": top + ch}
+    elif roi_path and Path(roi_path).exists():
         roi_img = Image.open(roi_path).convert("RGB")
     elif roi_bbox:
-        img = Image.open(image_path).convert("RGB")
-        roi_img = img.crop((roi_bbox["x1"], roi_bbox["y1"],
-                            roi_bbox["x2"], roi_bbox["y2"]))
+        x1, y1, x2, y2 = roi_bbox["x1"], roi_bbox["y1"], roi_bbox["x2"], roi_bbox["y2"]
+        roi_img = img.crop((x1, y1, x2, y2))
+        bbox_on_full = {"x1": int(x1), "y1": int(y1), "x2": int(x2), "y2": int(y2)}
+    elif lumen_bbox:
+        x1 = int(lumen_bbox["x1"])
+        y1 = int(lumen_bbox["y1"])
+        x2 = int(lumen_bbox["x2"])
+        y2 = int(lumen_bbox["y2"])
+        roi_img = img.crop((x1, y1, x2, y2))
+        bbox_on_full = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
     else:
-        # Center crop fallback
-        img = Image.open(image_path).convert("RGB")
         w, h = img.size
         cw, ch = int(w * 0.6), int(h * 0.6)
         left = (w - cw) // 2
         top = (h - ch) // 2
         roi_img = img.crop((left, top, left + cw, top + ch))
+        bbox_on_full = {"x1": left, "y1": top, "x2": left + cw, "y2": top + ch}
 
+    return roi_img, bbox_on_full, img
+
+
+def _prepare_local_input(
+    roi_path: Optional[str],
+    image_path: str,
+    roi_bbox: Optional[Dict],
+    transform,
+    device: torch.device,
+    *,
+    mask_array: Optional[np.ndarray] = None,
+    lumen_bbox: Optional[Dict[str, Any]] = None,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> torch.Tensor:
+    """Prepare ROI local input. Falls back to center crop."""
+    roi_img, _, _ = resolve_local_roi_pil(
+        image_path,
+        roi_path=roi_path,
+        roi_bbox=roi_bbox,
+        mask_array=mask_array,
+        lumen_bbox=lumen_bbox,
+        cfg=cfg,
+    )
     roi_t = transform(roi_img)
     return roi_t.unsqueeze(0).to(device)
 
@@ -334,6 +464,9 @@ class ClassificationTool(BaseTool):
                       "Optional clinical22 vector or raw clinical fields for encoding",
                       required=False),
         ToolParameter("patient_id", "str", "Patient id for clinical CSV lookup", required=False),
+        ToolParameter("lumen_bbox", "dict",
+                       "Lumen box {x1,y1,x2,y2} for anatomic-focus mask/local crop",
+                       required=False),
     ]
 
     def __init__(self, exp_dir: Path = DEFAULT_EXP_DIR,
@@ -362,6 +495,7 @@ class ClassificationTool(BaseTool):
                 mask_array: Optional[np.ndarray] = None,
                 roi_path: Optional[str] = None,
                 roi_bbox: Optional[Dict] = None,
+                lumen_bbox: Optional[Dict] = None,
                 clinical_features: Optional[Dict[str, Any]] = None,
                 patient_id: Optional[str] = None,
                 **kwargs) -> Dict[str, Any]:
@@ -373,9 +507,25 @@ class ClassificationTool(BaseTool):
 
             use_mask = self._cfg.get("use_mask_channel", False)
             global_input = _prepare_global_input(
-                image_path, mask_path, self._g_transform, use_mask, self._device)
+                image_path,
+                mask_path,
+                self._g_transform,
+                use_mask,
+                self._device,
+                mask_array=mask_array,
+                lumen_bbox=lumen_bbox,
+                cfg=self._cfg,
+            )
             local_input = _prepare_local_input(
-                roi_path, image_path, roi_bbox, self._l_transform, self._device)
+                roi_path,
+                image_path,
+                roi_bbox,
+                self._l_transform,
+                self._device,
+                mask_array=mask_array,
+                lumen_bbox=lumen_bbox,
+                cfg=self._cfg,
+            )
             clinical_input = _prepare_clinical_tensor(
                 image_path=image_path,
                 mask_path=mask_path,

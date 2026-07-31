@@ -32,36 +32,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("agent.smoke_test")
 
-def build_registry(device=None, enable_rag=False):
-    """Register all tools."""
-    import torch
-    from agent.tools.base import ToolRegistry
-    from agent.tools.quality_tool import QualityTool
-    from agent.tools.lumen_detection_tool import LumenDetectionTool
-    from agent.tools.wall_evidence_tool import WallEvidenceTool
-    from agent.tools.segmentation_tool import SegmentationTool
-    from agent.tools.classification_tool import ClassificationTool
-    from agent.tools.morphology_tool import MorphologyTool
-    from agent.tools.clinical_tool import ClinicalTool
-    from agent.tools.report_tool import ReportTool
-    from agent.tools.similarity_tool import SimilarityTool
+def build_registry(device=None, enable_rag=False, enable_binary=True):
+    """Backward-compatible wrapper — delegates to registry_factory SSOT."""
+    from agent.core.registry_factory import build_default_registry
 
-    if device is None:
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    registry = ToolRegistry()
-    registry.register(QualityTool())
-    registry.register(LumenDetectionTool(device=str(device)))
-    registry.register(WallEvidenceTool())
-    registry.register(SegmentationTool(device=device))
-    registry.register(ClassificationTool(device=device))
-    registry.register(MorphologyTool())
-    registry.register(ClinicalTool())
-    registry.register(ReportTool())
-    if enable_rag:
-        registry.register(SimilarityTool())
-
-    return registry
+    return build_default_registry(
+        device=device,
+        enable_rag=enable_rag,
+        enable_binary=enable_binary,
+    )
 
 
 def load_test_cases(n: int = 5):

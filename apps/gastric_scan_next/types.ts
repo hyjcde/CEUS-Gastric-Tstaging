@@ -98,6 +98,28 @@ export interface SegmentationEvidence {
   overlay_transparent_url?: string;
 }
 
+/** Doctor-edited lesion boundary fed into Agent analyze as mask/ROI override. */
+export interface MaskBoundaryOverride {
+  patientId: string;
+  frameId?: string;
+  imageWidth: number;
+  imageHeight: number;
+  /** Closed polygon in image pixel coords [[x,y], ...] — lesion (green) */
+  mask_polygon: number[][];
+  /** Optional gastric wall / lumen outer contour (orange) */
+  wall_polygon?: number[][];
+  /** Optional ROI box {x1,y1,x2,y2} derived from polygon or doctor crop */
+  roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
+  /** predicted = use override bbox; doctor = use on-disk crop ROI when available */
+  roi_mode?: 'predicted' | 'doctor' | 'auto';
+  source?: 'manual' | 'sam' | 'labelme' | 'imported' | 'video_track' | 'video_propagate';
+  /** When editing on video: timestamp in seconds */
+  video_time_sec?: number;
+  video_url?: string;
+  updated_at?: string;
+  note?: string;
+}
+
 export interface AgentReport {
   schema_version: string;
   case_token: string;
@@ -210,6 +232,10 @@ export interface AgentWorkbenchReport {
   knowledge_highlights: string[];
   tool_status: Record<string, string>;
   memory_update_candidates?: Array<Record<string, unknown>>;
+  memory_applied?: boolean;
+  active_rules_used?: string[];
+  governance_trust_labels?: Record<string, string>;
+  memory_context_summary?: Record<string, unknown>;
 }
 
 export interface AgentSessionSummary {
@@ -289,5 +315,10 @@ export interface AgentAnalysisResponse {
   trajectory_ref?: {
     path: string;
     schema_version: string;
+  };
+  memory_context?: Record<string, unknown>;
+  memory_store_ref?: {
+    path: string;
+    run_id?: string;
   };
 }

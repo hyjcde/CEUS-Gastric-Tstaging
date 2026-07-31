@@ -29,12 +29,19 @@ DEFAULT_TEMPERATURE = 0.1
 
 
 def _resolve_api_key() -> str:
-    for var in ("AGENT_API_KEY", "VLM_API_KEY", "POE_API_KEY", "OPENAI_API_KEY"):
+    for var in (
+        "AGENT_API_KEY",
+        "VLM_API_KEY",
+        "POE_API_KEY",
+        "OPENAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+    ):
         key = os.getenv(var)
         if key:
             return key
     raise RuntimeError(
-        "Missing API key. Set AGENT_API_KEY, VLM_API_KEY, POE_API_KEY, or OPENAI_API_KEY."
+        "Missing API key. Set AGENT_API_KEY, VLM_API_KEY, POE_API_KEY, "
+        "OPENAI_API_KEY, or DEEPSEEK_API_KEY."
     )
 
 
@@ -53,9 +60,10 @@ class AgentLLMClient:
                  model: Optional[str] = None,
                  max_tokens: int = DEFAULT_MAX_TOKENS,
                  temperature: float = DEFAULT_TEMPERATURE,
-                 retries: int = 3):
+                 retries: int = 3,
+                 api_key: Optional[str] = None):
         self._client = OpenAI(
-            api_key=_resolve_api_key(),
+            api_key=api_key or _resolve_api_key(),
             base_url=base_url or DEFAULT_BASE_URL,
         )
         self.model = model or DEFAULT_MODEL

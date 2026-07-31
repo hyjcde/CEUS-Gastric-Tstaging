@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gastric-tstaging.local/schemas/self_evolving_multimodal_memory.schema.json",
+  "title": "Self-evolving multimodal medical Agent memory record",
+  "type": "object",
+  "required": ["schema_version", "record_id", "record_type", "created_at", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "record_id": {
+      "type": "string",
+      "description": "Stable ID for this memory record."
+    },
+    "record_type": {
+      "type": "string",
+      "enum": [
+        "case_episode",
+        "procedural_rule",
+        "tool_governance",
+        "session_trace",
+        "model_backend_evidence"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": ["origin", "path_or_uri"],
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string",
+          "enum": ["frontend_review", "agent_analysis", "training_run", "doctor_feedback", "pathology_feedback", "cron_report", "manual_review"]
+        },
+        "path_or_uri": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "patient_id": {
+          "type": "string"
+        },
+        "split": {
+          "type": "string"
+        }
+      }
+    },
+    "case_episode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "patient_id": { "type": "string" },
+        "case_token": { "type": "string" },
+        "cohort": { "type": "string" },
+        "modalities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ultrasound_image", "roi", "mask", "clinical_table", "report_text", "video", "knowledge", "similar_cases"]
+          }
+        },
+        "input_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        },
+        "agent_report": { "$ref": "#/$defs/agent_report_summary" },
+        "report_cues": {
+          "type": "array",
+          "description": "Structured text cues extracted from ultrasound/endoscopy/pathology reports.",
+          "items": { "$ref": "#/$defs/report_cue" }
+        },
+        "feedback": { "$ref": "#/$defs/feedback" }
+      }
+    },
+    "procedural_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": { "type": "string" },
+        "title": { "type": "string" },
+        "rule_text": { "type": "string" },
+        "target_scenario": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        },
+        "usage_count": { "type": "integer", "minimum": 0 },
+        "observed_utility": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "tool_governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool_name": { "type": "string" },
+        "backend_id": { "type": "string" },
+        "trust_label": {
+          "type": "string",
+          "enum": ["trusted", "caution", "avoid", "unknown"]
+        },
+        "scenario": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "n_total": { "type": "integer", "minimum": 0 },
+        "n_helpful": { "type": "integer", "minimum": 0 },
+        "n_harmful": { "type": "integer", "minimum": 0 },
+        "n_manual_review": { "type": "integer", "minimum": 0 },
+        "rationale": { "type": "string" },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        }
+      }
+    },
+    "session_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "session_id": { "type": "string" },
+        "patient_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tool_calls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool_call" }
+        },
+        "final_report": { "$ref": "#/$defs/agent_report_summary" },
+        "trace_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        }
+      }
+    },
+    "model_backend_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend_id": { "type": "string" },
+        "model_task": { "type": "string" },
+        "checkpoint_ref": { "$ref": "#/$defs/artifact_ref" },
+        "config_ref": { "$ref": "#/$defs/artifact_ref" },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": ["number", "string", "integer", "boolean", "null"] }
+          }
+        },
+        "recommended_use": { "type": "string" },
+        "known_limitations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "required": ["kind", "path_or_uri"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["image", "mask", "roi", "video", "report", "clinical_table", "checkpoint", "config", "run_summary", "json", "csv", "markdown", "trace"]
+        },
+        "path_or_uri": { "type": "string" },
+        "sha256": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "agent_report_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recommended_t_stage": { "type": "string" },
+        "confidence": { "type": "string" },
+        "supporting_evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "uncertainty_flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "manual_review_recommended": { "type": "boolean" }
+      }
+    },
+    "report_cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cue": { "type": "string" },
+        "matched_terms": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_section": { "type": "string" },
+        "role": {
+          "type": "string",
+          "enum": ["supporting", "conflicting", "uncertain"]
+        }
+      }
+    },
+    "feedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "feedback_type": {
+          "type": "string",
+          "enum": ["doctor_correction", "pathology_result", "quality_review", "none"]
+        },
+        "final_t_stage": { "type": "string" },
+        "correction_text": { "type": "string" },
+        "error_type": { "type": "string" }
+      }
+    },
+    "tool_call": {
+      "type": "object",
+      "required": ["tool_name", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "tool_name": { "type": "string" },
+        "backend_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "fallback", "error", "skipped"]
+        },
+        "input_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        },
+        "output_ref": { "$ref": "#/$defs/artifact_ref" },
+        "summary": { "type": "string" },
+        "elapsed_s": { "type": "number" }
+      }
+    }
+  }
+}

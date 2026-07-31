@@ -98,7 +98,11 @@ def main() -> int:
         failed.append("segmentation")
     if not checks["classification"]:
         failed.append("classification")
-    if checks["wall_evidence"] is False and checks.get("wall_panel_source") != "live_lumen_signed_distance":
+    if checks["wall_evidence"] is False and checks.get("wall_panel_source") not in {
+        "live_lumen_signed_distance",
+        "live_current_image_composite",
+        "live_current_image_heatmap_only",
+    }:
         failed.append("wall_evidence_or_proxy")
     if checks["agent_steps"] < 10:
         failed.append(f"agent_steps={checks['agent_steps']}")

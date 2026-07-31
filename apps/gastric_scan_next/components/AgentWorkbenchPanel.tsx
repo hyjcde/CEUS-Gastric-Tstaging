@@ -4,10 +4,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { Activity, AlertTriangle, ArrowRight, Brain, CheckCircle2, ChevronRight, Clipboard, Database, FileSearch, FileText, Layers3, Loader2, Microscope, Network, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Workflow, X } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
-import { AgentAnalysisResponse, AgentReportCue, AgentStep, AgentToolResult, Patient, RuntimeVerification } from '@/types';
+import { AgentAnalysisResponse, AgentReportCue, AgentStep, AgentToolResult, MaskBoundaryOverride, Patient, RuntimeVerification } from '@/types';
+import { maskOverrideToAnalyzePayload } from '@/lib/mask-override';
 
 interface AgentWorkbenchPanelProps {
   patient: Patient | null;
+  maskOverride?: MaskBoundaryOverride | null;
   onAnalysisComplete?: (result: AgentAnalysisResponse) => void;
 }
 
@@ -241,7 +243,7 @@ function VisualFrame({
   );
 }
 
-export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbenchPanelProps) {
+export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisComplete }: AgentWorkbenchPanelProps) {
   const { language, cohortYear, treatmentType, dataset } = useSettings();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,6 +258,8 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
   const [copiedDraft, setCopiedDraft] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [imageLightbox, setImageLightbox] = useState<ImageZoomPayload | null>(null);
+  const [memoryActionPending, setMemoryActionPending] = useState<string | null>(null);
+  const [memoryActionMessage, setMemoryActionMessage] = useState<string | null>(null);
 
   const openImageLightbox = React.useCallback((payload: ImageZoomPayload) => {
     setImageLightbox(payload);
@@ -293,6 +297,54 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
     }
   };
 
+  const submitMemoryCandidateAction = async (
+    recordId: string,
+    action: 'accept' | 'reject' | 'defer',
+  ) => {
+    if (!patient || !recordId) return;
+    setMemoryActionPending(recordId);
+    setMemoryActionMessage(null);
+    try {
+      const response = await fetch('/api/agent/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: patient.patient_id,
+          sessionId,
+          record_id: recordId,
+          action,
+          memory_store: result?.memory_store_ref?.path,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Memory feedback failed');
+      }
+      setMemoryActionMessage(
+        language === 'zh'
+          ? `Memory 候选已${action === 'accept' ? '接受' : action === 'reject' ? '拒绝' : '暂缓'}`
+          : `Memory candidate ${action} recorded`,
+      );
+      if (result?.report.memory_update_candidates) {
+        setResult({
+          ...result,
+          report: {
+            ...result.report,
+            memory_update_candidates: result.report.memory_update_candidates.map((candidate) => (
+              candidate.record_id === recordId
+                ? { ...candidate, status: action === 'accept' ? 'active' : action === 'reject' ? 'rejected' : 'candidate' }
+                : candidate
+            )),
+          },
+        });
+      }
+    } catch (err) {
+      setMemoryActionMessage(err instanceof Error ? err.message : 'Memory feedback failed');
+    } finally {
+      setMemoryActionPending(null);
+    }
+  };
+
   const runAnalysis = async () => {
     if (!patient) return;
     setModalOpen(false);
@@ -314,6 +366,8 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
           cohortYear,
           treatmentType,
           sessionId,
+          memory_enabled: true,
+          ...maskOverrideToAnalyzePayload(maskOverride),
         }),
       });
       if (!response.ok) {
@@ -382,6 +436,18 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
     }
     void runAnalysis();
   };
+
+  const handleLauncherClickRef = React.useRef(handleLauncherClick);
+  handleLauncherClickRef.current = handleLauncherClick;
+
+  // AssistHub focus request (additive; bottom launcher unchanged)
+  useEffect(() => {
+    const handler = () => {
+      handleLauncherClickRef.current();
+    };
+    window.addEventListener('gastric:focus-agent', handler);
+    return () => window.removeEventListener('gastric:focus-agent', handler);
+  }, []);
 
   const classificationProbs = useMemo(() => {
     const probs = result?.tool_evidence.classification?.probabilities;
@@ -1615,12 +1681,36 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
                             <div className="text-[10px] font-bold uppercase tracking-wider text-violet-300">
                               {language === 'zh' ? 'Memory 候选' : 'Memory candidates'} ({result.report.memory_update_candidates?.length})
                             </div>
-                            <div className="mt-2 space-y-1">
-                              {result.report.memory_update_candidates?.slice(0, 2).map((candidate, idx) => (
-                                <div key={`memory-${idx}`} className="rounded bg-black/25 px-2 py-1 font-mono text-[9px] text-violet-100 line-clamp-2">
-                                  {formatUnknown(candidate.kind ?? candidate.type ?? candidate)}
-                                </div>
-                              ))}
+                            <div className="mt-2 space-y-2">
+                              {result.report.memory_update_candidates?.slice(0, 4).map((candidate, idx) => {
+                                const recordId = String(candidate.record_id ?? '');
+                                const label = formatUnknown(
+                                  candidate.title ?? candidate.record_type ?? candidate.kind ?? candidate.type ?? candidate,
+                                );
+                                return (
+                                  <div key={`memory-${recordId || idx}`} className="rounded bg-black/25 px-2 py-2">
+                                    <div className="font-mono text-[9px] text-violet-100 line-clamp-2">{label}</div>
+                                    {recordId && (
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {(['accept', 'reject', 'defer'] as const).map((action) => (
+                                          <button
+                                            key={`${recordId}-${action}`}
+                                            type="button"
+                                            disabled={memoryActionPending === recordId}
+                                            onClick={() => submitMemoryCandidateAction(recordId, action)}
+                                            className="rounded border border-violet-300/30 px-2 py-0.5 text-[9px] uppercase tracking-wide text-violet-100 transition hover:bg-violet-300/15 disabled:opacity-50"
+                                          >
+                                            {action}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {memoryActionMessage && (
+                                <div className="text-[9px] text-violet-200/80">{memoryActionMessage}</div>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1677,7 +1767,9 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
               <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-800/80">
                 {loading
                   ? `${liveSteps.length} ${language === 'zh' ? '步已返回' : 'steps returned'}`
-                  : (language === 'zh' ? '分割、腔检测、壁层、分类、相似病例逐步显示' : 'Lumen, wall, staging, memory stream in')}
+                  : maskOverride
+                    ? (language === 'zh' ? '将使用已编辑边界覆盖分割' : 'Using edited boundary override')
+                    : (language === 'zh' ? '分割、腔检测、壁层、分类、相似病例逐步显示' : 'Lumen, wall, staging, memory stream in')}
               </span>
             </span>
             <ArrowRight size={20} className="shrink-0 transition group-hover:translate-x-1" />
@@ -2539,6 +2631,31 @@ export function AgentWorkbenchPanel({ patient, onAnalysisComplete }: AgentWorkbe
                           <div className="text-slate-500">{language === 'zh' ? '候选记忆' : 'Memory candidates'}</div>
                           <div className="mt-1 font-mono text-slate-100">{result.report.memory_update_candidates?.length ?? 0}</div>
                         </div>
+                        {(result.report.memory_update_candidates ?? []).slice(0, 3).map((candidate, idx) => {
+                          const recordId = String(candidate.record_id ?? '');
+                          return (
+                            <div key={`mem-trace-${recordId || idx}`} className="rounded-lg bg-black/25 px-3 py-2">
+                              <div className="text-[10px] text-violet-100 line-clamp-2">
+                                {formatUnknown(candidate.title ?? candidate.record_type ?? candidate)}
+                              </div>
+                              {recordId && (
+                                <div className="mt-2 flex gap-1">
+                                  {(['accept', 'reject', 'defer'] as const).map((action) => (
+                                    <button
+                                      key={`trace-${recordId}-${action}`}
+                                      type="button"
+                                      disabled={memoryActionPending === recordId}
+                                      onClick={() => submitMemoryCandidateAction(recordId, action)}
+                                      className="rounded border border-violet-300/25 px-2 py-0.5 text-[9px] text-violet-100"
+                                    >
+                                      {action}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                         <div className="rounded-lg bg-black/25 px-3 py-2">
                           <div className="text-slate-500">{language === 'zh' ? '工具调用轨迹' : 'Tool traces'}</div>
                           <div className="mt-1 font-mono text-slate-100">{result.traces?.length ?? 0}</div>

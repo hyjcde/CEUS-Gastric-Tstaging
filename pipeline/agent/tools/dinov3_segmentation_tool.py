@@ -237,6 +237,9 @@ class DINOv3SegmentationTool(BaseTool):
             result.update(self._save_outputs(Path(output_dir), image_path, prob, mask))
         return result
 
+    def get_cached_mask(self, image_path: str) -> Optional[np.ndarray]:
+        return self._mask_cache.get(image_path)
+
     def predict_mask_raw(self, image_path: str, threshold: float = 0.5) -> Optional[np.ndarray]:
         if image_path in self._mask_cache:
             return self._mask_cache[image_path]

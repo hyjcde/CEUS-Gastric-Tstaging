@@ -11,20 +11,22 @@
 #   - Legacy 20260302 mask4ch run is deprecated (checkpoint often missing on disk).
 
 schema_version: "1.0.0"
-updated_at: "2026-05-19"
+updated_at: "2026-06-10"
 
 selection_policy:
   primary_metric_for_agent_final: test_prospective_auc
   secondary_metric_for_external_panel: test_external_auc
+  external_reporting: held_out_disjoint_399_patients
   promotion_governance: pipeline/experiments/mainlines/tstaging_4class/baseline_registry.yaml
   notes:
+    - "2026-06-10: Agent final T switches to acc_boost2 (screened L1); external ACC must report held-out 399"
     - "region-aware ext=0.7480 > mask4ch ext=0.7326, but prospective 0.6857 < frozen 0.7455 → not promoted"
     - "predroi+mask4ch ext=0.7438 but prospective 0.6683 → deploy reference only"
     - "contrastive_dual backends need ContrastiveDual inference adapter (Phase B)"
 
 agent_bindings:
   classification_primary:
-    backend_id: tstage_mask4ch_clinical22_frozen_20260423
+    backend_id: tstage_acc_boost2_screened_20260603
     tool: ClassificationTool
     role: agent_final_t_stage
     trust_label: trusted
@@ -60,6 +62,18 @@ agent_bindings:
     role: lumen_bbox_and_qc
     trust_label: trusted
 
+  binary_gate_primary:
+    backend_id: binary_current_gastritis_screened_20260531
+    tool: BinaryClassificationTool
+    role: l0_benign_vs_malignant_gate
+    trust_label: trusted
+    notes: >
+      L0 single-branch ConvNeXt-S, 224x224 image-only, 2-class. Used as
+      the agent's first tool in the two-stage clinical workflow. Gate
+      decision 'skip_t' fires only when P(benign) >= 0.95; otherwise the
+      T-staging chain runs. Held-out screened external 1358 patient:
+      AUC 0.7550, Sens 54.8% / Spec 83.6%.
+
   wall_evidence_primary:
     backend_id: wall_evidence_lumen_sdf_v1
     tool: WallEvidenceTool
@@ -73,6 +87,39 @@ agent_bindings:
     trust_label: caution
 
 backends:
+  tstage_acc_boost2_screened_20260603:
+    model_task: t_staging_4class
+    model_family: dual_branch
+    architecture_notes:
+      inference_inputs: [global_image_4ch, roi_image, clinical_vector_22d]
+      uses_own_case_patches_at_inference: false
+      uses_similar_case_features_in_forward: false
+      fusion_type: cross_attention
+      multitask: true
+      ordinal_loss: true
+      boundary_aware_loss: true
+    stage_id: acc_boost2_multitask_screened_eval
+    scoreboard_decision: Promote
+    config_path: pipeline/configs/tstaging_4class_acc_boost2_multitask_screened_eval.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_convnext/tstaging_4class_acc_boost2_multitask_screened_eval_20260603_162955
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_convnext/tstaging_4class_acc_boost2_multitask_screened_eval_20260603_162955/best_model.pth
+    baseline_registry_id: acc_boost2_multitask_screened_eval
+    metrics:
+      test_external_frame_auc: 0.8572
+      test_prospective_frame_auc: 0.8655
+      test_external_patient_acc_all_485: 0.629
+      test_external_patient_acc_held_out_399: 0.556
+      test_prospective_patient_acc: 0.720
+    adapter: pipeline.agent.tools.classification_tool.ClassificationTool
+    adapter_status: ready
+    inputs:
+      roi_type: doctor_roi
+      mask_type: predicted_lesion_mask_4ch
+      clinical_type: true_clinical_22d
+    reporting_notes:
+      - "Paper primary external = held-out 399 patient ACC, not full 485 cohort"
+      - "Phase 0 honest retrain config: tstaging_4class_acc_boost2_multitask_screened_eval_phase0.yaml"
+
   tstage_mask4ch_clinical22_frozen_20260423:
     model_task: t_staging_4class
     model_family: dual_branch
@@ -208,6 +255,35 @@ backends:
     adapter: pipeline.agent.tools.lumen_detection_tool.LumenDetectionTool
     adapter_status: ready
 
+  binary_current_gastritis_screened_20260531:
+    model_task: binary_gastritis
+    model_family: single_branch
+    architecture_notes:
+      backbone: convnext_small.in12k_ft_in1k
+      image_size: 224
+      num_classes: 2
+      head_hidden: 512
+      dropout: 0.4
+      loss: focal
+      inference_inputs: [cropped_image_224x224]
+      uses_clinical_features: false
+    stage_id: binary_current_gastritis_screened_eval_image_only
+    config_path: pipeline/configs/binary_current_gastritis_screened_eval_image_only.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_binary/classification/single_image_only/binary_current_gastritis_screened_eval_image_only_20260531_121138
+    checkpoint_path: pipeline/experiments/tree/gastric_binary/classification/single_image_only/binary_current_gastritis_screened_eval_image_only_20260531_121138/best_model.pth
+    metrics:
+      test_screened_external_latest_2966_patient_auc: 0.7550
+      test_screened_external_latest_2966_sens_spec: [0.548, 0.836]
+      test_screened_prospective_patient_auc: 1.0000
+    adapter: pipeline.agent.tools.binary_classification_tool.BinaryClassificationTool
+    adapter_status: ready
+    inputs:
+      roi_type: cropped_image_only
+      clinical_type: not_used
+    reporting_notes:
+      - "AUC 0.7550 is held-out screened external 1358 patient, NOT the matched_2025 sanity split"
+      - "FN risk: 219/1358 patient judged benign → must-review set"
+
   wall_evidence_lumen_sdf_v1:
     model_task: wall_evidence
     adapter: pipeline.agent.tools.wall_evidence_tool.WallEvidenceTool
@@ -225,3 +301,62 @@ backends:
 
 deprecated_do_not_use:
   - tstage_legacy_mask4ch_20260302
+
+# ─────────────────────────────────────────────────────────────────────
+# Two-stage triage policy (2026-06-10)
+# ─────────────────────────────────────────────────────────────────────
+# Selects the agent's behaviour when the binary gate returns:
+#   - skip_t: high-confidence benign — agent bypasses T-staging chain.
+#   - run_t:  any non-benign prediction — full L1 chain runs.
+#
+# Three modes:
+#   - conditional: skip_t only when P(benign) >= skip_t_threshold AND
+#     top1 == benign. Conservative — every other case runs T-staging.
+#     This is the **default** for production.
+#   - soft:        binary is one more evidence; never skip T. Useful
+#     when readers want to compare with/without the binary cue.
+#   - off:         no binary tool at all. Reproduces the pre-binary
+#     mainline behaviour exactly.
+#
+# Override at runtime:
+#   scripts/run_e2e_react_demo.py --triage-mode soft
+#   scripts/run_e2e_react_demo.py --triage-mode off
+#   scripts/run_e2e_react_demo.py --triage-mode conditional --skip-t-threshold 0.90
+triage_policy:
+  default_mode: conditional
+  skip_t_threshold: 0.95
+  rationale: >
+    skip_t is *strict by design* — P(benign) must be ≥ 0.95 to short-circuit
+    T-staging. This compensates for the binary model's external Sens of
+    only 54.8% (held-out screened external 1358 patient). The 219/1358
+    false-negative patients (gt=malignant but pred=benign) live in
+    docs/benign_malignant/must_review_FN.csv and are flagged for
+    mandatory human review regardless of triage mode.
+  must_review_list:
+    path: docs/benign_malignant/must_review_FN.csv
+    source: >
+      Generated by scripts/build_binary_fn_must_review_list.py from
+      pipeline/experiments/tree/gastric_binary/.../121138/eval/
+      test_screened_external_latest_2966/test_predictions.csv at
+      threshold 0.83 (calibrated Sens 0.730, Spec 0.619).
+    threshold_used: 0.83
+    count: 131
+    coverage: 131 of 485 external malignant patients (~27%)
+
+memory:
+  schema_version: "0.1.0"
+  default_store_root: pipeline/agent/memory/store_data/default
+  fusion_mode: soft_prior  # off | soft_prior — biases RAG/review only; never overrides ClassificationTool logits
+  promote_min_support: 3
+  quality_score:
+    correct_delta: 0.05
+    wrong_delta: -0.08
+    clamp: [0.0, 1.0]
+  retrieval:
+    top_k_episodes: 5
+    top_k_procedural: 8
+    scenario_tags: [t2_t3_boundary, t_staging_multimodal_review]
+  registry_notes:
+    - "LLM does not decide final T; memory affects evidence weights and review priority only"
+    - "Evolver CLI: python -m agent.memory.evolver --action reflect-batch|promote"
+    - "Eval: pipeline/agent/evaluation/run_self_evolution_eval.py"

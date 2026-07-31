@@ -1,0 +1,63 @@
+{
+  "name": "direction-annotator",
+  "version": "1.0.0",
+  "description": "胃癌 EUS 突破方向标注工具 — 独立版",
+  "author": "Fujian Union Hospital",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "dev:web": "next dev -p 3099",
+    "build": "next build",
+    "start": "next start -p 3099",
+    "package": "next build && electron-builder",
+    "package:win": "next build && electron-builder --win",
+    "package:linux": "next build && electron-builder --linux"
+  },
+  "dependencies": {
+    "next": "15.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "eslint": "^9",
+    "eslint-config-next": "15.3.1",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.union-hospital.direction-annotator",
+    "productName": "突破方向标注工具",
+    "icon": "public/icon.png",
+    "asar": false,
+    "win": {
+      "target": "portable"
+    },
+    "linux": {
+      "target": ["AppImage"]
+    },
+    "mac": {
+      "target": ["dmg"]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      ".next/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "src/**/*",
+      "next.config.ts",
+      "tsconfig.json",
+      "postcss.config.mjs"
+    ],
+    "extraResources": []
+  }
+}

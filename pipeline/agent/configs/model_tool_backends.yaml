@@ -75,6 +75,26 @@ backends:
       - Prospective Dice is near parity but not above baseline; use as research candidate before promotion.
       - Patient-level T2/T3 impact still needs a dedicated downstream panel.
 
+  - backend_id: tstage_4class_acc_boost2_screened_20260603
+    tool_name: classification
+    model_task: t_staging_4class
+    adapter_target: pipeline.agent.tools.classification_tool.ClassificationTool
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_convnext/tstaging_4class_acc_boost2_multitask_screened_eval_20260603_162955/best_model.pth
+    registry_ref: pipeline/agent/config/agent_backend_registry.yaml#tstage_acc_boost2_screened_20260603
+    trust_label: trusted
+    validation_summary:
+      test_external_frame_auc: 0.8572
+      test_prospective_frame_auc: 0.8655
+      test_external_patient_acc_all_485: 0.629
+      test_external_patient_acc_held_out_399: 0.556
+      test_prospective_patient_acc: 0.720
+    use_for:
+      - single_case_t_stage_prior
+      - agent_final_classification_evidence
+    known_limits:
+      - Full-cohort external ACC inflated by 86 train-seen overlap patients; report held-out 399.
+      - Multimodal (clinical22); not image-only.
+
   - backend_id: tstage_4class_frozen_mask4ch_clinical22_20260423
     tool_name: classification
     model_task: t_staging_4class

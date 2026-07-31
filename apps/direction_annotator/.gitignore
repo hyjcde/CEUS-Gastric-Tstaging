@@ -1,0 +1,6 @@
+node_modules/
+.next/
+out/
+dist/
+*.exe
+direction_annotations/

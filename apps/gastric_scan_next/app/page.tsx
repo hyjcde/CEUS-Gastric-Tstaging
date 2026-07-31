@@ -8,7 +8,19 @@ import { ConceptReasoning } from '@/components/ConceptReasoning';
 import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { StatisticsPanel } from '@/components/StatisticsPanel';
 import { AgentWorkbenchPanel } from '@/components/AgentWorkbenchPanel';
-import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse } from '@/types';
+import { InteractiveSegPanel, type ImagingAssistPayload } from '@/components/InteractiveSegPanel';
+import { ReaderAgentResultCard } from '@/components/ReaderAgentResultCard';
+import { AssistHub } from '@/components/AssistHub';
+import { GcUsImagingReportCard } from '@/components/GcUsImagingReportCard';
+import {
+  bboxShortAxisRatio,
+  buildImagingNarrative,
+  computeGcUsTscore,
+  estimateAxesMm,
+  polygonIrregularity,
+} from '@/lib/gc-us-tscore';
+// VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
+import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, MaskBoundaryOverride } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
 import { ChevronLeft, Users, BarChart2, X } from 'lucide-react';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
@@ -35,6 +47,8 @@ export default function Home() {
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [patientConceptStates, setPatientConceptStates] = useState<Map<string, ConceptState>>(new Map());
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisResponse | null>(null);
+  const [maskOverride, setMaskOverride] = useState<MaskBoundaryOverride | null>(null);
+  const [imagingAssist, setImagingAssist] = useState<ImagingAssistPayload | null>(null);
   const [agentFilledCount, setAgentFilledCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isDirty, setIsDirty] = useState(false);
@@ -68,6 +82,7 @@ export default function Home() {
     setAgentFilledCount(0);
     setSaveStatus('idle');
     setIsDirty(false);
+    setImagingAssist(null);
     lastMergedAgentSessionRef.current = null;
     lastMergedExplainableRef.current = null;
 
@@ -106,6 +121,47 @@ export default function Home() {
     const patientId = selectedPatient.patient_id;
     return allPatients.filter((p) => p.patient_id === patientId);
   }, [selectedPatient, allPatients]);
+
+  const imagingNarrative = useMemo(() => {
+    if (!selectedPatient || !imagingAssist?.layerResult) return null;
+    const clin = selectedPatient.clinical;
+    const poly = imagingAssist.lesionPolygon || [];
+    const layer = imagingAssist.layerResult;
+    const label = layer?.layer?.label || null;
+    const tHint = layer?.layer?.tHint || null;
+    const occ = layer?.pen?.ratio ?? layer?.analysis?.ratioHint ?? null;
+    const irreg = polygonIrregularity(poly);
+    const axes =
+      poly.length >= 3 && imagingAssist.frameSize
+        ? estimateAxesMm(poly, imagingAssist.frameSize)
+        : null;
+    const lengthCm = clin?.tumorSize?.length ?? (axes ? axes.lengthMm / 10 : null);
+    const thicknessCm = clin?.tumorSize?.thickness ?? (axes ? axes.thicknessMm / 10 : null);
+    const tscore = computeGcUsTscore({
+      lengthCm,
+      thicknessCm,
+      irregularity: irreg,
+      shortAxisRatio: bboxShortAxisRatio(poly),
+      layerLabel: label,
+      tHint,
+      inContact: layer?.inContact ?? null,
+      occupationRatio: typeof occ === 'number' ? occ : null,
+      serosaDisrupted: /L5|浆膜|T4|T3–T4|T3-T4/i.test(`${label || ''} ${tHint || ''}`),
+    });
+    return buildImagingNarrative({
+      location: clin?.location || null,
+      lengthMm: clin?.tumorSize?.length ? clin.tumorSize.length * 10 : axes?.lengthMm ?? null,
+      thicknessMm: clin?.tumorSize?.thickness ? clin.tumorSize.thickness * 10 : axes?.thicknessMm ?? null,
+      irregularity: irreg,
+      inContact: layer?.inContact ?? null,
+      layerLabel: label,
+      tHint,
+      occupationRatio: typeof occ === 'number' ? occ : null,
+      serosaDisrupted: /L5|浆膜|T4|T3–T4|T3-T4/i.test(`${label || ''} ${tHint || ''}`),
+      tscore,
+      zh: language === 'zh',
+    });
+  }, [selectedPatient, imagingAssist, language]);
 
   const applyConceptState = useCallback((patientId: string, state: ConceptState, markDirty = false) => {
     setConceptState(state);
@@ -253,6 +309,31 @@ export default function Home() {
   }, [selectedPatient?.id, applyConceptState, syncFieldSourcesForPatient]);
 
   useEffect(() => {
+    if (!selectedPatient) {
+      setMaskOverride(null);
+      return;
+    }
+    let cancelled = false;
+    const patientId = selectedPatient.patient_id;
+    const frameId = selectedPatient.id;
+    (async () => {
+      try {
+        const qs = new URLSearchParams({ patientId, frameId });
+        const res = await fetch(`/api/patients/mask-overrides?${qs.toString()}`);
+        if (!res.ok) {
+          if (!cancelled) setMaskOverride(null);
+          return;
+        }
+        const data = await res.json() as { override?: MaskBoundaryOverride | null };
+        if (!cancelled) setMaskOverride(data.override ?? null);
+      } catch {
+        if (!cancelled) setMaskOverride(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedPatient?.id, selectedPatient?.patient_id]);
+
+  useEffect(() => {
     if (!agentAnalysis || !selectedPatient) return;
     if (lastMergedAgentSessionRef.current === agentAnalysis.session_id) return;
 
@@ -314,7 +395,10 @@ export default function Home() {
   return (
     <main className="flex h-screen w-screen flex-col bg-[#000000] text-gray-200 overflow-hidden selection:bg-blue-500/30">
       <div className="h-16 shrink-0 border-b border-white/10 z-50">
-        <Header onShowStatistics={() => setShowStatistics(true)} />
+        <Header
+          onShowStatistics={() => setShowStatistics(true)}
+          selectedPatient={selectedPatient}
+        />
       </div>
 
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
@@ -346,6 +430,8 @@ export default function Home() {
         )}
 
         <div className="flex-1 flex flex-col min-h-0 bg-black relative min-w-0 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+          {/* 视频综合分析入口（上传选帧）暂隐藏；病例视频 SAM 走 InteractiveSegPanel「视频 SAM」 */}
+          {/* <VideoAnalysisUpload onAnalysisComplete={setAgentAnalysis} /> */}
           <UltrasoundViewer
             key={`${selectedPatient?.id}-${dataset}`}
             patient={selectedPatient}
@@ -353,7 +439,99 @@ export default function Home() {
             onSelectSibling={setSelectedPatient}
             onExplainableComplete={handleExplainableComplete}
           />
-          <AgentWorkbenchPanel patient={selectedPatient} onAnalysisComplete={setAgentAnalysis} />
+          <AssistHub patient={selectedPatient} />
+          <AgentWorkbenchPanel
+            patient={selectedPatient}
+            maskOverride={maskOverride}
+            onAnalysisComplete={setAgentAnalysis}
+          />
+          <InteractiveSegPanel
+            patient={selectedPatient}
+            override={maskOverride}
+            onOverrideChange={setMaskOverride}
+            onImagingAssist={setImagingAssist}
+          />
+          <ReaderAgentResultCard
+            patient={selectedPatient}
+            onApplyStage={(stage) => {
+              handleExplainableComplete({
+                success: true,
+                predicted_stage: stage,
+                confidence: 'reader-agent',
+                composite_score: 0.55,
+              });
+            }}
+            onImportMaskPolygon={(polygon) => {
+              if (!selectedPatient || !Array.isArray(polygon) || polygon.length < 3) return;
+              const apply = (w: number, h: number) => {
+                const next: MaskBoundaryOverride = {
+                  patientId: selectedPatient.patient_id,
+                  frameId: selectedPatient.id,
+                  imageWidth: w,
+                  imageHeight: h,
+                  mask_polygon: polygon.map((p) => [Number(p[0]), Number(p[1])]),
+                  wall_polygon: maskOverride?.wall_polygon,
+                  source: 'imported',
+                  updated_at: new Date().toISOString(),
+                };
+                void fetch('/api/patients/mask-overrides', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ override: next }),
+                }).then(async (res) => {
+                  if (!res.ok) return;
+                  const data = await res.json();
+                  if (data.override) setMaskOverride(data.override);
+                });
+              };
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => apply(img.naturalWidth || 1024, img.naturalHeight || 768);
+              img.onerror = () => apply(1024, 768);
+              img.src = selectedPatient.image_url;
+            }}
+            onImportWallPolygon={(polygon) => {
+              if (!selectedPatient || !Array.isArray(polygon) || polygon.length < 3) return;
+              const existingMask = maskOverride?.mask_polygon;
+              if (!existingMask || existingMask.length < 3) {
+                // Need a lesion contour for schema; open editor so doctor can SAM/edit after wall import.
+                window.dispatchEvent(new CustomEvent('gastric:open-boundary-edit', { detail: { sam: true } }));
+              }
+              const apply = (w: number, h: number) => {
+                const next: MaskBoundaryOverride = {
+                  patientId: selectedPatient.patient_id,
+                  frameId: selectedPatient.id,
+                  imageWidth: w,
+                  imageHeight: h,
+                  mask_polygon:
+                    existingMask && existingMask.length >= 3
+                      ? existingMask
+                      : polygon.map((p) => [Number(p[0]), Number(p[1])]),
+                  wall_polygon: polygon.map((p) => [Number(p[0]), Number(p[1])]),
+                  source: 'imported',
+                  updated_at: new Date().toISOString(),
+                  note:
+                    existingMask && existingMask.length >= 3
+                      ? undefined
+                      : 'wall_import_without_lesion — please edit green lesion contour',
+                };
+                void fetch('/api/patients/mask-overrides', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ override: next }),
+                }).then(async (res) => {
+                  if (!res.ok) return;
+                  const data = await res.json();
+                  if (data.override) setMaskOverride(data.override);
+                });
+              };
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => apply(img.naturalWidth || 1024, img.naturalHeight || 768);
+              img.onerror = () => apply(1024, 768);
+              img.src = selectedPatient.image_url;
+            }}
+          />
         </div>
 
         <div className="w-[420px] shrink-0 border-l border-white/10 bg-panel-bg flex flex-col min-h-0 z-40 transition-all duration-300">
@@ -374,10 +552,26 @@ export default function Home() {
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 bg-bg-dark relative">
+            <div className="shrink-0 border-b border-white/10 p-2">
+              <GcUsImagingReportCard
+                patient={selectedPatient}
+                assist={imagingAssist}
+                zh={language === 'zh'}
+                onApplyCtStage={(stage) => {
+                  handleExplainableComplete({
+                    success: true,
+                    predicted_stage: stage.startsWith('T') ? stage : `T${stage.replace(/^T/, '')}`,
+                    confidence: 'gc-us-tscore',
+                    composite_score: 0.6,
+                  });
+                }}
+              />
+            </div>
             <DiagnosisPanel
               state={conceptState}
               patient={selectedPatient}
               agentAnalysis={agentAnalysis}
+              imagingNarrative={imagingNarrative}
               onExpandedChange={setIsReportExpanded}
             />
           </div>

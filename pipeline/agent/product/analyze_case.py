@@ -816,6 +816,7 @@ def _save_current_image_dino_feature_panel(
             layer_index=11,
             device=device,
         )
+        bml_valid = bool(maps.get("boundary_minus_lesion_valid"))
         token_h = int(maps.get("token_grid_h", 0) or 0)
         token_w = int(maps.get("token_grid_w", 0) or 0)
 
@@ -843,6 +844,20 @@ def _save_current_image_dino_feature_panel(
             ax.imshow(content, cmap=cmap)
             ax.set_title(title, color="white", fontsize=10)
             ax.axis("off")
+        if not bml_valid:
+            axes[6].clear()
+            axes[6].set_facecolor("black")
+            axes[6].text(
+                0.5,
+                0.5,
+                "Boundary minus lesion\n(unavailable: lesion mask missing\nor boundary ring empty)",
+                ha="center",
+                va="center",
+                color="#cdb89a",
+                fontsize=9,
+                wrap=True,
+            )
+            axes[6].axis("off")
         axes[-1].set_facecolor("black")
         axes[-1].text(
             0.5,
@@ -1387,6 +1402,8 @@ def _build_rule_based_report(
     *,
     lumen_detection: Optional[Dict[str, Any]] = None,
     wall_evidence: Optional[Dict[str, Any]] = None,
+    memory_context: Optional[Dict[str, Any]] = None,
+    memory_fusion_mode: str = "soft_prior",
 ) -> Dict[str, Any]:
     lumen_detection = lumen_detection or {}
     wall_evidence = wall_evidence or {}
@@ -1515,7 +1532,7 @@ def _build_rule_based_report(
     gap = top_score - second_score
     confidence = "high" if gap >= 0.35 else "medium" if gap >= 0.18 else "low"
 
-    return {
+    base_report = {
         "schema_version": "0.3.0",
         "status": "ready",
         "recommended_t_stage": top_stage,
@@ -1543,6 +1560,18 @@ def _build_rule_based_report(
             "memory": "available" if similar_cases else "partial",
         },
     }
+    return _finalize_report_with_memory(base_report, memory_context, fusion_mode=memory_fusion_mode)
+
+
+def _finalize_report_with_memory(
+    report: Dict[str, Any],
+    memory_context: Optional[Dict[str, Any]],
+    *,
+    fusion_mode: str = "soft_prior",
+) -> Dict[str, Any]:
+    from agent.memory.memory_apply import apply_memory_to_report
+
+    return apply_memory_to_report(report, memory_context, fusion_mode=fusion_mode)
 
 
 def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -1590,6 +1619,8 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
             "base_url": DEFAULT_BASE_URL,
             "model": llm.model,
             "total_tokens": llm.total_tokens,
+            "request_prompt": prompt,
+            "response_text": response[:8000] if isinstance(response, str) else str(response)[:8000],
         }
         logger.info(
             "LLM synthesis API call completed: model=%s tokens=%s",
@@ -1633,7 +1664,7 @@ def _build_runtime_verification(
             "component": "nextjs_stream_route",
             "api_kind": "nodejs_spawn_python",
             "called": True,
-            "endpoint": "/api/agent/analyze/stream",
+            "endpoint": payload.get("source_endpoint") or "/api/agent/analyze/stream",
             "script": "pipeline/agent/product/analyze_case.py",
             "status": "ok",
         },
@@ -1715,17 +1746,29 @@ def _build_runtime_verification(
     ):
         proxy_visuals.append("real_wall_analysis_panel (live current-image proxy)")
 
-    core_called = all(
-        item.get("called")
+    required_components = {"segmentation", "classification", "dino_feature_panel", "nextjs_stream_route"}
+    failed_required = [
+        str(item.get("component"))
         for item in invocations
-        if item.get("component") in {"segmentation", "classification", "nextjs_stream_route"}
-    )
+        if item.get("component") in required_components and not item.get("called")
+    ]
+    degraded_components = [
+        str(item.get("component"))
+        for item in invocations
+        if item.get("called") and item.get("status") not in {"ok", "completed"}
+    ]
+    core_called = not failed_required
+    integrity_status = "verified" if core_called and not proxy_visuals else ("degraded" if core_called else "failed")
 
     return {
         "verified_at": datetime.now(timezone.utc).isoformat(),
         "session_id": payload.get("session_id"),
         "patient_id": payload.get("patient_id"),
         "all_core_models_called": core_called,
+        "integrity_status": integrity_status,
+        "required_components": sorted(required_components),
+        "failed_required_components": failed_required,
+        "degraded_components": degraded_components,
         "llm_api_called": bool(llm_invocation.get("called") and llm_invocation.get("status") == "ok"),
         "invocations": invocations,
         "proxy_visual_notes": proxy_visuals,
@@ -2006,787 +2049,9 @@ def _aggregate_classifications(classifications: List[Dict[str, Any]]) -> Dict[st
 
 def main() -> None:
     payload = _load_payload()
+    from agent.product.pipeline_adapter import analyze_via_unified_pipeline
 
-    frame_plan = _resolve_analysis_frames(payload)
-    if not frame_plan:
-        raise ValueError("No readable image_path in payload (image_path or frames[])")
-
-    primary = frame_plan[0]
-    image_path = primary["image_path"]
-    roi_path = primary.get("roi_path") or payload.get("roi_path")
-    annotation_path = primary.get("annotation_path") or payload.get("annotation_path")
-    clinical_payload_raw = payload.get("clinical") or {}
-    clinical_payload = normalize_frontend_clinical(clinical_payload_raw)
-    report_payload = payload.get("report_text") or {}
-    payload["frame_count"] = len(frame_plan)
-
-    lumen_detection_tool = LumenDetectionTool()
-    wall_evidence_tool = WallEvidenceTool()
-    segmentation_tool = SegmentationTool()
-    classification_tool = ClassificationTool()
-    morphology_tool = MorphologyTool()
-    clinical_tool = ClinicalTool()
-    report_tool = ReportTool()
-    similarity_tool = SimilarityTool()
-
-    traces: List[Dict[str, Any]] = []
-    agent_steps: List[Dict[str, Any]] = []
-    artifact_info = _prepare_artifact_dir(payload)
-    prediction_artifacts: Dict[str, Any] = {
-        "root": str(artifact_info["dir"]),
-        "relative_dir": str(artifact_info["relative_dir"]),
-        "created_at": artifact_info["created_at"],
-    }
-    real_script_artifacts = _save_real_script_artifacts(payload, artifact_info)
-    prediction_artifacts.update(real_script_artifacts)
-
-    _append_agent_step(
-        agent_steps,
-        step_id="case_intake",
-        title="病例接入与资料盘点",
-        intent="Collect available case assets before choosing tools.",
-        decision="call",
-        tool_name="case_intake",
-        status="completed",
-        inputs={
-            "patient_id": payload.get("patient_id"),
-            "image_path_available": bool(image_path),
-            "roi_path_available": bool(roi_path),
-            "annotation_path_available": bool(annotation_path),
-            "clinical_available": bool(clinical_payload_raw),
-            "analysis_frame_count": len(frame_plan),
-            "report_text_available": _has_report_payload(report_payload),
-        },
-        outputs={
-            "frame_count": payload.get("frame_count"),
-            "data_source": payload.get("data_source"),
-            "next_decision": "run segmentation first because image_path is available" if image_path else "image missing; downstream image tools will return unavailable evidence",
-        },
-        reasoning=(
-            "The Agent first checks which modalities exist. This determines whether image tools, "
-            "report text extraction, and memory retrieval should be trusted or down-weighted."
-        ),
-        visual_refs={
-            "image_path": image_path,
-            "roi_path": roi_path,
-            "annotation_path": annotation_path,
-            "overlay_path": payload.get("overlay_path"),
-        },
-    )
-
-    lumen_detection = (
-        lumen_detection_tool.execute(image_path=image_path)
-        if image_path
-        else {"available": False, "error": "Missing image_path"}
-    )
-    lumen_visual = _save_lumen_detection_visual(image_path, lumen_detection, artifact_info)
-    prediction_artifacts.update(lumen_visual)
-    traces.append({"tool": "detect_lumen", "result": lumen_detection})
-    _append_agent_step(
-        agent_steps,
-        step_id="lumen_detection",
-        title="胃腔检测（YOLO）",
-        intent="Localize water-filled gastric lumen for wall-band and lumen-relative features.",
-        decision="call" if image_path else "unavailable",
-        tool_name="LumenDetectionTool",
-        status="completed" if lumen_detection.get("lumen_detected") else (
-            "partial" if lumen_detection.get("available") else "unavailable"
-        ),
-        inputs={"image_path": image_path},
-        outputs=_compact_tool_output(lumen_detection, [
-            "available", "lumen_detected", "lumen_bbox", "lumen_confidence",
-            "lumen_area_ratio", "runtime_invocation", "error",
-        ]),
-        reasoning=(
-            "Lumen detection runs before lesion segmentation so wall evidence can use "
-            "signed distance from the cavity rather than a lesion-centered proxy only."
-        ),
-        visual_refs={
-            "image_path": image_path,
-            "lumen_detection_overlay_url": lumen_visual.get("lumen_detection_overlay_url"),
-        },
-    )
-
-    segmentation = segmentation_tool.execute(image_path=image_path) if image_path else {"available": False, "error": "Missing image_path"}
-    traces.append({"tool": "segment", "result": segmentation})
-    predicted_mask = segmentation_tool.get_cached_mask(image_path) if image_path else None
-
-    wall_evidence: Dict[str, Any] = {"available": False, "evidence_source": "not_run"}
-    wall_lumen_bbox = lumen_detection.get("lumen_bbox") if lumen_detection.get("lumen_detected") else None
-    if wall_lumen_bbox is None and isinstance(segmentation.get("roi_bbox"), dict):
-        wall_lumen_bbox = segmentation.get("roi_bbox")
-    if (
-        image_path
-        and wall_lumen_bbox
-        and predicted_mask is not None
-    ):
-        wall_evidence = wall_evidence_tool.execute(
-            image_path=image_path,
-            lumen_bbox=wall_lumen_bbox,
-            lesion_mask=predicted_mask,
-        )
-        if wall_evidence.get("available"):
-            live_wall_art = _persist_wall_evidence_tool_artifacts(dict(wall_evidence), artifact_info)
-            prediction_artifacts.update(live_wall_art)
-            if not lumen_detection.get("lumen_detected"):
-                wall_evidence["evidence_source"] = "roi_bbox_signed_distance_fallback"
-    wall_evidence.pop("_visuals", None)
-    traces.append({"tool": "wall_evidence", "result": wall_evidence})
-    prediction_artifacts.update(
-        _save_prediction_artifacts(
-            image_path=image_path,
-            predicted_mask=predicted_mask,
-            segmentation=segmentation,
-            classification=None,
-            artifact_info=artifact_info,
-        )
-    )
-    has_live_wall = bool(prediction_artifacts.get("real_wall_analysis_panel_url")) and (
-        prediction_artifacts.get("real_wall_analysis_panel_source") == "live_lumen_signed_distance"
-    )
-    wall_artifacts = _save_wall_analysis_artifacts(
-        image_path=image_path,
-        predicted_mask=predicted_mask,
-        segmentation=segmentation,
-        artifact_info=artifact_info,
-        reuse_script_wall_panel=has_live_wall,
-        keep_existing_layer_profile=bool(
-            prediction_artifacts.get("wall_layer_profile_url")
-        ),
-    )
-    if has_live_wall:
-        wall_artifacts = {
-            k: v for k, v in wall_artifacts.items()
-            if not k.startswith("real_wall_analysis_panel")
-        }
-    prediction_artifacts.update(wall_artifacts)
-    _merge_wall_visual_artifacts(prediction_artifacts, wall_artifacts, real_script_artifacts)
-    segmentation["prediction_artifacts"] = {
-        key: value for key, value in prediction_artifacts.items()
-        if key.startswith("predicted_") or key.startswith("wall_") or key in {"relative_dir", "created_at"}
-    }
-    _append_agent_step(
-        agent_steps,
-        step_id="lesion_localization_segmentation",
-        title="定位/分割模型调用",
-        intent="Localize lesion candidate region and obtain ROI/mask evidence.",
-        decision="call" if image_path else "unavailable",
-        tool_name="SegmentationTool",
-        status="completed" if segmentation.get("available") else "fallback",
-        inputs={"image_path": image_path},
-        outputs=_compact_tool_output(segmentation, [
-            "available", "mask_available", "roi_source", "roi_bbox", "lesion_area_ratio",
-            "image_height", "image_width", "prediction_artifacts", "runtime_invocation", "error",
-        ]),
-        reasoning=(
-            "The Agent calls segmentation before classification so the classifier can receive ROI "
-            "and mask-derived evidence. If the model cannot produce a mask, the ROI source is marked "
-            "as fallback and later evidence is down-weighted."
-        ),
-        visual_refs={
-            "image_path": image_path,
-            "roi_path": roi_path,
-            "overlay_path": payload.get("overlay_path"),
-            "predicted_mask_url": prediction_artifacts.get("predicted_mask_url"),
-            "predicted_overlay_url": prediction_artifacts.get("predicted_overlay_url"),
-            "predicted_roi_url": prediction_artifacts.get("predicted_roi_url"),
-            "wall_penetration_heatmap_url": prediction_artifacts.get("wall_penetration_heatmap_url"),
-            "wall_layer_profile_url": prediction_artifacts.get("wall_layer_profile_url"),
-            "real_wall_analysis_panel_url": prediction_artifacts.get("real_wall_analysis_panel_url"),
-        },
-    )
-
-    wall_prov = _wall_panel_provenance(prediction_artifacts)
-    _append_agent_step(
-        agent_steps,
-        step_id="wall_evidence_visualization",
-        title="胃壁穿透与层结构可视化",
-        intent="Surface wall penetration risk and layer-profile evidence for T-stage reasoning.",
-        decision="live_lumen_sdf" if has_live_wall else wall_prov["wall_panel_decision"],
-        tool_name="WallEvidenceTool" if has_live_wall else "wall_visualization",
-        status="completed" if prediction_artifacts.get("real_wall_analysis_panel_url") else "partial",
-        inputs={
-            "image_path": image_path,
-            "predicted_mask_available": predicted_mask is not None,
-            "lumen_detected": lumen_detection.get("lumen_detected"),
-            "reuse_script_wall_panel": False,
-        },
-        outputs={
-            **wall_prov,
-            "wall_evidence": _compact_tool_output(wall_evidence, [
-                "available", "evidence_source", "penetration_risk", "wall_features", "error",
-            ]) if wall_evidence else {},
-            "real_wall_analysis_panel_source": prediction_artifacts.get("real_wall_analysis_panel_source"),
-            "wall_layer_profile_source": (
-                "live_lumen_sdf" if has_live_wall else "live_current_image_proxy"
-            ),
-        },
-        reasoning=(
-            "Wall figures are always computed from the currently selected image_path. When lumen YOLO "
-            "and lesion mask are both available, signed distance from the cavity is used "
-            "(WallEvidenceTool). Otherwise a lesion/ROI-centered proxy heatmap is rendered live."
-        ),
-        visual_refs={
-            "real_wall_analysis_panel_url": prediction_artifacts.get("real_wall_analysis_panel_url"),
-            "wall_penetration_heatmap_url": prediction_artifacts.get("wall_penetration_heatmap_url"),
-            "wall_layer_profile_url": prediction_artifacts.get("wall_layer_profile_url"),
-        },
-    )
-
-    annotation_mask = _load_annotation_mask(annotation_path, image_path)
-    if annotation_mask is not None:
-        morphology_mask = annotation_mask
-        morphology_mask_source = "annotation"
-        morphology_decision = "call_annotation_mask"
-    elif predicted_mask is not None:
-        morphology_mask = predicted_mask
-        morphology_mask_source = "segmentation_prediction"
-        morphology_decision = "call_model_predicted_mask"
-    else:
-        morphology_mask = None
-        morphology_mask_source = "missing"
-        morphology_decision = "call_unavailable_mask"
-    morphology = morphology_tool.execute(mask_array=morphology_mask)
-    traces.append({"tool": "morphology", "result": morphology})
-    _append_agent_step(
-        agent_steps,
-        step_id="morphology_evidence",
-        title="形态学工具调用",
-        intent="Quantify lesion shape, boundary irregularity, and area evidence.",
-        decision=morphology_decision,
-        tool_name="MorphologyTool",
-        status="completed" if morphology.get("valid") else "partial",
-        inputs={
-            "annotation_path": annotation_path,
-            "mask_source": morphology_mask_source,
-            "predicted_mask_available": predicted_mask is not None,
-        },
-        outputs=_compact_tool_output(morphology, [
-            "valid", "boundary_irregularity", "lesion_area_ratio", "convexity", "solidity", "compactness", "aspect_ratio", "error"
-        ]),
-        reasoning=(
-            "The Agent first uses an annotation mask when available; otherwise it automatically "
-            "falls back to the segmentation model mask so the morphology step still produces "
-            "real evidence for new images."
-        ),
-        visual_refs={
-            "annotation_path": annotation_path,
-            "overlay_path": payload.get("overlay_path"),
-            "wall_penetration_heatmap_url": prediction_artifacts.get("wall_penetration_heatmap_url"),
-            "wall_layer_profile_url": prediction_artifacts.get("wall_layer_profile_url"),
-            "predicted_overlay_url": prediction_artifacts.get("predicted_overlay_url"),
-            "real_wall_analysis_panel_url": prediction_artifacts.get("real_wall_analysis_panel_url"),
-        },
-    )
-
-    classification_tool._ensure_model()
-    split_hint = "test_prospective"
-    data_source = str(payload.get("data_source", ""))
-    if "train" in data_source:
-        split_hint = "train"
-    elif "external" in data_source:
-        split_hint = "test_external"
-
-    clinical_features: Optional[Dict[str, Any]] = None
-    if classification_tool._cfg:
-        clinical_bundle = clinical_vector_for_classifier(
-            classification_tool._cfg,
-            payload_clinical=clinical_payload if isinstance(clinical_payload, dict) else None,
-            patient_id=str(payload.get("patient_id", "")) or None,
-            image_path=image_path,
-            split_hint=split_hint,
-        )
-        if clinical_bundle:
-            clinical_features = clinical_bundle
-
-    frame_classifications: List[Dict[str, Any]] = []
-    classification = classification_tool.execute(
-        image_path=image_path,
-        mask_array=predicted_mask,
-        roi_path=roi_path,
-        roi_bbox=segmentation.get("roi_bbox"),
-        lumen_bbox=lumen_detection.get("lumen_bbox") if lumen_detection.get("lumen_detected") else None,
-        clinical_features=clinical_features,
-        patient_id=str(payload.get("patient_id", "")) or None,
-    ) if image_path else {"available": False, "error": "Missing image_path"}
-    frame_classifications.append(classification)
-
-    for extra in frame_plan[1:]:
-        extra_image = extra["image_path"]
-        seg_extra = segmentation_tool.execute(image_path=extra_image)
-        mask_extra = segmentation_tool.get_cached_mask(extra_image)
-        cls_extra = classification_tool.execute(
-            image_path=extra_image,
-            mask_array=mask_extra,
-            roi_path=extra.get("roi_path"),
-            roi_bbox=seg_extra.get("roi_bbox") if isinstance(seg_extra, dict) else None,
-            lumen_bbox=lumen_detection.get("lumen_bbox") if lumen_detection.get("lumen_detected") else None,
-            clinical_features=clinical_features,
-            patient_id=str(payload.get("patient_id", "")) or None,
-        )
-        frame_classifications.append(cls_extra)
-        traces.append({"tool": "classify_extra_frame", "result": cls_extra})
-
-    if len(frame_classifications) > 1:
-        classification = _aggregate_classifications(frame_classifications)
-    traces.append({"tool": "classify", "result": classification})
-    prediction_artifacts.update(
-        _save_prediction_artifacts(
-            image_path=image_path,
-            predicted_mask=predicted_mask,
-            segmentation=segmentation,
-            classification=classification,
-            artifact_info=artifact_info,
-        )
-    )
-    prediction_artifacts.update(wall_artifacts)
-    _merge_wall_visual_artifacts(prediction_artifacts, wall_artifacts, real_script_artifacts)
-    segmentation["prediction_artifacts"] = {
-        key: value for key, value in prediction_artifacts.items()
-        if key.startswith("predicted_") or key.startswith("wall_") or key in {"relative_dir", "created_at"}
-    }
-    classification["prediction_artifacts"] = {
-        key: value for key, value in prediction_artifacts.items()
-        if key.startswith("classification_") or key in {"relative_dir", "created_at"}
-    }
-    _append_agent_step(
-        agent_steps,
-        step_id="t_stage_classification",
-        title="T 分期分类模型调用",
-        intent="Estimate T1/T2/T3/T4+ probabilities from image, ROI, and mask evidence.",
-        decision="call" if image_path else "unavailable",
-        tool_name="ClassificationTool",
-        status="completed" if classification.get("available") else "unavailable",
-        inputs={
-            "image_path": image_path,
-            "roi_path": roi_path,
-            "roi_bbox": segmentation.get("roi_bbox"),
-            "mask_array_available": predicted_mask is not None,
-        },
-        outputs=_compact_tool_output(classification, [
-            "available", "probabilities", "top1_stage", "top1_prob", "top2_stage", "top2_prob",
-            "uncertainty", "structured_features", "prediction_artifacts", "runtime_invocation", "error",
-        ]),
-        reasoning=(
-            "Classification is the main model evidence, but the Agent keeps top-2 and uncertainty "
-            "because adjacent T-stage boundaries can be ambiguous."
-        ),
-        visual_refs={
-            "image_path": image_path,
-            "roi_path": roi_path,
-            "overlay_path": payload.get("overlay_path"),
-            "predicted_overlay_url": prediction_artifacts.get("predicted_overlay_url"),
-            "predicted_roi_url": prediction_artifacts.get("predicted_roi_url"),
-            "classification_probabilities_url": prediction_artifacts.get("classification_probabilities_url"),
-            "wall_penetration_heatmap_url": prediction_artifacts.get("wall_penetration_heatmap_url"),
-            "wall_layer_profile_url": prediction_artifacts.get("wall_layer_profile_url"),
-            "real_dino_multimodal_panel_url": prediction_artifacts.get("real_dino_multimodal_panel_url"),
-        },
-    )
-
-    dino_feature_artifacts = _save_current_image_dino_feature_panel(
-        image_path=image_path,
-        prediction_artifacts=prediction_artifacts,
-        artifact_info=artifact_info,
-    )
-    prediction_artifacts.update(dino_feature_artifacts)
-
-    if not prediction_artifacts.get("real_dino_multimodal_panel_url"):
-        multimodal_dino_artifacts = _generate_real_dino_multimodal_panel_on_demand(
-            image_path=image_path,
-            prediction_artifacts=prediction_artifacts,
-            classification=classification,
-            payload=payload,
-            artifact_info=artifact_info,
-        )
-        prediction_artifacts.update(multimodal_dino_artifacts)
-        real_script_artifacts.update(multimodal_dino_artifacts)
-        dino_panel_url = multimodal_dino_artifacts.get("real_dino_multimodal_panel_url")
-        if dino_panel_url:
-            _patch_agent_step_visual_refs(
-                agent_steps,
-                "classification",
-                {"real_dino_multimodal_panel_url": dino_panel_url},
-            )
-
-    _append_agent_step(
-        agent_steps,
-        step_id="dino_feature_visualization",
-        title="DINO 特征图真实推理",
-        intent="Run the existing DINO token visualization script on the current image and predicted mask.",
-        decision="call_existing_dino_script",
-        tool_name="generate_external_source_dino_token_panels.py",
-        status="completed" if dino_feature_artifacts.get("current_image_dino_feature_panel_url") else "partial",
-        inputs={
-            "image_path": image_path,
-            "predicted_mask_path": prediction_artifacts.get("predicted_mask_path"),
-            "source_script": "scripts/generate_external_source_dino_token_panels.py",
-            "allow_slow_execution": True,
-        },
-        outputs={
-            "current_image_dino_feature_panel_url": dino_feature_artifacts.get("current_image_dino_feature_panel_url"),
-            "current_image_dino_model": dino_feature_artifacts.get("current_image_dino_model"),
-            "current_image_dino_error": dino_feature_artifacts.get("current_image_dino_error"),
-            "dino_is_real_forward": dino_feature_artifacts.get("dino_is_real_forward"),
-            "dino_inference_mode": dino_feature_artifacts.get("dino_inference_mode"),
-            "dino_input_size": dino_feature_artifacts.get("dino_input_size"),
-            "dino_token_grid": dino_feature_artifacts.get("dino_token_grid"),
-            "dino_region_pooling": dino_feature_artifacts.get("dino_region_pooling"),
-            "dino_note": dino_feature_artifacts.get("dino_note"),
-            "real_dino_multimodal_panel_url": prediction_artifacts.get("real_dino_multimodal_panel_url"),
-        },
-        reasoning=(
-            "DINOv3 runs a real forward pass on the current frame (512 resized full image, not ROI patch crop). "
-            "Lesion affinity / wall maps pool tokens using the predicted segmentation mask downsampled to the ViT grid."
-        ),
-        visual_refs={
-            "current_image_dino_feature_panel_url": dino_feature_artifacts.get("current_image_dino_feature_panel_url"),
-            "real_dino_multimodal_panel_url": prediction_artifacts.get("real_dino_multimodal_panel_url"),
-            "predicted_overlay_url": prediction_artifacts.get("predicted_overlay_url"),
-        },
-    )
-
-    clinical_kwargs = _build_clinical_kwargs(clinical_payload_raw)
-    clinical = clinical_tool.execute(**clinical_kwargs)
-    traces.append({"tool": "clinical_risk", "result": clinical})
-    _append_agent_step(
-        agent_steps,
-        step_id="clinical_context",
-        title="临床风险工具调用",
-        intent="Cross-check image model output against clinical risk and location bias.",
-        decision="call" if clinical_payload_raw else "call_with_missing_fields",
-        tool_name="ClinicalTool",
-        status="completed" if clinical.get("factors_available") else "partial",
-        inputs=clinical_kwargs,
-        outputs=_compact_tool_output(clinical, [
-            "clinical_risk_score", "risk_factors", "protective_factors", "factors_available", "location_calibration", "ulcer_calibration"
-        ]),
-        reasoning=(
-            "The Agent uses clinical context as a calibration layer, especially when the classifier "
-            "is uncertain or the tumour location has known ultrasound staging bias."
-        ),
-    )
-
-    report_text = report_tool.execute(report_payload=report_payload)
-    traces.append({"tool": "structure_report", "result": report_text})
-    _append_agent_step(
-        agent_steps,
-        step_id="report_text_cues",
-        title="报告文本线索抽取",
-        intent="Extract structured staging cues from ultrasound/endoscopy/pathology text.",
-        decision="call" if _has_report_payload(report_payload) else "call_to_confirm_missing",
-        tool_name="ReportTool",
-        status="completed" if report_text.get("available") else "missing",
-        inputs={"sections_requested": list((report_payload or {}).keys())},
-        outputs=_compact_tool_output(report_text, [
-            "available", "sections_available", "report_cues", "text_length", "report_source", "uncertainty_flags", "error"
-        ]),
-        reasoning=(
-            "Report text is used only as supporting evidence. When no report section is attached, "
-            "the Agent explicitly records that text evidence should be down-weighted."
-        ),
-    )
-
-    query_vector = extract_patient_vector(
-        cls_results=[classification] if classification else [],
-        morph_results=[morphology] if morphology else [],
-        clinical_info=clinical_kwargs,
-        wall_evidence=wall_evidence,
-    )
-
-    case_context = {
-        "cls_results": [classification] if classification else [],
-        "morph_results": [morphology] if morphology else [],
-        "clinical_info": clinical_kwargs,
-        "wall_evidence": wall_evidence,
-    }
-    similar_payload = similarity_tool.execute(
-        query_vector=query_vector.tolist(),
-        case_context=case_context,
-        top_k=5,
-        patient_id=str(payload.get("patient_id", "")) or None,
-    )
-    similar_cases = similar_payload.get("similar_cases", []) if similar_payload.get("available") else []
-    memory_source = "faiss_index"
-    if not similar_cases:
-        case_memory = CurrentCaseMemory()
-        similar_cases = case_memory.search(
-            query_vector=query_vector,
-            top_k=5,
-            cohort_year=payload.get("cohort_year"),
-            exclude_patient_id=str(payload.get("patient_id", "")),
-        )
-        similar_payload = {
-            "available": True,
-            "source": "current_case_memory",
-            "similar_cases": similar_cases,
-            "runtime_invocation": {
-                "api_kind": "current_case_memory_cosine",
-                "called": bool(similar_cases),
-                "cache_path": str(case_memory.cache_path),
-                "hits": len(similar_cases),
-            },
-        }
-        memory_source = "current_case_memory"
-    traces.append({"tool": "retrieve_similar", "result": similar_payload})
-    similar_cases = _attach_similar_case_preview_artifacts(similar_cases, artifact_info)
-    similarity_artifacts = _save_similarity_visual_artifacts(
-        image_path=image_path,
-        predicted_mask=predicted_mask,
-        similar_cases=similar_cases,
-        artifact_info=artifact_info,
-    )
-    prediction_artifacts.update(similarity_artifacts)
-    similarity_summary = _summarize_similarity(similar_cases)
-    similarity_vote_weights = _compute_similarity_vote_weights(similar_cases)
-    _append_agent_step(
-        agent_steps,
-        step_id="similar_case_retrieval",
-        title="相似病例检索与投票",
-        intent="Retrieve historical cases and use their T-stage distribution as case-based evidence.",
-        decision="call",
-        tool_name="SimilarityTool" if memory_source == "faiss_index" else "CurrentCaseMemory",
-        status="completed" if similar_cases else "partial",
-        inputs={
-            "query_vector_dim": int(query_vector.shape[0]),
-            "top_k": 5,
-            "memory_source": memory_source,
-        },
-        outputs={
-            "retrieved_count": len(similar_cases),
-            "majority_stage": similarity_summary.get("majority_stage"),
-            "stage_distribution": similarity_summary.get("stage_distribution", {}),
-            "similarity_vote_weights": similarity_vote_weights,
-            "similar_cases": similar_cases[:5],
-            "similar_cases_with_preview_count": sum(1 for case in similar_cases[:5] if case.get("preview_image_url")),
-            "dino_similarity_heatmap_url": similarity_artifacts.get("dino_similarity_heatmap_url"),
-            "similar_cases_contact_sheet_url": similarity_artifacts.get("similar_cases_contact_sheet_url"),
-        },
-        reasoning=(
-            "The Agent retrieves similar historical cases after image, morphology, and clinical tools "
-            "produce a patient vector. Majority T-stage and similarity-weighted votes are surfaced "
-            "before the final RAG gate combines them with the classifier."
-        ),
-        visual_refs={
-            "dino_similarity_heatmap_url": similarity_artifacts.get("dino_similarity_heatmap_url"),
-            "similar_cases_contact_sheet_url": similarity_artifacts.get("similar_cases_contact_sheet_url"),
-        },
-    )
-
-    knowledge_memory = KnowledgeMemory.build()
-    knowledge_query = " ".join([
-        str(payload.get("data_source", "")),
-        str(clinical_payload_raw.get("location", "")),
-        str(payload.get("patient_id", "")),
-        str(segmentation.get("roi_source", "")),
-    ])
-    knowledge = knowledge_memory.search(knowledge_query, top_k=3)
-    _append_agent_step(
-        agent_steps,
-        step_id="knowledge_context",
-        title="知识与规则检索",
-        intent="Retrieve project knowledge/rules relevant to this case and tool state.",
-        decision="call",
-        tool_name="KnowledgeMemory",
-        status="completed" if knowledge else "partial",
-        inputs={"knowledge_query": knowledge_query},
-        outputs={
-            "retrieved_count": len(knowledge),
-            "titles": [item.get("title", "") for item in knowledge],
-        },
-        reasoning=(
-            "Knowledge retrieval gives the Agent context about workflow rules and known limitations. "
-            "It does not override model evidence, but it can support review recommendations."
-        ),
-    )
-
-    report = _build_rule_based_report(
-        payload=payload,
-        segmentation=segmentation,
-        classification=classification,
-        morphology=morphology,
-        clinical=clinical,
-        report_text=report_text,
-        similar_cases=similar_cases,
-        knowledge=knowledge,
-        lumen_detection=lumen_detection,
-        wall_evidence=wall_evidence,
-    )
-    report, llm_invocation = _maybe_llm_synthesis(report, payload)
-    _append_agent_step(
-        agent_steps,
-        step_id="llm_report_synthesis_api",
-        title="LLM 报告综合 API 调用",
-        intent="Optionally refine the fused report through an OpenAI-compatible LLM endpoint.",
-        decision="call" if llm_invocation.get("called") else "unavailable",
-        tool_name="AgentLLMClient",
-        status="completed" if llm_invocation.get("status") == "ok" else ("partial" if llm_invocation.get("called") else "unavailable"),
-        inputs={
-            "base_url": llm_invocation.get("base_url"),
-            "model": llm_invocation.get("model"),
-            "api_key_configured": llm_invocation.get("skip_reason") != "missing_api_key",
-        },
-        outputs=llm_invocation,
-        reasoning=(
-            "When an API key is configured, the Agent sends structured tool evidence to the LLM "
-            "endpoint and merges JSON refinements. Without a key, rule-based synthesis remains active."
-        ),
-    )
-    _append_agent_step(
-        agent_steps,
-        step_id="evidence_synthesis",
-        title="多证据综合推理",
-        intent="Fuse model, morphology, clinical, report, similar-case, and knowledge evidence.",
-        decision="call",
-        tool_name="RuleBasedReportBuilder",
-        status="completed",
-        inputs={
-            "classifier_available": classification.get("available"),
-            "morphology_valid": morphology.get("valid"),
-            "clinical_factors": clinical.get("factors_available"),
-            "report_available": report_text.get("available"),
-            "similar_case_count": len(similar_cases),
-        },
-        outputs=_compact_tool_output(report, [
-            "recommended_t_stage", "confidence", "reasoning", "supporting_evidence",
-            "conflicting_evidence", "uncertainty_flags", "rag_gate", "similar_case_summary", "tool_status",
-        ]),
-        reasoning=(
-            "The Agent combines evidence streams and records uncertainty. The final T stage is not "
-            "the classifier top-1 alone; similar-case voting and clinical/report/morphology checks "
-            "can shift confidence or trigger review."
-        ),
-        visual_refs={
-            "wall_penetration_heatmap_url": prediction_artifacts.get("wall_penetration_heatmap_url"),
-            "wall_layer_profile_url": prediction_artifacts.get("wall_layer_profile_url"),
-            "dino_similarity_heatmap_url": prediction_artifacts.get("dino_similarity_heatmap_url"),
-            "similar_cases_contact_sheet_url": prediction_artifacts.get("similar_cases_contact_sheet_url"),
-            "classification_probabilities_url": prediction_artifacts.get("classification_probabilities_url"),
-            "real_dino_multimodal_panel_url": prediction_artifacts.get("real_dino_multimodal_panel_url"),
-            "real_wall_analysis_panel_url": prediction_artifacts.get("real_wall_analysis_panel_url"),
-        },
-    )
-    report["dynamic_report_draft"] = _build_dynamic_report_draft(
-        payload=payload,
-        clinical_payload=clinical_payload_raw,
-        report=report,
-        segmentation=segmentation,
-        classification=classification,
-        morphology=morphology,
-        clinical=clinical,
-        report_text=report_text,
-        similar_cases=similar_cases,
-    )
-    report["memory_update_candidates"] = _build_memory_update_candidates(
-        payload=payload,
-        report=report,
-        report_text=report_text,
-        traces=traces,
-    )
-    _append_agent_step(
-        agent_steps,
-        step_id="report_and_memory",
-        title="动态报告草稿与 memory 候选",
-        intent="Create a copy-ready report draft and prepare reviewed memory candidates.",
-        decision="call",
-        tool_name="DynamicReportDraftBuilder",
-        status="completed",
-        inputs={
-            "recommended_t_stage": report.get("recommended_t_stage"),
-            "confidence": report.get("confidence"),
-            "tool_trace_count": len(traces),
-        },
-        outputs={
-            "report_sections": [section.get("heading") for section in report.get("dynamic_report_draft", {}).get("sections", [])],
-            "review_required": report.get("dynamic_report_draft", {}).get("review_required"),
-            "memory_candidate_count": len(report.get("memory_update_candidates", [])),
-        },
-        reasoning=(
-            "The Agent emits a report draft only after all evidence streams are fused. Memory records "
-            "remain candidates until a clinician confirms, modifies, or rejects the analysis."
-        ),
-    )
-
-    session = load_session(payload.get("session_id"))
-    session_entry = {
-        "timestamp": session.updated_at,
-        "patient_id": str(payload.get("patient_id", "")),
-        "recommended_t_stage": report.get("recommended_t_stage"),
-        "confidence": report.get("confidence"),
-        "tool_trace_count": len(traces),
-    }
-    session.append_analysis(session_entry)
-    session.save()
-
-    runtime_verification = _build_runtime_verification(
-        payload=payload,
-        lumen_detection=lumen_detection,
-        wall_evidence=wall_evidence,
-        segmentation=segmentation,
-        classification=classification,
-        morphology=morphology,
-        clinical=clinical,
-        report_text=report_text,
-        similar_payload=similar_payload,
-        memory_source=memory_source,
-        llm_invocation=llm_invocation,
-        prediction_artifacts=prediction_artifacts,
-        dino_feature_artifacts=dino_feature_artifacts,
-    )
-    _append_agent_step(
-        agent_steps,
-        step_id="runtime_api_verification",
-        title="运行时 API / 模型调用核验",
-        intent="Record auditable proof that core models and APIs were actually invoked.",
-        decision="call",
-        tool_name="runtime_verification",
-        status="completed",
-        inputs={"patient_id": payload.get("patient_id")},
-        outputs=runtime_verification,
-        reasoning=(
-            "This step does not run new inference. It aggregates invocation proofs from segmentation, "
-            "classification, memory retrieval, DINO visualization, and optional LLM synthesis."
-        ),
-    )
-    if _stream_enabled():
-        _emit_stream_event("runtime_verification", {"verification": runtime_verification})
-
-    result = {
-        "session_id": session.session_id,
-        "session_memory": {
-            "session_id": session.session_id,
-            "created_at": session.created_at,
-            "updated_at": session.updated_at,
-            "patient_ids": session.patient_ids,
-            "analysis_count": len(session.analyses),
-        },
-        "frame_evidence": {
-            "frame_count": len(frame_plan),
-            "primary_image_path": image_path,
-            "aggregation": classification.get("frame_aggregation", "single_frame"),
-            "aggregated_frame_count": classification.get("aggregated_frame_count", 1),
-        },
-        "tool_evidence": {
-            "lumen_detection": lumen_detection,
-            "wall_evidence": wall_evidence if wall_evidence.get("available") else {
-                k: wall_evidence.get(k)
-                for k in ("available", "evidence_source", "error")
-            },
-            "segmentation": segmentation,
-            "classification": classification,
-            "morphology": morphology,
-            "clinical": clinical,
-            "report": report_text,
-        },
-        "similar_cases": similar_cases,
-        "knowledge_context": knowledge,
-        "report": report,
-        "agent_steps": agent_steps,
-        "prediction_artifacts": prediction_artifacts,
-        "runtime_verification": runtime_verification,
-        "traces": traces,
-    }
-    result["trajectory_ref"] = _write_trajectory(payload, session.session_id, result)
+    result = analyze_via_unified_pipeline(payload)
     if _stream_enabled():
         _emit_stream_event("final", {"result": result})
     else:

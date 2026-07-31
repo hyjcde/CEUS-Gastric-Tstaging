@@ -3,16 +3,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
 import { GASTRIC_COHORT_YEARS, GastricCohortYear, getCohortDisplayLabel } from '@/lib/cohort';
-import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool, Clapperboard } from 'lucide-react';
+import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool, Clapperboard, ScanSearch, Compass } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getDirectionAnnotatorPath } from '@/lib/annotator-url';
 import { getVideoAnnotatorUrl } from '@/lib/video-annotator-url';
+import { buildReaderAppUrl, buildHumanAssistUrl } from '@/lib/reading-agent-url';
+import type { Patient } from '@/types';
 
 interface HeaderProps {
   onShowStatistics?: () => void;
+  selectedPatient?: Patient | null;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
+export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatient }) => {
   const { language, setLanguage, dataset, setDataset, cohortYear, setCohortYear, treatmentType, setTreatmentType, t } = useSettings();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -41,6 +44,17 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
 
   const openVideoAnnotator = () => {
     window.open(getVideoAnnotatorUrl(), '_blank', 'noopener,noreferrer');
+    setShowUserMenu(false);
+  };
+
+  const openReadingAgent = () => {
+    router.push(buildReaderAppUrl(selectedPatient || null));
+    setShowUserMenu(false);
+  };
+
+  const openHumanAssist = () => {
+    const url = buildHumanAssistUrl(selectedPatient || null);
+    window.open(url, '_blank', 'noopener,noreferrer');
     setShowUserMenu(false);
   };
 
@@ -161,6 +175,24 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
           <Clapperboard size={12} />
           <span className="text-[10px] font-semibold">{t.nav.videoAnnotator}</span>
         </button>
+
+        <button
+          onClick={openReadingAgent}
+          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-colors text-emerald-400 hover:text-emerald-300"
+          title={t.nav.readingAgentTitle}
+        >
+          <ScanSearch size={12} />
+          <span className="text-[10px] font-semibold">{t.nav.readingAgent}</span>
+        </button>
+
+        <button
+          onClick={openHumanAssist}
+          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors text-orange-400 hover:text-orange-300"
+          title={t.nav.humanAssistTitle}
+        >
+          <Compass size={12} />
+          <span className="text-[10px] font-semibold">{t.nav.humanAssist}</span>
+        </button>
         
         <div className="hidden md:flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 shadow-inner">
             <div className="relative flex h-1.5 w-1.5">
@@ -210,6 +242,18 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics }) => {
                         className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
                     >
                         <Clapperboard size={12} /> {t.nav.videoAnnotator}
+                    </button>
+                    <button 
+                        onClick={openReadingAgent}
+                        className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
+                    >
+                        <ScanSearch size={12} /> {t.nav.readingAgent}
+                    </button>
+                    <button 
+                        onClick={openHumanAssist}
+                        className="flex items-center gap-3 px-4 py-2 text-[11px] text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-left"
+                    >
+                        <Compass size={12} /> {t.nav.humanAssist}
                     </button>
                     
                     <div className="h-px bg-white/5 my-1"></div>

@@ -1,0 +1,12 @@
+{
+  "created_at": "2026-05-20T15:11:26",
+  "feature_dir": "/data/research/gastric/GastricTstaging/pipeline/data/adapter_dinov3_case_rag_features/last2blocks_clean_mlp_512",
+  "train_patients": 1245,
+  "feature_dim_raw": 39936,
+  "pca_components": 128,
+  "nca_components": 32,
+  "top_k": 9,
+  "temperature": 0.2,
+  "method": "adapter_learned_nca",
+  "fusion_alpha_recommended": 0.3
+}

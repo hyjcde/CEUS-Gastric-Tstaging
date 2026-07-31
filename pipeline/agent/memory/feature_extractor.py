@@ -31,6 +31,10 @@ THICKNESS_MEAN, THICKNESS_STD = 1.0, 0.8
 def _norm(val: Optional[float], mean: float, std: float) -> float:
     if val is None:
         return 0.0
+    try:
+        val = float(val)
+    except (TypeError, ValueError):
+        return 0.0
     return (val - mean) / std
 
 

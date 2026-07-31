@@ -372,6 +372,11 @@ def run_react_loop(
                             logger.debug("Injected cached mask for frame %d "
                                          "into morphology call", fidx)
 
+        # For wall_evidence: inject lumen_bbox + lesion_mask from prior steps
+        if action_name == "wall_evidence":
+            _inject_wall_evidence_params(
+                resolved_params, result.steps, case_card, registry)
+
         # Execute tool
         t_tool = time.time()
         _clean_params = {k: v for k, v in resolved_params.items()
@@ -410,6 +415,49 @@ def run_react_loop(
     result.total_time_s = time.time() - t0
 
     return result
+
+
+def _inject_wall_evidence_params(
+    resolved_params: Dict[str, Any],
+    past_steps: List["ReActStep"],
+    case_card: CaseCard,
+    registry: ToolRegistry,
+) -> None:
+    """Pass lumen bbox and lesion mask from prior detect_lumen/segment steps."""
+    if "image_path" not in resolved_params:
+        fidx = resolved_params.get("_frame_index", 0)
+        if 0 <= fidx < len(case_card.frames):
+            resolved_params["image_path"] = case_card.frames[fidx].image_path
+
+    if "lumen_bbox" not in resolved_params:
+        for step in reversed(past_steps):
+            if step.action_name == "detect_lumen" and step.observation.get("lumen_bbox"):
+                resolved_params["lumen_bbox"] = dict(step.observation["lumen_bbox"])
+                break
+
+    if "lesion_mask" not in resolved_params:
+        fidx = resolved_params.get("_frame_index", 0)
+        if fidx is None:
+            fidx = 0
+        if 0 <= fidx < len(case_card.frames):
+            img_path = case_card.frames[fidx].image_path
+            seg_tool = registry.get("segment")
+            if seg_tool and hasattr(seg_tool, "get_cached_mask"):
+                cached = seg_tool.get_cached_mask(img_path)
+                if cached is not None:
+                    resolved_params["lesion_mask"] = cached
+                    return
+        for step in reversed(past_steps):
+            if step.action_name == "segment" and step.observation.get("mask_available"):
+                fidx2 = resolved_params.get("_frame_index", 0) or 0
+                if 0 <= fidx2 < len(case_card.frames):
+                    img_path = case_card.frames[fidx2].image_path
+                    seg_tool = registry.get("segment")
+                    if seg_tool and hasattr(seg_tool, "get_cached_mask"):
+                        cached = seg_tool.get_cached_mask(img_path)
+                        if cached is not None:
+                            resolved_params["lesion_mask"] = cached
+                break
 
 
 def _extract_frame_index(val: Any, n_frames: int) -> Optional[int]:

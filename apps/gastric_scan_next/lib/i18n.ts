@@ -26,6 +26,10 @@ export const dictionary = {
         annotatorTitle: 'Open direction annotation tool',
         videoAnnotator: 'Video Platform',
         videoAnnotatorTitle: 'Open MedDINO video/static annotation platform',
+        readingAgent: 'Reader Agent',
+        readingAgentTitle: 'Open SAM + wall-layer interactive reader agent',
+        humanAssist: 'Human Assist',
+        humanAssistTitle: 'Open contact-geometry human-assist demo for current case',
     },
     cohort: {
         title: 'Study Cohort',
@@ -120,6 +124,10 @@ export const dictionary = {
         annotatorTitle: '打开突破方向标注工具',
         videoAnnotator: '视频标注',
         videoAnnotatorTitle: '打开 MedDINO 视频/静态图标注平台',
+        readingAgent: '阅片Agent',
+        readingAgentTitle: '打开 SAM + 胃壁分层交互阅片 Agent',
+        humanAssist: '人机互助',
+        humanAssistTitle: '打开接触几何人机互助演示（当前病例深链）',
     },
     cohort: {
         title: '研究队列',

@@ -1,0 +1,6 @@
+
+memory/store_data/
+memory/index/
+memory/retriever/**/pca.joblib
+memory/retriever/**/train_memory_meta.json
+__pycache__/

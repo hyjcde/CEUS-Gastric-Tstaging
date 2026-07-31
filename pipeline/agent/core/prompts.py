@@ -26,12 +26,21 @@ Use INTEGER frame index (0, 1, 2, ...) for image_path and mask_path.
 
 ## Workflow
 
-### Step 1 — Segment and Classify (start here, skip quality_check)
-Directly call segment(image_path=0) then classify() on the best frame. \
-If num_frames > 3, pick frame 0 and one middle frame. \
-Do NOT call quality_check — all frames are usable.
+### Step 0 — L0 binary gate (when binary_classify is available)
+Call binary_classify(image_path=0) first. If gate_decision is skip_t \
+(P(benign) >= threshold), you may FINISH with a benign recommendation \
+after structure_report. Otherwise continue with the T-staging chain below.
 
-### Step 2 — Read the Classifier Output
+### Step 1 — Lumen, segment, classify
+After binary gate (run_t path): detect_lumen(image_path=0), segment(image_path=0), \
+classify(image_path=0). If num_frames > 3, also classify one middle frame. \
+Do NOT call quality_check unless image quality is suspect.
+
+### Step 2 — Wall and clinical cross-check
+Call wall_evidence(image_path=0) after lumen + segment (lumen bbox and mask \
+are injected automatically). Always call clinical_risk() after classify.
+
+Read the classifier output:
 - **top1_stage** + **top1_prob**: the model's best guess and confidence
 - **uncertainty**: Shannon entropy (< 0.7 = confident, > 0.9 = very uncertain)
 - **top2_stage**: the runner-up
@@ -115,7 +124,8 @@ conflicting_evidence=[<list>], manual_review_recommended=<true|false>)
 ## Key Rules
 
 - You have {max_steps} steps. Do NOT waste steps on quality_check.
-- Start with segment → classify. Only escalate if uncertain.
+- Start with binary_classify (if available) → detect_lumen → segment → classify. \
+Only escalate if uncertain.
 - clinical_risk() auto-injects clinical data — call with no arguments.
 - Respect the classifier direction: if it says T1, seriously consider T1.
 - NEVER call the same tool with the same arguments twice.
