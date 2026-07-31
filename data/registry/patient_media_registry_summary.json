@@ -1,0 +1,31 @@
+{
+  "date": "2026-07-31",
+  "sample_rows": 13763,
+  "patient_rows": 2593,
+  "training_linked_samples": 11514,
+  "real_video_samples": 6236,
+  "loop_still_samples": 0,
+  "by_cohort": {
+    "internal": 8229,
+    "prospective": 2430,
+    "external": 3104
+  },
+  "by_split": {
+    "val": 773,
+    "train": 7025,
+    "test_external": 3221,
+    "test_external_newzip": 495
+  },
+  "quality_flags": {
+    "no_training_row": 2249,
+    "missing_crop_video": 7493,
+    "clinical_missing": 26,
+    "clinical_sheet_label": 9
+  },
+  "split_leakage": {
+    "patients_with_split": 2012,
+    "conflict_count": 0,
+    "conflicts": [],
+    "ok": true
+  }
+}
