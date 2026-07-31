@@ -1,0 +1,14 @@
+{
+  "dataset_id": "direct_surgery_video_v1",
+  "status": "raw_registered_derived_pipeline_pending",
+  "raw_root": "data/raw/legacy_gastric_staging/协和内部数据集/直接手术",
+  "processed_root": "data/processed/direct_surgery_video",
+  "video_registry": "data/registry/video_assets_registry.csv",
+  "patient_registry": "data/registry/patient_media_registry.csv",
+  "evaluation_protocol": "data/registry/video_tstaging_protocol",
+  "workstation_raw_video_count": 1736,
+  "mac_audited_subset_count": 1598,
+  "mac_subset_match_method": "basename_and_byte_size; sha256_pending",
+  "label_policy": "labels must come from patient-level clinical/pathology registries; filenames are not labels",
+  "derived_policy": "immutable raw; versioned processed outputs with source linkage and QC status"
+}
