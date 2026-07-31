@@ -1,0 +1,17 @@
+{
+  "source_root": "/Users/huangyijun/Documents/Xiehe/01_数据与数据集/胃充盈超声/胃癌分期/协和直接手术视频",
+  "video_count": 1598,
+  "total_bytes": 19971665058,
+  "total_gib": 18.6,
+  "by_year": {
+    "2018": 100,
+    "2024": 366,
+    "2025": 1132
+  },
+  "by_extension": {
+    ".avi": 100,
+    ".mp4": 1057,
+    ".wmv": 441
+  },
+  "hashes_included": false
+}
