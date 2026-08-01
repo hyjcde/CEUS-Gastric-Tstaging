@@ -30,20 +30,20 @@ SCRIPT_DIR = PROJECT_ROOT / "scripts"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-DEFAULT_BACKEND_ID = "lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512"
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "segmentation" / "dinov3" / "vitb16_last_blocks_adapter.yaml"
+DEFAULT_BACKEND_ID = "lesion_segmentation_dinov3_vitb16_last2blocks_mlp_decoder_20260512"
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "segmentation" / "dinov3" / "vitb16_last2blocks_mlp_decoder.yaml"
 DEFAULT_RUN_MANIFEST = (
     PROJECT_ROOT
     / "experiments"
     / "segmentation"
-    / "segmentation_dinov3_vitb16_last2blocks_holdout_cropui_dataset_v20260409_20260511_r001"
+    / "dinov3_vitb16_last2blocks_mlp_decoder_cropui_20260512_full_r001"
     / "dinov3_run_manifest.json"
 )
 DEFAULT_CHECKPOINT = (
     PROJECT_ROOT
     / "experiments"
     / "segmentation"
-    / "segmentation_dinov3_vitb16_last2blocks_holdout_cropui_dataset_v20260409_20260511_r001"
+    / "dinov3_vitb16_last2blocks_mlp_decoder_cropui_20260512_full_r001"
     / "checkpoints"
     / "best.pt"
 )
