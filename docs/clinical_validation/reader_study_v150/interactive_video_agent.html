@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>交互式视频 T 分期 · 人机协作阅片</title>
+  <link rel="stylesheet" href="reader_theme.css" />
+  <link rel="stylesheet" href="interactive_video_agent.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <h1>交互式视频 T 分期</h1>
+        <span class="study-badge">人机协作阅片</span>
+      </div>
+      <div class="topbar-meta">
+        <span id="samBackendBadge" class="study-badge" style="font-size:0.68rem">分割 …</span>
+        <span id="caseCounter">—</span>
+        <a class="btn ghost" href="ai_assist.html">← AI 辅助总览</a>
+        <a class="btn ghost" href="task1.html">阅片系统</a>
+      </div>
+    </header>
+
+    <div class="interactive-app">
+      <aside class="interactive-sidebar">
+        <div class="interactive-sidebar-head">
+          <div class="section-title" style="font-size:0.82rem;margin-bottom:6px">病例库</div>
+          <div style="font-size:0.72rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
+            阅片包 150 例：良恶性 50 + T 分期 100。点击/框选生成 mask 与报告。
+          </div>
+          <div class="interactive-cohort-bar" id="cohortBar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+            <button type="button" class="btn interactive-cohort-pill active" data-cohort="all">全部</button>
+            <button type="button" class="btn interactive-cohort-pill" data-cohort="benign_malignancy">良恶性</button>
+            <button type="button" class="btn interactive-cohort-pill" data-cohort="t_staging">T分期</button>
+          </div>
+        </div>
+        <div class="interactive-case-list" id="caseList"></div>
+      </aside>
+
+      <main class="interactive-main">
+        <div class="interactive-toolbar">
+          <div class="interactive-toolbar-group">
+            <strong id="caseTitle" style="font-size:0.82rem">—</strong>
+            <span id="frameTitle" style="font-size:0.72rem;color:var(--muted)">—</span>
+          </div>
+          <div class="interactive-toolbar-group">
+            <button class="btn" id="playPauseBtn">播放/暂停 <kbd class="kbd-hint">Space</kbd></button>
+            <button class="btn primary" id="trackPlayBtn">播放跟踪 · 开</button>
+            <button class="btn" id="analyzeBtn">自动分析关键帧</button>
+            <button class="btn primary" id="generateReportBtn">生成文字报告</button>
+            <button class="btn" id="clearClickBtn">清除交互</button>
+            <button class="btn" id="undoPointBtn">撤销上一点</button>
+          </div>
+          <div class="interactive-toolbar-group">
+            <span style="font-size:0.72rem;color:var(--muted)">交互模式</span>
+            <button class="interactive-mode-pill active" data-interaction-mode="positive" title="快捷键 1">正向点 · 病灶</button>
+            <button class="interactive-mode-pill" data-interaction-mode="negative" title="快捷键 2">负向点 · 排除</button>
+            <button class="interactive-mode-pill" data-interaction-mode="box" title="快捷键 3">框选 · 区域</button>
+            <button class="interactive-mode-pill" data-interaction-mode="inspect" title="快捷键 4">边界检视 · 放大</button>
+            <button class="interactive-mode-pill" data-interaction-mode="boundary" title="快捷键 5">自定义方向 · 边界</button>
+            <label class="boundary-lock-label" title="播放时仅更新当前选中方向的放大图">
+              <input type="checkbox" id="boundaryLockTrack" checked /> 方向锁定跟踪
+            </label>
+            <span id="promptCounter" class="interactive-prompt-counter">未标注</span>
+          </div>
+          <div class="interactive-toolbar-group mask-control-bar" id="maskControlBar">
+            <label class="mask-toggle-label" title="切换视频上的分割轮廓显示">
+              <input type="checkbox" id="showMaskToggle" checked /> 显示分割轮廓
+            </label>
+            <label class="mask-opacity-label">填充透明度
+              <input type="range" id="maskOpacitySlider" min="8" max="55" step="1" value="30" />
+            </label>
+          </div>
+          <div class="interactive-toolbar-group boundary-guide-bar is-hidden" id="boundaryGuideBar">
+            <span class="boundary-guide-label">辅助线</span>
+            <label><input type="checkbox" data-guide="contour" checked /> 分割轮廓</label>
+            <label><input type="checkbox" data-guide="normal" checked /> 法向</label>
+            <label><input type="checkbox" data-guide="serosa" checked /> 浆膜线</label>
+            <label><input type="checkbox" data-guide="breakthrough" checked /> 突破弧</label>
+            <label><input type="checkbox" data-guide="normalWall" checked /> 正常壁</label>
+          </div>
+        </div>
+
+        <div class="interactive-viewer-wrap">
+          <div class="interactive-viewer-stage" id="viewerStage">
+            <video id="studyVideo" loop muted playsinline preload="auto"></video>
+            <div class="interactive-overlay">
+              <canvas id="overlayCanvas"></canvas>
+            </div>
+            <div id="boundaryLoupe" class="boundary-loupe hidden" aria-hidden="true">
+              <canvas id="boundaryLoupeCanvas" width="120" height="120"></canvas>
+              <div class="boundary-loupe-label">×3.5 边界放大</div>
+            </div>
+            <div class="interactive-hint" id="viewerHint">点击或框选病灶 → 自动分割 → 右侧查看文字报告</div>
+            <div id="samVideoBadge" class="sam-video-badge hidden" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <div class="interactive-boundary-panel" id="boundaryDetailPanel">
+          <div class="interactive-boundary-head">
+            <span>分割结果</span>
+            <span id="boundaryDetailHint">完成分割后显示视频叠加</span>
+          </div>
+          <div class="boundary-compass-row" id="boundaryCompass"></div>
+          <div class="boundary-detail-deep is-hidden" id="boundaryDetailDeep">
+            <div class="boundary-detail-canvas-wrap">
+              <canvas id="boundaryDetailCanvas" width="480" height="320"></canvas>
+              <div class="boundary-detail-empty" id="boundaryDetailEmpty">完成分割后，点击上方方向卡片查看边界深读</div>
+            </div>
+            <div class="boundary-detail-side">
+              <div class="boundary-detail-title" id="boundaryDetailTitle">—</div>
+              <div class="boundary-detail-metrics" id="boundaryDetailMetrics"></div>
+              <div class="boundary-profile-wrap">
+                <span class="boundary-adj-label">法向壁层剖面</span>
+                <canvas id="boundaryProfileCanvas" width="200" height="72"></canvas>
+              </div>
+              <label class="boundary-zoom-label">放大倍率 ×<span id="boundaryZoomValue">8</span>
+                <input type="range" id="boundaryZoomSlider" min="4" max="12" step="0.5" value="8" />
+              </label>
+              <div class="boundary-adjudication" id="boundaryAdjudication">
+                <span class="boundary-adj-label">医生判读</span>
+                <div class="boundary-adj-btns" id="boundaryAdjButtons"></div>
+              </div>
+            </div>
+          </div>
+          <div class="interactive-boundary-grid boundary-compass-thumbs" id="boundaryDetailGrid"></div>
+        </div>
+
+        <div class="interactive-timeline">
+          <div class="interactive-timeline-head">
+            <span>关键帧推荐</span>
+            <span id="videoClock">00:00 / 00:00</span>
+          </div>
+          <div class="interactive-keyframe-bar" id="keyframeBar"></div>
+          <input id="timelineSeek" type="range" min="0" max="1000" value="0" style="width:100%;margin-top:10px" />
+        </div>
+      </main>
+
+      <aside class="interactive-agent-panel">
+        <div class="interactive-agent-head">
+          <h2>阅片工作台</h2>
+          <p>交互分割 → 壁层证据 → T 分期 → 文字报告</p>
+          <div style="margin-top:10px">
+            <span class="interactive-confidence" id="reviewFlag">待分析</span>
+          </div>
+        </div>
+        <div class="interactive-agent-body">
+          <div class="clinical-report-hero" id="clinicalReportHero">
+            <div class="clinical-report-hero-head">
+              <span class="clinical-report-badge">T 分期文字报告</span>
+              <div class="clinical-report-head-actions">
+                <span class="clinical-report-status" id="clinicalReportStatus">等待分割</span>
+                <button type="button" class="btn ghost clinical-copy-btn" id="copyReportBtn" title="复制报告正文">复制</button>
+              </div>
+            </div>
+            <div class="clinical-report-stage-row">
+              <div class="clinical-report-stage" id="clinicalReportStage">—</div>
+              <span class="clinical-report-confidence" id="clinicalReportConfidence">—</span>
+            </div>
+            <div class="clinical-report-narrative-wrap">
+              <div class="clinical-report-narrative" id="clinicalReportNarrative">
+                完成病灶分割后，点击「生成文字报告」；亦可在边界方向完成判读后自动生成。
+              </div>
+            </div>
+            <div class="clinical-report-meta" id="clinicalReportMeta"></div>
+          </div>
+          <div class="interactive-card interactive-card-compact">
+            <div class="interactive-card-title">分析摘要</div>
+            <div id="agentConclusion">
+              <div class="interactive-empty">加载中…</div>
+            </div>
+          </div>
+          <div class="interactive-card">
+            <div class="interactive-card-title">T 分期概率</div>
+            <div id="agentStages"></div>
+          </div>
+          <details class="interactive-card interactive-card-collapsible">
+            <summary class="interactive-card-title">工具链</summary>
+            <div id="agentTools"></div>
+          </details>
+          <div class="interactive-card" id="layerBridgeCard">
+            <div class="interactive-card-title">胃壁分层 · 达层</div>
+            <div id="layerBridgePanel"><div class="interactive-empty">完成分割后，对当前视频帧做像素回声分层</div></div>
+          </div>
+          <div class="interactive-card" id="boundaryWorkbenchCard">
+            <div class="interactive-card-title">分割摘要</div>
+            <div id="boundaryWorkbenchAgent"><div class="interactive-empty">分割完成后汇总各方向突破判读</div></div>
+          </div>
+          <div class="interactive-card">
+            <div class="interactive-card-title">证据条目</div>
+            <div id="agentEvidence"></div>
+          </div>
+          <details class="interactive-card interactive-card-collapsible">
+            <summary class="interactive-card-title">相似病例</summary>
+            <div id="agentSimilar"></div>
+          </details>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <div id="agentToast" class="agent-toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="cases.bundle.js"></script>
+  <script src="demo_assets/contact_geometry.js"></script>
+  <script src="interactive_layer_bridge.js"></script>
+  <script src="interactive_boundary_workbench.js"></script>
+  <script src="interactive_video_agent.js?v=20260728-guest-video"></script>
+  <script src="demo_assets/ai_assist_nav.js"></script>
+</body>
+</html>
