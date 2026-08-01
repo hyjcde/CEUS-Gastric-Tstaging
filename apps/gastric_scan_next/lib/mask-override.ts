@@ -31,9 +31,24 @@ export function isValidMaskOverride(value: unknown): value is MaskBoundaryOverri
   if (!Array.isArray(v.mask_polygon) || v.mask_polygon.length < 3) return false;
   if (typeof v.imageWidth !== 'number' || typeof v.imageHeight !== 'number') return false;
   if (v.imageWidth <= 0 || v.imageHeight <= 0) return false;
-  return v.mask_polygon.every(
-    (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])),
-  );
+  const validPolygon = (polygon: unknown) => Array.isArray(polygon)
+    && polygon.length >= 3
+    && polygon.every(
+      (pt) => Array.isArray(pt) && pt.length >= 2
+        && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])),
+    );
+  if (!validPolygon(v.mask_polygon)) return false;
+  if (v.video_frames !== undefined) {
+    if (!Array.isArray(v.video_frames)) return false;
+    if (!v.video_frames.every((frame) => (
+      frame
+      && Number.isFinite(Number(frame.timestamp_sec))
+      && Number(frame.imageWidth) > 0
+      && Number(frame.imageHeight) > 0
+      && validPolygon(frame.mask_polygon)
+    ))) return false;
+  }
+  return true;
 }
 
 /** Payload fragment attached to /api/agent/analyze. */
@@ -49,6 +64,7 @@ export function maskOverrideToAnalyzePayload(override: MaskBoundaryOverride | nu
       source: override.source || 'manual',
       video_time_sec: override.video_time_sec,
       video_url: override.video_url,
+      video_frames: override.video_frames,
     },
     roi_mode: override.roi_mode || 'predicted',
     use_mask_override: true,

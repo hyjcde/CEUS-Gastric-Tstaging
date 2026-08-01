@@ -98,6 +98,18 @@ export interface SegmentationEvidence {
   overlay_transparent_url?: string;
 }
 
+/** One persisted lesion contour generated at a video timestamp. */
+export interface VideoMaskFrameOverride {
+  timestamp_sec: number;
+  imageWidth: number;
+  imageHeight: number;
+  mask_polygon: number[][];
+  roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
+  source?: 'video_track' | 'video_propagate' | 'sam' | 'manual';
+  propagation_status?: 'seed' | 'accepted';
+  quality_score?: number;
+}
+
 /** Doctor-edited lesion boundary fed into Agent analyze as mask/ROI override. */
 export interface MaskBoundaryOverride {
   patientId: string;
@@ -116,6 +128,8 @@ export interface MaskBoundaryOverride {
   /** When editing on video: timestamp in seconds */
   video_time_sec?: number;
   video_url?: string;
+  /** Persisted lesion contours produced at sampled video timestamps. */
+  video_frames?: VideoMaskFrameOverride[];
   updated_at?: string;
   note?: string;
 }
@@ -231,6 +245,7 @@ export interface AgentWorkbenchReport {
   };
   knowledge_highlights: string[];
   tool_status: Record<string, string>;
+  dino_sign_fusion?: Record<string, unknown>;
   memory_update_candidates?: Array<Record<string, unknown>>;
   memory_applied?: boolean;
   active_rules_used?: string[];
@@ -287,7 +302,36 @@ export interface RuntimeVerification {
   proxy_visual_notes?: string[];
 }
 
+export interface AgentEvidenceItem {
+  evidence_id: string;
+  domain: string;
+  feature: string;
+  status: string;
+  source_type: string;
+  source_ref: string;
+  value?: unknown;
+  confidence?: unknown;
+  model_version?: unknown;
+  frame_id_or_time?: unknown;
+  created_at: string;
+}
+
+export interface AgentProvenance {
+  schema_version: string;
+  orchestrator: string;
+  run_id: string;
+  case_id: string;
+  patient_id: string;
+  data_source?: string;
+  software_version?: string;
+  manifest_version?: string;
+  artifact_relative_dir?: string;
+  step_count: number;
+  model_steps?: Array<Record<string, unknown>>;
+}
+
 export interface AgentAnalysisResponse {
+  schema_version?: string;
   session_id: string;
   session_memory: AgentSessionSummary;
   frame_evidence?: {
@@ -308,6 +352,8 @@ export interface AgentAnalysisResponse {
   similar_cases: SimilarCaseResult[];
   knowledge_context: KnowledgeSnippet[];
   report: AgentWorkbenchReport;
+  evidence?: AgentEvidenceItem[];
+  provenance?: AgentProvenance;
   agent_steps?: AgentStep[];
   prediction_artifacts?: Record<string, unknown>;
   runtime_verification?: RuntimeVerification;

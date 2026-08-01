@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import {
   Check, Eraser, Loader2, MousePointer2, Pause, Pencil, Play, Plus, Save, Sparkles, Trash2, Video, X, ZoomIn,
 } from 'lucide-react';
-import type { MaskBoundaryOverride, Patient, VideoInfo } from '@/types';
+import type { MaskBoundaryOverride, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import { bboxFromPolygon } from '@/lib/mask-override';
 import { parseLesionMaskFromLabelMe, parseWallMaskFromLabelMe } from '@/lib/direction-annotation/labelme-utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -175,6 +175,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const [frameFrozen, setFrameFrozen] = useState(false);
   const [propagateBusy, setPropagateBusy] = useState(false);
   const [propagateProgress, setPropagateProgress] = useState<string | null>(null);
+  const [videoFrameOverrides, setVideoFrameOverrides] = useState<VideoMaskFrameOverride[]>([]);
   const [frameDataUrl, setFrameDataUrl] = useState<string | null>(null);
   const [layerResult, setLayerResult] = useState<LayerAnalyzeResult | null>(null);
   const [layerPick, setLayerPick] = useState<{ x: number; y: number } | null>(null);
@@ -263,9 +264,11 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     if (!patient) {
       setPoints([]);
       setWallPoints([]);
+      setVideoFrameOverrides([]);
       setImgLoaded(false);
       return;
     }
+    setVideoFrameOverrides(override?.video_frames || []);
     setRoiMode(override?.roi_mode || 'predicted');
     if (override?.mask_polygon?.length || override?.wall_polygon?.length) {
       const lesion = override?.mask_polygon?.length
@@ -319,7 +322,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       }
     })();
     return () => { cancelled = true; };
-  }, [patient?.id, override?.updated_at, override?.mask_polygon, override?.wall_polygon, patient?.json_url, patient?.segmentation?.annotation_url, zh, snapshotOriginal]);
+  }, [patient?.id, override?.updated_at, override?.mask_polygon, override?.wall_polygon, override?.video_frames, patient?.json_url, patient?.segmentation?.annotation_url, zh, snapshotOriginal]);
 
   useEffect(() => {
     if (!open) return;
@@ -1176,7 +1179,19 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     setTrackOnPlay(false);
     const step = Math.max(0.2, Math.min(0.5, duration / 40));
     const maxSteps = 12;
+    const imageWidth = video.videoWidth;
+    const imageHeight = video.videoHeight;
     let currentPoly = points.map((p) => [p[0], p[1]]);
+    let propagatedFrames: VideoMaskFrameOverride[] = [{
+      timestamp_sec: Number(start.toFixed(3)),
+      imageWidth,
+      imageHeight,
+      mask_polygon: currentPoly.map((p) => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]),
+      roi_bbox: bboxFromPolygon(currentPoly),
+      source: 'video_propagate',
+      propagation_status: 'seed',
+    }];
+    setVideoFrameOverrides(propagatedFrames);
     let okSteps = 0;
     try {
       for (let i = 1; i <= maxSteps; i += 1) {
@@ -1208,6 +1223,19 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
         }
         currentPoly = nextPoly;
         setPoints(nextPoly);
+        propagatedFrames = [
+          ...propagatedFrames,
+          {
+            timestamp_sec: Number(t.toFixed(3)),
+            imageWidth,
+            imageHeight,
+            mask_polygon: nextPoly.map((p) => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]),
+            roi_bbox: bboxFromPolygon(nextPoly),
+            source: 'video_propagate',
+            propagation_status: 'accepted',
+          },
+        ];
+        setVideoFrameOverrides(propagatedFrames);
         okSteps += 1;
         setVideoTime(t);
         redraw();
@@ -1254,9 +1282,15 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       source: mode === 'sam' ? 'sam' : 'manual',
       video_time_sec: mediaMode === 'video' ? Number(videoTime.toFixed(3)) : undefined,
       video_url: mediaMode === 'video' ? videoUrl || undefined : undefined,
+      video_frames: mediaMode === 'video' && videoFrameOverrides.length
+        ? videoFrameOverrides
+        : undefined,
+      note: mediaMode === 'video' && videoFrameOverrides.length
+        ? 'Video propagation stores lesion contours at sampled timestamps; wall contour remains current-frame only.'
+        : undefined,
       updated_at: new Date().toISOString(),
     };
-  }, [patient, points, wallPoints, roiMode, mode, mediaMode, videoTime, videoUrl]);
+  }, [patient, points, wallPoints, roiMode, mode, mediaMode, videoTime, videoUrl, videoFrameOverrides]);
 
   const handleSave = async () => {
     const next = buildOverride();
@@ -1295,6 +1329,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       pointsRef.current = [];
       setWallPoints([]);
       wallPointsRef.current = [];
+      setVideoFrameOverrides([]);
       clearSamPrompts();
       setLayerResult(null);
       onImagingAssist?.(null);
