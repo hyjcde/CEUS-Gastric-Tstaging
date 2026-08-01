@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Check, Eraser, Loader2, MousePointer2, Pause, Pencil, Play, Plus, Save, Sparkles, Trash2, Video, X, ZoomIn,
+  Check, Eraser, Layers, Loader2, MousePointer2, Pause, Pencil, Play, Plus, Save, Sparkles, Trash2, Video, X, ZoomIn,
 } from 'lucide-react';
 import type { MaskBoundaryOverride, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import { bboxFromPolygon } from '@/lib/mask-override';
@@ -178,6 +178,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const [videoFrameOverrides, setVideoFrameOverrides] = useState<VideoMaskFrameOverride[]>([]);
   const [frameDataUrl, setFrameDataUrl] = useState<string | null>(null);
   const [layerResult, setLayerResult] = useState<LayerAnalyzeResult | null>(null);
+  const [wallAnalysisOpen, setWallAnalysisOpen] = useState(false);
   const [layerPick, setLayerPick] = useState<{ x: number; y: number } | null>(null);
   const [undoLen, setUndoLen] = useState(0);
   const [hasOriginal, setHasOriginal] = useState(false);
@@ -835,17 +836,29 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
 
   useEffect(() => {
     if (!open) return;
-    const onResize = () => {
+    const resizeCanvas = () => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (!canvas || !container) return;
       const rect = container.getBoundingClientRect();
-      canvas.width = Math.max(320, Math.floor(rect.width));
-      canvas.height = Math.max(240, Math.floor(rect.height));
+      const nextWidth = Math.max(320, Math.floor(rect.width));
+      const nextHeight = Math.max(240, Math.floor(rect.height));
+      if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+      }
       redraw();
     };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => requestAnimationFrame(resizeCanvas))
+      : null;
+    if (observer && containerRef.current) observer.observe(containerRef.current);
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', resizeCanvas);
+    };
   }, [open, redraw]);
 
   const canvasToImage = useCallback((e: { clientX: number; clientY: number }): number[] | null => {
@@ -1509,6 +1522,19 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
               >
                 {zh ? '青, 病灶' : 'Cyan lesion'} ({points.length})
               </button>
+              <button
+                type="button"
+                disabled={points.length < 3 && !layerResult}
+                onClick={() => setWallAnalysisOpen((value) => !value)}
+                className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                  wallAnalysisOpen
+                    ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-100'
+                    : 'border-white/10 text-slate-300 hover:bg-white/5'
+                } disabled:opacity-40`}
+              >
+                <Layers size={13} />
+                {wallAnalysisOpen ? (zh ? '关闭征象窗' : 'Close evidence') : (zh ? '征象小窗' : 'Evidence window')}
+              </button>
               <div className="h-5 w-px bg-white/10" />
               <button
                 type="button"
@@ -1780,8 +1806,8 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
               </div>
             )}
 
-            <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-              <div ref={containerRef} className="relative min-h-0 flex-1 bg-black">
+            <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+              <div ref={containerRef} className="relative h-full w-full bg-black">
                 <canvas
                   ref={canvasRef}
                   className="h-full w-full touch-none"
@@ -1797,31 +1823,46 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                   </div>
                 )}
               </div>
-              <aside className="max-h-[42vh] w-full shrink-0 overflow-y-auto border-t border-white/10 bg-slate-950/90 p-3 md:max-h-none md:w-[300px] md:border-l md:border-t-0">
-                <WallFeatureAnalysisCard
-                  zh={zh}
-                  lesionPolygon={points}
-                  wallPolygon={wallPoints}
-                  frameSize={frameSize}
-                  frameDataUrl={frameDataUrl}
-                  pick={layerPick}
-                  paused={dragIndex !== null || samBusy || propagateBusy}
-                  onResult={(r) => {
-                    setLayerResult(r);
-                    onImagingAssist?.({
-                      layerResult: r,
-                      lesionPolygon: pointsRef.current,
-                      wallPolygon: wallPointsRef.current,
-                      frameSize,
-                    });
-                  }}
-                />
-                <p className="mt-2 text-[9px] leading-relaxed text-slate-500">
-                  {zh
-                    ? '算法迁自人机互助 ContactGeom / LayerBridge；达层为软提示，不作病理金标准。Alt+点击设取样点；「纪要」看会议验收点。'
-                    : 'Migrated ContactGeom/LayerBridge; Alt+click sets pick. Layer read is soft hint only.'}
-                </p>
-              </aside>
+              <div className={`absolute inset-y-3 right-3 z-30 w-[min(390px,calc(100%-1.5rem))] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-emerald-300/30 bg-slate-950/95 shadow-2xl shadow-black/60 backdrop-blur-md ${wallAnalysisOpen ? 'flex' : 'hidden'}`}>
+                <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-100">
+                    <Layers size={14} />
+                    {zh ? '胃壁特征分析' : 'Wall feature analysis'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setWallAnalysisOpen(false)}
+                    className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-300 hover:bg-white/10"
+                  >
+                    {zh ? '收起' : 'Collapse'}
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-2 custom-scrollbar">
+                  <WallFeatureAnalysisCard
+                    zh={zh}
+                    lesionPolygon={points}
+                    wallPolygon={wallPoints}
+                    frameSize={frameSize}
+                    frameDataUrl={frameDataUrl}
+                    pick={layerPick}
+                    paused={dragIndex !== null || samBusy || propagateBusy}
+                    onResult={(r) => {
+                      setLayerResult(r);
+                      onImagingAssist?.({
+                        layerResult: r,
+                        lesionPolygon: pointsRef.current,
+                        wallPolygon: wallPointsRef.current,
+                        frameSize,
+                      });
+                    }}
+                  />
+                  <p className="mt-2 px-1 text-[9px] leading-relaxed text-slate-500">
+                    {zh
+                      ? 'ContactGeom / LayerBridge 结果是辅助提示，不作病理层次结论。Alt+点击设取样点。'
+                      : 'ContactGeom / LayerBridge is assistive evidence, not pathological layer truth.'}
+                  </p>
+                </div>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">              <button
                 type="button"
