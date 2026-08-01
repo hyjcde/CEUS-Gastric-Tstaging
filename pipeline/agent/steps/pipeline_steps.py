@@ -308,7 +308,6 @@ class FrameExtractAgent(BasePipelineStep):
     def run(self, state, registry, options):
         frames = [
             {
-                "frame_index": f.frame_index,
                 "frame_id": f.frame_id,
                 "frame_index": f.frame_index,
                 "timestamp_sec": f.timestamp_sec,

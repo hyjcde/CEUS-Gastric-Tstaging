@@ -336,7 +336,17 @@ export interface AgentAnalysisResponse {
   session_memory: AgentSessionSummary;
   frame_evidence?: {
     frame_count: number;
+    frames?: Array<{
+      image_path?: string;
+      roi_path?: string | null;
+      frame_id?: string | null;
+      frame_index?: number;
+      timestamp_sec?: number | null;
+      quality_score?: number | null;
+    }>;
     primary_image_path?: string;
+    primary_frame_id?: string | null;
+    primary_timestamp_sec?: number | null;
     aggregation?: string;
     aggregated_frame_count?: number;
   };

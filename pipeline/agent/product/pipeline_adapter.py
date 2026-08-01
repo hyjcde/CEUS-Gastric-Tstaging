@@ -44,6 +44,7 @@ def _pipeline_step_to_agent_step(record: StepRecord, order: int) -> Dict[str, An
         "t_staging": "T 分期 4-class 分类",
         "wall_evidence": "壁层侵犯证据（SDF）",
         "dinov3_seg": "DINOv3 候选分割",
+        "dino_sign_fusion": "DINOv3 + 结构化征象融合证据",
         "case_rag": "Case-RAG 相似病例检索",
         "report_synth": "多证据综合推理",
     }
@@ -72,6 +73,165 @@ def _pipeline_step_to_agent_step(record: StepRecord, order: int) -> Dict[str, An
         ),
         "reasoning": record.explanation,
         "visual_refs": visual_refs,
+    }
+
+
+def _contract_value(value: Any, *, depth: int = 0) -> Any:
+    """Compact nested tool values for the public AgentResult contract."""
+    if isinstance(value, np.ndarray):
+        return {
+            "__type__": "ndarray",
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+        }
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, Path):
+        return str(value)
+    if depth > 3:
+        return str(value)[:500]
+    if isinstance(value, dict):
+        return {
+            str(key): _contract_value(item, depth=depth + 1)
+            for key, item in list(value.items())[:32]
+        }
+    if isinstance(value, (list, tuple)):
+        return [_contract_value(item, depth=depth + 1) for item in list(value)[:16]]
+    return value
+
+
+def _evidence_domain(step_id: str) -> str:
+    if "lumen" in step_id:
+        return "lumen"
+    if "wall" in step_id or "morphology" in step_id or "sign" in step_id:
+        return "wall_or_lesion"
+    if "binary" in step_id:
+        return "benign_malignant"
+    if "staging" in step_id:
+        return "t_staging"
+    if "report" in step_id:
+        return "report"
+    if "rag" in step_id or "memory" in step_id:
+        return "similarity_memory"
+    return "pipeline"
+
+
+def _evidence_source_type(record: StepRecord) -> str:
+    if record.step_id in {"morphology", "dino_sign_fusion", "report_synth"}:
+        return "derived_rule"
+    if record.step_id == "triage":
+        return "case_registry"
+    if record.step_id == "frame_extract":
+        return "image_or_video"
+    if record.step_id == "quality":
+        return "quality_tool"
+    if record.tool_name:
+        return "model_inference"
+    return "pipeline_derived"
+
+
+def _frame_refs_from_observation(obs: Dict[str, Any]) -> Any:
+    """Return compact frame/time provenance for step and per-frame outputs."""
+    per_frame = obs.get("per_frame")
+    if isinstance(per_frame, list) and per_frame:
+        return [
+            {
+                "frame_id": item.get("frame_id"),
+                "frame_index": item.get("frame_index"),
+                "timestamp_sec": item.get("timestamp_sec"),
+                "image_path": item.get("image_path"),
+                "quality_score": item.get("quality_score"),
+            }
+            for item in per_frame
+            if isinstance(item, dict)
+        ]
+    if any(obs.get(key) is not None for key in ("frame_id", "frame_index", "timestamp_sec")):
+        return {
+            "frame_id": obs.get("frame_id"),
+            "frame_index": obs.get("frame_index"),
+            "timestamp_sec": obs.get("timestamp_sec"),
+            "image_path": obs.get("image_path"),
+            "quality_score": obs.get("quality_score"),
+        }
+    if isinstance(obs.get("frames"), list):
+        return [
+            {
+                "frame_id": item.get("frame_id"),
+                "frame_index": item.get("frame_index"),
+                "timestamp_sec": item.get("timestamp_sec"),
+                "image_path": item.get("image_path"),
+                "quality_score": item.get("quality_score"),
+            }
+            for item in obs["frames"]
+            if isinstance(item, dict)
+        ]
+    return None
+
+
+def _build_evidence_items(
+    state: CasePipelineState,
+    artifact_info: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for record in state.steps:
+        source_ref = str(
+            artifact_info["relative_dir"]
+            / "pipeline"
+            / "steps"
+            / f"step-{record.step:02d}-{record.step_id}.json"
+        )
+        obs = record.observation or {}
+        confidence = (
+            obs.get("top1_prob")
+            or obs.get("lumen_confidence")
+            or obs.get("confidence")
+        )
+        items.append(
+            {
+                "evidence_id": f"EV-{record.step:02d}-{record.step_id}",
+                "domain": _evidence_domain(record.step_id),
+                "feature": record.step_id,
+                "status": record.status,
+                "source_type": _evidence_source_type(record),
+                "source_ref": source_ref,
+                "value": _contract_value(obs),
+                "confidence": _contract_value(confidence),
+                "model_version": _contract_value(
+                    obs.get("backend_id") or obs.get("model") or record.tool_name
+                ),
+                "frame_id_or_time": _contract_value(_frame_refs_from_observation(obs)),
+                "created_at": state.created_at,
+            }
+        )
+    return items
+
+
+def _build_provenance(
+    payload: Dict[str, Any],
+    state: CasePipelineState,
+    artifact_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "schema_version": "provenance_v1",
+        "orchestrator": "langgraph_case_pipeline",
+        "run_id": str(payload.get("session_id") or "unsaved_session"),
+        "case_id": state.case_input.case_id,
+        "patient_id": state.case_input.patient_id,
+        "data_source": state.case_input.data_source,
+        "software_version": payload.get("software_version") or "gastric-agent-next-lan-20260801",
+        "manifest_version": payload.get("manifest_version") or "patient_media_registry",
+        "artifact_relative_dir": str(artifact_info["relative_dir"]),
+        "step_count": len(state.steps),
+        "model_steps": [
+            {
+                "step_id": record.step_id,
+                "tool_name": record.tool_name,
+                "status": record.status,
+                "elapsed_s": round(record.elapsed_s, 4),
+            }
+            for record in state.steps
+            if record.tool_name
+        ],
     }
 
 
@@ -160,7 +320,7 @@ def _resolve_memory_options(payload: Dict[str, Any]) -> tuple[bool, Optional[str
 
 
 def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Run the 12-step pipeline and map results to the Workbench JSON contract."""
+    """Run the 13-step pipeline and map results to the Workbench JSON contract."""
     clinical_payload_raw = payload.get("clinical") or {}
     clinical_payload = normalize_frontend_clinical(clinical_payload_raw)
     report_payload = payload.get("report_text") or {}
@@ -218,7 +378,14 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     image_path = case_input.primary_image_path
     frame_plan = [
-        {"image_path": f.image_path, "roi_path": f.roi_path}
+        {
+            "image_path": f.image_path,
+            "roi_path": f.roi_path,
+            "frame_id": f.frame_id,
+            "frame_index": f.frame_index,
+            "timestamp_sec": f.timestamp_sec,
+            "quality_score": f.quality_score,
+        }
         for f in case_input.frames
     ]
 
@@ -358,6 +525,7 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         ac._emit_stream_event("runtime_verification", {"verification": runtime_verification})
 
     result = {
+        "schema_version": "agent_result_v1",
         "session_id": session.session_id,
         "session_memory": {
             "session_id": session.session_id,
@@ -368,7 +536,10 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         },
         "frame_evidence": {
             "frame_count": len(frame_plan),
+            "frames": frame_plan,
             "primary_image_path": image_path,
+            "primary_frame_id": case_input.primary_frame.frame_id,
+            "primary_timestamp_sec": case_input.primary_frame.timestamp_sec,
             "aggregation": classification.get("frame_aggregation", "single_frame"),
             "aggregated_frame_count": classification.get("aggregated_frame_count", 1),
         },
@@ -394,6 +565,8 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         "pipeline_state_path": str(pipeline_out / "pipeline_state.json"),
         "memory_context": state.memory_context or {},
         "memory_store_ref": memory_store_ref,
+        "evidence": _build_evidence_items(state, artifact_info),
+        "provenance": _build_provenance(payload, state, artifact_info),
     }
     result["trajectory_ref"] = ac._write_trajectory(payload, session.session_id, result)
     return result
