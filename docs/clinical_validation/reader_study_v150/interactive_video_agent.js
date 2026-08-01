@@ -26,6 +26,7 @@
     keyFrames: [],
     samBackend: null,
     maskPolygon: null,
+    contourEditDirty: false,
     boundarySamples: [],
     loupePoint: null,
     trackOnPlay: true,
@@ -63,6 +64,7 @@
   }
 
   const dragState = { active: false, startCanvas: null, startImage: null, pointerId: null };
+  const contourDrag = { active: false, pointerId: null, index: -1, base: null };
   const MIN_BOX_PX = 10;
   const MIN_BOX_IMAGE_PX = 12;
   const BOUNDARY_ZOOM = 3.5;
@@ -485,6 +487,10 @@
         hint.textContent = '边界检视：移动鼠标局部放大 · 黄圈=外缘 · 青圈=分割边界 · 用于外壁突破判读';
       } else if (state.interactionMode === 'box') {
         hint.textContent = '框选模式：拖拽框住病灶区域 · 松开后可加正负点微调 · 绿=正向 · 红=排除';
+      } else if (state.interactionMode === 'edit') {
+        hint.textContent = state.maskPolygon?.length >= 3
+          ? '平滑编辑：拖动轮廓附近的点，邻近轮廓会平滑跟随；完成后请重新生成报告'
+          : '请先点击或框选完成病灶分割，再进入平滑编辑';
       } else if (boundaryDirectionsEnabled() && state.interactionMode === 'boundary') {
         hint.textContent = '自定义方向：点击分割边界 · 沿法向查看壁层剖面 · 快捷键 5';
       } else if (state.interactionMode === 'negative') {
@@ -513,6 +519,9 @@
     }
     if (extra?.refined) {
       parts.push('精修');
+    }
+    if (extra?.manual) {
+      parts.push('手工平滑编辑');
     }
     node.textContent = parts.join(' · ') || '未标注';
   }
@@ -832,6 +841,11 @@
   }
 
   async function generateLlmReport(options = {}) {
+    if (state.contourEditDirty) {
+      refreshLayerAnalysis({ silent: false });
+      showToast('当前轮廓已手工平滑编辑；请重新点选或框选后再生成模型报告', 'warn');
+      return;
+    }
     if (!state.samBackend) {
       showToast('分割服务未连接，无法生成报告', 'warn');
       return;
@@ -849,6 +863,7 @@
     try {
       const data = await callSamBackend(buildPromptPayload(), { llmReport: true });
       state.maskPolygon = normalizeMaskPolygon(data.mask_polygon, data.frame_size, el('studyVideo')) || state.maskPolygon;
+      state.contourEditDirty = false;
       state.lastPromptMeta = data.prompt_meta || state.lastPromptMeta;
       const report = {
         ...(state.lastReport || {}),
@@ -917,6 +932,7 @@
   function scheduleVideoTrack(force) {
     const video = el('studyVideo');
     if (!video || video.paused || !state.trackOnPlay || !hasUserPrompt()) return;
+    if (state.contourEditDirty) return;
     if (performance.now() < state.userEditUntil) return;
     const now = performance.now();
     if (!force && now - state.lastTrackMs < TRACK_INTERVAL_MS) return;
@@ -937,6 +953,7 @@
       const data = await callSamBackend(prompt, { llmReport: false });
       if (requestId !== state.trackRequestId) return;
       state.maskPolygon = normalizeMaskPolygon(data.mask_polygon, data.frame_size, el('studyVideo'));
+        state.contourEditDirty = false;
       state.lastMaskOverlayPng = data.mask_overlay_png || null;
       state.lastPromptMeta = data.prompt_meta || null;
       updatePromptCounter({
@@ -1002,6 +1019,40 @@
     const vh = video.videoHeight || 1;
     const normalized = normalizeMaskPolygon(normPoly, { width: vw, height: vh }, video) || [];
     return normalized.map(([nx, ny]) => [nx * vw, ny * vh]);
+  }
+
+  function nearestContourVertex(imageX, imageY, video) {
+    if (!state.maskPolygon?.length) return -1;
+    const points = polygonImagePoints(state.maskPolygon, video);
+    const threshold = Math.max(18, Math.min(video.videoWidth || 1, video.videoHeight || 1) * 0.035);
+    let best = -1;
+    let bestDistance = threshold * threshold;
+    points.forEach(([x, y], index) => {
+      const dx = x - imageX;
+      const dy = y - imageY;
+      const distance = dx * dx + dy * dy;
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    return best;
+  }
+
+  function smoothContourFromBase(base, index, imageX, imageY, video) {
+    if (!Array.isArray(base) || index < 0 || index >= base.length) return null;
+    const current = base[index];
+    const dx = imageX - current[0];
+    const dy = imageY - current[1];
+    const weights = [1, 0.62, 0.34, 0.16, 0.06];
+    const n = base.length;
+    const moved = base.map(([x, y], i) => {
+      const rawDistance = Math.abs(i - index);
+      const distance = Math.min(rawDistance, n - rawDistance);
+      const weight = weights[Math.min(distance, weights.length - 1)];
+      return [x + dx * weight, y + dy * weight];
+    });
+    return normalizeMaskPolygon(moved, { width: video.videoWidth, height: video.videoHeight }, video);
   }
 
   function polygonCentroid(points) {
@@ -1723,6 +1774,7 @@
         const data = await callSamBackend(prompt, { llmReport: fullReport && !silent });
         if (requestId !== state.trackRequestId) return;
         state.maskPolygon = normalizeMaskPolygon(data.mask_polygon, data.frame_size, el('studyVideo'));
+        state.contourEditDirty = false;
         state.lastMaskOverlayPng = data.mask_overlay_png || null;
         state.lastPromptMeta = data.prompt_meta || null;
         updatePromptCounter({
@@ -1821,6 +1873,38 @@
       );
     }
 
+    function onWindowContourPointerMove(event) {
+      if (!contourDrag.active || event.pointerId !== contourDrag.pointerId) return;
+      const pt = overlayPoint(event);
+      if (!pt.mapped.inVideo) return;
+      const next = smoothContourFromBase(contourDrag.base, contourDrag.index, pt.mapped.x, pt.mapped.y, video);
+      if (!next) return;
+      state.maskPolygon = next;
+      redrawOverlay();
+    }
+
+    function cleanupContourDragListeners() {
+      window.removeEventListener('pointermove', onWindowContourPointerMove);
+      window.removeEventListener('pointerup', onWindowContourPointerUp);
+      window.removeEventListener('pointercancel', onWindowContourPointerUp);
+    }
+
+    function onWindowContourPointerUp(event) {
+      if (!contourDrag.active || event.pointerId !== contourDrag.pointerId) return;
+      contourDrag.active = false;
+      contourDrag.pointerId = null;
+      contourDrag.index = -1;
+      contourDrag.base = null;
+      cleanupContourDragListeners();
+      state.contourEditDirty = true;
+      state.trackOnPlay = false;
+      updateTrackButtonUi();
+      updatePromptCounter({ manual: true });
+      refreshLayerAnalysis({ silent: false });
+      showToast('轮廓已平滑调整；请复核后重新点选/框选生成模型报告', 'ok');
+      redrawOverlay();
+    }
+
     function onWindowBoxPointerMove(event) {
       if (!dragState.active || event.pointerId !== dragState.pointerId) return;
       const pt = overlayPoint(event);
@@ -1860,6 +1944,28 @@
         state.layerPickImage = { x: pt.mapped.x, y: pt.mapped.y };
         refreshLayerAnalysis({ silent: false });
         showToast('已按点击方向重算分层', 'ok');
+        return;
+      }
+      if (state.interactionMode === 'edit') {
+        const pt = overlayPoint(event);
+        if (!pt.mapped.inVideo || !state.maskPolygon?.length) return;
+        const index = nearestContourVertex(pt.mapped.x, pt.mapped.y, video);
+        if (index < 0) {
+          showToast('请拖动轮廓附近的点进行平滑编辑', 'warn');
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        video.pause();
+        markUserEditing();
+        contourDrag.active = true;
+        contourDrag.pointerId = event.pointerId;
+        contourDrag.index = index;
+        contourDrag.base = polygonImagePoints(state.maskPolygon, video);
+        target.setPointerCapture?.(event.pointerId);
+        window.addEventListener('pointermove', onWindowContourPointerMove);
+        window.addEventListener('pointerup', onWindowContourPointerUp);
+        window.addEventListener('pointercancel', onWindowContourPointerUp);
         return;
       }
       if (state.interactionMode === 'inspect') return;
@@ -1983,6 +2089,7 @@
       if (event.key === '3') { setInteractionMode('box'); showToast('框选模式', 'ok'); return; }
       if (event.key === '4' && boundaryDirectionsEnabled()) { setInteractionMode('inspect'); showToast('边界检视模式', 'ok'); return; }
       if (event.key === '5' && boundaryDirectionsEnabled()) { setInteractionMode('boundary'); showToast('自定义边界方向', 'ok'); return; }
+      if (event.key === '6') { setInteractionMode('edit'); showToast('平滑编辑模式', 'ok'); return; }
       if (event.key === '[' && boundaryDirectionsEnabled()) {
         if (window.BoundaryWorkbench) window.BoundaryWorkbench.cycleSector(state, -1);
         return;
@@ -2023,6 +2130,7 @@
       state.dragBox = null;
       state.lastReport = null;
       state.maskPolygon = null;
+      state.contourEditDirty = false;
       state.lastMaskOverlayPng = null;
       clearBoundaryDetailPanel();
       clearOverlay();
