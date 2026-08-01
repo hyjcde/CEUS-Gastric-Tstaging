@@ -63,6 +63,7 @@ def select_lumen_box(result: Any) -> Optional[Dict[str, int]]:
 
 
 def lumen_mask_from_bbox(bbox: Dict[str, int], height: int, width: int) -> np.ndarray:
+    """Create a rectangular proxy mask; this is not a lumen segmentation mask."""
     mask = np.zeros((height, width), dtype=np.uint8)
     x1 = max(0, int(bbox["x1"]))
     y1 = max(0, int(bbox["y1"]))
@@ -73,11 +74,26 @@ def lumen_mask_from_bbox(bbox: Dict[str, int], height: int, width: int) -> np.nd
     return mask
 
 
+def lumen_geometry_from_bbox(bbox: Dict[str, int], height: int, width: int) -> Dict[str, float]:
+    """Return auditable box geometry without inferring a clinical direction."""
+    box_width = max(0, int(bbox["x2"]) - int(bbox["x1"]))
+    box_height = max(0, int(bbox["y2"]) - int(bbox["y1"]))
+    image_area = max(int(height) * int(width), 1)
+    return {
+        "bbox_width_px": float(box_width),
+        "bbox_height_px": float(box_height),
+        "bbox_aspect_ratio": round(box_width / max(box_height, 1), 4),
+        "bbox_center_x_norm": round(((int(bbox["x1"]) + int(bbox["x2"])) / 2) / max(width, 1), 4),
+        "bbox_center_y_norm": round(((int(bbox["y1"]) + int(bbox["y2"])) / 2) / max(height, 1), 4),
+        "bbox_area_ratio": round((box_width * box_height) / image_area, 4),
+    }
+
+
 class LumenDetectionTool(BaseTool):
     name = "detect_lumen"
     description = (
-        "Detect gastric lumen (water-filled cavity) with YOLO. Returns bounding box, "
-        "confidence, and lumen area ratio for wall-band and staging context."
+        "Detect gastric lumen (water-filled cavity) with YOLO. Returns a bounding box, "
+        "proxy-mask geometry, confidence, and explicit direction status for staging context."
     )
     parameters = [
         ToolParameter("image_path", "str", "Absolute path to the ultrasound image"),
@@ -135,6 +151,8 @@ class LumenDetectionTool(BaseTool):
             return {
                 "available": False,
                 "error": "Could not read image",
+                "lumen_direction": "not_assessable",
+                "lumen_direction_source": "image_unavailable",
                 "runtime_invocation": self._runtime_invocation(forward_pass=False),
             }
 
@@ -145,6 +163,8 @@ class LumenDetectionTool(BaseTool):
                 "available": False,
                 "lumen_detected": False,
                 "error": self._load_error or "Lumen YOLO unavailable",
+                "lumen_direction": "not_assessable",
+                "lumen_direction_source": "model_unavailable",
                 "image_height": h,
                 "image_width": w,
                 "runtime_invocation": self._runtime_invocation(forward_pass=False),
@@ -167,6 +187,8 @@ class LumenDetectionTool(BaseTool):
                 "available": False,
                 "lumen_detected": False,
                 "error": str(exc),
+                "lumen_direction": "not_assessable",
+                "lumen_direction_source": "inference_error",
                 "image_height": h,
                 "image_width": w,
                 "runtime_invocation": self._runtime_invocation(forward_pass=False),
@@ -177,6 +199,8 @@ class LumenDetectionTool(BaseTool):
                 "available": True,
                 "lumen_detected": False,
                 "roi_source": "yolo_no_detection",
+                "lumen_direction": "not_assessable",
+                "lumen_direction_source": "no_bbox",
                 "image_height": h,
                 "image_width": w,
                 "runtime_invocation": self._runtime_invocation(forward_pass=True),
@@ -193,8 +217,12 @@ class LumenDetectionTool(BaseTool):
             "lumen_detected": True,
             "roi_source": "yolo_lumen",
             "lumen_bbox": bbox,
+            "lumen_mask_type": "bbox_proxy",
             "lumen_confidence": round(conf_val, 4),
             "lumen_area_ratio": round(lumen_area / total, 4),
+            "lumen_geometry": lumen_geometry_from_bbox(bbox, h, w),
+            "lumen_direction": "not_assessed",
+            "lumen_direction_source": "yolo_bbox_only",
             "image_height": h,
             "image_width": w,
             "runtime_invocation": self._runtime_invocation(forward_pass=True),
