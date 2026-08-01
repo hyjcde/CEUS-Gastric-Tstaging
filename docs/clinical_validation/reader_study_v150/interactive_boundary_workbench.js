@@ -117,7 +117,18 @@
   function polygonImagePoints(normPoly, video) {
     const vw = video.videoWidth || 1;
     const vh = video.videoHeight || 1;
-    return normPoly.map(([nx, ny]) => [nx * vw, ny * vh]);
+    if (!Array.isArray(normPoly)) return [];
+    const points = normPoly
+      .filter((point) => Array.isArray(point) && point.length >= 2)
+      .map((point) => [Number(point[0]), Number(point[1])])
+      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+    const maxX = Math.max(...points.map(([x]) => Math.abs(x)), 0);
+    const maxY = Math.max(...points.map(([, y]) => Math.abs(y)), 0);
+    const pixelSpace = maxX > 1.5 || maxY > 1.5;
+    return points.map(([x, y]) => [
+      pixelSpace ? (x / vw) * vw : x * vw,
+      pixelSpace ? (y / vh) * vh : y * vh,
+    ]);
   }
 
   function polygonCentroid(points) {

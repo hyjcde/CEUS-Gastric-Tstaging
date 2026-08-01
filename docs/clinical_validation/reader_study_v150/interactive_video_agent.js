@@ -848,7 +848,7 @@
     showVideoBadge('正在生成报告…', true);
     try {
       const data = await callSamBackend(buildPromptPayload(), { llmReport: true });
-      state.maskPolygon = data.mask_polygon || state.maskPolygon;
+      state.maskPolygon = normalizeMaskPolygon(data.mask_polygon, data.frame_size, el('studyVideo')) || state.maskPolygon;
       state.lastPromptMeta = data.prompt_meta || state.lastPromptMeta;
       const report = {
         ...(state.lastReport || {}),
@@ -936,7 +936,7 @@
     try {
       const data = await callSamBackend(prompt, { llmReport: false });
       if (requestId !== state.trackRequestId) return;
-      state.maskPolygon = data.mask_polygon || null;
+      state.maskPolygon = normalizeMaskPolygon(data.mask_polygon, data.frame_size, el('studyVideo'));
       state.lastMaskOverlayPng = data.mask_overlay_png || null;
       state.lastPromptMeta = data.prompt_meta || null;
       updatePromptCounter({
@@ -979,10 +979,29 @@
     }
   }
 
+  function normalizeMaskPolygon(rawPoly, frameSize, video) {
+    if (!Array.isArray(rawPoly) || rawPoly.length < 3) return null;
+    const width = Number(frameSize?.width || video?.videoWidth || 1);
+    const height = Number(frameSize?.height || video?.videoHeight || 1);
+    const points = rawPoly
+      .filter((point) => Array.isArray(point) && point.length >= 2)
+      .map((point) => [Number(point[0]), Number(point[1])])
+      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+    if (points.length < 3) return null;
+    const maxX = Math.max(...points.map(([x]) => Math.abs(x)));
+    const maxY = Math.max(...points.map(([, y]) => Math.abs(y)));
+    const pixelSpace = maxX > 1.5 || maxY > 1.5;
+    return points.map(([x, y]) => [
+      Math.min(1, Math.max(0, pixelSpace ? x / width : x)),
+      Math.min(1, Math.max(0, pixelSpace ? y / height : y)),
+    ]);
+  }
+
   function polygonImagePoints(normPoly, video) {
     const vw = video.videoWidth || 1;
     const vh = video.videoHeight || 1;
-    return normPoly.map(([nx, ny]) => [nx * vw, ny * vh]);
+    const normalized = normalizeMaskPolygon(normPoly, { width: vw, height: vh }, video) || [];
+    return normalized.map(([nx, ny]) => [nx * vw, ny * vh]);
   }
 
   function polygonCentroid(points) {
@@ -1703,7 +1722,7 @@
       if (state.samBackend) {
         const data = await callSamBackend(prompt, { llmReport: fullReport && !silent });
         if (requestId !== state.trackRequestId) return;
-        state.maskPolygon = data.mask_polygon || null;
+        state.maskPolygon = normalizeMaskPolygon(data.mask_polygon, data.frame_size, el('studyVideo'));
         state.lastMaskOverlayPng = data.mask_overlay_png || null;
         state.lastPromptMeta = data.prompt_meta || null;
         updatePromptCounter({
