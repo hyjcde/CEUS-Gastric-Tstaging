@@ -1,4 +1,4 @@
-"""Twelve deterministic pipeline step agents."""
+"""Thirteen deterministic pipeline step agents."""
 
 from __future__ import annotations
 
@@ -101,6 +101,131 @@ def _should_skip_vision(state: CasePipelineState) -> bool:
     return state.gate_decision == "skip_t"
 
 
+_STAGE_NAMES = ("T1", "T2", "T3", "T4+")
+
+
+def _frame_quality_weight(frame) -> float:
+    score = frame.quality_score
+    if score is None:
+        return 1.0
+    return max(0.05, min(float(score), 1.0))
+
+
+def _frame_metadata(frame) -> Dict[str, Any]:
+    return {
+        "frame_id": frame.frame_id,
+        "frame_index": frame.frame_index,
+        "timestamp_sec": frame.timestamp_sec,
+        "quality_score": frame.quality_score,
+        "image_path": frame.image_path,
+    }
+
+
+def _representative_frame_result(rows: List[Dict[str, Any]], state: CasePipelineState) -> Dict[str, Any]:
+    if not rows:
+        return {}
+    primary_path = state.case_input.primary_frame.image_path
+    for row in rows:
+        if row.get("image_path") == primary_path:
+            return row
+    return max(rows, key=lambda row: float(row.get("quality_score") or 0.0))
+
+
+def _aggregate_binary_frames(
+    rows: List[Dict[str, Any]],
+    frames,
+    threshold: float,
+) -> Dict[str, Any]:
+    available = [row for row in rows if row.get("available")]
+    if not available:
+        return rows[0] if rows else {"available": False, "gate_decision": "run_t"}
+    frame_by_path = {frame.image_path: frame for frame in frames}
+    weighted = [
+        (row, _frame_quality_weight(frame_by_path[row.get("image_path")]))
+        for row in available
+        if row.get("image_path") in frame_by_path
+    ]
+    if not weighted:
+        weighted = [(row, 1.0) for row in available]
+    total = sum(weight for _, weight in weighted) or 1.0
+    probs = {
+        label: round(
+            sum(float((row.get("probabilities") or {}).get(label, 0.0)) * weight for row, weight in weighted)
+            / total,
+            4,
+        )
+        for label in ("benign", "malignant")
+    }
+    ordered = sorted(probs.items(), key=lambda pair: pair[1], reverse=True)
+    representative = max(weighted, key=lambda pair: pair[1])[0]
+    all_skip = all(row.get("gate_decision") == "skip_t" for row, _ in weighted)
+    top_label, top_prob = ordered[0]
+    gate = "skip_t" if all_skip and top_label == "benign" and top_prob >= threshold else "run_t"
+    merged = dict(representative)
+    merged.update(
+        {
+            "probabilities": probs,
+            "top1_label": top_label,
+            "top1_prob": top_prob,
+            "top2_label": ordered[1][0] if len(ordered) > 1 else top_label,
+            "top2_prob": ordered[1][1] if len(ordered) > 1 else 0.0,
+            "gate_decision": gate,
+            "frame_aggregation": "quality_weighted_mean",
+            "aggregated_frame_count": len(weighted),
+            "frame_weights": [
+                {"frame_index": row.get("frame_index"), "weight": round(weight / total, 4)}
+                for row, weight in weighted
+            ],
+        }
+    )
+    return merged
+
+
+def _aggregate_tstage_frames(rows: List[Dict[str, Any]], frames) -> Dict[str, Any]:
+    available = [row for row in rows if row.get("available") and row.get("probabilities")]
+    if not available:
+        return rows[0] if rows else {"available": False, "error": "No frame classifications"}
+    frame_by_path = {frame.image_path: frame for frame in frames}
+    weighted = [
+        (row, _frame_quality_weight(frame_by_path[row.get("image_path")]))
+        for row in available
+        if row.get("image_path") in frame_by_path
+    ]
+    if not weighted:
+        weighted = [(row, 1.0) for row in available]
+    total = sum(weight for _, weight in weighted) or 1.0
+    probs = {
+        stage: round(
+            sum(float((row.get("probabilities") or {}).get(stage, 0.0)) * weight for row, weight in weighted)
+            / total,
+            4,
+        )
+        for stage in _STAGE_NAMES
+    }
+    ordered = sorted(probs.items(), key=lambda pair: pair[1], reverse=True)
+    representative = max(weighted, key=lambda pair: pair[1])[0]
+    top1_stage, top1_prob = ordered[0]
+    top2_stage, top2_prob = ordered[1] if len(ordered) > 1 else (top1_stage, 0.0)
+    merged = dict(representative)
+    merged.update(
+        {
+            "probabilities": probs,
+            "top1_stage": top1_stage,
+            "top1_prob": top1_prob,
+            "top2_stage": top2_stage,
+            "top2_prob": top2_prob,
+            "uncertainty": round(1.0 - max(top1_prob - top2_prob, 0.0), 4),
+            "frame_aggregation": "quality_weighted_mean",
+            "aggregated_frame_count": len(weighted),
+            "frame_weights": [
+                {"frame_index": row.get("frame_index"), "weight": round(weight / total, 4)}
+                for row, weight in weighted
+            ],
+        }
+    )
+    return merged
+
+
 def _get_seg_tool(registry: ToolRegistry) -> SegmentationTool:
     tool = registry.get("segment")
     if not isinstance(tool, SegmentationTool):
@@ -185,6 +310,9 @@ class FrameExtractAgent(BasePipelineStep):
             {
                 "frame_index": f.frame_index,
                 "frame_id": f.frame_id,
+                "frame_index": f.frame_index,
+                "timestamp_sec": f.timestamp_sec,
+                "quality_score": f.quality_score,
                 "image_path": f.image_path,
                 "roi_path": f.roi_path,
             }
@@ -212,11 +340,37 @@ class QualityAgent(BasePipelineStep):
     tool_name = "quality_check"
 
     def run(self, state, registry, options):
-        path = state.case_input.primary_image_path
-        obs = registry.execute("quality_check", image_path=path)
-        usable = obs.get("usable", obs.get("quality_score", 0) >= 0.3)
-        expl = f"首帧质量检查：usable={usable}，score={obs.get('quality_score', '?')}。"
-        return StepResult(observation=obs, explanation=expl, inputs={"image_path": path})
+        reports: List[Dict[str, Any]] = []
+        for frame in state.case_input.frames:
+            obs = registry.execute("quality_check", image_path=frame.image_path)
+            reports.append({**obs, **_frame_metadata(frame)})
+        primary = _representative_frame_result(reports, state)
+        usable_count = sum(1 for report in reports if report.get("usable"))
+        total_count = len(reports)
+        obs = dict(primary)
+        obs.update(
+            {
+                "primary_frame": primary,
+                "per_frame": reports,
+                "frame_count": total_count,
+                "usable_frame_count": usable_count,
+                "quality_aggregation": "per_frame_primary_representative",
+                "usable": bool(usable_count),
+            }
+        )
+        if usable_count == 0:
+            status = "failed"
+        elif usable_count < total_count:
+            status = "partial"
+        else:
+            status = "completed"
+        expl = f"{usable_count}/{total_count} 个关键帧通过质量检查；代表帧为 frame_index={primary.get('frame_index', '?')}。"
+        return StepResult(
+            observation=obs,
+            status=status,
+            explanation=expl,
+            inputs={"image_paths": [frame.image_path for frame in state.case_input.frames]},
+        )
 
     def render(self, state, result, options):
         from ..visualization.artifacts import save_quality_panel
@@ -245,17 +399,21 @@ class BinaryGateAgent(BasePipelineStep):
             )
 
         per_frame: List[Dict[str, Any]] = []
-        for fr in state.case_input.frames:
+        for frame in state.case_input.frames:
             obs = registry.execute(
                 "binary_classify",
-                image_path=fr.image_path,
-                frame_index=fr.frame_index,
+                image_path=frame.image_path,
+                frame_index=frame.frame_index,
                 gate_skip_t_threshold=options.skip_t_threshold,
             )
-            per_frame.append(obs)
+            per_frame.append({**obs, **_frame_metadata(frame)})
 
         state.per_frame_binary = per_frame
-        primary = per_frame[0]
+        primary = _aggregate_binary_frames(
+            per_frame,
+            state.case_input.frames,
+            options.skip_t_threshold,
+        )
         gate = primary.get("gate_decision", "run_t")
         if options.triage_mode == "soft":
             gate = "run_t"
@@ -263,8 +421,9 @@ class BinaryGateAgent(BasePipelineStep):
         state.triage_path = "benign_skip" if gate == "skip_t" else "malignant_run_t"
 
         obs = {
-            "available": True,
+            "available": bool(per_frame),
             "primary_frame": primary,
+            "representative_frame": _representative_frame_result(per_frame, state),
             "per_frame": per_frame,
             "gate_decision": gate,
             "triage_mode": options.triage_mode,
@@ -273,14 +432,14 @@ class BinaryGateAgent(BasePipelineStep):
         if options.triage_mode == "soft":
             obs["soft_override"] = "L0 recorded; T-staging chain always runs"
         expl = (
-            f"L0 良恶性：首帧 {primary.get('top1_label')} p={primary.get('top1_prob')} "
-            f"→ gate={gate}。"
+            f"L0 良恶性：质量加权聚合 top1={primary.get('top1_label')} "
+            f"p={primary.get('top1_prob')} → gate={gate}。"
         )
         skip_vision = gate == "skip_t" and options.triage_mode != "soft"
         return StepResult(
             observation=obs,
-            explanation=expl,
             skip_remaining_vision=skip_vision,
+            status="completed" if per_frame else "failed",
         )
 
     def render(self, state, result, options):
@@ -524,30 +683,43 @@ class TStagingAgent(BasePipelineStep):
             return StepResult(status="skipped", observation={"skipped": True}, explanation="跳过 T 分期。")
 
         clin_feats = _clinical_features_for_classifier(state.case_input.clinical)
+        primary_path = state.case_input.primary_frame.image_path
         per_frame: List[Dict[str, Any]] = []
-        for fr in state.case_input.frames:
+        for frame in state.case_input.frames:
             kwargs: Dict[str, Any] = {
-                "image_path": fr.image_path,
+                "image_path": frame.image_path,
                 "clinical_features": clin_feats,
                 "patient_id": state.case_input.patient_id,
             }
-            kwargs.update(_classification_roi_kwargs(fr.roi_path, state, options))
-            if state.lesion_mask is not None and fr.frame_index == 0:
+            kwargs.update(
+                _classification_roi_kwargs(
+                    frame.roi_path,
+                    state,
+                    options,
+                    is_primary=frame.image_path == primary_path,
+                )
+            )
+            if state.lesion_mask is not None and frame.image_path == primary_path:
                 kwargs["mask_array"] = state.lesion_mask
-            if state.lumen_bbox is not None:
+            if state.lumen_bbox is not None and frame.image_path == primary_path:
                 kwargs["lumen_bbox"] = state.lumen_bbox
             obs = registry.execute("classify", **kwargs)
-            per_frame.append({**obs, "frame_index": fr.frame_index, "image_path": fr.image_path})
+            per_frame.append({**obs, **_frame_metadata(frame)})
 
         state.per_frame_classifications = per_frame
-        primary = per_frame[0]
+        primary = _aggregate_tstage_frames(per_frame, state.case_input.frames)
         state.primary_classification = primary
         expl = (
-            f"L1 T 分期（acc_boost2）：首帧 top1={primary.get('top1_stage')} "
-            f"p={primary.get('top1_prob')}。"
+            f"L1 T 分期（acc_boost2）：质量加权聚合 top1={primary.get('top1_stage')} "
+            f"p={primary.get('top1_prob')}，使用 {primary.get('aggregated_frame_count', 0)} 帧。"
         )
         return StepResult(
-            observation={"primary": primary, "per_frame": per_frame},
+            observation={
+                "primary": primary,
+                "representative_frame": _representative_frame_result(per_frame, state),
+                "per_frame": per_frame,
+            },
+            status="completed" if per_frame else "failed",
             explanation=expl,
         )
 
@@ -656,8 +828,102 @@ class DINOv3Agent(BasePipelineStep):
         return StepResult(observation=obs, explanation=expl)
 
 
-class CaseRAGAgent(BasePipelineStep):
+class DinoSignFusionAgent(BasePipelineStep):
+    """Join DINO evidence and structured signs without replacing the T model."""
+
     step_number = 11
+    step_id = "dino_sign_fusion"
+    agent_name = "DINOAndSignFusionAgent"
+    tool_name = "dino_sign_fusion"
+
+    def run(self, state, registry, options):
+        if _should_skip_vision(state):
+            return StepResult(
+                status="skipped",
+                observation={"skipped": True, "reason": "skip_t"},
+                explanation="跳过 DINO 与结构化征象融合证据。",
+            )
+
+        dino = _step_obs(state, "dinov3_seg")
+        morphology = _step_obs(state, "morphology")
+        wall = _step_obs(state, "wall_evidence")
+        classification = _step_obs(state, "t_staging")
+        dino_available = bool(
+            dino.get("available") or dino.get("mask_available")
+        )
+        wall_features = wall.get("wall_features") or {}
+        sign_status = {
+            "morphology": "available" if morphology.get("valid") else "partial",
+            "wall": "available" if wall.get("available") else "partial",
+            "lumen": "available" if state.lumen_bbox else "missing",
+        }
+        supporting = []
+        uncertainty = []
+        if dino_available:
+            supporting.append("DINOv3 region evidence is available for this case.")
+        else:
+            uncertainty.append("DINOv3 evidence is unavailable for this case.")
+        if morphology.get("valid"):
+            supporting.append(
+                "Structured morphology signs are available "
+                f"(irregularity={morphology.get('boundary_irregularity', 'n/a')})."
+            )
+        else:
+            uncertainty.append("Morphology signs are incomplete.")
+        if wall.get("available"):
+            supporting.append(
+                "Wall evidence is available "
+                f"(risk={wall.get('penetration_risk', 'unknown')})."
+            )
+        else:
+            uncertainty.append("Wall evidence is proxy-only or unavailable.")
+        if not state.lumen_bbox:
+            uncertainty.append("Lumen geometry is unavailable for sign alignment.")
+
+        obs = {
+            "available": bool(dino_available or morphology.get("valid") or wall.get("available")),
+            "fusion_mode": "evidence_only_probe",
+            "model_fusion_available": False,
+            "final_t_stage_ownership": "t_staging_step",
+            "dino": {
+                "available": dino_available,
+                "mask_available": bool(dino.get("mask_available")),
+                "source": dino.get("source") or dino.get("model"),
+            },
+            "structured_signs": sign_status,
+            "sign_values": {
+                "boundary_irregularity": morphology.get("boundary_irregularity"),
+                "lesion_area_ratio": morphology.get("lesion_area_ratio"),
+                "penetration_risk": wall.get("penetration_risk"),
+                "fraction_outside_lumen": wall_features.get("fraction_outside_lumen"),
+            },
+            "classification_context": {
+                "top1_stage": classification.get("primary", {}).get("top1_stage")
+                if isinstance(classification, dict)
+                else None,
+            },
+            "supporting_evidence": supporting,
+            "uncertainty_flags": uncertainty,
+            "provenance": {
+                "probe": "pipeline/experiments/reports/dino_gc_us_sign_fusion_probe_20260801",
+                "feature_source": "cached_workstation_dinov3_region_features",
+                "note": "Exploratory evidence fusion; no trained fusion checkpoint is used.",
+            },
+        }
+        status = "completed" if obs["available"] else "partial"
+        return StepResult(
+            status=status,
+            observation=obs,
+            explanation=(
+                "DINO 与结构化征象已统一为可追溯证据层；"
+                "当前不覆盖 T 分期主模型结论。"
+            ),
+            inputs={"dino_enabled": bool(options.enable_dino)},
+        )
+
+
+class CaseRAGAgent(BasePipelineStep):
+    step_number = 12
     step_id = "case_rag"
     agent_name = "CaseRAGAgent"
     tool_name = "retrieve_similar"
@@ -694,7 +960,7 @@ class CaseRAGAgent(BasePipelineStep):
 
 
 class ReportSynthAgent(BasePipelineStep):
-    step_number = 12
+    step_number = 13
     step_id = "report_synth"
     agent_name = "ReportSynthAgent"
     tool_name = None
@@ -706,6 +972,7 @@ class ReportSynthAgent(BasePipelineStep):
         seg_obs = _step_obs(state, "lesion_seg")
         lumen_obs = _step_obs(state, "lumen_detect")
         wall_obs = _step_obs(state, "wall_evidence")
+        dino_sign_obs = _step_obs(state, "dino_sign_fusion")
         morph_obs = _step_obs(state, "morphology")
         cls_obs = state.primary_classification or _step_obs(state, "t_staging").get("primary") or {}
         rag_obs = _step_obs(state, "case_rag")
@@ -741,7 +1008,7 @@ class ReportSynthAgent(BasePipelineStep):
             state.memory_context = memory_context
 
         if state.gate_decision == "skip_t" and state.per_frame_binary:
-            primary_bin = state.per_frame_binary[0]
+            primary_bin = _step_obs(state, "binary_gate").get("primary_frame") or state.per_frame_binary[0]
             fusion = {
                 "recommended_t_stage": "benign",
                 "confidence": "high" if primary_bin.get("top1_prob", 0) >= options.skip_t_threshold else "medium",
@@ -770,6 +1037,8 @@ class ReportSynthAgent(BasePipelineStep):
             )
             fusion["triage_path"] = state.triage_path or "malignant_run_t"
 
+        if dino_sign_obs:
+            fusion["dino_sign_fusion"] = dino_sign_obs
         state.final_report = fusion
         obs = {
             "fusion": fusion,
@@ -796,8 +1065,10 @@ def _classification_roi_kwargs(
     frame_roi_path: Optional[str],
     state: CasePipelineState,
     options,
+    *,
+    is_primary: bool = True,
 ) -> Dict[str, Any]:
-    """Resolve local-branch ROI for ClassificationTool (deploy-consistent default)."""
+    """Resolve ROI inputs without applying a primary-frame box to other frames."""
     roi_mode = getattr(options, "roi_mode", "predicted")
     seg_obs = _step_obs(state, "lesion_seg")
     roi_bbox = state.lesion_roi_bbox or seg_obs.get("roi_bbox")
@@ -807,15 +1078,16 @@ def _classification_roi_kwargs(
         if frame_roi_path:
             kwargs["roi_path"] = frame_roi_path
     elif roi_mode == "predicted":
-        if roi_bbox:
+        if is_primary and roi_bbox:
             kwargs["roi_bbox"] = dict(roi_bbox)
+        elif frame_roi_path:
+            kwargs["roi_path"] = frame_roi_path
     else:  # auto
-        if roi_bbox:
+        if is_primary and roi_bbox:
             kwargs["roi_bbox"] = dict(roi_bbox)
         elif frame_roi_path:
             kwargs["roi_path"] = frame_roi_path
     return kwargs
-
 
 def _clinical_kwargs(clinical: Dict[str, Any]) -> Dict[str, Any]:
     c = _norm_clinical(clinical)
@@ -893,6 +1165,7 @@ def get_pipeline_steps() -> List[BasePipelineStep]:
         TStagingAgent(),
         WallEvidenceAgent(),
         DINOv3Agent(),
+        DinoSignFusionAgent(),
         CaseRAGAgent(),
         ReportSynthAgent(),
     ]
