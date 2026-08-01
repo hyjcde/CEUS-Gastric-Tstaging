@@ -39,6 +39,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("agent.product.analyze_case")
 
 STAGES = ["T1", "T2", "T3", "T4+"]
+
+
+def _json_default(obj: Any) -> Any:
+    """Keep API/trajectory JSON compact; raw arrays stay in artifact files."""
+    if isinstance(obj, np.ndarray):
+        return {
+            "__type__": "ndarray",
+            "shape": list(obj.shape),
+            "dtype": str(obj.dtype),
+        }
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 PREDICTION_ARTIFACT_ROOT = PROJECT_ROOT / "tmp" / "agent_predictions"
 
 
@@ -49,7 +64,14 @@ def _stream_enabled() -> bool:
 def _emit_stream_event(event: str, payload: Dict[str, Any]) -> None:
     if not _stream_enabled():
         return
-    sys.stdout.write(json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n")
+    sys.stdout.write(
+        json.dumps(
+            {"event": event, **payload},
+            ensure_ascii=False,
+            default=_json_default,
+        )
+        + "\n"
+    )
     sys.stdout.flush()
 
 
@@ -1594,8 +1616,9 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
         "data_source": payload.get("data_source"),
         "candidate_report": base_report,
         "instruction": (
-            "Refine the candidate medical agent report into compact JSON with keys "
-            "recommended_t_stage, confidence, reasoning, supporting_evidence, uncertainty_flags. "
+            "Rewrite only the narrative reasoning as compact JSON. The deterministic pipeline owns "
+            "recommended_t_stage, confidence, supporting_evidence, and uncertainty_flags; preserve "
+            "those fields exactly and never change them. Return an optional reasoning string only. "
             "Do not invent missing tool outputs."
         ),
     }
@@ -1609,9 +1632,16 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
         ])
         parsed = json.loads(response)
         merged = dict(base_report)
-        merged.update({k: v for k, v in parsed.items() if k in {
-            "recommended_t_stage", "confidence", "reasoning", "supporting_evidence", "uncertainty_flags"
-        }})
+        locked_stage = base_report.get("recommended_t_stage")
+        locked_confidence = base_report.get("confidence")
+        if isinstance(parsed.get("reasoning"), str) and parsed["reasoning"].strip():
+            merged["llm_reasoning"] = parsed["reasoning"].strip()
+        merged["recommended_t_stage"] = locked_stage
+        merged["confidence"] = locked_confidence
+        ignored_fields = [
+            key for key in parsed
+            if key in {"recommended_t_stage", "confidence", "supporting_evidence", "uncertainty_flags"}
+        ]
         invocation = {
             "api_kind": "http_openai_compatible",
             "called": True,
@@ -1621,6 +1651,9 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
             "total_tokens": llm.total_tokens,
             "request_prompt": prompt,
             "response_text": response[:8000] if isinstance(response, str) else str(response)[:8000],
+            "role": "language_only",
+            "locked_fields": ["recommended_t_stage", "confidence", "supporting_evidence", "uncertainty_flags"],
+            "ignored_output_fields": ignored_fields,
         }
         logger.info(
             "LLM synthesis API call completed: model=%s tokens=%s",
@@ -1976,7 +2009,15 @@ def _write_trajectory(
         },
         "result": result,
     }
-    trajectory_path.write_text(json.dumps(trajectory, ensure_ascii=False, indent=2), encoding="utf-8")
+    trajectory_path.write_text(
+        json.dumps(
+            trajectory,
+            ensure_ascii=False,
+            indent=2,
+            default=_json_default,
+        ),
+        encoding="utf-8",
+    )
     return {
         "path": str(trajectory_path),
         "schema_version": "0.1.0",
@@ -2055,7 +2096,9 @@ def main() -> None:
     if _stream_enabled():
         _emit_stream_event("final", {"result": result})
     else:
-        sys.stdout.write(json.dumps(result, ensure_ascii=False))
+        sys.stdout.write(
+            json.dumps(result, ensure_ascii=False, default=_json_default)
+        )
 
 
 if __name__ == "__main__":

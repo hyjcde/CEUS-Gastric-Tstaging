@@ -219,6 +219,8 @@ export interface AgentWorkbenchReport {
   recommended_t_stage: string;
   confidence: 'high' | 'medium' | 'low' | string;
   reasoning: string;
+  /** Optional language-only refinement; never owns the stage or confidence. */
+  llm_reasoning?: string;
   dynamic_report_draft?: {
     title: string;
     generated_by: string;
