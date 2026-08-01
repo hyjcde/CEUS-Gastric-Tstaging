@@ -167,8 +167,8 @@ def render_wall_visuals(
 class WallEvidenceTool(BaseTool):
     name = "wall_evidence"
     description = (
-        "Compute gastric wall penetration evidence from lesion mask and lumen "
-        "geometry (signed distance from detected lumen)."
+        "Compute proxy gastric wall penetration evidence from a lesion mask and "
+        "the detected lumen bounding box. This is not a pathological wall-layer estimate."
     )
     parameters = [
         ToolParameter("image_path", "str", "Absolute path to ultrasound image"),
@@ -185,13 +185,18 @@ class WallEvidenceTool(BaseTool):
     ) -> Dict[str, Any]:
         image = cv2.imread(image_path)
         if image is None:
-            return {"available": False, "error": "Could not read image"}
+            return {
+                "available": False,
+                "error": "Could not read image",
+                "evidence_role": "proxy_geometry_unavailable",
+            }
 
         h, w = image.shape[:2]
         if lumen_bbox is None:
             return {
                 "available": False,
                 "evidence_source": "missing_lumen",
+                "evidence_role": "proxy_geometry_unavailable",
                 "error": "lumen_bbox required for wall evidence",
                 "image_height": h,
                 "image_width": w,
@@ -201,6 +206,7 @@ class WallEvidenceTool(BaseTool):
             return {
                 "available": False,
                 "evidence_source": "missing_lesion_mask",
+                "evidence_role": "proxy_geometry_unavailable",
                 "error": "lesion_mask required for wall evidence",
                 "image_height": h,
                 "image_width": w,
@@ -215,6 +221,7 @@ class WallEvidenceTool(BaseTool):
             return {
                 "available": False,
                 "evidence_source": "empty_lumen_mask",
+                "evidence_role": "proxy_geometry_unavailable",
                 "error": "Invalid lumen bbox",
                 "image_height": h,
                 "image_width": w,
@@ -233,16 +240,27 @@ class WallEvidenceTool(BaseTool):
 
         return {
             "available": True,
-            "evidence_source": "lumen_signed_distance",
+            "evidence_source": "lumen_bbox_proxy_signed_distance",
+            "evidence_role": "proxy_geometry",
             "penetration_risk": penetration_risk,
+            "risk_semantics": "proxy_only_not_pathological_layer_truth",
+            "wall_layer_estimate": False,
+            "threshold_units": "pixels_and_fraction",
+            "risk_thresholds": {
+                "medium_fraction_outside_lumen": 0.2,
+                "high_fraction_outside_lumen": 0.5,
+                "medium_max_outward_depth_px": 8.0,
+                "high_max_outward_depth_px": 15.0,
+            },
             "wall_features": {k: round(v, 4) if isinstance(v, float) else v for k, v in features.items()},
             "lumen_bbox": lumen_bbox,
+            "lumen_geometry_source": "yolo_bbox_proxy",
             "image_height": h,
             "image_width": w,
             "runtime_invocation": {
                 "api_kind": "local_numpy_scipy_wall_analysis",
                 "forward_pass": True,
-                "method": "signed_distance_from_lumen",
+                "method": "signed_distance_from_yolo_bbox_proxy",
             },
             "_visuals": visuals,
         }

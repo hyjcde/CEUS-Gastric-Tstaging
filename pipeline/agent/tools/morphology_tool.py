@@ -101,9 +101,9 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
 class MorphologyTool(BaseTool):
     name = "morphology"
     description = (
-        "Extract morphological features (convexity, solidity, boundary "
-        "irregularity, compactness) from a lesion mask. Lower convexity "
-        "and higher irregularity correlate with deeper T-stage invasion."
+        "Extract mask-derived shape descriptors (convexity, solidity, boundary "
+        "irregularity, compactness). These are exploratory evidence features, "
+        "not direct measurements of pathological invasion depth."
     )
     parameters = [
         ToolParameter("mask_path", "str",
@@ -117,13 +117,23 @@ class MorphologyTool(BaseTool):
     def execute(self, mask_path: Optional[str] = None,
                 mask_array: Optional[np.ndarray] = None,
                 **kwargs) -> Dict[str, Any]:
+        def annotate(result: Dict[str, Any]) -> Dict[str, Any]:
+            result.update(
+                {
+                    "evidence_source": "lesion_mask_geometry",
+                    "evidence_role": "derived_shape_descriptor",
+                    "clinical_interpretation": "not_independently_diagnostic",
+                }
+            )
+            return result
+
         if mask_array is not None:
-            return compute_morphology(mask_array)
+            return annotate(compute_morphology(mask_array))
 
         if mask_path:
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
             if mask is None:
-                return {"error": "Could not read mask", "valid": False}
-            return compute_morphology(mask)
+                return annotate({"error": "Could not read mask", "valid": False})
+            return annotate(compute_morphology(mask))
 
-        return {"error": "No mask_path or mask_array provided", "valid": False}
+        return annotate({"error": "No mask_path or mask_array provided", "valid": False})
