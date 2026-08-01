@@ -66,13 +66,14 @@ agent_bindings:
     backend_id: binary_current_gastritis_screened_20260531
     tool: BinaryClassificationTool
     role: l0_benign_vs_malignant_gate
-    trust_label: trusted
+    trust_label: caution
     notes: >
       L0 single-branch ConvNeXt-S, 224x224 image-only, 2-class. Used as
-      the agent's first tool in the two-stage clinical workflow. Gate
-      decision 'skip_t' fires only when P(benign) >= 0.95; otherwise the
-      T-staging chain runs. Held-out screened external 1358 patient:
-      AUC 0.7550, Sens 54.8% / Spec 83.6%.
+      the agent's first tool in the two-stage workflow. Gate decision
+      'skip_t' fires only when P(benign) >= 0.95; otherwise the T-staging
+      chain runs. Held-out screened external 1358 patient: AUC 0.7550,
+      Sens 54.8% / Spec 83.6%. This is routing-only evidence; doctor review
+      is required and the threshold is not a clinical calibration.
 
   wall_evidence_primary:
     backend_id: wall_evidence_lumen_sdf_v1

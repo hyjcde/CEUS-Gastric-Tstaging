@@ -129,9 +129,9 @@ class BinaryClassificationTool(BaseTool):
 
     name = "binary_classify"
     description = (
-        "Run the L0 single-branch ConvNeXt on one frame and return "
-        "benign-vs-malignant probabilities with a gate decision. "
-        "Use as the first tool to decide whether T-staging is required."
+        "Run the L0 single-branch ConvNeXt screening model on one frame and return "
+        "benign-vs-malignant probabilities with a conservative routing decision. "
+        "This is pre-staging screening evidence, not a final diagnosis; doctor review remains required."
     )
     parameters = [
         ToolParameter(
@@ -239,6 +239,11 @@ class BinaryClassificationTool(BaseTool):
             "uncertainty": round(uncertainty, 4),
             "gate_decision": "skip_t" if gate_skip else "run_t",
             "gate_skip_t_threshold": float(gate_skip_t_threshold),
+            "gate_threshold_status": "engineering_conservative_not_clinically_calibrated",
+            "clinical_role": "pre_staging_screening",
+            "routing_only": True,
+            "requires_doctor_review": True,
+            "trust_label": "caution",
             "device": self._device_str,
         }
 
@@ -252,4 +257,9 @@ class BinaryClassificationTool(BaseTool):
             "top1_label": None,
             "top1_prob": None,
             "gate_decision": "run_t",  # conservative: still run T-staging
+            "gate_threshold_status": "engineering_conservative_not_clinically_calibrated",
+            "clinical_role": "pre_staging_screening",
+            "routing_only": True,
+            "requires_doctor_review": True,
+            "trust_label": "caution",
         }
