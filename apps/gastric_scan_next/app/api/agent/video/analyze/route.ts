@@ -21,6 +21,7 @@ type ExtractedFrame = {
   sharpness: number;
   brightness: number;
   motion_score: number;
+  contrast: number;
 };
 
 type ExtractedVideo = {
@@ -109,6 +110,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path.cwd() / 'scripts'))
+from agent.pipeline.keyframe_selection import select_visual_keyframes
+
 import cv2
 import numpy as np
 
@@ -141,17 +145,12 @@ def score_frame(frame, prev_gray):
     else:
         motion_score = float(cv2.absdiff(gray, prev_gray).mean())
 
-    brightness_balance = 1.0 - min(abs(brightness - 110.0) / 110.0, 1.0)
-    sharpness_norm = min(sharpness / 900.0, 1.0)
-    contrast_norm = min(contrast / 70.0, 1.0)
-    motion_norm = min(motion_score / 35.0, 1.0)
-    quality_score = 0.45 * sharpness_norm + 0.25 * contrast_norm + 0.20 * brightness_balance + 0.10 * motion_norm
     return {
         "gray": gray,
         "sharpness": sharpness,
         "brightness": brightness,
+        "contrast": contrast,
         "motion_score": motion_score,
-        "quality_score": float(quality_score),
     }
 
 candidates = []
@@ -167,9 +166,9 @@ for index, pos in enumerate(positions):
         "frame": frame,
         "frame_index": int(pos),
         "timestamp_sec": float(pos / fps) if fps > 0 else 0.0,
-        "quality_score": metrics["quality_score"],
         "sharpness": metrics["sharpness"],
         "brightness": metrics["brightness"],
+        "contrast": metrics["contrast"],
         "motion_score": metrics["motion_score"],
     })
 
@@ -178,8 +177,11 @@ if not candidates:
     print(json.dumps({"frame_count": frame_count, "fps": fps, "duration_sec": duration_sec, "frames": [], "candidate_count": 0}, ensure_ascii=False))
     raise SystemExit(0)
 
-top = sorted(candidates, key=lambda item: item["quality_score"], reverse=True)[:max_frames]
-selected = sorted(top, key=lambda item: item["frame_index"])
+selected = select_visual_keyframes(
+    candidates,
+    n_key=max_frames,
+    min_gap=max(2, int(round(max(fps, 25.0) * 0.5))),
+)
 
 frames = []
 for index, item in enumerate(selected):
@@ -202,7 +204,7 @@ print(json.dumps({
     "duration_sec": duration_sec,
     "frames": frames,
     "candidate_count": len(candidates),
-    "selection_method": "quality_motion_topk_temporal_order",
+    "selection_method": "visual_quality_temporal_diverse_topk_v1",
 }, ensure_ascii=False))
 `;
 
@@ -210,7 +212,7 @@ print(json.dumps({
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      PYTHONPATH: `${PROJECT_ROOT}/pipeline${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
+      PYTHONPATH: `${PROJECT_ROOT}/pipeline:${PROJECT_ROOT}/scripts${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
     },
     timeoutMs: 300000,
   });
@@ -239,7 +241,7 @@ async function runAgent(payload: Record<string, unknown>) {
     env: {
       ...process.env,
       GASTRIC_ROOT: PROJECT_ROOT,
-      PYTHONPATH: `${PROJECT_ROOT}/pipeline${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
+      PYTHONPATH: `${PROJECT_ROOT}/pipeline:${PROJECT_ROOT}/scripts${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
     },
     input: JSON.stringify(payload),
     timeoutMs: 600000,
@@ -394,7 +396,9 @@ export async function POST(request: NextRequest) {
     const patientId = String(formData.get('patientId') || `upload_${uploadId.slice(0, 8)}`);
     const notes = String(formData.get('notes') || '');
     const sessionId = String(formData.get('sessionId') || `video_${uploadId}`);
-    const primaryFrame = extracted.frames[0];
+    const primaryFrame = extracted.frames.reduce((best, frame) => (
+      frame.quality_score > best.quality_score ? frame : best
+    ), extracted.frames[0]);
     const payload = {
       session_id: sessionId,
       source_endpoint: '/api/agent/video/analyze',
@@ -420,7 +424,16 @@ export async function POST(request: NextRequest) {
         })),
       },
       max_frames: MAX_FRAMES,
-      frames: extracted.frames.map((frame) => ({ image_path: frame.image_path })),
+      frames: extracted.frames.map((frame) => ({
+        image_path: frame.image_path,
+        frame_index: frame.frame_index,
+        timestamp_sec: frame.timestamp_sec,
+        quality_score: frame.quality_score,
+        sharpness: frame.sharpness,
+        brightness: frame.brightness,
+        contrast: frame.contrast,
+        motion_score: frame.motion_score,
+      })),
       image_path: primaryFrame.image_path,
       clinical: {},
       report_text: {

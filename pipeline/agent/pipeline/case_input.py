@@ -23,6 +23,8 @@ class FrameRef:
     roi_path: Optional[str] = None
     frame_id: Optional[str] = None
     frame_index: int = 0
+    timestamp_sec: Optional[float] = None
+    quality_score: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,12 @@ class CaseInput:
     def primary_frame(self) -> FrameRef:
         if not self.frames:
             raise ValueError("CaseInput has no frames")
+        scored = [frame for frame in self.frames if frame.quality_score is not None]
+        if scored:
+            return max(
+                scored,
+                key=lambda frame: (float(frame.quality_score or 0.0), -int(frame.frame_index)),
+            )
         return self.frames[0]
 
     @property
@@ -77,7 +85,17 @@ class CaseInput:
                     image_path=str(img),
                     roi_path=f.get("roi_path"),
                     frame_id=f.get("frame_id"),
-                    frame_index=idx,
+                    frame_index=int(f.get("frame_index", idx)),
+                    timestamp_sec=(
+                        float(f["timestamp_sec"])
+                        if f.get("timestamp_sec") is not None
+                        else None
+                    ),
+                    quality_score=(
+                        float(f["quality_score"])
+                        if f.get("quality_score") is not None
+                        else None
+                    ),
                 )
             )
         if not frames:
@@ -188,7 +206,18 @@ class CaseInput:
                         FrameRef(
                             image_path=str(f["image_path"]),
                             roi_path=f.get("roi_path"),
-                            frame_index=idx,
+                            frame_id=f.get("frame_id"),
+                            frame_index=int(f.get("frame_index", idx)),
+                            timestamp_sec=(
+                                float(f["timestamp_sec"])
+                                if f.get("timestamp_sec") is not None
+                                else None
+                            ),
+                            quality_score=(
+                                float(f["quality_score"])
+                                if f.get("quality_score") is not None
+                                else None
+                            ),
                         )
                     )
         elif payload.get("image_path"):
@@ -214,13 +243,35 @@ class CaseInput:
         )
 
 
+def _select_key_frame_rows(
+    frame_items: List[Dict[str, Any]],
+    n: int,
+    fps: float,
+) -> List[Dict[str, Any]]:
+    scripts_dir = PROJECT_ROOT / "scripts"
+    import sys
+
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    from .keyframe_selection import select_visual_keyframes
+
+    min_gap = max(2, int(round(max(float(fps or 25.0), 1.0) * 0.5)))
+    return select_visual_keyframes(frame_items, n_key=n, min_gap=min_gap)
+
+
 def _pick_key_frame_indices(sampled: List[Dict[str, Any]], n: int) -> List[int]:
-    if len(sampled) <= n:
-        return list(range(len(sampled)))
-    scores = [float(s.get("motion_delta", 0)) + float(s.get("sharpness", 0)) for s in sampled]
-    order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-    picked = sorted(order[:n])
-    return picked
+    rows = [
+        {
+            **dict(item),
+            "_sample_index": index,
+            "frame_index": int(item.get("frame_index", index)),
+            "brightness": float(item.get("brightness", 110.0)),
+            "contrast": float(item.get("contrast", 0.0)),
+        }
+        for index, item in enumerate(sampled)
+    ]
+    selected = _select_key_frame_rows(rows, n, fps=25.0)
+    return [int(row["_sample_index"]) for row in selected]
 
 
 def resolve_prospective_crop_assets(
@@ -278,44 +329,60 @@ def _extract_key_frames_from_clip(
     *,
     n_key_frames: int = 4,
 ) -> List[FrameRef]:
-    import sys
-
     import cv2
 
     scripts_dir = PROJECT_ROOT / "scripts"
+    import sys
+
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     from generate_video_deep_dive import sample_video  # type: ignore
 
     sampled = sample_video(Path(clip_path), max_frames=64)
     rgb_frames = sampled["rgb_frames"]
+    times = sampled.get("times_sec", [])
     motion = sampled.get("motion_scores", [])
     sharpness = sampled.get("sharpness", [])
-    frame_items = [
-        {
-            "motion_delta": float(motion[i]) if i < len(motion) else 0.0,
-            "sharpness": float(sharpness[i]) if i < len(sharpness) else 0.0,
-        }
-        for i in range(len(rgb_frames))
-    ]
-    key_indices = _pick_key_frame_indices(frame_items, n_key_frames)
+    fps = float(sampled.get("fps") or 25.0)
+
+    frame_items: List[Dict[str, Any]] = []
+    for index, rgb in enumerate(rgb_frames):
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        timestamp = float(times[index]) if index < len(times) else float(index / fps)
+        frame_items.append(
+            {
+                "_sample_index": index,
+                "frame_index": int(round(timestamp * fps)),
+                "timestamp_sec": timestamp,
+                "motion_delta": float(motion[index]) if index < len(motion) else 0.0,
+                "motion_score": float(motion[index]) if index < len(motion) else 0.0,
+                "sharpness": float(sharpness[index]) if index < len(sharpness) else 0.0,
+                "contrast": float(gray.std()),
+                "brightness": float(gray.mean()),
+            }
+        )
+
+    selected = _select_key_frame_rows(frame_items, n_key_frames, fps=fps)
     tmp_dir = PROJECT_ROOT / "docs" / "agent" / "clinical_report_assets" / "_tmp_frames"
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     frames: List[FrameRef] = []
-    for i, idx in enumerate(key_indices):
-        rgb = rgb_frames[idx]
-        out_path = tmp_dir / f"{case_id}_k{i}.jpg"
+    for row in selected:
+        sample_index = int(row["_sample_index"])
+        source_frame_index = int(row["frame_index"])
+        out_path = tmp_dir / f"{case_id}_f{source_frame_index:06d}.jpg"
+        rgb = rgb_frames[sample_index]
         cv2.imwrite(str(out_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
         frames.append(
             FrameRef(
                 image_path=str(out_path),
-                frame_id=f"key_{i}",
-                frame_index=i,
+                frame_id=f"key_{source_frame_index:06d}",
+                frame_index=source_frame_index,
+                timestamp_sec=float(row.get("timestamp_sec") or 0.0),
+                quality_score=float(row.get("quality_score") or 0.0),
             )
         )
     return frames
-
 
 def _clinical_from_reader_csv(csv_path: Path, case_id: str) -> Dict[str, Any]:
     import csv

@@ -40,6 +40,9 @@ const KEYFRAME_SCRIPT = `
 import cv2, json, sys, math
 from pathlib import Path
 
+sys.path.insert(0, str(Path.cwd() / 'scripts'))
+from agent.pipeline.keyframe_selection import select_visual_keyframes
+
 video_path = sys.argv[1]
 anchor = float(sys.argv[2])
 window = float(sys.argv[3])
@@ -109,8 +112,13 @@ for t in times:
     })
 
 cap.release()
-candidates.sort(key=lambda x: x["score"], reverse=True)
-top = candidates[:top_k]
+top = select_visual_keyframes(
+    candidates,
+    n_key=top_k,
+    min_gap=max(2, int(round(max(fps, 25.0) * 0.5))),
+)
+for item in top:
+    item["score"] = item.get("quality_score", item.get("score", 0.0))
 print(json.dumps({
     "ok": True,
     "fps": fps,
