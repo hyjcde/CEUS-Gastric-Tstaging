@@ -21,7 +21,9 @@ MODES = ("box", "jitter_box", "point", "box_plus_point")
 
 
 def patient_key(sample_id: str) -> str:
-    return re.sub(r"[-_]\d+$", "", str(sample_id))
+    # Only a hyphen-delimited trailing number is a frame suffix. Underscores
+    # can be part of the patient identifier and must not be stripped.
+    return re.sub(r"-\d+$", "", str(sample_id))
 
 
 def parse_args() -> argparse.Namespace:
