@@ -316,6 +316,10 @@ def main() -> None:
     if args.max_train_samples:
         train_rows = train_rows[: args.max_train_samples]
         val_rows = val_rows[: max(1, args.max_train_samples // 8)]
+    holdout_by_patient: dict[str, dict[str, Any]] = {}
+    for row in holdout_rows:
+        holdout_by_patient.setdefault(patient_key(row), row)
+    holdout_rows = [holdout_by_patient[key] for key in sorted(holdout_by_patient)]
     holdout_rows = holdout_rows[: args.max_holdout_samples]
     train_loader = DataLoader(
         PromptDataset(train_rows, args.image_size, train=True, seed=args.seed + 17),
