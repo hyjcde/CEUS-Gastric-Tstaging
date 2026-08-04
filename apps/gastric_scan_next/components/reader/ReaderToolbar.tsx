@@ -2,7 +2,7 @@
 
 import React from 'react';
 import {
-  Eraser, FileText, Loader2, Pause, Play, RotateCcw, Sparkles, Undo2,
+  Eraser, FileText, Loader2, Pause, Play, RotateCcw, Route, Sparkles, Undo2,
 } from 'lucide-react';
 import type { InteractionMode } from '@/lib/reader/types';
 
@@ -15,6 +15,9 @@ type Props = {
   onTogglePlay: () => void;
   trackOnPlay: boolean;
   onToggleTrack: () => void;
+  videoTrackBusy: boolean;
+  videoTrackStatus?: string | null;
+  onPropagateVideo: () => void;
   showMask: boolean;
   onToggleShowMask: () => void;
   maskOpacity: number;
@@ -47,6 +50,9 @@ export function ReaderToolbar({
   onTogglePlay,
   trackOnPlay,
   onToggleTrack,
+  videoTrackBusy,
+  videoTrackStatus,
+  onPropagateVideo,
   showMask,
   onToggleShowMask,
   maskOpacity,
@@ -86,6 +92,17 @@ export function ReaderToolbar({
         >
           播放跟踪 · {trackOnPlay ? '开' : '关'}
         </button>
+        <button
+          type="button"
+          onClick={onPropagateVideo}
+          className="reader-btn"
+          disabled={videoTrackBusy || !hasPrompt}
+          title={!hasPrompt ? '请先框选或点击病灶' : '使用 SAM2.1 视频 memory 对整个视频传播'}
+        >
+          {videoTrackBusy ? <Loader2 size={12} className="animate-spin" /> : <Route size={12} />}
+          {videoTrackBusy ? '全视频传播中' : '全视频传播'}
+        </button>
+        {videoTrackStatus ? <span className="text-[10px] text-gray-500">{videoTrackStatus}</span> : null}
         <button type="button" onClick={onAnalyzeKeyframe} className="reader-btn" disabled={samBusy}>
           {samBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
           关键帧分析

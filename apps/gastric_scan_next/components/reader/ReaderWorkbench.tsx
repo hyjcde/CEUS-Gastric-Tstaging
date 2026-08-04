@@ -17,6 +17,8 @@ import {
   fetchSamStatus,
   llmReportConfigured,
   runSamAnalyze,
+  runSamVideoPropagation,
+  type SamVideoPropagationResult,
 } from '@/lib/reader/sam-client';
 import type {
   InteractionMode,
@@ -25,12 +27,52 @@ import type {
   SamBackendStatus,
   SamBox,
   SamClick,
+  ReaderDoctorAction,
   SamReport,
 } from '@/lib/reader/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import { buildReadingAgentUrl, getReadingAgentPageUrl } from '@/lib/reading-agent-url';
 
 const TRACK_INTERVAL_MS = 500;
+type AuditEventType =
+  | 'session_start'
+  | 'session_end'
+  | 'ai_suggestion'
+  | 'report_generated'
+  | 'doctor_action'
+  | 'frame_viewed'
+  | 'error';
+
+function newAuditId(prefix: string) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${random}`;
+}
+
+async function writeReaderAuditEvent(event: {
+  event_type: AuditEventType;
+  session_id: string;
+  case_id: string;
+  reader_id?: string;
+  round?: string;
+  patient_id?: string;
+  payload?: Record<string, unknown>;
+}) {
+  try {
+    await fetch('/api/reader-audit/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...event,
+        client_recorded_at: new Date().toISOString(),
+      }),
+      keepalive: event.event_type === 'session_end',
+    });
+  } catch {
+    // Audit recording must not interrupt clinical reading.
+  }
+}
 
 export function ReaderWorkbench() {
   const router = useRouter();
@@ -65,19 +107,64 @@ export function ReaderWorkbench() {
   const [layerResult, setLayerResult] = useState<LayerAnalyzeResult | null>(null);
   const [badge, setBadge] = useState<string | null>(null);
   const [bundleVersion, setBundleVersion] = useState<string | undefined>();
+  const [videoTrack, setVideoTrack] = useState<SamVideoPropagationResult | null>(null);
+  const [videoTrackBusy, setVideoTrackBusy] = useState(false);
+  const [videoTrackStatus, setVideoTrackStatus] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const trackBusyRef = useRef(false);
   const lastTrackRef = useRef(0);
+  const videoTrackRequestRef = useRef(0);
+  const lastVideoTrackFrameRef = useRef<number | null>(null);
   const llmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const runSamRef = useRef<(opts?: { llmReport?: boolean; silent?: boolean; clicks?: SamClick[]; box?: SamBox | null }) => Promise<void>>(async () => {});
+  const trackingClientIdRef = useRef(`reader_${Math.random().toString(36).slice(2)}`);
+  const runSamRef = useRef<(opts?: {
+    llmReport?: boolean;
+    silent?: boolean;
+    clicks?: SamClick[];
+    box?: SamBox | null;
+    resetTracking?: boolean;
+  }) => Promise<void>>(async () => {});
+  const auditSessionRef = useRef<string | null>(null);
+  const auditCaseRef = useRef<string | null>(null);
+  const auditSuggestionRef = useRef<string | null>(null);
+  const auditStartedAtRef = useRef<number | null>(null);
+  const lastAuditFrameRef = useRef(0);
+  const initialCaseSelectionRef = useRef(false);
   const externalVideo = searchParams.get('video') || '';
   const externalImage = searchParams.get('image') || '';
   const deepCaseId = searchParams.get('case') || '';
+  const patientIdParam = searchParams.get('patient_id') || '';
+  const readerIdParam = searchParams.get('reader_id') || 'unknown_reader';
+  const roundParam = searchParams.get('round') || 'round2';
   const callbackUrl = searchParams.get('callback') || '';
+  const activeCaseId = selectedCase?.case_id || deepCaseId || patientIdParam || 'external';
+  const hasExternalMedia = Boolean(externalVideo || externalImage);
 
   const llmReady = llmReportConfigured(samStatus);
   const hasPrompt = Boolean(box) || clicks.length > 0;
+
+  const recordAudit = useCallback(
+    (
+      eventType: AuditEventType,
+      payload: Record<string, unknown> = {},
+      overrides: { sessionId?: string; caseId?: string; patientId?: string } = {},
+    ) => {
+      const sessionId = overrides.sessionId || auditSessionRef.current;
+      const caseId = overrides.caseId || auditCaseRef.current || activeCaseId;
+      if (!sessionId || !caseId) return;
+      void writeReaderAuditEvent({
+        event_type: eventType,
+        session_id: sessionId,
+        case_id: caseId,
+        reader_id: readerIdParam,
+        round: roundParam,
+        patient_id: overrides.patientId || selectedCase?.patient_id || patientIdParam || caseId,
+        payload,
+      });
+    },
+    [activeCaseId, patientIdParam, readerIdParam, roundParam, selectedCase?.patient_id],
+  );
 
   const currentFrame = selectedCase?.frames?.[frameIndex] || selectedCase?.frames?.[0];
   const videoSrc = useMemo(() => {
@@ -85,6 +172,21 @@ export function ReaderWorkbench() {
     if (currentFrame?.video_rel) return readerMediaUrl(currentFrame.video_rel, bundleVersion);
     return '';
   }, [bundleVersion, currentFrame?.video_rel, externalVideo]);
+  const trackingSessionId = useMemo(() => {
+    if (!videoSrc) return '';
+    const raw = `${trackingClientIdRef.current}__${activeCaseId}__${videoSrc}`;
+    return raw.replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 160);
+  }, [activeCaseId, videoSrc]);
+
+  const nearestVideoTrackFrame = useMemo(() => {
+    const frames = videoTrack?.frames || [];
+    if (!frames.length) return null;
+    return frames.reduce((nearest, frame) => (
+      Math.abs(frame.frame_time - currentTime) < Math.abs(nearest.frame_time - currentTime)
+        ? frame
+        : nearest
+    ), frames[0]);
+  }, [currentTime, videoTrack]);
 
   const promptSummary = useMemo(() => {
     const pos = clicks.filter((c) => c.label !== 'negative').length;
@@ -92,9 +194,15 @@ export function ReaderWorkbench() {
     const parts: string[] = [];
     if (box) parts.push('1 框');
     if (pos || neg) parts.push(`${pos} 正 / ${neg} 负`);
-    if (samScore != null) parts.push(`分割 ${Math.round(samScore * 100)}%`);
+    if (maskPolygon?.length) {
+      parts.push(samScore != null && samScore > 0
+        ? `Mask 已生成 · ${Math.round(samScore * 100)}%`
+        : 'Mask 已生成 · 分数不可用');
+    } else if (samScore != null) {
+      parts.push(`分割 ${Math.round(samScore * 100)}%`);
+    }
     return parts.join(' · ');
-  }, [box, clicks, samScore]);
+  }, [box, clicks, maskPolygon, samScore]);
 
   const loadCases = useCallback(async (c: ReaderCohort) => {
     setCasesLoading(true);
@@ -112,17 +220,49 @@ export function ReaderWorkbench() {
   }, []);
 
   const loadCaseDetail = useCallback(async (caseId: string) => {
+    if (auditSessionRef.current && auditCaseRef.current && auditCaseRef.current !== caseId) {
+      recordAudit(
+        'session_end',
+        {
+          elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
+          reason: 'case_changed',
+        },
+        { sessionId: auditSessionRef.current, caseId: auditCaseRef.current },
+      );
+    }
     try {
       const res = await fetch(`/api/reader/cases?case_id=${encodeURIComponent(caseId)}`);
       const data = await res.json();
       if (!data.ok || !data.case) throw new Error('case not found');
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set('case', caseId);
+      ['patient_id', 'video', 'image', 'frame_id', 'title'].forEach((key) => nextParams.delete(key));
+      router.replace(`/reader?${nextParams.toString()}`, { scroll: false });
+      const sessionId = newAuditId('reader');
+      auditSessionRef.current = sessionId;
+      auditCaseRef.current = caseId;
+      auditSuggestionRef.current = null;
+      auditStartedAtRef.current = Date.now();
+      lastAuditFrameRef.current = 0;
       setSelectedCase(data.case as ReaderCase);
       setFrameIndex(0);
       resetInteraction();
+      recordAudit(
+        'session_start',
+        {
+          cohort,
+          round: roundParam,
+          reader_id: readerIdParam,
+          study_mode: data.case.study_mode,
+          frame_count: data.case.frames?.length || 0,
+          software_version: 'gastric_scan_next_reader',
+        },
+        { sessionId, caseId, patientId: data.case.patient_id },
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '病例加载失败');
     }
-  }, []);
+  }, [cohort, readerIdParam, recordAudit, roundParam, router, searchParams]);
 
   const resetInteraction = () => {
     setClicks([]);
@@ -133,6 +273,15 @@ export function ReaderWorkbench() {
     setSamScore(null);
     setLayerResult(null);
     setBadge(null);
+    setFrameDataUrl(null);
+    setFrameSize(null);
+    setVideoTrack(null);
+    setVideoTrackStatus(null);
+    videoTrackRequestRef.current += 1;
+    lastVideoTrackFrameRef.current = null;
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
   };
 
   useEffect(() => {
@@ -143,12 +292,57 @@ export function ReaderWorkbench() {
     fetchSamStatus().then(setSamStatus).catch(() => setSamStatus({ available: false }));
   }, []);
 
+  useEffect(() => () => {
+    const sessionId = auditSessionRef.current;
+    const caseId = auditCaseRef.current;
+    if (!sessionId || !caseId) return;
+    void writeReaderAuditEvent({
+      event_type: 'session_end',
+      session_id: sessionId,
+      case_id: caseId,
+      patient_id: selectedCase?.patient_id || patientIdParam || caseId,
+      reader_id: readerIdParam,
+      round: roundParam,
+      payload: {
+        elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
+        reason: 'unmount',
+      },
+    });
+  }, [patientIdParam, readerIdParam, roundParam]);
+
   useEffect(() => {
-    const target = deepCaseId || caseSummaries[0]?.case_id;
-    if (target && !selectedCase) {
-      loadCaseDetail(target);
+    if (initialCaseSelectionRef.current || !caseSummaries.length) return;
+    const hasExternalDeepLink = Boolean(deepCaseId || patientIdParam || externalVideo || externalImage);
+    const mappedPatientCase = patientIdParam
+      ? caseSummaries.find((item) => item.patient_id === patientIdParam)?.case_id
+      : undefined;
+    const target = deepCaseId || mappedPatientCase || (hasExternalDeepLink ? undefined : caseSummaries[0]?.case_id);
+    if (target) {
+      initialCaseSelectionRef.current = true;
+      void loadCaseDetail(target);
+    } else if (hasExternalMedia) {
+      // Keep an external media deep-link and create a session without inventing BM-001.
+      const sessionId = newAuditId('reader');
+      auditSessionRef.current = sessionId;
+      auditCaseRef.current = activeCaseId;
+      auditSuggestionRef.current = null;
+      auditStartedAtRef.current = Date.now();
+      lastAuditFrameRef.current = 0;
+      initialCaseSelectionRef.current = true;
+      recordAudit('session_start', {
+        cohort,
+        round: roundParam,
+        reader_id: readerIdParam,
+        study_mode: 'external_media',
+        frame_count: 0,
+        software_version: 'gastric_scan_next_reader',
+      }, { sessionId, caseId: activeCaseId, patientId: patientIdParam || activeCaseId });
+    } else if (hasExternalDeepLink) {
+      // Never silently load BM-001 when an unmapped patient link is supplied.
+      initialCaseSelectionRef.current = true;
+      toast.error('深链未映射到阅片病例；未自动加载其他病例');
     }
-  }, [caseSummaries, deepCaseId, loadCaseDetail, selectedCase]);
+  }, [activeCaseId, caseSummaries, cohort, deepCaseId, externalImage, externalVideo, hasExternalMedia, loadCaseDetail, patientIdParam, readerIdParam, recordAudit, roundParam]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -168,6 +362,7 @@ export function ReaderWorkbench() {
 
   const onVideoReady = useCallback((video: HTMLVideoElement) => {
     videoRef.current = video;
+    lastVideoTrackFrameRef.current = null;
     setFrameSize({ width: video.videoWidth, height: video.videoHeight });
     setDuration(video.duration || 0);
     try {
@@ -182,18 +377,27 @@ export function ReaderWorkbench() {
   }, []);
 
   const buildPayload = useCallback(
-    (llmReport: boolean, clickOverride?: SamClick[], boxOverride?: SamBox | null) => {
+    (
+      llmReport: boolean,
+      clickOverride?: SamClick[],
+      boxOverride?: SamBox | null,
+      trackingReset = false,
+    ) => {
       const video = videoRef.current;
       if (!video?.videoWidth) throw new Error('Video frame not ready');
       const useUpload = Boolean(externalVideo || externalImage || !currentFrame?.video_rel);
       const effectiveClicks = clickOverride ?? clicks;
       const effectiveBox = boxOverride !== undefined ? boxOverride : box;
       const payload = {
-        case_id: selectedCase?.case_id || deepCaseId || 'external',
+        case_id: activeCaseId,
         video_rel: useUpload ? '' : currentFrame?.video_rel,
-        frame_time: useUpload ? 0 : video.currentTime || 0,
+        video_url: videoSrc || undefined,
+        frame_time: video.currentTime || currentTime || 0,
         image_width: video.videoWidth,
         image_height: video.videoHeight,
+        tracking_session_id: trackingSessionId || undefined,
+        tracking_enabled: Boolean(videoSrc && trackingSessionId),
+        tracking_reset: trackingReset,
         clicks: effectiveClicks.map((c) => ({ x: c.x, y: c.y, label: c.label })),
         box: effectiveBox || undefined,
         llm_report: llmReport,
@@ -203,13 +407,25 @@ export function ReaderWorkbench() {
       }
       return payload;
     },
-    [box, clicks, currentFrame?.video_rel, deepCaseId, externalImage, externalVideo, selectedCase?.case_id],
+    [
+      activeCaseId,
+      box,
+      clicks,
+      currentFrame?.video_rel,
+      currentTime,
+      externalImage,
+      externalVideo,
+      trackingSessionId,
+      videoSrc,
+    ],
   );
 
   const applySamResult = useCallback((result: Awaited<ReturnType<typeof runSamAnalyze>>, withReport: boolean) => {
     setMaskPolygon(result.mask_polygon || null);
     setMaskOverlayPng(result.mask_overlay_png || null);
     setSamScore(result.sam_score ?? null);
+    const suggestionId = newAuditId('suggestion');
+    auditSuggestionRef.current = suggestionId;
     if (withReport && result.report) {
       setReport({
         ...result.report,
@@ -224,11 +440,34 @@ export function ReaderWorkbench() {
         elapsed_ms: result.elapsed_ms,
       }));
     }
-    setBadge(`分割 ${Math.round((result.sam_score || 0) * 100)}%`);
-  }, []);
+    recordAudit(withReport ? 'report_generated' : 'ai_suggestion', {
+      suggestion_id: suggestionId,
+      frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
+      frame_time: currentTime,
+      input_source: currentFrame?.video_rel ? 'workstation_media' : 'uploaded_frame',
+      sam_score: result.sam_score ?? null,
+      elapsed_ms: result.elapsed_ms ?? null,
+      prompt_meta: result.prompt_meta || null,
+      recommended_stage: result.report?.recommended_stage || null,
+      stage_distribution: result.report?.stage_distribution || null,
+      calibrated_confidence: result.report?.calibrated_confidence ?? null,
+      evidence: result.report?.evidence || [],
+      toolchain: result.report?.toolchain || [],
+      model: result.report?.llm_report?.model || null,
+    });
+    setBadge(result.mask_polygon?.length
+      ? `Mask 已生成${result.sam_score && result.sam_score > 0 ? ` · ${Math.round(result.sam_score * 100)}%` : ' · 分数不可用'}`
+      : '未生成 Mask');
+  }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, recordAudit]);
 
   const runSam = useCallback(
-    async (opts: { llmReport?: boolean; silent?: boolean; clicks?: SamClick[]; box?: SamBox | null } = {}) => {
+    async (opts: {
+      llmReport?: boolean;
+      silent?: boolean;
+      clicks?: SamClick[];
+      box?: SamBox | null;
+      resetTracking?: boolean;
+    } = {}) => {
       const effectiveClicks = opts.clicks ?? clicks;
       const effectiveBox = opts.box !== undefined ? opts.box : box;
       const hasLocalPrompt = Boolean(effectiveBox) || effectiveClicks.length > 0;
@@ -239,7 +478,12 @@ export function ReaderWorkbench() {
       setSamBusy(true);
       if (opts.llmReport) setReportBusy(true);
       try {
-        const payload = buildPayload(Boolean(opts.llmReport), effectiveClicks, effectiveBox);
+        const payload = buildPayload(
+          Boolean(opts.llmReport),
+          effectiveClicks,
+          effectiveBox,
+          Boolean(opts.resetTracking),
+        );
         const wrapped = await runSamAnalyze(payload);
         applySamResult(wrapped, Boolean(opts.llmReport));
         if (!opts.silent) toast.success(`分割完成 · ${Math.round((wrapped.sam_score || 0) * 100)}%`);
@@ -268,9 +512,73 @@ export function ReaderWorkbench() {
     [applySamResult, box, buildPayload, clicks, llmReady],
   );
 
+  const runFullVideoTrack = useCallback(async () => {
+    const video = videoRef.current;
+    const videoRel = currentFrame?.video_rel;
+    if (!video || !videoRel) {
+      toast.error('当前病例没有可跟踪的视频');
+      return;
+    }
+    if (!hasPrompt) {
+      toast.error('请先框选或添加标注点');
+      return;
+    }
+    const requestId = ++videoTrackRequestRef.current;
+    setVideoTrackBusy(true);
+    setVideoTrackStatus('SAM2.1 视频 memory 传播中…');
+    try {
+      const result = await runSamVideoPropagation({
+        case_id: activeCaseId,
+        video_rel: videoRel,
+        frame_time: video.currentTime || currentTime,
+        image_width: video.videoWidth,
+        image_height: video.videoHeight,
+        clicks,
+        box,
+        direction: 'both',
+      });
+      if (requestId !== videoTrackRequestRef.current) return;
+      setVideoTrack(result);
+      lastVideoTrackFrameRef.current = null;
+      setVideoTrackStatus(result.needs_reanchor
+        ? `传播中断，已接受 ${result.accepted_frames}/${result.num_frames} 帧；请重锚定`
+        : `全视频 ${result.accepted_frames}/${result.num_frames} 帧已完成`);
+      const nearest = result.frames.reduce((current, frame) => (
+        Math.abs(frame.frame_time - (video.currentTime || currentTime)) < Math.abs(current.frame_time - (video.currentTime || currentTime))
+          ? frame
+          : current
+      ), result.frames[0]);
+      if (nearest?.mask_polygon?.length) setMaskPolygon(nearest.mask_polygon);
+      recordAudit('ai_suggestion', {
+        source: 'sam2.1_video_memory',
+        status: result.status,
+        accepted_frames: result.accepted_frames,
+        total_frames: result.num_frames,
+        elapsed_ms: result.elapsed_ms,
+        direction_reports: result.direction_reports,
+      });
+      if (result.needs_reanchor) toast.error('全视频传播已在质量门处停止，请重新框选或点击重锚定');
+      else toast.success(`全视频传播完成 · ${result.accepted_frames}/${result.num_frames} 帧`);
+    } catch (error) {
+      if (requestId !== videoTrackRequestRef.current) return;
+      setVideoTrackStatus('全视频传播失败');
+      toast.error(error instanceof Error ? error.message : '全视频传播失败');
+    } finally {
+      if (requestId === videoTrackRequestRef.current) setVideoTrackBusy(false);
+    }
+  }, [activeCaseId, box, clicks, currentFrame?.video_rel, currentTime, hasPrompt, recordAudit]);
+
   useEffect(() => {
     runSamRef.current = runSam;
   }, [runSam]);
+
+  useEffect(() => {
+    const frame = nearestVideoTrackFrame;
+    if (!frame || videoTrackBusy || samBusy || lastVideoTrackFrameRef.current === frame.frame_index) return;
+    lastVideoTrackFrameRef.current = frame.frame_index;
+    if (frame.mask_polygon?.length) setMaskPolygon(frame.mask_polygon);
+    setBadge(`视频传播 · ${Math.round(frame.quality_score * 100)}% · ${frame.frame_index + 1}/${videoTrack?.num_frames || 0}`);
+  }, [nearestVideoTrackFrame, samBusy, videoTrack?.num_frames, videoTrackBusy]);
 
   const postCallbackIfNeeded = async (result: Awaited<ReturnType<typeof runSamAnalyze>>) => {
     const url = callbackUrl || (typeof window !== 'undefined' ? `${window.location.origin}/api/reader-agent/result` : '');
@@ -280,9 +588,9 @@ export function ReaderWorkbench() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          case_id: selectedCase?.case_id,
+          case_id: activeCaseId,
           frame_id: searchParams.get('frame_id') || undefined,
-          patient_id: searchParams.get('patient_id') || undefined,
+          patient_id: selectedCase?.patient_id || patientIdParam || undefined,
           mask_polygon: result.mask_polygon,
           layer_label: layerResult?.layer?.label,
           t_hint: layerResult?.layer?.tHint,
@@ -296,20 +604,36 @@ export function ReaderWorkbench() {
   };
 
   const onAddClick = (click: SamClick) => {
+    setVideoTrack(null);
+    setVideoTrackStatus(null);
+    lastVideoTrackFrameRef.current = null;
     setClicks((prev) => {
       const next = [...prev, click];
       // Schedule outside the updater — never toast/setState synchronously while React is rendering.
       queueMicrotask(() => {
-        void runSamRef.current({ silent: true, clicks: next, box });
+        void runSamRef.current({
+          silent: true,
+          clicks: next,
+          box,
+          resetTracking: true,
+        });
       });
       return next;
     });
   };
 
   const onPointerUpAfterBox = () => {
+    setVideoTrack(null);
+    setVideoTrackStatus(null);
+    lastVideoTrackFrameRef.current = null;
     if (box && Math.abs(box.x2 - box.x1) > 8 && Math.abs(box.y2 - box.y1) > 8) {
       queueMicrotask(() => {
-        void runSamRef.current({ silent: true, clicks, box });
+        void runSamRef.current({
+          silent: true,
+          clicks,
+          box,
+          resetTracking: true,
+        });
       });
     }
   };
@@ -328,7 +652,7 @@ export function ReaderWorkbench() {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !trackOnPlay || !isPlaying || !hasPrompt) return;
+    if (!video || !trackOnPlay || !isPlaying || !hasPrompt || videoTrack?.frames.length) return;
     const timer = window.setInterval(() => {
       const now = performance.now();
       if (trackBusyRef.current || now - lastTrackRef.current < TRACK_INTERVAL_MS) return;
@@ -339,7 +663,7 @@ export function ReaderWorkbench() {
       });
     }, TRACK_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [hasPrompt, isPlaying, runSam, trackOnPlay]);
+  }, [hasPrompt, isPlaying, runSam, trackOnPlay, videoTrack?.frames.length]);
 
   const onSeek = (time: number) => {
     const video = videoRef.current;
@@ -348,7 +672,52 @@ export function ReaderWorkbench() {
     setCurrentTime(time);
   };
 
-  const caseTitle = selectedCase?.case_id || deepCaseId || '—';
+  const onVideoTimeUpdate = useCallback((time: number, videoDuration: number) => {
+    setCurrentTime(time);
+    setDuration(videoDuration);
+    if (Math.abs(time - lastAuditFrameRef.current) >= 0.5) {
+      lastAuditFrameRef.current = time;
+      recordAudit('frame_viewed', {
+        frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
+        frame_time: time,
+        duration: videoDuration,
+      });
+    }
+  }, [currentFrame?.media_token, currentFrame?.video_rel, recordAudit]);
+
+  const onDoctorAction = useCallback((action: ReaderDoctorAction) => {
+    const recommendedStage = report?.recommended_stage || (
+      report?.stage_distribution
+        ? Object.entries(report.stage_distribution).sort((a, b) => b[1] - a[1])[0]?.[0]
+        : undefined
+    );
+    recordAudit('doctor_action', {
+      action_id: newAuditId('action'),
+      reader_id: readerIdParam,
+      suggestion_id: auditSuggestionRef.current,
+      action_type: action.action_type,
+      before_value: recommendedStage || null,
+      after_value: action.final_t_stage || null,
+      reason: action.reason || null,
+      frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
+      frame_time: currentTime,
+      elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
+      ai_confidence: report?.calibrated_confidence ?? null,
+    });
+    toast.success(
+      action.action_type === 'accept'
+        ? '已记录采纳'
+        : action.action_type === 'modify'
+          ? '已记录修改'
+          : action.action_type === 'reject'
+            ? '已记录拒绝'
+            : '已记录证据不足',
+    );
+  }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, readerIdParam, recordAudit, report]);
+
+  const caseTitle = selectedCase
+    ? `${selectedCase.case_id}${selectedCase.patient_id ? ` · ${selectedCase.patient_id}` : ''}`
+    : deepCaseId || patientIdParam || '—';
   const frameTitle = currentFrame?.axis_label || (externalVideo ? '外部视频' : '—');
 
   const samBadge = samStatus?.available
@@ -387,8 +756,8 @@ export function ReaderWorkbench() {
             onClick={() => {
               const htmlUrl = buildReadingAgentUrl({
                 id: searchParams.get('frame_id') || undefined,
-                patient_id: searchParams.get('patient_id') || undefined,
-                id_short: searchParams.get('title') || selectedCase?.case_id || undefined,
+                patient_id: selectedCase?.patient_id || patientIdParam || undefined,
+                id_short: selectedCase?.display_id || searchParams.get('title') || selectedCase?.case_id || undefined,
                 image_url: externalImage || undefined,
                 video_urls: externalVideo ? [{ url: externalVideo }] : undefined,
               });
@@ -408,6 +777,15 @@ export function ReaderWorkbench() {
         <ReaderCaseSidebar
           cohort={cohort}
           onCohortChange={(c) => {
+            if (auditSessionRef.current && auditCaseRef.current) {
+              recordAudit('session_end', {
+                elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
+                reason: 'cohort_changed',
+              });
+            }
+            auditSessionRef.current = null;
+            auditCaseRef.current = null;
+            initialCaseSelectionRef.current = false;
             setCohort(c);
             setSelectedCase(null);
             resetInteraction();
@@ -428,6 +806,9 @@ export function ReaderWorkbench() {
             onTogglePlay={togglePlay}
             trackOnPlay={trackOnPlay}
             onToggleTrack={() => setTrackOnPlay((v) => !v)}
+            videoTrackBusy={videoTrackBusy}
+            videoTrackStatus={videoTrackStatus}
+            onPropagateVideo={runFullVideoTrack}
             showMask={showMask}
             onToggleShowMask={() => setShowMask((v) => !v)}
             maskOpacity={maskOpacity}
@@ -446,6 +827,7 @@ export function ReaderWorkbench() {
 
           {videoSrc ? (
             <ReaderViewer
+              key={selectedCase?.case_id || externalVideo || externalImage || 'external-reader'}
               videoSrc={videoSrc}
               interactionMode={interactionMode}
               clicks={clicks}
@@ -455,10 +837,7 @@ export function ReaderWorkbench() {
               maskOpacity={maskOpacity}
               maskOverlayPng={maskOverlayPng}
               onVideoReady={onVideoReady}
-              onTimeUpdate={(t, d) => {
-                setCurrentTime(t);
-                setDuration(d);
-              }}
+              onTimeUpdate={onVideoTimeUpdate}
               onAddClick={onAddClick}
               onSetBox={setBox}
               onPointerUpAfterBox={onPointerUpAfterBox}
@@ -491,6 +870,7 @@ export function ReaderWorkbench() {
         </main>
 
         <ReaderReportPanel
+          key={selectedCase?.case_id || externalVideo || externalImage || 'external-report'}
           report={report}
           loading={reportBusy}
           samScore={samScore}
@@ -498,6 +878,7 @@ export function ReaderWorkbench() {
           frameSize={frameSize}
           frameDataUrl={frameDataUrl}
           onLayerResult={setLayerResult}
+          onDoctorAction={onDoctorAction}
           onCopy={() => {
             const text = report?.llm_report?.narrative || report?.summary || '';
             if (text) {
