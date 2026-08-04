@@ -9,6 +9,8 @@ import {
 import { DatasetType, CohortYear, TreatmentType, PROJECT_ROOT } from '@/lib/config';
 import { Patient } from '@/types';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
 const ANALYZE_SCRIPT = `${PROJECT_ROOT}/pipeline/agent/product/analyze_case.py`;
@@ -33,12 +35,13 @@ interface AnalyzeRequestBody {
     source?: string;
   };
   roi_mode?: 'predicted' | 'doctor' | 'auto';
+  gc_us_report?: GcUsReportState;
 }
 
 function buildPayload(body: AnalyzeRequestBody) {
   const {
     patient, dataset, cohortYear, treatmentType, sessionId, memory_enabled, memory_store,
-    use_mask_override, mask_override, roi_mode,
+    use_mask_override, mask_override, roi_mode, gc_us_report,
   } = body;
   const resolvedPaths = resolvePatientAgentPaths(patient, cohortYear, treatmentType, dataset);
   if (!resolvedPaths.image_path) {
@@ -66,11 +69,15 @@ function buildPayload(body: AnalyzeRequestBody) {
     use_mask_override: Boolean(use_mask_override && mask_override),
     mask_override: use_mask_override ? mask_override : undefined,
     roi_mode: roi_mode || 'predicted',
+    gc_us_report: gc_us_report || undefined,
     ...resolvedPaths,
   };
 }
 
 export async function POST(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+
   const encoder = new TextEncoder();
 
   try {

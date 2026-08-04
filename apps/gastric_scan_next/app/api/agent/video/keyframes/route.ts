@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
 import { resolvePlayableVideoPath } from '@/lib/video-stream';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -135,6 +136,9 @@ print(json.dumps({
  * POST { video_url, anchor_sec, window_sec?, top_k? }
  */
 export async function POST(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+
   try {
     const body = await request.json();
     const videoUrl = String(body.video_url || body.videoUrl || '');

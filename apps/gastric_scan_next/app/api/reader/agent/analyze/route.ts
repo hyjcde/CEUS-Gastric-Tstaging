@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
 export const runtime = 'nodejs';
@@ -105,6 +106,9 @@ function runPython(payload: Record<string, unknown>): Promise<Record<string, unk
 }
 
 export async function POST(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+
   let body: ReaderAgentRequest;
   try {
     body = await request.json() as ReaderAgentRequest;

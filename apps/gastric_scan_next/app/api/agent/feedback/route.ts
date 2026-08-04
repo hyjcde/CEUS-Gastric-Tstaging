@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
 const APPLY_FEEDBACK_SCRIPT = `${PROJECT_ROOT}/pipeline/agent/product/apply_feedback.py`;
@@ -68,6 +69,9 @@ interface FeedbackRequestBody {
 }
 
 export async function POST(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+
   try {
     const body = await request.json() as FeedbackRequestBody;
     if (!body.patient_id) {

@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -366,6 +367,9 @@ function buildSystemIntegrity(result: unknown, extracted: ExtractedVideo) {
 }
 
 export async function POST(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+
   try {
     const formData = await request.formData();
     const file = formData.get('video');

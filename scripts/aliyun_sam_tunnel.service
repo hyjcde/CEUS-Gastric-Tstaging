@@ -1,0 +1,13 @@
+[Unit]
+Description=Reverse tunnel workstation SAM and Next Agent to Aliyun
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -R 127.0.0.1:18767:127.0.0.1:8767 -R 127.0.0.1:18768:127.0.0.1:3000 aliyun-reader
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
