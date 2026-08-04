@@ -2,7 +2,16 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Language, dictionary } from '@/lib/i18n';
-import { CohortYear, DatasetType, DEFAULT_DATASET, TreatmentType } from '@/lib/cohort';
+import {
+  CohortYear,
+  DatasetType,
+  DEFAULT_DATASET,
+  DEFAULT_WORKBENCH_QUEUE,
+  parseWorkbenchQueueId,
+  queueToCohortYear,
+  TreatmentType,
+  WorkbenchQueueId,
+} from '@/lib/cohort';
 
 interface SettingsContextType {
   language: Language;
@@ -11,6 +20,8 @@ interface SettingsContextType {
   setDataset: (ds: DatasetType) => void;
   cohortYear: CohortYear;
   setCohortYear: (year: CohortYear) => void;
+  queueId: WorkbenchQueueId;
+  setQueueId: (queueId: WorkbenchQueueId) => void;
   treatmentType: TreatmentType;
   setTreatmentType: (type: TreatmentType) => void;
   t: typeof dictionary['en'];
@@ -25,12 +36,40 @@ function readStoredDataset(): DatasetType {
   return DEFAULT_DATASET;
 }
 
+function readStoredLanguage(): Language {
+  if (typeof window === 'undefined') return 'zh';
+  const stored = window.localStorage.getItem('gastric_language');
+  return stored === 'en' || stored === 'zh' ? stored : 'zh';
+}
+
+function readStoredQueue(): WorkbenchQueueId {
+  if (typeof window === 'undefined') return DEFAULT_WORKBENCH_QUEUE;
+  return parseWorkbenchQueueId(window.localStorage.getItem('gastric_queue'));
+}
+
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
-  const [language, setLanguage] = useState<Language>('zh'); // Default to Chinese per request
+  const [language, setLanguageState] = useState<Language>('zh');
   const [dataset, setDatasetState] = useState<DatasetType>(DEFAULT_DATASET);
 
   useEffect(() => {
-    setDatasetState(readStoredDataset());
+    const storedLanguage = readStoredLanguage();
+    if (storedLanguage === 'zh') return;
+    const timer = window.setTimeout(() => setLanguageState(storedLanguage), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const setLanguage = (nextLanguage: Language) => {
+    setLanguageState(nextLanguage);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('gastric_language', nextLanguage);
+    }
+  };
+
+  useEffect(() => {
+    const storedDataset = readStoredDataset();
+    if (storedDataset === DEFAULT_DATASET) return;
+    const timer = window.setTimeout(() => setDatasetState(storedDataset), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const setDataset = (ds: DatasetType) => {
@@ -39,13 +78,32 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
       window.localStorage.setItem('gastric_dataset', ds);
     }
   };
-  const [cohortYear, setCohortYear] = useState<CohortYear>('2025');
+  const [cohortYear, setCohortYear] = useState<CohortYear>('reader_v150');
+  const [queueId, setQueueIdState] = useState<WorkbenchQueueId>(DEFAULT_WORKBENCH_QUEUE);
   const [treatmentType, setTreatmentType] = useState<TreatmentType>('surgery'); // Default to surgery (can be 'surgery' or 'nac')
+
+  useEffect(() => {
+    const storedQueue = readStoredQueue();
+    if (storedQueue === DEFAULT_WORKBENCH_QUEUE) return;
+    const timer = window.setTimeout(() => {
+      setQueueIdState(storedQueue);
+      setCohortYear(queueToCohortYear(storedQueue));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const setQueueId = (nextQueueId: WorkbenchQueueId) => {
+    setQueueIdState(nextQueueId);
+    setCohortYear(queueToCohortYear(nextQueueId));
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('gastric_queue', nextQueueId);
+    }
+  };
 
   const t = dictionary[language];
 
   return (
-    <SettingsContext.Provider value={{ language, setLanguage, dataset, setDataset, cohortYear, setCohortYear, treatmentType, setTreatmentType, t }}>
+    <SettingsContext.Provider value={{ language, setLanguage, dataset, setDataset, cohortYear, setCohortYear, queueId, setQueueId, treatmentType, setTreatmentType, t }}>
       {children}
     </SettingsContext.Provider>
   );

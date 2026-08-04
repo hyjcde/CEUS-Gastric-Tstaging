@@ -8,20 +8,17 @@ import { ConceptReasoning } from '@/components/ConceptReasoning';
 import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { StatisticsPanel } from '@/components/StatisticsPanel';
 import { AgentWorkbenchPanel } from '@/components/AgentWorkbenchPanel';
-import { InteractiveSegPanel, type ImagingAssistPayload } from '@/components/InteractiveSegPanel';
+import { InteractiveSegPanel, type DinoFeatureResult, type ImagingAssistPayload } from '@/components/InteractiveSegPanel';
 import { ReaderAgentResultCard } from '@/components/ReaderAgentResultCard';
+import { ReaderStudyQueuePanel } from '@/components/ReaderStudyQueuePanel';
+import { BenignTissueObservationCard } from '@/components/BenignTissueObservationCard';
 import { AssistHub } from '@/components/AssistHub';
 import { GcUsImagingReportCard } from '@/components/GcUsImagingReportCard';
-import {
-  bboxShortAxisRatio,
-  buildImagingNarrative,
-  computeGcUsTscore,
-  estimateAxesMm,
-  polygonIrregularity,
-} from '@/lib/gc-us-tscore';
 // VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
-import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, MaskBoundaryOverride } from '@/types';
+import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
+import type { SamReport } from '@/lib/reader/types';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
 import { ChevronLeft, Users, BarChart2, X } from 'lucide-react';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
 import {
@@ -38,9 +35,44 @@ import {
 } from '@/lib/concept-agent-merge';
 
 export default function Home() {
-  const { dataset, cohortYear, language } = useSettings();
+  const { dataset, cohortYear, queueId, language } = useSettings();
   const [conceptState, setConceptState] = useState<ConceptState>(DEFAULT_STATE);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [readerStudyMode, setReaderStudyMode] = useState<ReaderStudyMode>('benign_malignancy');
+  const [systemReport, setSystemReport] = useState<SamReport | null>(null);
+  const [dinoFeature, setDinoFeature] = useState<DinoFeatureResult | null>(null);
+  const isReaderStudyQueue = selectedPatient?.phase === 'reader_v150';
+  const isBenignQueue = selectedPatient?.phase === 'benign';
+
+  useEffect(() => {
+    setSelectedPatient(null);
+    setAllPatients([]);
+    setAgentAnalysis(null);
+    setMaskOverride(null);
+    setImagingAssist(null);
+    setGcUsReport(null);
+    setConceptState(DEFAULT_STATE);
+    setAgentFilledCount(0);
+    setIsDirty(false);
+    setSaveStatus('idle');
+    setSystemReport(null);
+    setDinoFeature(null);
+    if (cohortYear === 'reader_v150') setReaderStudyMode('benign_malignancy');
+  }, [cohortYear, dataset, queueId]);
+
+  useEffect(() => {
+    if (cohortYear === 'reader_v150') {
+      setSelectedPatient(null);
+      setSystemReport(null);
+    }
+  }, [readerStudyMode, cohortYear]);
+
+  useEffect(() => {
+    if (cohortYear !== 'reader_v150' || typeof window === 'undefined') return;
+    const task = new URLSearchParams(window.location.search).get('reader_task');
+    if (task === 'task2') setReaderStudyMode('t_staging');
+    if (task === 'task1') setReaderStudyMode('benign_malignancy');
+  }, [cohortYear]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isReportExpanded, setIsReportExpanded] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
@@ -49,6 +81,7 @@ export default function Home() {
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisResponse | null>(null);
   const [maskOverride, setMaskOverride] = useState<MaskBoundaryOverride | null>(null);
   const [imagingAssist, setImagingAssist] = useState<ImagingAssistPayload | null>(null);
+  const [gcUsReport, setGcUsReport] = useState<GcUsReportState | null>(null);
   const [agentFilledCount, setAgentFilledCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isDirty, setIsDirty] = useState(false);
@@ -83,6 +116,9 @@ export default function Home() {
     setSaveStatus('idle');
     setIsDirty(false);
     setImagingAssist(null);
+    setGcUsReport(null);
+    setSystemReport(null);
+    setDinoFeature(null);
     lastMergedAgentSessionRef.current = null;
     lastMergedExplainableRef.current = null;
 
@@ -114,7 +150,18 @@ export default function Home() {
       }
       return patients;
     });
-  }, []);
+    if (!patients.length || (selectedPatient && !patients.some((item) => item.id === selectedPatient.id))) {
+      setSelectedPatient(patients[0] || null);
+      setAgentAnalysis(null);
+      setMaskOverride(null);
+      setImagingAssist(null);
+      setGcUsReport(null);
+      setConceptState(DEFAULT_STATE);
+      setAgentFilledCount(0);
+      setIsDirty(false);
+      setSaveStatus('idle');
+    }
+  }, [selectedPatient]);
 
   const siblingImages = useMemo(() => {
     if (!selectedPatient || !allPatients.length) return [];
@@ -122,46 +169,7 @@ export default function Home() {
     return allPatients.filter((p) => p.patient_id === patientId);
   }, [selectedPatient, allPatients]);
 
-  const imagingNarrative = useMemo(() => {
-    if (!selectedPatient || !imagingAssist?.layerResult) return null;
-    const clin = selectedPatient.clinical;
-    const poly = imagingAssist.lesionPolygon || [];
-    const layer = imagingAssist.layerResult;
-    const label = layer?.layer?.label || null;
-    const tHint = layer?.layer?.tHint || null;
-    const occ = layer?.pen?.ratio ?? layer?.analysis?.ratioHint ?? null;
-    const irreg = polygonIrregularity(poly);
-    const axes =
-      poly.length >= 3 && imagingAssist.frameSize
-        ? estimateAxesMm(poly, imagingAssist.frameSize)
-        : null;
-    const lengthCm = clin?.tumorSize?.length ?? (axes ? axes.lengthMm / 10 : null);
-    const thicknessCm = clin?.tumorSize?.thickness ?? (axes ? axes.thicknessMm / 10 : null);
-    const tscore = computeGcUsTscore({
-      lengthCm,
-      thicknessCm,
-      irregularity: irreg,
-      shortAxisRatio: bboxShortAxisRatio(poly),
-      layerLabel: label,
-      tHint,
-      inContact: layer?.inContact ?? null,
-      occupationRatio: typeof occ === 'number' ? occ : null,
-      serosaDisrupted: /L5|浆膜|T4|T3–T4|T3-T4/i.test(`${label || ''} ${tHint || ''}`),
-    });
-    return buildImagingNarrative({
-      location: clin?.location || null,
-      lengthMm: clin?.tumorSize?.length ? clin.tumorSize.length * 10 : axes?.lengthMm ?? null,
-      thicknessMm: clin?.tumorSize?.thickness ? clin.tumorSize.thickness * 10 : axes?.thicknessMm ?? null,
-      irregularity: irreg,
-      inContact: layer?.inContact ?? null,
-      layerLabel: label,
-      tHint,
-      occupationRatio: typeof occ === 'number' ? occ : null,
-      serosaDisrupted: /L5|浆膜|T4|T3–T4|T3-T4/i.test(`${label || ''} ${tHint || ''}`),
-      tscore,
-      zh: language === 'zh',
-    });
-  }, [selectedPatient, imagingAssist, language]);
+  const imagingNarrative = gcUsReport?.report.prose || null;
 
   const applyConceptState = useCallback((patientId: string, state: ConceptState, markDirty = false) => {
     setConceptState(state);
@@ -393,23 +401,24 @@ export default function Home() {
   }, [selectedPatient]);
 
   return (
-    <main className="flex h-screen w-screen flex-col bg-[#000000] text-gray-200 overflow-hidden selection:bg-blue-500/30">
-      <div className="h-16 shrink-0 border-b border-white/10 z-50">
+    <main className="flex h-screen w-screen min-w-0 flex-col overflow-hidden bg-[#08090a] text-gray-200 selection:bg-blue-500/30">
+      <div className="h-16 min-h-0 shrink-0 border-b border-white/10 z-50">
         <Header
           onShowStatistics={() => setShowStatistics(true)}
           selectedPatient={selectedPatient}
         />
       </div>
 
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+      <div className="relative flex min-w-0 flex-1 overflow-hidden">
         <div
-          className={`shrink-0 border-r border-white/10 bg-[#0b0b0d] flex flex-col min-h-0 z-40 transition-all duration-300 ease-in-out ${
+          className={`z-40 flex min-h-0 shrink-0 flex-col border-r border-white/10 bg-[#0b0b0d] transition-all duration-300 ease-in-out ${
             isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full opacity-0 border-none'
           }`}
         >
           <div className="w-72 h-full">
             <PatientList
-              key={`${dataset}-${cohortYear}`}
+              key={`${dataset}-${queueId}-${cohortYear}-${readerStudyMode}`}
+              readerStudyMode={readerStudyMode}
               onSelect={setSelectedPatient}
               selectedId={selectedPatient?.id || null}
               onPatientsLoaded={handlePatientsLoaded}
@@ -423,34 +432,48 @@ export default function Home() {
             className={`absolute top-1/2 -translate-y-1/2 z-40 bg-neutral-800/80 backdrop-blur border border-white/10 text-gray-400 hover:text-white p-1.5 rounded-r-lg shadow-lg transition-all duration-300 hover:bg-blue-600 hover:border-blue-500 ${
               isSidebarOpen ? 'left-72' : 'left-0'
             }`}
-            title={isSidebarOpen ? 'Collapse Patient List' : 'Expand Patient List'}
+            title={isSidebarOpen
+              ? (language === 'zh' ? '收起病例列表' : 'Collapse patient list')
+              : (language === 'zh' ? '展开病例列表' : 'Expand patient list')}
           >
             {isSidebarOpen ? <ChevronLeft size={16} /> : <Users size={16} />}
           </button>
         )}
 
-        <div className="flex-1 flex flex-col min-h-0 bg-black relative min-w-0 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
-          {/* 视频综合分析入口（上传选帧）暂隐藏；病例视频 SAM 走 InteractiveSegPanel「视频 SAM」 */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-black shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+          {/* 视频综合分析入口（上传选帧）暂隐藏；病例视频分析走主工作台视频画布 */}
           {/* <VideoAnalysisUpload onAnalysisComplete={setAgentAnalysis} /> */}
-          <UltrasoundViewer
-            key={`${selectedPatient?.id}-${dataset}`}
-            patient={selectedPatient}
-            siblingImages={siblingImages}
-            onSelectSibling={setSelectedPatient}
-            onExplainableComplete={handleExplainableComplete}
-          />
-          <AssistHub patient={selectedPatient} />
-          <AgentWorkbenchPanel
-            patient={selectedPatient}
-            maskOverride={maskOverride}
-            onAnalysisComplete={setAgentAnalysis}
-          />
+          {!isReaderStudyQueue ? (
+            <UltrasoundViewer
+              key={`${selectedPatient?.id}-${dataset}`}
+              patient={selectedPatient}
+              siblingImages={siblingImages}
+              onSelectSibling={setSelectedPatient}
+              onExplainableComplete={handleExplainableComplete}
+            />
+          ) : null}
+          {!isReaderStudyQueue && !isBenignQueue ? <AssistHub patient={selectedPatient} /> : null}
+          {!isReaderStudyQueue && !isBenignQueue ? (
+            <AgentWorkbenchPanel
+              patient={selectedPatient}
+              maskOverride={maskOverride}
+              gcUsReport={gcUsReport}
+              onAnalysisComplete={setAgentAnalysis}
+            />
+          ) : null}
           <InteractiveSegPanel
             patient={selectedPatient}
             override={maskOverride}
             onOverrideChange={setMaskOverride}
-            onImagingAssist={setImagingAssist}
+            onImagingAssist={(next) => {
+              setImagingAssist(next);
+              if (!next) setGcUsReport(null);
+            }}
+            onSystemReport={setSystemReport}
+            onDinoFeatures={setDinoFeature}
+            inline={Boolean(selectedPatient)}
           />
+          {!isReaderStudyQueue && !isBenignQueue && (
           <ReaderAgentResultCard
             patient={selectedPatient}
             onApplyStage={(stage) => {
@@ -532,49 +555,78 @@ export default function Home() {
               img.src = selectedPatient.image_url;
             }}
           />
+          )}
         </div>
 
-        <div className="w-[420px] shrink-0 border-l border-white/10 bg-panel-bg flex flex-col min-h-0 z-40 transition-all duration-300">
-          <div className="h-[35%] shrink-0 border-b border-white/10 flex flex-col min-h-0 bg-panel-bg">
-            <ConceptReasoning
-              state={conceptState}
-              onChange={handleStateChange}
-              onReset={handleResetConceptState}
-              onSave={handleSaveConceptState}
-              populatedCount={conceptPopulatedCount}
-              agentFilledCount={agentFilledCount}
-              fieldSources={fieldSources}
-              hasClinicalData={Boolean(selectedPatient?.clinical)}
-              isDirty={isDirty}
-              saveStatus={saveStatus}
-              autoSaveEnabled
-            />
-          </div>
-
-          <div className="flex-1 flex flex-col min-h-0 bg-bg-dark relative">
-            <div className="shrink-0 border-b border-white/10 p-2">
-              <GcUsImagingReportCard
+        <div className="z-40 flex min-h-0 w-[min(420px,34vw)] min-w-[18rem] shrink-0 flex-col border-l border-white/10 bg-panel-bg transition-all duration-300">
+          {!selectedPatient ? (
+            <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-gray-500">
+              当前队列没有可用病例；请选择其他队列或检查数据入口。
+            </div>
+          ) : isReaderStudyQueue ? (
+            <div className="flex-1 overflow-y-auto p-4">
+              <ReaderStudyQueuePanel
                 patient={selectedPatient}
-                assist={imagingAssist}
-                zh={language === 'zh'}
-                onApplyCtStage={(stage) => {
-                  handleExplainableComplete({
-                    success: true,
-                    predicted_stage: stage.startsWith('T') ? stage : `T${stage.replace(/^T/, '')}`,
-                    confidence: 'gc-us-tscore',
-                    composite_score: 0.6,
-                  });
-                }}
+                patients={allPatients}
+                compact
+                studyMode={readerStudyMode}
+                onStudyModeChange={setReaderStudyMode}
+                onSelectPatient={setSelectedPatient}
+                systemReport={systemReport}
               />
             </div>
-            <DiagnosisPanel
-              state={conceptState}
-              patient={selectedPatient}
-              agentAnalysis={agentAnalysis}
-              imagingNarrative={imagingNarrative}
-              onExpandedChange={setIsReportExpanded}
-            />
-          </div>
+          ) : isBenignQueue ? (
+            <div className="flex-1 overflow-y-auto p-4">
+              <BenignTissueObservationCard patient={selectedPatient} />
+            </div>
+          ) : (
+            <>
+              <div className="h-[35%] shrink-0 border-b border-white/10 flex flex-col min-h-0 bg-panel-bg">
+                <ConceptReasoning
+                  state={conceptState}
+                  onChange={handleStateChange}
+                  onReset={handleResetConceptState}
+                  onSave={handleSaveConceptState}
+                  populatedCount={conceptPopulatedCount}
+                  agentFilledCount={agentFilledCount}
+                  fieldSources={fieldSources}
+                  hasClinicalData={Boolean(selectedPatient?.clinical)}
+                  isDirty={isDirty}
+                  saveStatus={saveStatus}
+                  autoSaveEnabled
+                />
+              </div>
+
+              <div className="flex-1 flex flex-col min-h-0 bg-bg-dark relative">
+                <div className="shrink-0 border-b border-white/10 p-2">
+                  <GcUsImagingReportCard
+                    patient={selectedPatient}
+                    assist={imagingAssist}
+                    zh={language === 'zh'}
+                    onApplyCtStage={(stage) => {
+                      handleExplainableComplete({
+                        success: true,
+                        predicted_stage: stage.startsWith('T') ? stage : `T${stage.replace(/^T/, '')}`,
+                        confidence: 'gc-us-tscore',
+                        composite_score: 0.6,
+                      });
+                    }}
+                    onEvidenceStateChange={setGcUsReport}
+                  />
+                </div>
+                <DiagnosisPanel
+                  state={conceptState}
+                  patient={selectedPatient}
+                  agentAnalysis={agentAnalysis}
+                  systemReport={systemReport}
+                  dinoFeature={dinoFeature}
+                  gcUsReport={gcUsReport}
+                  imagingNarrative={imagingNarrative}
+                  onExpandedChange={setIsReportExpanded}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {showStatistics && (

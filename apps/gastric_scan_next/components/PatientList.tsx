@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Patient } from '@/types';
+import { Patient, ReaderStudyMode } from '@/types';
 import { Search, Database, ChevronDown, ChevronRight, Folder, FileImage } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
+import { getQueueDisplayLabel, isInternalQueue } from '@/lib/cohort';
+import { QueueTreeSelect } from './QueueTreeSelect';
 import toast from 'react-hot-toast';
 import { PatientListGroupSkeleton } from './Skeleton';
 
@@ -11,28 +13,129 @@ interface PatientListProps {
   onSelect: (patient: Patient) => void;
   selectedId: string | null;
   onPatientsLoaded?: (patients: Patient[]) => void;
+  readerStudyMode?: ReaderStudyMode;
 }
 
 // Helper type for grouped patients
 interface PatientGroup {
+  key: string;
   baseId: string; // e.g., 1MC_1424711
   groupType: string; // Chemo/Surgery
+  scopeLabel?: string;
   items: Patient[];
 }
 
-export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded }) => {
-  const { dataset, cohortYear, t } = useSettings();
+type TreatmentKey = 'surgery' | 'nac';
+
+interface PatientPage {
+  items: Patient[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  has_more?: boolean;
+}
+
+const PATIENT_PAGE_SIZE = 80;
+
+function getTreatmentType(patient: Patient): 'NAC' | 'Benign' | 'Surgery' {
+  if (patient.group === 'Benign') return 'Benign';
+  return patient.group === 'NAC' || patient.id.startsWith('NAC_') ? 'NAC' : 'Surgery';
+}
+
+function getPatientGroupKey(patient: Patient): string {
+  const patientId = patient.patient_id || patient.id_short.split('(')[0].trim();
+  const scope = patient.center_id || patient.phase || patient.queue_id || 'queue';
+  return `${scope}::${patientId}::${getTreatmentType(patient)}`;
+}
+
+function emptyPatientPage(offset = 0): PatientPage {
+  return {
+    items: [],
+    total: 0,
+    offset,
+    limit: PATIENT_PAGE_SIZE,
+    hasMore: false,
+  };
+}
+
+function mergePatients(current: Patient[], additions: Patient[]): Patient[] {
+  const seen = new Set(current.map((patient) => patient.id));
+  const next = [...current];
+  for (const patient of additions) {
+    if (seen.has(patient.id)) continue;
+    seen.add(patient.id);
+    next.push(patient);
+  }
+  return next;
+}
+
+async function fetchPatientPage(
+  dataset: string,
+  queueId: string,
+  treatment: TreatmentKey,
+  offset: number,
+  signal: AbortSignal,
+  language: 'zh' | 'en',
+): Promise<PatientPage> {
+  const params = new URLSearchParams({
+    dataset,
+    queue: queueId,
+    treatment,
+    offset: String(offset),
+    limit: String(PATIENT_PAGE_SIZE),
+  });
+  const response = await fetch(`/api/patients?${params.toString()}`, { signal });
+  if (!response.ok) {
+    throw new Error(language === 'en'
+      ? `${treatment === 'nac' ? 'NAC' : 'Surgery'} queue request failed (HTTP ${response.status})`
+      : `${treatment === 'nac' ? 'NAC' : 'surgery'} 队列请求失败（HTTP ${response.status}）`);
+  }
+  const data = await response.json() as Partial<PatientPage> | Patient[];
+  if (Array.isArray(data)) {
+    return {
+      items: data,
+      total: data.length,
+      offset,
+      limit: PATIENT_PAGE_SIZE,
+      hasMore: false,
+    };
+  }
+  if (!Array.isArray(data.items)) {
+    throw new Error(language === 'en'
+      ? `${treatment === 'nac' ? 'NAC' : 'Surgery'} queue returned an invalid format`
+      : `${treatment === 'nac' ? 'NAC' : 'surgery'} 队列返回格式错误`);
+  }
+  return {
+    items: data.items,
+    total: typeof data.total === 'number' ? data.total : data.items.length,
+    offset: typeof data.offset === 'number' ? data.offset : offset,
+    limit: typeof data.limit === 'number' ? data.limit : PATIENT_PAGE_SIZE,
+    hasMore: Boolean(data.has_more),
+  };
+}
+
+export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded, readerStudyMode }) => {
+  const { dataset, cohortYear, queueId, setQueueId, language, t } = useSettings();
+  const zh = language === 'zh';
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [displayLimit, setDisplayLimit] = useState(50);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isLoadingMore = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalFrames, setTotalFrames] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const onSelectRef = useRef(onSelect);
   const onPatientsLoadedRef = useRef(onPatientsLoaded);
   const selectedIdRef = useRef(selectedId);
   const hasAutoSelectedRef = useRef(false);
+  const patientsRef = useRef<Patient[]>([]);
+  const nextOffsetsRef = useRef<Record<TreatmentKey, number>>({ surgery: 0, nac: 0 });
+  const hasMoreRef = useRef<Record<TreatmentKey, boolean>>({ surgery: true, nac: false });
+  const loadingMoreRef = useRef(false);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -48,121 +151,164 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
 
   useEffect(() => {
     let isMounted = true;
-
-    const safeFetchPatients = async (treatment: 'surgery' | 'nac'): Promise<Patient[]> => {
-      try {
-        const response = await fetch(`/api/patients?dataset=${dataset}&cohort=${cohortYear}&treatment=${treatment}`);
-        if (!response.ok) {
-          console.warn(`Fetch ${treatment} patients failed (${response.status})`);
-          return [];
-        }
-        const data = await response.json();
-        if (!Array.isArray(data)) {
-          console.warn(`Unexpected ${treatment} payload`, data);
-          return [];
-        }
-        return data;
-      } catch (error) {
-        console.error(`Failed to load ${treatment} data`, error);
-        toast.error(`Failed to load ${treatment} patient data`);
-        return [];
-      }
-    };
+    const controller = new AbortController();
+    const shouldFetchNac = isInternalQueue(queueId);
 
     const loadPatients = async () => {
       setLoading(true);
-      setDisplayLimit(50);
+      setLoadingMore(false);
+      setPatients([]);
+      patientsRef.current = [];
+      nextOffsetsRef.current = { surgery: 0, nac: 0 };
+      hasMoreRef.current = { surgery: true, nac: shouldFetchNac };
+      setTotalFrames(0);
+      setHasMore(false);
 
-      // gist数据集不支持NAC，只请求surgery数据
-      const shouldFetchNac = cohortYear !== 'gist';
       const [surgeryData, nacData] = await Promise.all([
-        safeFetchPatients('surgery'),
-        shouldFetchNac ? safeFetchPatients('nac') : Promise.resolve([])
+        fetchPatientPage(dataset, queueId, 'surgery', 0, controller.signal, language),
+        shouldFetchNac
+          ? fetchPatientPage(dataset, queueId, 'nac', 0, controller.signal, language)
+          : Promise.resolve(emptyPatientPage(0)),
       ]);
 
       if (!isMounted) return;
 
-      // Merge both datasets (nacData might be empty for years without NAC)
-      const allData = [...surgeryData, ...nacData];
-      const seen = new Set<string>();
-      const merged = allData.filter(p => {
-        if (seen.has(p.id)) {
-          console.warn(`Duplicate patient ID found: ${p.id}, skipping duplicate`);
-          return false;
-        }
-        seen.add(p.id);
-        return true;
-      });
+      const merged = mergePatients([], [...surgeryData.items, ...nacData.items]);
+      patientsRef.current = merged;
+      nextOffsetsRef.current = {
+        surgery: surgeryData.offset + surgeryData.limit,
+        nac: nacData.offset + nacData.limit,
+      };
+      hasMoreRef.current = {
+        surgery: surgeryData.hasMore,
+        nac: nacData.hasMore,
+      };
 
       setPatients(merged);
+      setTotalFrames(surgeryData.total + nacData.total);
+      setHasMore(surgeryData.hasMore || nacData.hasMore);
       setLoading(false);
       onPatientsLoadedRef.current?.(merged);
 
+      const visiblePatients = queueId === 'reader:reader_v150' && readerStudyMode
+        ? merged.filter((patient) => patient.study_mode === readerStudyMode)
+        : merged;
       const currentSelectedId = selectedIdRef.current;
 
       // Auto-expand the group of the selected patient if exists
       if (currentSelectedId) {
-          const p = merged.find((x: Patient) => x.id === currentSelectedId);
+          const p = visiblePatients.find((x: Patient) => x.id === currentSelectedId);
           if (p) {
-              const patientId = p.patient_id || p.id_short.split('(')[0].trim();
-              const isNAC = p.group === 'NAC' || p.id.startsWith('NAC_');
-              const treatmentType = isNAC ? 'NAC' : 'Surgery';
-              const groupKey = `${patientId}_${treatmentType}`;
+              const groupKey = getPatientGroupKey(p);
               setExpandedGroups(new Set([groupKey]));
+          } else if (visiblePatients.length > 0 && !hasAutoSelectedRef.current) {
+              hasAutoSelectedRef.current = true;
+              onSelectRef.current(visiblePatients[0]);
           }
-      } else if (merged.length > 0 && !hasAutoSelectedRef.current) {
+      } else if (visiblePatients.length > 0 && !hasAutoSelectedRef.current) {
           hasAutoSelectedRef.current = true;
-          onSelectRef.current(merged[0]);
-          const patientId = merged[0].patient_id || merged[0].id_short.split('(')[0].trim();
-          const isNAC = merged[0].group === 'NAC' || merged[0].id.startsWith('NAC_');
-          const treatmentType = isNAC ? 'NAC' : 'Surgery';
-          const groupKey = `${patientId}_${treatmentType}`;
+          onSelectRef.current(visiblePatients[0]);
+          const groupKey = getPatientGroupKey(visiblePatients[0]);
           setExpandedGroups(new Set([groupKey]));
       }
     };
 
     loadPatients().catch(error => {
+      if (!isMounted || (error instanceof DOMException && error.name === 'AbortError')) return;
       console.error('Failed to load patients', error);
-      if (isMounted) {
-        setLoading(false);
-        toast.error('Failed to load patient list. Please refresh the page.');
-      }
+      setLoading(false);
+      toast.error(error instanceof Error ? error.message : (language === 'en' ? 'Failed to load the case queue' : '病例队列加载失败'));
     });
 
     return () => {
       isMounted = false;
+      controller.abort();
+      loadMoreControllerRef.current?.abort();
     };
-  }, [dataset, cohortYear]);
+  }, [dataset, language, queueId, readerStudyMode]);
 
   useEffect(() => {
     hasAutoSelectedRef.current = false;
-  }, [dataset, cohortYear]);
+  }, [dataset, queueId]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || (!hasMoreRef.current.surgery && !hasMoreRef.current.nac)) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
+    try {
+      const shouldFetchNac = isInternalQueue(queueId);
+      const pageRequests: Array<[TreatmentKey, Promise<PatientPage>]> = [];
+      if (hasMoreRef.current.surgery) {
+        pageRequests.push([
+          'surgery',
+          fetchPatientPage(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language),
+        ]);
+      }
+      if (shouldFetchNac && hasMoreRef.current.nac) {
+        pageRequests.push([
+          'nac',
+          fetchPatientPage(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language),
+        ]);
+      }
+      const pages = await Promise.all(pageRequests.map(async ([treatment, request]) => (
+        [treatment, await request] as const
+      )));
+
+      const additions = pages.flatMap(([, page]) => page.items);
+      for (const [treatment, page] of pages) {
+        nextOffsetsRef.current[treatment] = page.offset + page.limit;
+        hasMoreRef.current[treatment] = page.hasMore;
+      }
+      const merged = mergePatients(patientsRef.current, additions);
+      patientsRef.current = merged;
+      setPatients(merged);
+      setHasMore(hasMoreRef.current.surgery || hasMoreRef.current.nac);
+      onPatientsLoadedRef.current?.(merged);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.error('Failed to load more patients', error);
+        toast.error(error instanceof Error ? error.message : (language === 'en' ? 'Failed to load more cases' : '更多病例加载失败'));
+      }
+    } finally {
+      loadingMoreRef.current = false;
+      loadMoreControllerRef.current = null;
+      setLoadingMore(false);
+    }
+  }, [dataset, language, queueId]);
+
+  useEffect(() => {
+    loadMoreRef.current = loadMore;
+  }, [loadMore]);
+
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const target = event.currentTarget;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (remaining < 240) void loadMoreRef.current();
+  }, []);
 
   // Grouping Logic - Group by patient_id and treatment type
   const groupedPatients = useMemo(() => {
     const groups: Record<string, PatientGroup> = {};
+    const visiblePatients = queueId === 'reader:reader_v150' && readerStudyMode
+      ? patients.filter((patient) => patient.study_mode === readerStudyMode)
+      : patients;
     
-    patients.forEach(p => {
-        // Use patient_id for grouping (this is the actual patient ID from Excel)
-        // For 2019: patient_id is extracted from filename (e.g., "127" from "1-127-3")
-        // For 2025: patient_id is the numeric ID (e.g., "1424711")
+    visiblePatients.forEach(p => {
         const patientId = p.patient_id || p.id_short.split('(')[0].trim();
-        
-        // Determine treatment type: NAC files start with "NAC_", Surgery files start with "Surgery_"
-        const isNAC = p.group === 'NAC' || p.id.startsWith('NAC_');
-        const treatmentType = isNAC ? 'NAC' : 'Surgery';
-        
-        // Create a unique key: patientId + treatmentType (so same patient can have both Surgery and NAC)
-        const baseId = `${patientId}_${treatmentType}`;
-        
-        if (!groups[baseId]) {
-            groups[baseId] = {
-                baseId: patientId, // Display patient ID (without treatment suffix)
-                groupType: treatmentType, // 'NAC' or 'Surgery'
-                items: []
+        const treatmentType = getTreatmentType(p);
+        const groupKey = getPatientGroupKey(p);
+        if (!groups[groupKey]) {
+            groups[groupKey] = {
+                key: groupKey,
+                baseId: patientId,
+                groupType: treatmentType,
+                scopeLabel: p.center_label || (p.phase && p.phase !== 'external' ? p.phase : undefined),
+                items: [],
             };
         }
-        groups[baseId].items.push(p);
+        groups[groupKey].items.push(p);
     });
 
     // Sort groups: first by clinical data presence (any item in group has clinical), then by patient_id, then by treatment type
@@ -174,9 +320,8 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
         if (hasClinicalA && !hasClinicalB) return -1;
         if (!hasClinicalA && hasClinicalB) return 1;
 
-        // Extract patient ID from baseId (remove treatment suffix if exists)
-        const aPatientId = a.baseId.split('_')[0];
-        const bPatientId = b.baseId.split('_')[0];
+        const aPatientId = a.baseId;
+        const bPatientId = b.baseId;
         
         const aNum = parseInt(aPatientId) || 0;
         const bNum = parseInt(bPatientId) || 0;
@@ -209,13 +354,14 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
     const term = searchTerm.toLowerCase();
     const result = sortedGroups.filter(g => 
         g.baseId.toLowerCase().includes(term) || 
+        g.scopeLabel?.toLowerCase().includes(term) ||
         g.items.some(i => i.id.toLowerCase().includes(term) || i.patient_id?.toLowerCase().includes(term))
     );
 
     return result;
-  }, [patients, searchTerm]);
+  }, [patients, searchTerm, queueId, readerStudyMode]);
 
-  const visibleGroups = groupedPatients.slice(0, displayLimit);
+  const visibleGroups = groupedPatients;
 
   const toggleGroup = useCallback((groupKey: string) => {
     setExpandedGroups(prev => {
@@ -229,38 +375,25 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
     });
   }, []);
 
-  // 滚动到底部自动加载更多
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    
-    // 当距离底部小于 100px 时，自动加载更多
-    if (scrollBottom < 100 && !isLoadingMore.current && displayLimit < groupedPatients.length) {
-      isLoadingMore.current = true;
-      setDisplayLimit(prev => {
-        const newLimit = prev + 50;
-        setTimeout(() => {
-          isLoadingMore.current = false;
-        }, 500);
-        return newLimit;
-      });
-    }
-  }, [displayLimit, groupedPatients.length]);
-
   return (
     <div className="flex flex-col h-full w-full bg-[#0b0b0d]">
       {/* Sidebar Header */}
-      <div className="h-10 shrink-0 border-b border-white/5 flex items-center justify-between px-3 bg-[#0b0b0d]">
-        <span className="flex items-center gap-2 text-[11px] font-bold text-gray-300 uppercase tracking-widest">
-          <Database size={12} className="text-blue-500" /> 
-          {t.cohort.title}
-        </span>
-        <span className="text-[9px] font-mono text-gray-500 flex items-center gap-2">
-          <span className={dataset === 'cropped' ? 'text-amber-500' : 'text-blue-400'}>
-            {dataset === 'cropped' ? 'CROP UI' : 'ORIGINAL'}
+      <div className="min-h-12 shrink-0 border-b border-white/5 px-3 py-1.5 bg-[#0b0b0d]">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 text-[11px] font-bold text-gray-300 uppercase tracking-widest">
+            <Database size={12} className="text-blue-500" />
+            {t.cohort.title}
           </span>
-          <span>CASES: {groupedPatients.length}</span>
-        </span>
+          <span className="text-[9px] font-mono text-gray-500">
+            {zh ? `${groupedPatients.length}组 / ${totalFrames}帧` : `${groupedPatients.length} groups / ${totalFrames} frames`}
+          </span>
+        </div>
+        <div className="mt-0.5 truncate text-[8px] font-mono text-cyan-300/70" title={getQueueDisplayLabel(queueId, language)}>
+          {getQueueDisplayLabel(queueId, language)}
+        </div>
+        <div className="relative z-[60] mt-1.5">
+          <QueueTreeSelect value={queueId} onChange={setQueueId} />
+        </div>
       </div>
 
       {/* Search */}
@@ -278,10 +411,10 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       </div>
 
       {/* Grouped List */}
-      <div 
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent pb-4"
+      <div
+        ref={listRef}
         onScroll={handleScroll}
+        className="flex-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent pb-4"
       >
         {loading ? (
           <div className="divide-y divide-white/5">
@@ -292,8 +425,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
         ) : (
           <div className="divide-y divide-white/5">
             {visibleGroups.map(group => {
-              // Create unique key for this group (patientId + treatmentType)
-              const groupKey = `${group.baseId}_${group.groupType}`;
+              const groupKey = group.key;
               const isExpanded = expandedGroups.has(groupKey);
               const isGroupSelected = group.items.some(i => i.id === selectedId);
               
@@ -307,19 +439,28 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                         ${isGroupSelected ? 'bg-blue-500/5' : 'hover:bg-white/5'}
                     `}
                   >
-                    <div className="flex items-center gap-2 overflow-hidden">
+                    <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                         {isExpanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
                         <Folder size={12} className={isGroupSelected ? "text-blue-400" : "text-gray-600"} />
-                        <span className={`text-[11px] font-mono truncate ${isGroupSelected ? 'text-gray-200' : 'text-gray-400'}`}>
-                            {cohortYear === 'gist' ? `Patient ${group.baseId}` : group.baseId}
-                        </span>
+                        <div className="min-w-0">
+                          <span className={`block truncate text-[11px] font-mono ${isGroupSelected ? 'text-gray-200' : 'text-gray-400'}`}>
+                              {cohortYear === 'gist' ? `Patient ${group.baseId}` : group.baseId}
+                          </span>
+                          {group.scopeLabel ? (
+                            <span className="block truncate text-[8px] font-mono text-gray-600">{group.scopeLabel}</span>
+                          ) : null}
+                        </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <span className={`
                             text-[8px] font-bold px-1 py-0.5 rounded-sm uppercase
-                            ${group.groupType === 'NAC' ? 'text-pink-500 bg-pink-500/10' : 'text-indigo-500 bg-indigo-500/10'}
+                            ${group.groupType === 'NAC'
+                              ? 'text-pink-500 bg-pink-500/10'
+                              : group.groupType === 'Benign'
+                                ? 'text-emerald-400 bg-emerald-500/10'
+                                : 'text-indigo-500 bg-indigo-500/10'}
                         `}>
-                            {group.groupType === 'NAC' ? 'NAC' : 'SURG'}
+                            {group.groupType === 'NAC' ? 'NAC' : group.groupType === 'Benign' ? 'BENIGN' : 'SURG'}
                         </span>
                         {group.items.some(p => p.clinical) && (
                             <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 py-0.5 rounded border border-blue-500/30" title="Has clinical data">
@@ -377,15 +518,25 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                 </div>
               );
             })}
-            
-            {/* Load More Trigger - 显示剩余数量，但自动加载 */}
-            {groupedPatients.length > displayLimit && (
-                <div className="w-full py-3 text-center">
-                    <span className="text-[9px] text-gray-600 font-mono">
-                        {groupedPatients.length - displayLimit} more available (scroll to load)
-                    </span>
-                </div>
-            )}
+            {!loading && hasMore ? (
+              <div className="flex flex-col items-center gap-1.5 px-3 py-4">
+                <button
+                  type="button"
+                  onClick={() => void loadMoreRef.current()}
+                  disabled={loadingMore}
+                  className="rounded border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
+                >
+                  {loadingMore
+                    ? (zh ? '正在加载下一页...' : 'Loading next page...')
+                    : (zh ? `继续加载 ${PATIENT_PAGE_SIZE} 帧` : `Load next ${PATIENT_PAGE_SIZE} frames`)}
+                </button>
+                <span className="text-[9px] font-mono text-gray-600">
+                  {zh
+                    ? `已加载 ${patients.length} / ${totalFrames} 帧`
+                    : `${patients.length} / ${totalFrames} frames loaded`}
+                </span>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

@@ -6,6 +6,7 @@ import {
   Check, Eraser, Layers, Loader2, MousePointer2, Pause, Pencil, Play, Plus, Save, Sparkles, Trash2, Video, X, ZoomIn,
 } from 'lucide-react';
 import type { MaskBoundaryOverride, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
+import type { SamReport } from '@/lib/reader/types';
 import { bboxFromPolygon } from '@/lib/mask-override';
 import { parseLesionMaskFromLabelMe, parseWallMaskFromLabelMe } from '@/lib/direction-annotation/labelme-utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -27,12 +28,41 @@ type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam';
 type MediaMode = 'image' | 'video';
 type ContourLayer = 'lesion' | 'wall';
 type DragLayer = ContourLayer;
+type KeyframeCandidate = {
+  timestamp_sec: number;
+  score: number;
+  reasons?: string[];
+  thumb_url?: string;
+};
+
+export type DinoFeatureResult = {
+  available?: boolean;
+  case_id?: string;
+  frame_time?: number;
+  model?: string;
+  layer_index?: number;
+  input_size?: number;
+  token_grid?: [number, number];
+  feature_dim?: number;
+  feature_vector?: number[];
+  feature_names?: string[];
+  scalars?: Record<string, number>;
+  feature_overlay_png?: string;
+  wall_evidence_overlay_png?: string;
+  elapsed_ms?: number;
+  error?: string;
+};
 interface InteractiveSegPanelProps {
   patient: Patient | null;
   override: MaskBoundaryOverride | null;
   onOverrideChange: (next: MaskBoundaryOverride | null) => void;
   /** Optional: wall-layer + GC-US assist payload for DiagnosisPanel */
   onImagingAssist?: (payload: ImagingAssistPayload | null) => void;
+  /** Current-frame system evidence shown in the AI-assisted task panel. */
+  onSystemReport?: (report: SamReport | null) => void;
+  /** Current-frame DINO region feature result shown in the workbench evidence panel. */
+  onDinoFeatures?: (result: DinoFeatureResult | null) => void;
+  inline?: boolean;
 }
 
 export type ImagingAssistPayload = {
@@ -138,9 +168,26 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function InteractiveSegPanel({ patient, override, onOverrideChange, onImagingAssist }: InteractiveSegPanelProps) {
+function sanitizeSystemCopy(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\bSAM(?:2)?\b/gi, 'system analysis')
+    .replace(/\bSegment Anything(?: Model)?\b/gi, 'system analysis');
+}
+
+export function InteractiveSegPanel({
+  patient,
+  override,
+  onOverrideChange,
+  onImagingAssist,
+  onSystemReport,
+  onDinoFeatures,
+  inline = false,
+}: InteractiveSegPanelProps) {
   const { language } = useSettings();
   const zh = language === 'zh';
+  const simpleVideoMode = inline && patient?.phase === 'reader_v150';
+  const [simplePromptMode, setSimplePromptMode] = useState<'point' | 'box'>('point');
+  const [simpleEditMode, setSimpleEditMode] = useState(false);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EditMode>('soft');
   const [mediaMode, setMediaMode] = useState<MediaMode>('image');
@@ -152,6 +199,9 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const [dragLayer, setDragLayer] = useState<DragLayer | null>(null);
   const [saving, setSaving] = useState(false);
   const [samBusy, setSamBusy] = useState(false);
+  const [samReport, setSamReport] = useState<SamReport | null>(null);
+  const [dinoBusy, setDinoBusy] = useState(false);
+  const [dinoResult, setDinoResult] = useState<DinoFeatureResult | null>(null);
   const [samClicks, setSamClicks] = useState<Array<{ x: number; y: number; label: 'positive' | 'negative' }>>([]);
   const [samBoxPreview, setSamBoxPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [samAvailable, setSamAvailable] = useState<boolean | null>(null);
@@ -162,15 +212,14 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const [videoTime, setVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [trackOnPlay, setTrackOnPlay] = useState(true);
-  const [keyCandidates, setKeyCandidates] = useState<Array<{
-    timestamp_sec: number;
-    score: number;
-    reasons?: string[];
-    thumb_url?: string;
-  }>>([]);
+  const [trackOnPlay, setTrackOnPlay] = useState(false);
+  const [trackingPrepared, setTrackingPrepared] = useState(false);
+  const [precomputeBusy, setPrecomputeBusy] = useState(false);
+  const [precomputeProgress, setPrecomputeProgress] = useState<string | null>(null);
+  const [keyCandidates, setKeyCandidates] = useState<KeyframeCandidate[]>([]);
   const [keyBusy, setKeyBusy] = useState(false);
   const [pendingOpenVideoSam, setPendingOpenVideoSam] = useState(false);
+  const [pendingKeyframeRequest, setPendingKeyframeRequest] = useState(false);
   /** Freeze display frame while editing vertices / after SAM — prevents click refresh flicker. */
   const [frameFrozen, setFrameFrozen] = useState(false);
   const [propagateBusy, setPropagateBusy] = useState(false);
@@ -182,6 +231,20 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const [layerPick, setLayerPick] = useState<{ x: number; y: number } | null>(null);
   const [undoLen, setUndoLen] = useState(0);
   const [hasOriginal, setHasOriginal] = useState(false);
+  const trackingClientIdRef = useRef(`tab_${Math.random().toString(36).slice(2)}`);
+  const trackingSessionId = useMemo(() => {
+    if (mediaMode !== 'video' || !videoUrl || !patient) return '';
+    const raw = `${trackingClientIdRef.current}__${patient.patient_id || patient.id}__${videoUrl}`;
+    return raw.replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 160);
+  }, [mediaMode, patient, videoUrl]);
+
+  useEffect(() => {
+    if (!inline || patient?.phase !== 'reader_v150') return;
+    setOpen(true);
+    setPendingOpenVideoSam(true);
+    setMediaMode('video');
+    setMode('sam');
+  }, [inline, patient?.id, patient?.phase]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -195,6 +258,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const dragLayerRef = useRef<DragLayer | null>(null);
   const dragSoftRef = useRef(true);
   const frameFrozenRef = useRef(false);
+  const videoFrameOverridesRef = useRef<VideoMaskFrameOverride[]>([]);
   const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const undoStackRef = useRef<Array<{ lesion: number[][]; wall: number[][] }>>([]);
   const originalRef = useRef<{ lesion: number[][]; wall: number[][] } | null>(null);
@@ -204,6 +268,10 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const samBusyRef = useRef(false);
   const samClicksRef = useRef<Array<{ x: number; y: number; label: 'positive' | 'negative' }>>([]);
   const samBoxDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  // Keep playback listeners attached while React redraws the canvas or tracks a frame.
+  // Re-running the source effect on every state change would call video.load() and pause playback.
+  const redrawRef = useRef<() => void>(() => {});
+  const maybeTrackWhilePlayingRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     pointsRef.current = points;
   }, [points]);
@@ -263,13 +331,26 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
 
   useEffect(() => {
     if (!patient) {
+      setSamReport(null);
       setPoints([]);
       setWallPoints([]);
       setVideoFrameOverrides([]);
       setImgLoaded(false);
       return;
     }
+    if (!(inline && patient.phase === 'reader_v150')) setOpen(false);
+    setSamReport(null);
+    setDinoResult(null);
+    onDinoFeatures?.(null);
+    setSimplePromptMode('point');
+    setSimpleEditMode(false);
+    videoFrameOverridesRef.current = override?.video_frames || [];
     setVideoFrameOverrides(override?.video_frames || []);
+    setKeyCandidates([]);
+    setPendingKeyframeRequest(false);
+    setTrackingPrepared(false);
+    setPrecomputeBusy(false);
+    setPrecomputeProgress(null);
     setRoiMode(override?.roi_mode || 'predicted');
     if (override?.mask_polygon?.length || override?.wall_polygon?.length) {
       const lesion = override?.mask_polygon?.length
@@ -323,7 +404,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       }
     })();
     return () => { cancelled = true; };
-  }, [patient?.id, override?.updated_at, override?.mask_polygon, override?.wall_polygon, override?.video_frames, patient?.json_url, patient?.segmentation?.annotation_url, zh, snapshotOriginal]);
+  }, [inline, patient?.id, patient?.phase, override?.updated_at, override?.mask_polygon, override?.wall_polygon, override?.video_frames, patient?.json_url, patient?.segmentation?.annotation_url, zh, snapshotOriginal, onDinoFeatures]);
 
   useEffect(() => {
     if (!open) return;
@@ -347,18 +428,22 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       // Always resolve from disk index (crop_ui / qualified / public) — no upload.
       const fromPatient = patient.video_urls || [];
       let list = fromPatient;
-      try {
-        const res = await fetch(
-          `/api/patients/videos?patientId=${encodeURIComponent(patient.patient_id)}&limit=40`,
-        );
-        const data = await res.json();
-        const remote = (data.videos || []) as VideoInfo[];
-        if (remote.length) {
-          const seen = new Set(list.map((v) => v.url));
-          list = [...list, ...remote.filter((v) => !seen.has(v.url))];
+      // Reader-study media is already case-resolved. Other queues can use the
+      // allowlisted patient video catalog, including external centers.
+      if (patient.phase !== 'reader_v150') {
+        try {
+          const res = await fetch(
+            `/api/patients/videos?patientId=${encodeURIComponent(patient.patient_id)}&limit=40`,
+          );
+          const data = await res.json();
+          const remote = (data.videos || []) as VideoInfo[];
+          if (remote.length) {
+            const seen = new Set(list.map((v) => v.url));
+            list = [...list, ...remote.filter((v) => !seen.has(v.url))];
+          }
+        } catch {
+          /* keep fromPatient */
         }
-      } catch {
-        /* keep fromPatient */
       }
       if (cancelled) return;
       setVideos(list);
@@ -373,8 +458,8 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
         setMode('sam');
         setMessage(
           zh
-            ? `已打开对应视频：${list[0].filename}, 点击画面做 SAM`
-            : `Opened ${list[0].filename}, click for SAM`,
+            ? `已打开对应视频：${list[0].filename}, 点击画面进行系统分析`
+            : `Opened ${list[0].filename}, click the frame for analysis`,
         );
       } else if (pendingOpenVideoSam && !list.length) {
         setPendingOpenVideoSam(false);
@@ -383,6 +468,16 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     })();
     return () => { cancelled = true; };
   }, [open, patient?.patient_id, patient?.video_urls, pendingOpenVideoSam, zh]);
+
+  useEffect(() => {
+    if (!simpleVideoMode || mediaMode !== 'video' || !videoUrl || !videos.length) return;
+    const filename = videos.find((video) => video.url === videoUrl)?.filename || videos[0].filename;
+    setMessage(
+      zh
+        ? `已打开对应视频：${filename}, 点击画面进行系统分析`
+        : `Opened ${filename}; click the frame for system analysis`,
+    );
+  }, [mediaMode, simpleVideoMode, videoUrl, videos, zh]);
 
   const openPatientVideoSam = useCallback(() => {
     if (!videos.length) {
@@ -395,10 +490,98 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     setMode('sam');
     setMessage(
       zh
-        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}, 点击画面做 SAM`
-        : `Opened patient video, click canvas for SAM`,
+        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}, 点击画面进行系统分析`
+        : `Opened patient video, click the frame for analysis`,
     );
   }, [videos, videoUrl, zh]);
+
+  const scoreKeyframes = useCallback(async () => {
+    if (!videoUrl || keyBusy) return;
+    setKeyBusy(true);
+    setMessage(zh ? '邻域关键帧打分中…' : 'Scoring neighborhood keyframes…');
+    try {
+      const res = await fetch('/api/agent/video/keyframes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_url: videoUrl,
+          anchor_sec: videoTime,
+          window_sec: 2.0,
+          top_k: 5,
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string; keyframes?: KeyframeCandidate[] };
+      if (!res.ok || !data.ok) throw new Error(data.error || 'keyframe failed');
+      setKeyCandidates(data.keyframes || []);
+      setMessage(
+        zh
+          ? `关键帧候选 ${data.keyframes?.length || 0} 帧（锚点 ${videoTime.toFixed(2)}s）`
+          : `${data.keyframes?.length || 0} keyframe candidates`,
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'keyframe failed');
+    } finally {
+      setKeyBusy(false);
+    }
+  }, [keyBusy, videoTime, videoUrl, zh]);
+
+  useEffect(() => {
+    if (!pendingKeyframeRequest || mediaMode !== 'video' || !videoUrl || keyBusy) return;
+    setPendingKeyframeRequest(false);
+    void scoreKeyframes();
+  }, [keyBusy, mediaMode, pendingKeyframeRequest, scoreKeyframes, videoUrl]);
+
+  const extractDinoFeatures = useCallback(async () => {
+    if (!patient || dinoBusy) return;
+    setDinoBusy(true);
+    setMessage(zh ? 'DINO 特征提取中，首次加载可能较慢…' : 'Extracting DINO features; first load may take longer…');
+    try {
+      const frame = await videoOrImageToSamFrame(
+        videoRef.current,
+        imgRef.current,
+        mediaMode === 'video',
+        1024,
+      );
+      const scale = frame.scale || 1;
+      const response = await fetch('/api/agent/dino/features', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: patient.patient_id,
+          frame_time: mediaMode === 'video'
+            ? Number(videoRef.current?.currentTime ?? videoTime)
+            : 0,
+          frame_png_b64: frame.b64,
+          image_width: frame.width,
+          image_height: frame.height,
+          lesion_polygon: pointsRef.current.map((point) => [point[0] * scale, point[1] * scale]),
+          wall_polygon: wallPointsRef.current.map((point) => [point[0] * scale, point[1] * scale]),
+          layer_index: 11,
+        }),
+      });
+      const payload = await response.json() as { ok?: boolean; result?: DinoFeatureResult; error?: string };
+      if (!response.ok || !payload.ok || !payload.result?.available) {
+        throw new Error(payload.error || payload.result?.error || 'DINO feature extraction unavailable');
+      }
+      setDinoResult(payload.result);
+      onDinoFeatures?.(payload.result);
+      setMessage(
+        zh
+          ? `DINO 特征已提取：${payload.result.feature_dim || 0} 维，${payload.result.token_grid?.join(' × ') || '未知'} token 网格`
+          : `DINO features extracted: ${payload.result.feature_dim || 0} dimensions`,
+      );
+    } catch (error) {
+      const failure: DinoFeatureResult = {
+        available: false,
+        error: error instanceof Error ? error.message : 'DINO feature extraction failed',
+      };
+      setDinoResult(failure);
+      onDinoFeatures?.(failure);
+      setMessage(failure.error || 'DINO feature extraction failed');
+    } finally {
+      setDinoBusy(false);
+    }
+  }, [dinoBusy, mediaMode, onDinoFeatures, patient, videoTime, zh]);
 
   const captureFrameDataUrl = useCallback(() => {
     const video = videoRef.current;
@@ -475,6 +658,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       clicks?: Array<{ x: number; y: number; label: 'positive' | 'negative' }>;
       keepEditing?: boolean;
       stayInSam?: boolean;
+      llmReport?: boolean;
     },
   ): Promise<number[][] | null> => {
     if (!patient) return null;
@@ -484,7 +668,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       samGenRef.current += 1;
       samBusyRef.current = true;
       setSamBusy(true);
-      setMessage(zh ? 'SAM 推理中…' : 'Running SAM…');
+      setMessage(zh ? '系统分析中…' : 'Running SAM…');
     } else {
       samAbortRef.current?.abort();
     }
@@ -499,11 +683,22 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
         1024,
       );
       const scale = frame.scale || 1;
+      const currentFrameTime = mediaMode === 'video'
+        ? Number(videoRef.current?.currentTime ?? videoTime)
+        : 0;
       const payload: Record<string, unknown> = {
         case_id: patient.patient_id,
         frame_png_b64: frame.b64,
         image_width: frame.width,
         image_height: frame.height,
+        frame_time: currentFrameTime,
+        video_url: mediaMode === 'video' ? videoUrl : undefined,
+        tracking_session_id: trackingSessionId || undefined,
+        tracking_enabled: mediaMode === 'video' && Boolean(trackingSessionId),
+        tracking_reset: mediaMode === 'video'
+          && opts?.source === 'sam'
+          && !opts?.silent,
+        llm_report: Boolean(opts?.llmReport),
       };
       const promptClicks = opts?.clicks?.length
         ? opts.clicks
@@ -543,12 +738,15 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       if (!data.ok || !data.result?.mask_polygon) {
         throw new Error(data.error || data.result?.message || 'SAM returned no polygon');
       }
+      const nextReport = (data.result.report || null) as SamReport | null;
+      setSamReport(nextReport);
+      onSystemReport?.(nextReport);
       const rawPoly = (data.result.mask_polygon as number[][]).map((p) => [Number(p[0]), Number(p[1])]);
       if (rawPoly.length < 3) {
         throw new Error(
           zh
-            ? 'SAM 未检出有效区域（可换点 / Shift+排除 / 框选再试）'
-            : 'SAM empty mask — try another click, Shift+neg, or box',
+            ? '系统分析未得到有效区域，请换一个关注点重试'
+            : 'No valid region returned — try another point',
         );
       }
       const maxCoord = Math.max(...rawPoly.flatMap((p) => p));
@@ -584,8 +782,8 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
         const nPrompt = promptClicks.length;
         setMessage(
           zh
-            ? `SAM 完成: 稠密 ${poly.length} 点 / ${nCtrl} 控制点; 提示 ${nPrompt} 个（Shift=排除, 拖框=区域）`
-            : `SAM done: ${poly.length} pts / ${nCtrl} controls; ${nPrompt} prompts`,
+            ? `系统分析完成: 当前帧已返回关注区域（${poly.length} 点）`
+            : `System analysis complete: ${poly.length} contour points`,
         );
       } else {
         setMessage(
@@ -600,7 +798,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       if ((err as Error)?.name === 'AbortError') return null;
       if (!opts?.silent) {
         setSamAvailable(false);
-        setMessage(err instanceof Error ? err.message : 'SAM failed');
+        setMessage(err instanceof Error ? sanitizeSystemCopy(err.message) : 'System analysis failed');
       }
       return null;
     } finally {
@@ -609,14 +807,141 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
         setSamBusy(false);
       }
     }
-  }, [patient, zh, activeLayer, mediaMode, freezeCurrentFrame, snapshotOriginal]);
+  }, [
+    patient,
+    zh,
+    activeLayer,
+    mediaMode,
+    videoTime,
+    videoUrl,
+    trackingSessionId,
+    freezeCurrentFrame,
+    snapshotOriginal,
+    onSystemReport,
+  ]);
+
+  const recordVideoFrameOverride = useCallback((poly: number[][], status: 'seed' | 'accepted' = 'accepted') => {
+    if (!simpleVideoMode || mediaMode !== 'video') return;
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) return;
+    const timestamp = Number((video.currentTime || 0).toFixed(3));
+    const frame: VideoMaskFrameOverride = {
+      timestamp_sec: timestamp,
+      imageWidth: video.videoWidth,
+      imageHeight: video.videoHeight,
+      mask_polygon: poly.map((point) => [Math.round(point[0] * 10) / 10, Math.round(point[1] * 10) / 10]),
+      roi_bbox: bboxFromPolygon(poly),
+      source: 'video_track',
+      propagation_status: status,
+    };
+    const next = [
+      ...videoFrameOverridesRef.current.filter((item) => Math.abs(item.timestamp_sec - timestamp) > 0.12),
+      frame,
+    ].sort((a, b) => a.timestamp_sec - b.timestamp_sec);
+    videoFrameOverridesRef.current = next;
+    setVideoFrameOverrides(next);
+  }, [mediaMode, simpleVideoMode]);
+
+  const resumeSimpleTracking = useCallback((poly: number[][] | null) => {
+    if (!simpleVideoMode || !poly || poly.length < 3) return;
+    recordVideoFrameOverride(poly, videoFrameOverridesRef.current.length ? 'accepted' : 'seed');
+    setTrackingPrepared(false);
+    setFrameFrozen(false);
+    frameFrozenRef.current = false;
+    setTrackOnPlay(true);
+    setMessage(zh ? '当前帧轮廓已生成，点击播放后将连续跟踪' : 'Contour ready; playback will track subsequent frames');
+  }, [recordVideoFrameOverride, simpleVideoMode, zh]);
+
+  const getCurrentTrackedPolygon = useCallback((): number[][] => {
+    if (!simpleVideoMode || mediaMode !== 'video' || !videoFrameOverridesRef.current.length) {
+      return pointsRef.current;
+    }
+    const currentTime = videoRef.current?.currentTime || 0;
+    const nearest = videoFrameOverridesRef.current.reduce((best, item) => (
+      Math.abs(item.timestamp_sec - currentTime) < Math.abs(best.timestamp_sec - currentTime) ? item : best
+    ), videoFrameOverridesRef.current[0]);
+    return nearest?.mask_polygon?.length ? nearest.mask_polygon : pointsRef.current;
+  }, [mediaMode, simpleVideoMode]);
+
+  const precomputeVideoTracking = useCallback(async () => {
+    if (!simpleVideoMode || mediaMode !== 'video' || precomputeBusy) return;
+    const video = videoRef.current;
+    const seed = pointsRef.current;
+    if (!video || !video.videoWidth || seed.length < 3) {
+      setMessage(zh ? '请先在当前帧生成有效轮廓' : 'Generate a valid contour first');
+      return;
+    }
+    const duration = video.duration || 0;
+    const start = video.currentTime || 0;
+    if (!duration || duration <= start + 0.05) {
+      setMessage(zh ? '当前视频没有可预计算的后续帧' : 'No subsequent frames to precompute');
+      return;
+    }
+    const originalTime = start;
+    const step = Math.max(0.25, Math.min(0.5, duration / 24));
+    const total = Math.max(1, Math.ceil((duration - start) / step));
+    const seekTo = (time: number) => new Promise<void>((resolve) => {
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener('seeked', done);
+        resolve();
+      };
+      video.addEventListener('seeked', done);
+      video.currentTime = time;
+      window.setTimeout(done, 2500);
+    });
+    video.pause();
+    setTrackOnPlay(false);
+    setFrameFrozen(true);
+    frameFrozenRef.current = true;
+    setPrecomputeBusy(true);
+    setTrackingPrepared(false);
+    try {
+      for (let index = 1; index <= total; index += 1) {
+        const time = Math.min(duration - 0.01, start + step * index);
+        setPrecomputeProgress(`${index}/${total}`);
+        await seekTo(time);
+        setVideoTime(time);
+        const current = pointsRef.current;
+        const bbox = bboxFromPolygon(current);
+        const centroid = polygonCentroid(current);
+        if (!bbox || !centroid) break;
+        const next = await runSamAtPoint(centroid, {
+          silent: true,
+          source: 'video_track',
+          box: bbox,
+          keepEditing: false,
+        });
+        if (next && next.length >= 3) {
+          pointsRef.current = next;
+          setPoints(next);
+          recordVideoFrameOverride(next);
+        }
+      }
+      await seekTo(originalTime);
+      setVideoTime(originalTime);
+      setTrackingPrepared(true);
+      setTrackOnPlay(true);
+      setFrameFrozen(false);
+      frameFrozenRef.current = false;
+      setMessage(zh ? '连续跟踪已预计算，点击播放即可流畅查看' : 'Tracking precomputed; playback is ready');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (zh ? '预计算失败' : 'Precompute failed'));
+    } finally {
+      setPrecomputeBusy(false);
+      setPrecomputeProgress(null);
+    }
+  }, [mediaMode, precomputeBusy, recordVideoFrameOverride, runSamAtPoint, simpleVideoMode, zh]);
 
   const maybeTrackWhilePlaying = useCallback(async () => {
     if (!trackOnPlay || mediaMode !== 'video' || !isPlaying) return;
+    if (simpleVideoMode && (simpleEditMode || trackingPrepared)) return;
     if (frameFrozenRef.current || dragIndexRef.current !== null) return;
     if (trackBusyRef.current || samAvailable === false) return;
     const now = Date.now();
-    if (now - lastTrackAtRef.current < 1200) return;
+    if (now - lastTrackAtRef.current < 500) return;
     const poly = pointsRef.current;
     if (poly.length < 3) return;
     const bbox = bboxFromPolygon(poly);
@@ -625,16 +950,18 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     trackBusyRef.current = true;
     lastTrackAtRef.current = now;
     try {
-      await runSamAtPoint(centroid, {
+      const nextPoly = await runSamAtPoint(centroid, {
         silent: true,
         source: 'video_track',
         box: bbox,
         keepEditing: false,
       });
+      if (nextPoly && nextPoly.length >= 3) recordVideoFrameOverride(nextPoly);
     } finally {
       trackBusyRef.current = false;
     }
-  }, [trackOnPlay, mediaMode, isPlaying, samAvailable, runSamAtPoint]);
+  }, [trackOnPlay, mediaMode, isPlaying, samAvailable, runSamAtPoint, recordVideoFrameOverride, simpleEditMode, simpleVideoMode, trackingPrepared]);
+
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -669,6 +996,13 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     else if (img) ctx.drawImage(img, dx, dy, dw, dh);
 
     const map = (x: number, y: number) => ({ x: dx + x * scale, y: dy + y * scale });
+    const trackedFrame = simpleVideoMode && useVideo && videoFrameOverrides.length
+      ? videoFrameOverrides.reduce((best, item) => {
+        if (!best) return item;
+        return Math.abs(item.timestamp_sec - video!.currentTime) < Math.abs(best.timestamp_sec - video!.currentTime) ? item : best;
+      }, videoFrameOverrides[0])
+      : null;
+    const displayPoints = trackedFrame?.mask_polygon?.length ? trackedFrame.mask_polygon : points;
 
     const drawPoly = (poly: number[][], fill: string, stroke: string) => {
       if (poly.length < 2) return;
@@ -705,47 +1039,62 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       });
     };
 
-    drawPoly(wallPoints, 'rgba(251, 146, 60, 0.16)', 'rgba(251, 146, 60, 0.95)');
-    drawPoly(points, 'rgba(34, 211, 238, 0.18)', 'rgba(34, 211, 238, 0.95)');
-    // Dual handles like direction_demo (both editable without layer switch)
-    drawHandles(wallPoints, WALL_CTRL_COUNT, '#ea580c', 'wall');
-    drawHandles(points, LESION_CTRL_COUNT, '#16a34a', 'lesion');
+    if (simpleVideoMode) {
+      drawPoly(displayPoints, 'rgba(34, 211, 238, 0.10)', 'rgba(34, 211, 238, 0.88)');
+      if (simpleEditMode && displayPoints.length >= 3) {
+        drawHandles(displayPoints, Math.min(12, LESION_CTRL_COUNT), '#22d3ee', 'lesion');
+      }
+      if (samBoxPreview) {
+        const a = map(samBoxPreview.x1, samBoxPreview.y1);
+        const b = map(samBoxPreview.x2, samBoxPreview.y2);
+        ctx.fillStyle = 'rgba(34, 211, 238, 0.08)';
+        ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      }
+    } else {
+      drawPoly(wallPoints, 'rgba(251, 146, 60, 0.16)', 'rgba(251, 146, 60, 0.95)');
+      drawPoly(points, 'rgba(34, 211, 238, 0.18)', 'rgba(34, 211, 238, 0.95)');
+      // Dual handles like direction_demo (both editable without layer switch)
+      drawHandles(wallPoints, WALL_CTRL_COUNT, '#ea580c', 'wall');
+      drawHandles(points, LESION_CTRL_COUNT, '#16a34a', 'lesion');
 
-    // SAM prompt markers
-    for (const c of samClicks) {
-      const { x, y } = map(c.x, c.y);
-      ctx.beginPath();
-      ctx.arc(x, y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = c.label === 'negative' ? '#f43f5e' : '#22c55e';
-      ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-    if (samBoxPreview) {
-      const a = map(samBoxPreview.x1, samBoxPreview.y1);
-      const b = map(samBoxPreview.x2, samBoxPreview.y2);
-      ctx.strokeStyle = 'rgba(168, 85, 247, 0.95)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.strokeRect(
-        Math.min(a.x, b.x),
-        Math.min(a.y, b.y),
-        Math.abs(b.x - a.x),
-        Math.abs(b.y - a.y),
-      );
-      ctx.setLineDash([]);
-    }
-
-    if (layerResult?.ok && window.LayerBridge?.drawLayerOverlay) {
-      try {
-        window.LayerBridge.drawLayerOverlay(layerResult, ctx, map, useVideo ? video : null);
-      } catch {
-        /* overlay is best-effort */
+      // Prompt markers and box preview remain available only in the legacy editor.
+      for (const c of samClicks) {
+        const { x, y } = map(c.x, c.y);
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = c.label === 'negative' ? '#f43f5e' : '#22c55e';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      if (samBoxPreview) {
+        const a = map(samBoxPreview.x1, samBoxPreview.y1);
+        const b = map(samBoxPreview.x2, samBoxPreview.y2);
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.95)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(
+          Math.min(a.x, b.x),
+          Math.min(a.y, b.y),
+          Math.abs(b.x - a.x),
+          Math.abs(b.y - a.y),
+        );
+        ctx.setLineDash([]);
       }
     }
-  }, [points, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, videoTime, layerResult, samClicks, samBoxPreview]);
 
+  }, [points, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, samClicks, samBoxPreview, simpleVideoMode, simpleEditMode, videoFrameOverrides]);
+
+  useEffect(() => {
+    redrawRef.current = redraw;
+  }, [redraw]);
+  useEffect(() => {
+    maybeTrackWhilePlayingRef.current = maybeTrackWhilePlaying;
+  }, [maybeTrackWhilePlaying]);
   useEffect(() => {
     redraw();
   }, [redraw]);
@@ -806,8 +1155,8 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       setVideoTime(video.currentTime || 0);
       if (!video.paused) {
         syncFrameFromVideo();
-        redraw();
-        void maybeTrackWhilePlaying();
+        redrawRef.current();
+        void maybeTrackWhilePlayingRef.current();
       }
     };
     const onPlay = () => {
@@ -818,7 +1167,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     const onPause = () => {
       setIsPlaying(false);
       syncFrameFromVideo({ force: true });
-      redraw();
+      redrawRef.current();
     };
     video.addEventListener('loadedmetadata', onMeta);
     video.addEventListener('timeupdate', onTime);
@@ -832,7 +1181,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
     };
-  }, [open, mediaMode, videoUrl, syncFrameFromVideo, maybeTrackWhilePlaying, redraw]);
+  }, [open, mediaMode, videoUrl, syncFrameFromVideo]);
 
   useEffect(() => {
     if (!open) return;
@@ -886,6 +1235,24 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     return [ix, iy];
   }, [mediaMode]);
 
+  /** Build a hidden local context box for one click; never draw it on the video. */
+  const buildAnalysisBox = useCallback((imgPt: number[]) => {
+    const video = videoRef.current;
+    const img = imgRef.current;
+    const useVideo = mediaMode === 'video' && video && video.videoWidth > 0;
+    const iw = useVideo ? video!.videoWidth : (img?.naturalWidth || 0);
+    const ih = useVideo ? video!.videoHeight : (img?.naturalHeight || 0);
+    if (!iw || !ih) return null;
+    const halfW = Math.max(80, iw * 0.18);
+    const halfH = Math.max(60, ih * 0.18);
+    return {
+      x1: Math.max(0, Math.min(iw, imgPt[0] - halfW)),
+      y1: Math.max(0, Math.min(ih, imgPt[1] - halfH)),
+      x2: Math.max(0, Math.min(iw, imgPt[0] + halfW)),
+      y2: Math.max(0, Math.min(ih, imgPt[1] + halfH)),
+    };
+  }, [mediaMode]);
+
   const hitThreshold = useCallback(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -919,7 +1286,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       samClicksRef.current = next;
       setSamClicks(next);
     }
-    await runSamAtPoint(imgPt, {
+    return runSamAtPoint(imgPt, {
       keepEditing: true,
       stayInSam: true,
       source: 'sam',
@@ -931,6 +1298,53 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const imgPt = canvasToImage(e);
     if (!imgPt) return;
+
+    if (simpleVideoMode && mediaMode === 'video') {
+      if (samBusy) return;
+      e.preventDefault();
+      if (simpleEditMode && points.length >= 3) {
+        const editablePoints = getCurrentTrackedPolygon();
+        if (editablePoints !== pointsRef.current) {
+          pointsRef.current = clonePoly(editablePoints);
+          setPoints(pointsRef.current);
+        }
+        let nearest = -1;
+        let bestDistance = hitThreshold() * hitThreshold() * 9;
+        editablePoints.forEach((point, index) => {
+          const distance = dist2(point, imgPt);
+          if (distance <= bestDistance) {
+            bestDistance = distance;
+            nearest = index;
+          }
+        });
+        if (nearest >= 0) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          freezeCurrentFrame();
+          pushEditUndo();
+          dragSoftRef.current = true;
+          dragIndexRef.current = nearest;
+          dragLayerRef.current = 'lesion';
+          setDragIndex(nearest);
+          setDragLayer('lesion');
+        }
+        return;
+      }
+      clearSamPrompts();
+      videoFrameOverridesRef.current = [];
+      setVideoFrameOverrides([]);
+      setTrackingPrepared(false);
+      setSimpleEditMode(false);
+      if (simplePromptMode === 'box') {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
+        setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
+        return;
+      }
+      // Each point prompt is independent and receives a hidden local context box.
+      void runSamClick(imgPt, e.shiftKey ? 'negative' : 'positive', buildAnalysisBox(imgPt))
+        .then((poly) => resumeSimpleTracking(poly));
+      return;
+    }
 
     // Alt/Option+click：设置浸润通道取样点（会议纪要：接触弧内点选）
     if (e.altKey && points.length >= 3) {
@@ -1146,9 +1560,14 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
         // Box prompt resets click history (cleaner region seed).
         samClicksRef.current = [{ x: cx, y: cy, label: 'positive' }];
         setSamClicks(samClicksRef.current);
-        void runSamClick([cx, cy], 'positive', box);
+        void runSamClick([cx, cy], 'positive', box).then((poly) => resumeSimpleTracking(poly));
       } else {
-        void runSamClick([boxDrag.x0, boxDrag.y0], neg ? 'negative' : 'positive');
+        void runSamClick(
+          [boxDrag.x0, boxDrag.y0],
+          neg ? 'negative' : 'positive',
+          buildAnalysisBox([boxDrag.x0, boxDrag.y0]),
+        )
+          .then((poly) => resumeSimpleTracking(poly));
       }
       return;
     }
@@ -1156,10 +1575,14 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       draggingRef.current = false;
       setPoints(clonePoly(pointsRef.current));
       setWallPoints(clonePoly(wallPointsRef.current));
+      if (simpleVideoMode && mediaMode === 'video') {
+        setTrackingPrepared(false);
+        recordVideoFrameOverride(pointsRef.current, 'accepted');
+      }
       setMessage(
         zh
-          ? '轮廓已软变形, 可继续拖手柄, 或「撤销 / 恢复原始」'
-          : 'Soft-deformed; drag more, or undo / restore',
+          ? '当前帧区域已更新'
+          : 'Current-frame region updated',
       );
       try {
         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -1207,6 +1630,87 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     setVideoFrameOverrides(propagatedFrames);
     let okSteps = 0;
     try {
+      try {
+        const centroid = polygonCentroid(currentPoly);
+        const nativeResponse = await fetch('/api/agent/video/propagate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            case_id: patient?.patient_id || patient?.id || '',
+            video_url: videoUrl,
+            frame_time: start,
+            image_width: imageWidth,
+            image_height: imageHeight,
+            clicks: samClicksRef.current.length
+              ? samClicksRef.current
+              : centroid
+                ? [{ x: centroid[0], y: centroid[1], label: 'positive' }]
+                : [],
+            box: bboxFromPolygon(currentPoly),
+            direction: 'both',
+          }),
+        });
+        const nativePayload = await nativeResponse.json() as {
+          ok?: boolean;
+          error?: string;
+          result?: {
+            status?: string;
+            needs_reanchor?: boolean;
+            accepted_frames?: number;
+            num_frames?: number;
+            frames?: Array<{
+              frame_time: number;
+              direction?: string;
+              mask_polygon?: number[][];
+              accepted?: boolean;
+              quality_score?: number;
+            }>;
+          };
+        };
+        if (!nativeResponse.ok || !nativePayload.ok || !nativePayload.result) {
+          throw new Error(nativePayload.error || 'native video propagation failed');
+        }
+        const nativeFrames = (nativePayload.result.frames || [])
+          .filter((frame) => Array.isArray(frame.mask_polygon) && frame.mask_polygon.length >= 3)
+          .map((frame) => {
+            const maskPolygon = frame.mask_polygon!.map((point) => [Number(point[0]), Number(point[1])]);
+            return {
+              timestamp_sec: Number(frame.frame_time.toFixed(3)),
+              imageWidth,
+              imageHeight,
+              mask_polygon: maskPolygon,
+              roi_bbox: bboxFromPolygon(maskPolygon),
+              source: 'video_track' as const,
+              propagation_status: frame.direction === 'seed' ? 'seed' as const : 'accepted' as const,
+              quality_score: Number(frame.quality_score ?? 0),
+            };
+          });
+        if (!nativeFrames.length) throw new Error('native video propagation returned no masks');
+        videoFrameOverridesRef.current = nativeFrames;
+        setVideoFrameOverrides(nativeFrames);
+        const nearest = nativeFrames.reduce((best, frame) => (
+          Math.abs(frame.timestamp_sec - start) < Math.abs(best.timestamp_sec - start) ? frame : best
+        ), nativeFrames[0]);
+        if (nearest?.mask_polygon?.length) {
+          pointsRef.current = nearest.mask_polygon;
+          setPoints(nearest.mask_polygon);
+        }
+        setFrameFrozen(true);
+        frameFrozenRef.current = true;
+        setMessage(
+          zh
+            ? `原生视频传播完成：${nativePayload.result.accepted_frames || nativeFrames.length}/${nativePayload.result.num_frames || nativeFrames.length} 帧${nativePayload.result.needs_reanchor ? '，已请求重锚定' : ''}`
+            : `Native video propagation complete: ${nativePayload.result.accepted_frames || nativeFrames.length}/${nativePayload.result.num_frames || nativeFrames.length} frames`,
+        );
+        return;
+      } catch (nativeError) {
+        setMessage(
+          zh
+            ? `原生视频传播不可用，回退逐帧跟踪：${nativeError instanceof Error ? nativeError.message : 'unknown error'}`
+            : 'Native propagation unavailable; falling back to sampled tracking',
+        );
+      }
+
       for (let i = 1; i <= maxSteps; i += 1) {
         const t = Math.min(duration - 0.01, start + step * i);
         if (t <= start) break;
@@ -1265,7 +1769,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
       setPropagateBusy(false);
       setPropagateProgress(null);
     }
-  }, [mediaMode, points, zh, freezeCurrentFrame, runSamAtPoint, redraw]);
+  }, [mediaMode, patient?.id, patient?.patient_id, points, videoUrl, zh, freezeCurrentFrame, runSamAtPoint, redraw]);
 
   const buildOverride = useCallback((): MaskBoundaryOverride | null => {
     if (!patient || points.length < 3) return null;
@@ -1355,8 +1859,11 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     }
   };
 
-  const openEditor = useCallback((opts?: { videoSam?: boolean; sam?: boolean }) => {
+  const openEditor = useCallback((opts?: { videoSam?: boolean; sam?: boolean; keyframes?: boolean }) => {
     if (opts?.videoSam) setPendingOpenVideoSam(true);
+    if (opts?.keyframes) setPendingKeyframeRequest(true);
+    if (opts?.videoSam || opts?.keyframes) setMediaMode('video');
+    if (opts?.sam && !opts?.videoSam && !opts?.keyframes) setMediaMode('image');
     const useSam = Boolean(opts?.videoSam || opts?.sam);
     setMode(useSam ? 'sam' : 'soft');
     samClicksRef.current = [];
@@ -1367,8 +1874,8 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
     setMessage(
       useSam
         ? (zh
-          ? 'SAM: 单击前景; Shift+单击排除; 拖框区域分割; 连续点选精修'
-          : 'SAM: click include; Shift+click exclude; drag box; multi-click refine')
+          ? '点击画面标记关注区域，系统返回当前帧结果'
+          : 'Click the frame to get the current-frame result')
         : (zh
           ? '拖橙/绿控制点软变形边界（同人机互助 HTML）; 硬拖/加点/删点为辅助'
           : 'Drag orange/green handles to soft-deform (same as HTML demo)'),
@@ -1378,7 +1885,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   // AssistHub / external open request (additive; floating buttons unchanged)
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ videoSam?: boolean; sam?: boolean }>).detail;
+      const detail = (event as CustomEvent<{ videoSam?: boolean; sam?: boolean; keyframes?: boolean }>).detail;
       openEditor(detail || { sam: true });
     };
     window.addEventListener('gastric:open-boundary-edit', handler);
@@ -1408,51 +1915,98 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
   if (!patient) return null;
 
   const modal = open ? (
-        <div className="pointer-events-auto fixed inset-0 z-[200500] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm">
-          <div className="flex h-[min(94vh,920px)] w-[min(1380px,98vw)] flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-slate-950 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div>
+        <div className={inline
+          ? 'pointer-events-auto absolute inset-0 z-[200500] flex min-w-0 items-stretch justify-stretch overflow-hidden bg-slate-950'
+          : 'pointer-events-auto fixed inset-0 z-[200500] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm'}>
+          <div className={inline
+            ? 'flex h-full w-full min-w-0 flex-col overflow-hidden border border-cyan-400/25 bg-slate-950'
+            : 'flex h-[min(94vh,920px)] w-[min(1380px,98vw)] flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-slate-950 shadow-2xl'}>
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-cyan-100">
-                  {zh ? '交互分割 / 边界编辑' : 'Interactive seg / boundary edit'}
+                  {zh ? (mediaMode === 'video' ? '视频分析' : '静态图分割') : (mediaMode === 'video' ? 'Video analysis' : 'Static image segmentation')}
                 </div>
                 <div className="mt-0.5 text-[11px] text-slate-400">
-                  {patient.id_short}, {zh ? '橙/绿手柄软变形（direction_demo 同款）; 保存后 Agent 用编辑边界' : 'Soft-deform like direction_demo; save feeds Agent'}
+                  {patient.id_short}, {zh
+                    ? mediaMode === 'video'
+                      ? '当前视频，点击画面标记关注区域，系统返回当前帧证据'
+                      : '当前静态图，点击或框选病灶进行分割'
+                    : mediaMode === 'video'
+                      ? 'Current video, click the frame for system evidence'
+                      : 'Current static image, click or box the lesion to segment'}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={undoLen <= 0}
-                  onClick={undoEdit}
-                  className="rounded-lg border border-white/15 px-2.5 py-1.5 text-[11px] text-slate-200 disabled:opacity-40"
-                >
-                  {zh ? `撤销 (${undoLen})` : `Undo (${undoLen})`}
-                </button>
-                <button
-                  type="button"
-                  disabled={!hasOriginal}
-                  onClick={restoreOriginal}
-                  className="rounded-lg border border-white/15 px-2.5 py-1.5 text-[11px] text-slate-200 disabled:opacity-40"
-                >
-                  {zh ? '恢复原始' : 'Restore'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-lg border border-white/15 p-2 text-slate-300 hover:bg-white/5"
-                >
-                  <X size={16} />
-                </button>
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={dinoBusy}
+                    onClick={() => void extractDinoFeatures()}
+                    className="rounded-lg border border-amber-300/50 bg-amber-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-amber-100 disabled:opacity-40"
+                    title={zh ? '提取当前静态图或视频帧的 DINOv3 区域特征' : 'Extract DINOv3 region features from the current frame'}
+                  >
+                    {dinoBusy ? (zh ? 'DINO 提取中' : 'DINO running') : dinoResult?.available ? 'DINO ✓' : (zh ? 'DINO 特征' : 'DINO features')}
+                  </button>
+                  {mediaMode === 'video' && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!videoUrl || keyBusy}
+                        onClick={() => void scoreKeyframes()}
+                        className="rounded-lg border border-violet-300/50 bg-violet-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-violet-100 disabled:opacity-40"
+                        title={zh ? '按清晰度、对比度和运动信息选择候选关键帧' : 'Select quality keyframes'}
+                      >
+                        {keyBusy ? (zh ? '关键帧打分中' : 'Scoring') : (zh ? '选择关键帧' : 'Keyframes')}
+                        {keyCandidates.length ? ` (${keyCandidates.length})` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!videoUrl || propagateBusy || points.length < 3}
+                        onClick={() => void propagateMaskAcrossVideo()}
+                        className="rounded-lg border border-emerald-300/50 bg-emerald-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"
+                      >
+                        {propagateBusy ? (zh ? '传播中' : 'Propagating') : (zh ? '全视频传播' : 'Propagate')}
+                      </button>
+                    </>
+                  )}
+                  {!simpleVideoMode && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={undoLen <= 0}
+                        onClick={undoEdit}
+                        className="rounded-lg border border-white/15 px-2.5 py-1.5 text-[11px] text-slate-200 disabled:opacity-40"
+                      >
+                        {zh ? `撤销 (${undoLen})` : `Undo (${undoLen})`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!hasOriginal}
+                        onClick={restoreOriginal}
+                        className="rounded-lg border border-white/15 px-2.5 py-1.5 text-[11px] text-slate-200 disabled:opacity-40"
+                      >
+                        {zh ? '恢复原始' : 'Restore'}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="rounded-lg border border-white/15 p-2 text-slate-300 hover:bg-white/5"
+                    aria-label={zh ? '关闭分割编辑器' : 'Close segmentation editor'}
+                  >
+                    <X size={16} />
+                  </button>
               </div>
             </div>
 
+            {!simpleVideoMode && (
             <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-4 py-2">
               {([
                 ['soft', zh ? '软变形' : 'Soft', MousePointer2],
                 ['hard', zh ? '硬拖点' : 'Hard', Pencil],
                 ['add', zh ? '加点' : 'Add', Plus],
                 ['delete', zh ? '删点' : 'Delete', Eraser],
-                ['sam', 'SAM click', Sparkles],
+                ['sam', zh ? '标记关注区域' : 'Mark region', Sparkles],
               ] as const).map(([id, label, Icon]) => (
                 <button
                   key={id}
@@ -1463,8 +2017,8 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                     if (id === 'sam') {
                       setMessage(
                         zh
-                          ? 'SAM: 单击前景; Shift+排除; 拖框区域; 连续点选精修'
-                          : 'SAM: click include; Shift exclude; drag box; refine',
+                          ? '点击画面标记关注区域'
+                          : 'Click the frame to mark a region',
                       );
                     }
                   }}
@@ -1483,11 +2037,11 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                   type="button"
                   onClick={() => {
                     clearSamPrompts();
-                    setMessage(zh ? '已清除 SAM 提示点' : 'SAM prompts cleared');
+                    setMessage(zh ? '已清除关注标记' : 'Region markers cleared');
                   }}
                   className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-100"
                 >
-                  {zh ? `清除提示 (${samClicks.length})` : `Clear prompts (${samClicks.length})`}
+                  {zh ? `清除标记 (${samClicks.length})` : `Clear markers (${samClicks.length})`}
                 </button>
               )}
               <button
@@ -1533,7 +2087,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                 } disabled:opacity-40`}
               >
                 <Layers size={13} />
-                {wallAnalysisOpen ? (zh ? '关闭征象窗' : 'Close evidence') : (zh ? '征象小窗' : 'Evidence window')}
+                    {wallAnalysisOpen ? (zh ? '关闭组织层观察' : 'Close tissue view') : (zh ? '组织层观察' : 'Tissue view')}
               </button>
               <div className="h-5 w-px bg-white/10" />
               <button
@@ -1560,7 +2114,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                 }`}
               >
                 <Video size={13} />
-                {zh ? `视频 SAM${videos.length ? ` (${videos.length})` : ''}` : `Video SAM${videos.length ? ` (${videos.length})` : ''}`}
+                {zh ? `视频分析${videos.length ? ` (${videos.length})` : ''}` : `Video analysis${videos.length ? ` (${videos.length})` : ''}`}
               </button>
               <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-400">
                 <span>ROI</span>
@@ -1575,10 +2129,126 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                 </select>
               </div>
             </div>
+            )}
 
             {mediaMode === 'video' && (
+              <>
+                <video ref={videoRef} className="hidden" muted playsInline preload="auto" crossOrigin="anonymous" />
+              {simpleVideoMode ? (
+                <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-white/10 bg-cyan-950/25 px-4 py-2">
+                  <span className="min-w-0 flex-[1_1_10rem] truncate text-[11px] text-cyan-100">
+                    {videos[0]?.filename || (videoUrl ? (zh ? '当前视频' : 'Current video') : (zh ? '视频加载中…' : 'Loading video…'))}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!videoUrl}
+                    onClick={() => {
+                      const v = videoRef.current;
+                      if (!v) return;
+                      if (v.paused) void v.play();
+                      else v.pause();
+                    }}
+                    className="flex items-center gap-1 rounded-lg border border-cyan-400/40 px-2.5 py-1.5 text-[11px] text-cyan-100 disabled:opacity-40"
+                  >
+                    {isPlaying ? <Pause size={13} /> : <Play size={13} />}
+                    {isPlaying ? (zh ? '暂停' : 'Pause') : (zh ? '播放' : 'Play')}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(videoDuration, 0.01)}
+                    step={0.01}
+                    value={videoTime}
+                    disabled={!videoUrl}
+                    onChange={(e) => {
+                      const nextTime = Number(e.target.value);
+                      const v = videoRef.current;
+                      if (!v) return;
+                      v.pause();
+                      v.currentTime = nextTime;
+                      setVideoTime(nextTime);
+                      setFrameFrozen(false);
+                      frameFrozenRef.current = false;
+                      syncFrameFromVideo({ force: true });
+                    }}
+                    className="min-w-[8rem] flex-[2_1_10rem]"
+                    aria-label={zh ? '视频进度' : 'Video progress'}
+                  />
+                  <span className="shrink-0 font-mono text-[10px] text-cyan-200/80">
+                    {videoTime.toFixed(2)}s / {videoDuration.toFixed(2)}s
+                  </span>
+                  <div className="flex min-w-0 flex-[4_1_22rem] flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => { setSimplePromptMode('point'); setSimpleEditMode(false); }}
+                      className={`rounded border px-2 py-1 text-[10px] ${simplePromptMode === 'point' && !simpleEditMode ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
+                    >
+                      {zh ? '点选' : 'Point'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSimplePromptMode('box'); setSimpleEditMode(false); }}
+                      className={`rounded border px-2 py-1 text-[10px] ${simplePromptMode === 'box' && !simpleEditMode ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
+                    >
+                      {zh ? '框选' : 'Box'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={points.length < 3}
+                      onClick={() => setSimpleEditMode((value) => {
+                        const next = !value;
+                        setTrackOnPlay(!next);
+                        return next;
+                      })}
+                      className={`rounded border px-2 py-1 text-[10px] disabled:opacity-40 ${simpleEditMode ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
+                    >
+                      {simpleEditMode ? (zh ? '完成修正' : 'Finish edit') : (zh ? '修正轮廓' : 'Edit contour')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={points.length < 3 || precomputeBusy}
+                      onClick={() => void precomputeVideoTracking()}
+                      className="rounded border border-cyan-300/40 bg-cyan-400/10 px-2 py-1 text-[10px] text-cyan-100 disabled:opacity-40"
+                    >
+                      {precomputeBusy
+                        ? (zh ? `预计算 ${precomputeProgress || ''}` : `Precomputing ${precomputeProgress || ''}`)
+                        : (zh ? '预计算跟踪' : 'Precompute track')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!videoUrl || keyBusy || propagateBusy || points.length < 3}
+                      onClick={() => void propagateMaskAcrossVideo()}
+                      className="rounded border border-emerald-300/40 bg-emerald-400/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40"
+                    >
+                      {propagateBusy ? (zh ? `全视频传播 ${propagateProgress || ''}` : `Propagating ${propagateProgress || ''}`) : (zh ? '全视频传播' : 'Propagate video')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!videoUrl || keyBusy}
+                      onClick={() => void scoreKeyframes()}
+                      className="rounded border border-violet-300/40 bg-violet-400/10 px-2 py-1 text-[10px] text-violet-100 disabled:opacity-40"
+                    >
+                      {keyBusy ? (zh ? '关键帧打分中' : 'Scoring keyframes') : (zh ? '选择关键帧' : 'Select keyframes')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={points.length < 3 || precomputeBusy}
+                      onClick={() => setTrackOnPlay((value) => !value)}
+                      className={`rounded border px-2 py-1 text-[10px] disabled:opacity-40 ${trackOnPlay ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
+                    >
+                      {trackOnPlay ? (zh ? '连续跟踪：开' : 'Track: on') : (zh ? '连续跟踪：关' : 'Track: off')}
+                    </button>
+                  </div>
+                  <span className="basis-full text-[10px] text-slate-400">
+                    {simpleEditMode
+                      ? (zh ? '拖动青色控制点' : 'Drag cyan handles')
+                      : simplePromptMode === 'box'
+                        ? (zh ? '拖动框选当前帧' : 'Drag a box on the frame')
+                        : (zh ? '点击画面分析当前帧' : 'Click the frame to analyze')}
+                  </span>
+                </div>
+              ) : (
               <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-violet-950/30 px-4 py-2">
-                <video ref={videoRef} className="hidden" muted playsInline crossOrigin="anonymous" />
                 <select
                   value={videoUrl}
                   onChange={(e) => {
@@ -1652,42 +2322,26 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                       }
                     }}
                   />
-                  {zh ? '播放时自动跟随（编辑时请关）' : 'Auto-track on play'}
+                  {zh ? '播放时自动跟随' : 'Auto-track on play'}
                 </label>
                 <button
                   type="button"
                   disabled={!videoUrl || keyBusy}
-                  onClick={async () => {
-                    setKeyBusy(true);
-                    setMessage(zh ? '邻域关键帧打分中…' : 'Scoring neighborhood keyframes…');
-                    try {
-                      const res = await fetch('/api/agent/video/keyframes', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          video_url: videoUrl,
-                          anchor_sec: videoTime,
-                          window_sec: 2.0,
-                          top_k: 5,
-                        }),
-                      });
-                      const data = await res.json();
-                      if (!data.ok) throw new Error(data.error || 'keyframe failed');
-                      setKeyCandidates(data.keyframes || []);
-                      setMessage(
-                        zh
-                          ? `关键帧候选 ${data.keyframes?.length || 0} 帧（锚点 ${videoTime.toFixed(2)}s）`
-                          : `${data.keyframes?.length || 0} keyframe candidates`,
-                      );
-                    } catch (err) {
-                      setMessage(err instanceof Error ? err.message : 'keyframe failed');
-                    } finally {
-                      setKeyBusy(false);
-                    }
-                  }}
+                  onClick={() => void scoreKeyframes()}
+                  title={zh ? '按清晰度、对比度和运动信息选择候选关键帧' : 'Select keyframes by sharpness, contrast, and motion'}
                   className="rounded-lg border border-violet-400/40 px-2 py-1 text-[10px] text-violet-100 disabled:opacity-40"
                 >
-                  {keyBusy ? (zh ? '打分中…' : 'Scoring…') : (zh ? '邻域关键帧' : 'Near keyframes')}
+                  {keyBusy ? (zh ? '关键帧打分中…' : 'Scoring keyframes…') : (zh ? '选择关键帧' : 'Select keyframes')}
+                </button>
+                <button
+                  type="button"
+                  disabled={!videoUrl || keyBusy || propagateBusy || points.length < 3}
+                  onClick={() => void propagateMaskAcrossVideo()}
+                  className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40"
+                >
+                  {propagateBusy
+                    ? (zh ? `全视频传播 ${propagateProgress || ''}` : `Propagating ${propagateProgress || ''}`)
+                    : (zh ? '全视频传播' : 'Propagate video')}
                 </button>
                 <button
                   type="button"
@@ -1697,23 +2351,13 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                     const c = polygonCentroid(points);
                     const box = bboxFromPolygon(points);
                     if (c && box) void runSamAtPoint(c, { source: 'sam', box, keepEditing: true });
-                    else setMessage(zh ? '先 SAM 点选或载入边界' : 'Seed a polygon first');
+                    else setMessage(zh ? '请先点击视频画面获得当前帧结果' : 'Click the video frame first');
                   }}
                   className="rounded-lg border border-violet-400/40 px-2 py-1 text-[10px] text-violet-100 disabled:opacity-40"
                 >
-                  {zh ? '本帧用当前区域重算' : 'Re-SAM with region'}
+                  {zh ? '重新分析当前帧' : 'Re-analyze current frame'}
                 </button>
-                <button
-                  type="button"
-                  disabled={!videoUrl || propagateBusy || points.length < 3}
-                  onClick={() => void propagateMaskAcrossVideo()}
-                  className="rounded-lg border border-emerald-400/50 bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-100 disabled:opacity-40"
-                  title={zh ? '把当前可编辑区域固定为 mask/box prompt，向后续帧扩散' : 'Lock region as mask prompt and propagate'}
-                >
-                  {propagateBusy
-                    ? (propagateProgress || (zh ? '扩散中…' : 'Propagating…'))
-                    : (zh ? '固定并扩散到邻帧' : 'Lock & propagate')}
-                </button>
+
                 {frameFrozen && (
                   <button
                     type="button"
@@ -1766,7 +2410,10 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                   </button>
                 )}
               </div>
+              )}
+              </>
             )}
+
 
             {mediaMode === 'video' && keyCandidates.length > 0 && (
               <div className="flex gap-2 overflow-x-auto border-b border-white/10 bg-black/50 px-4 py-2">
@@ -1811,7 +2458,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                 <canvas
                   ref={canvasRef}
                   className="h-full w-full touch-none"
-                  style={{ cursor: dragIndex !== null ? 'grabbing' : mode === 'soft' || mode === 'hard' ? 'grab' : 'crosshair' }}
+                  style={{ cursor: dragIndex !== null ? 'grabbing' : simpleEditMode ? 'grab' : mode === 'soft' || mode === 'hard' ? 'grab' : 'crosshair' }}
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
@@ -1823,11 +2470,11 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                   </div>
                 )}
               </div>
-              <div className={`absolute inset-y-3 right-3 z-30 w-[min(390px,calc(100%-1.5rem))] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-emerald-300/30 bg-slate-950/95 shadow-2xl shadow-black/60 backdrop-blur-md ${wallAnalysisOpen ? 'flex' : 'hidden'}`}>
+              <div className={`absolute inset-y-3 right-3 z-30 w-[min(390px,calc(100%-1.5rem))] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-emerald-300/30 bg-slate-950/95 shadow-2xl shadow-black/60 backdrop-blur-md ${!simpleVideoMode && wallAnalysisOpen ? 'flex' : 'hidden'}`}>
                 <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-emerald-100">
                     <Layers size={14} />
-                    {zh ? '胃壁特征分析' : 'Wall feature analysis'}
+                    {zh ? '组织层观察' : 'Tissue layer observation'}
                   </div>
                   <button
                     type="button"
@@ -1864,45 +2511,96 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">              <button
-                type="button"
-                disabled={saving || points.length < 3}
-                onClick={() => void handleSave()}
-                className="flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"
-              >
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                {zh ? '保存覆盖' : 'Save override'}
-              </button>
+            <div className="flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">
+              {!simpleVideoMode && (
+                <button
+                  type="button"
+                  disabled={saving || points.length < 3}
+                  onClick={() => void handleSave()}
+                  className="flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 disabled:opacity-40"
+                >
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  {zh ? '保存覆盖' : 'Save override'}
+                </button>
+              )}
               <button
                 type="button"
-                disabled={saving}
-                onClick={() => void handleClear()}
-                className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-white/5"
+                disabled={samBusy || points.length < 3}
+                onClick={() => {
+                  const c = polygonCentroid(points);
+                  const box = bboxFromPolygon(points);
+                  if (c && box) {
+                    freezeCurrentFrame();
+                    void runSamAtPoint(c, { source: 'sam', box, keepEditing: true, stayInSam: true, llmReport: true });
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-40"
               >
-                <Trash2 size={13} />
-                {zh ? '清除' : 'Clear'}
+                {samBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                {zh ? '生成系统证据' : 'Generate system evidence'}
               </button>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-[11px] text-cyan-100"
-              >
-                <Check size={13} />
-                {zh ? '完成并关闭' : 'Done'}
-              </button>
+              {simpleVideoMode && points.length >= 3 && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void handleSave()}
+                  className="flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-40"
+                >
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  {zh ? '保存当前轮廓' : 'Save contour'}
+                </button>
+              )}
+              {!simpleVideoMode && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void handleClear()}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-white/5"
+                >
+                  <Trash2 size={13} />
+                  {zh ? '清除' : 'Clear'}
+                </button>
+              )}
+              {!inline && (
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-[11px] text-cyan-100"
+                >
+                  <Check size={13} />
+                  {zh ? '完成并关闭' : 'Done'}
+                </button>
+              )}
               <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-400">
                 <ZoomIn size={12} />
-                <span>
-                  {zh ? '当前层' : 'Layer'} {activeLayer === 'wall' ? wallPoints.length : points.length}pt
-                  {wallPoints.length >= 3 ? `, ${zh ? '壁' : 'wall'}${wallPoints.length}` : ''}
-                </span>
+                {simpleVideoMode ? (
+                  <span>{zh ? '当前帧系统结果' : 'Current-frame system result'}</span>
+                ) : (
+                  <span>
+                    {zh ? '当前层' : 'Layer'} {activeLayer === 'wall' ? wallPoints.length : points.length}pt
+                    {wallPoints.length >= 3 ? `, ${zh ? '壁' : 'wall'}${wallPoints.length}` : ''}
+                  </span>
+                )}
                 {samAvailable === false && (
                   <span className="text-amber-300/90">
-                    {zh ? 'SAM 未启动（可手动编辑）' : 'SAM offline (manual edit OK)'}
+                    {zh ? '系统分析服务不可用' : 'Analysis service unavailable'}
                   </span>
                 )}
               </div>
             </div>
+            {samReport && (
+              <div className="border-t border-cyan-400/15 bg-cyan-500/[0.04] px-4 py-3 text-[11px] text-slate-200">
+                <div className="font-semibold text-cyan-200">{zh ? '系统证据（辅助意见）' : 'System evidence (assistive)'}</div>
+                <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-slate-400">
+                  <span>{zh ? '推荐' : 'Recommendation'}: {samReport.recommended_stage || '—'}</span>
+                  <span>{zh ? '置信度' : 'Confidence'}: {samReport.calibrated_confidence != null ? `${Math.round(samReport.calibrated_confidence * 100)}%` : '—'}</span>
+                  <span>{zh ? '证据' : 'Evidence'}: {samReport.evidence?.length || 0}</span>
+                  <span>{zh ? '相似病例' : 'Similar cases'}: {samReport.similar_cases?.length || 0}</span>
+                </div>
+                {samReport.summary ? <div className="mt-2 leading-relaxed text-slate-300">{sanitizeSystemCopy(samReport.summary)}</div> : null}
+                <div className="mt-2 text-[10px] text-amber-200/80">{zh ? '仅供医生复核，不覆盖最终判断；证据不足时请继续查看连续帧。' : 'For clinician review only; does not overwrite final judgment.'}</div>
+              </div>
+            )}
             {message && (
               <div className="border-t border-white/5 px-4 py-2 text-[11px] text-slate-300">{message}</div>
             )}
@@ -1912,7 +2610,7 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
 
   return (
     <>
-      <div className="pointer-events-auto absolute bottom-[5.75rem] left-3 z-[110] flex flex-col gap-2">
+      {!inline && (<div className="pointer-events-auto absolute bottom-[5.75rem] left-3 z-[110] flex flex-col gap-2">
         <button
           type="button"
           onClick={() => openEditor({ sam: true })}
@@ -1921,10 +2619,10 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
               ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100'
               : 'border-white/15 bg-black/70 text-gray-200 hover:border-cyan-400/40'
           }`}
-          title={zh ? '打开交互 SAM 分割与边界编辑' : 'Open interactive SAM + boundary edit'}
+          title={zh ? '打开视频分析' : 'Open video analysis'}
         >
           <Pencil size={14} />
-          <span>{zh ? '边界编辑 / SAM' : 'Edit / SAM'}</span>
+          <span>{zh ? '视频分析' : 'Video analysis'}</span>
           {override && (
             <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.5 text-[9px] text-cyan-200">
               {override.mask_polygon.length}pt
@@ -1935,13 +2633,13 @@ export function InteractiveSegPanel({ patient, override, onOverrideChange, onIma
           type="button"
           onClick={() => openEditor({ videoSam: true })}
           className="flex items-center gap-2 rounded-xl border border-violet-400/40 bg-violet-500/20 px-3 py-2 text-[11px] font-semibold text-violet-100 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:border-violet-300/60"
-          title={zh ? '免上传：直接打开本例对应视频并进入 SAM' : 'Open matched patient video for SAM (no upload)'}
+          title={zh ? '免上传：直接打开本例对应视频并分析' : 'Open matched patient video for analysis (no upload)'}
         >
           <Video size={14} />
-          <span>{zh ? '视频 SAM' : 'Video SAM'}</span>
+          <span>{zh ? '视频分析' : 'Video analysis'}</span>
         </button>
-      </div>
-      {typeof document !== 'undefined' ? createPortal(modal, document.body) : modal}
+      </div>)}
+      {typeof document !== 'undefined' && !inline ? createPortal(modal, document.body) : modal}
     </>
   );
 }

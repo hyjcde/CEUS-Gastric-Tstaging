@@ -2,8 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
-import { GASTRIC_COHORT_YEARS, GastricCohortYear, getCohortDisplayLabel } from '@/lib/cohort';
-import { Activity, ChevronRight, Building2, Globe, User, Settings, LogOut, FileText, BarChart2, PenTool, Clapperboard, ScanSearch, Compass } from 'lucide-react';
+import { Globe, User, LogOut, FileText, BarChart2, PenTool, Clapperboard, ScanSearch, Compass } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getDirectionAnnotatorPath } from '@/lib/annotator-url';
 import { getVideoAnnotatorUrl } from '@/lib/video-annotator-url';
@@ -16,7 +15,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatient }) => {
-  const { language, setLanguage, dataset, setDataset, cohortYear, setCohortYear, treatmentType, setTreatmentType, t } = useSettings();
+  const { language, setLanguage, dataset, setDataset, t } = useSettings();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -59,75 +58,49 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatien
   };
 
   return (
-    <header className="h-full w-full flex items-center justify-between px-5 bg-[#08090a] border-b border-white/10 shadow-md z-50 relative">
-      <div className="flex items-center gap-6">
+    <header className="relative z-50 flex h-full w-full min-w-0 items-center justify-between gap-3 overflow-hidden border-b border-white/10 bg-[#08090a] px-3 shadow-md sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-3 lg:gap-5">
         {/* Logo Block */}
         <div 
-            className="flex items-center gap-3.5 group cursor-pointer select-none"
+            className="group flex min-w-0 max-w-[min(70vw,28rem)] cursor-pointer select-none items-center gap-2.5 sm:gap-3.5"
             onClick={() => router.push('/')}
         >
-          <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-white/10 shadow-lg group-hover:border-white/20 transition-all duration-500">
+          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-lg transition-all duration-500 group-hover:border-white/20 sm:h-12 sm:w-12">
             <img 
               src="/image.png" 
               alt="Union Hospital Logo" 
               className="w-full h-full object-contain bg-white/5 p-1.5"
             />
           </div>
-          <div className="flex flex-col justify-center gap-0.5">
-            <h1 className="font-bold text-base tracking-tight text-gray-100 leading-none">
+          <div className="flex min-w-0 flex-col justify-center gap-1">
+            <h1 className="text-balance text-[clamp(0.78rem,1.35vw,1rem)] font-bold leading-[1.05] tracking-tight text-gray-100">
               {t.title}
             </h1>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+            <div className="hidden min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 sm:flex">
+              <span className="text-[9px] font-bold uppercase leading-tight tracking-[0.16em] text-blue-400 sm:text-[10px]">
                 {t.hospital}
               </span>
-              <span className="w-0.5 h-0.5 bg-gray-600 rounded-full"></span>
-              <span className="text-[10px] font-medium text-gray-500 tracking-wide">{t.subtitle}</span>
+              <span className="hidden h-3 w-px bg-gray-600/60 sm:block"></span>
+              <span className="text-[9px] font-medium leading-tight tracking-wide text-gray-500 sm:text-[10px]">{t.subtitle}</span>
             </div>
           </div>
         </div>
 
-        <div className="h-8 w-px bg-white/5 hidden md:block"></div>
+        <div className="hidden h-8 w-px shrink-0 bg-white/5 md:block"></div>
 
         {/* Controls: Language, Cohort & Dataset */}
-        <div className="hidden lg:flex items-center gap-4">
+        <div className="hidden shrink-0 items-center gap-2 xl:gap-3 lg:flex">
             {/* Language Switcher */}
             <button 
                 onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}
-                className="flex items-center gap-2 text-[10px] font-mono text-gray-400 hover:text-gray-200 transition-colors bg-[#111] px-2 py-1 rounded border border-white/5"
+                className="flex shrink-0 items-center gap-2 rounded border border-white/5 bg-[#111] px-2 py-1 text-[10px] font-mono text-gray-400 transition-colors hover:text-gray-200"
             >
                 <Globe size={10} />
                 {language === 'en' ? 'EN' : '中文'}
             </button>
 
-            {/* Cohort Year Switcher */}
-            <div className="flex items-center gap-1 bg-[#111] p-1 rounded border border-white/5 max-w-[min(52vw,520px)] overflow-x-auto custom-scrollbar">
-                {GASTRIC_COHORT_YEARS.map((year) => {
-                  const isActive = cohortYear === year;
-                  const activeClass = year === '2025'
-                    ? 'bg-emerald-600 text-white'
-                    : year === '2024'
-                      ? 'bg-cyan-600 text-white'
-                      : year === '2020_2023'
-                        ? 'bg-orange-600 text-white'
-                        : year === '2019'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-600 text-white';
-                  return (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => setCohortYear(year as GastricCohortYear)}
-                      className={`shrink-0 px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${isActive ? activeClass : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                      {getCohortDisplayLabel(year)}
-                    </button>
-                  );
-                })}
-            </div>
-
             {/* Dataset Switcher — CROP UI 为默认主视图 */}
-            <div className="flex items-center gap-1 bg-[#111] p-1 rounded border border-white/5">
+            <div className="flex shrink-0 items-center gap-1 rounded border border-white/5 bg-[#111] p-1">
                 <button 
                     onClick={() => setDataset('cropped')}
                     className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${dataset === 'cropped' ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
@@ -145,22 +118,22 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatien
       </div>
 
       {/* Right Status & User Menu */}
-      <div className="flex items-center gap-6 text-[10px] font-mono text-gray-500">
+      <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-mono text-gray-500 sm:gap-2">
         {/* Statistics Button */}
         {onShowStatistics && (
           <button
             onClick={onShowStatistics}
-            className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-purple-500/50 hover:bg-purple-500/10 transition-colors text-purple-400 hover:text-purple-300"
+            className="flex items-center gap-2 rounded border border-white/5 bg-[#111] px-2 py-1.5 text-purple-400 transition-colors hover:border-purple-500/50 hover:bg-purple-500/10 hover:text-purple-300 sm:px-2.5"
             title={language === 'zh' ? '查看统计' : 'View Statistics'}
           >
             <BarChart2 size={12} />
-            <span className="text-[10px] font-semibold">{language === 'zh' ? '统计' : 'Stats'}</span>
+            <span className="hidden text-[10px] font-semibold sm:inline">{language === 'zh' ? '统计' : 'Stats'}</span>
           </button>
         )}
 
         <button
           onClick={openAnnotator}
-          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-amber-500/50 hover:bg-amber-500/10 transition-colors text-amber-400 hover:text-amber-300"
+          className="hidden items-center gap-2 rounded border border-white/5 bg-[#111] px-3 py-1.5 text-amber-400 transition-colors hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-300 xl:flex"
           title={t.nav.annotatorTitle}
         >
           <PenTool size={12} />
@@ -169,7 +142,7 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatien
 
         <button
           onClick={openVideoAnnotator}
-          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-colors text-cyan-400 hover:text-cyan-300"
+          className="hidden items-center gap-2 rounded border border-white/5 bg-[#111] px-3 py-1.5 text-cyan-400 transition-colors hover:border-cyan-500/50 hover:bg-cyan-500/10 hover:text-cyan-300 xl:flex"
           title={t.nav.videoAnnotatorTitle}
         >
           <Clapperboard size={12} />
@@ -178,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatien
 
         <button
           onClick={openReadingAgent}
-          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-colors text-emerald-400 hover:text-emerald-300"
+          className="hidden items-center gap-2 rounded border border-white/5 bg-[#111] px-3 py-1.5 text-emerald-400 transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-300 xl:flex"
           title={t.nav.readingAgentTitle}
         >
           <ScanSearch size={12} />
@@ -187,18 +160,14 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatien
 
         <button
           onClick={openHumanAssist}
-          className="flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors text-orange-400 hover:text-orange-300"
+          className="hidden items-center gap-2 rounded border border-white/5 bg-[#111] px-3 py-1.5 text-orange-400 transition-colors hover:border-orange-500/50 hover:bg-orange-500/10 hover:text-orange-300 xl:flex"
           title={t.nav.humanAssistTitle}
         >
           <Compass size={12} />
           <span className="text-[10px] font-semibold">{t.nav.humanAssist}</span>
         </button>
         
-        <div className="hidden md:flex items-center gap-2 bg-[#111] px-3 py-1.5 rounded border border-white/5 shadow-inner">
-            <div className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
-            </div>
+        <div className="hidden items-center gap-2 rounded border border-white/5 bg-[#111] px-3 py-1.5 shadow-inner 2xl:flex">
             <span className="text-blue-400 font-semibold tracking-wider">{t.status.online}</span>
         </div>
         
@@ -206,7 +175,7 @@ export const Header: React.FC<HeaderProps> = ({ onShowStatistics, selectedPatien
         <div className="relative" ref={menuRef}>
             <button 
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="w-8 h-8 rounded-full bg-gradient-to-tr from-gray-800 to-gray-700 border border-white/10 flex items-center justify-center text-xs font-bold text-gray-300 shadow-lg hover:border-blue-500/50 transition-colors"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-gradient-to-tr from-gray-800 to-gray-700 text-xs font-bold text-gray-300 shadow-lg transition-colors hover:border-blue-500/50"
             >
               DR
             </button>

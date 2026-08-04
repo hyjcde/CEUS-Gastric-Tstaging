@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MM-GCS | Fujian Xiehe Ultrasound",
-  description: "Multimodal Gastric Cancer Staging Research Workstation",
+  title: "Gastric Filling Ultrasound Intelligent Diagnosis",
+  description: "Clinical intelligence workstation for gastric filling ultrasound image review and staging support.",
 };
 
 export default function RootLayout({

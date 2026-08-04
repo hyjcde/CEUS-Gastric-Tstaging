@@ -15,12 +15,12 @@ function ReaderLoadingFallback() {
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-3 bg-[#08090a] text-gray-400">
       <Loader2 className="animate-spin" size={24} />
-      <div className="text-xs">正在加载阅片工作台…</div>
+      <div className="text-xs">Loading the reading workbench…</div>
       {timedOut ? (
         <div className="flex flex-col items-center gap-2 text-center text-[11px] text-amber-300">
-          <div>页面脚本响应较慢，请重试；病例数据不会被修改。</div>
+          <div>The page is taking longer than expected. Retry; case data will not be modified.</div>
           <button type="button" className="reader-btn" onClick={() => window.location.reload()}>
-            重新加载
+            Reload
           </button>
         </div>
       ) : null}
