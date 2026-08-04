@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from .case_card import CaseCard
+from .belief_state import build_case_belief_state
 from .llm_client import AgentLLMClient
 from .prompts import SYSTEM_PROMPT, INITIAL_USER_PROMPT, USER_TURN_TEMPLATE
 from ..tools.base import ToolRegistry
@@ -53,6 +54,7 @@ class AgentResult:
     total_tokens: int = 0
     total_time_s: float = 0.0
     raw_finish: str = ""
+    belief_state: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,6 +68,7 @@ class AgentResult:
             "num_steps": len(self.steps),
             "total_tokens": self.total_tokens,
             "total_time_s": round(self.total_time_s, 2),
+            "belief_state": self.belief_state,
         }
 
 
@@ -413,6 +416,14 @@ def run_react_loop(
 
     result.total_tokens = llm.total_tokens
     result.total_time_s = time.time() - t0
+    result.belief_state = build_case_belief_state(
+        case_id=case_card.patient_id,
+        patient_id=case_card.patient_id,
+        steps=result.steps,
+        frame_count=case_card.num_frames,
+        run_id=f"react_{case_card.patient_id}_{int(t0)}",
+        final_report=result.to_dict(),
+    ).to_dict()
 
     return result
 

@@ -8,15 +8,22 @@ import { ConceptReasoning } from '@/components/ConceptReasoning';
 import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { StatisticsPanel } from '@/components/StatisticsPanel';
 import { AgentWorkbenchPanel } from '@/components/AgentWorkbenchPanel';
-import { InteractiveSegPanel, type DinoFeatureResult, type ImagingAssistPayload } from '@/components/InteractiveSegPanel';
+import {
+  InteractiveSegPanel,
+  type DinoFeatureResult,
+  type ImagingAssistPayload,
+  type UnifiedAgentCapture,
+} from '@/components/InteractiveSegPanel';
 import { ReaderAgentResultCard } from '@/components/ReaderAgentResultCard';
 import { ReaderStudyQueuePanel } from '@/components/ReaderStudyQueuePanel';
+import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
 import { BenignTissueObservationCard } from '@/components/BenignTissueObservationCard';
 import { AssistHub } from '@/components/AssistHub';
 import { GcUsImagingReportCard } from '@/components/GcUsImagingReportCard';
 // VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
+import toast from 'react-hot-toast';
 import type { SamReport } from '@/lib/reader/types';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 import { ChevronLeft, Users, BarChart2, X } from 'lucide-react';
@@ -79,6 +86,9 @@ export default function Home() {
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [patientConceptStates, setPatientConceptStates] = useState<Map<string, ConceptState>>(new Map());
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisResponse | null>(null);
+  const [readerUnifiedAgentResult, setReaderUnifiedAgentResult] = useState<AgentAnalysisResponse | null>(null);
+  const [readerUnifiedAgentBusy, setReaderUnifiedAgentBusy] = useState(false);
+  const [readerUnifiedAgentError, setReaderUnifiedAgentError] = useState<string | null>(null);
   const [maskOverride, setMaskOverride] = useState<MaskBoundaryOverride | null>(null);
   const [imagingAssist, setImagingAssist] = useState<ImagingAssistPayload | null>(null);
   const [gcUsReport, setGcUsReport] = useState<GcUsReportState | null>(null);
@@ -112,6 +122,8 @@ export default function Home() {
 
   useEffect(() => {
     setAgentAnalysis(null);
+    setReaderUnifiedAgentResult(null);
+    setReaderUnifiedAgentError(null);
     setAgentFilledCount(0);
     setSaveStatus('idle');
     setIsDirty(false);
@@ -162,6 +174,59 @@ export default function Home() {
       setSaveStatus('idle');
     }
   }, [selectedPatient]);
+
+  const handleReaderUnifiedAgent = useCallback(async (capture: UnifiedAgentCapture) => {
+    if (!selectedPatient || !isReaderStudyQueue) return;
+    setReaderUnifiedAgentBusy(true);
+    setReaderUnifiedAgentError(null);
+    try {
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const response = await fetch('/api/reader/agent/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: selectedPatient.id,
+          patient_id: selectedPatient.patient_id,
+          reader_id: params?.get('reader_id') || 'workbench_reader',
+          round: params?.get('round') || 'round2',
+          study_mode: selectedPatient.study_mode || readerStudyMode,
+          frame_id: selectedPatient.id,
+          frame_time: capture.current_time,
+          frame_png_b64: capture.frames[0]?.frame_png_b64,
+          frames: capture.frames,
+          gc_us_report: gcUsReport || undefined,
+          mask_override: capture.mask_polygon.length
+            ? {
+                patientId: selectedPatient.patient_id,
+                frameId: selectedPatient.id,
+                imageWidth: capture.image_width,
+                imageHeight: capture.image_height,
+                mask_polygon: capture.mask_polygon,
+                roi_bbox: capture.roi_bbox,
+                source: 'sam',
+                video_time_sec: capture.current_time,
+              }
+            : undefined,
+        }),
+      });
+      const data = await response.json() as {
+        ok?: boolean;
+        error?: string;
+        result?: AgentAnalysisResponse;
+      };
+      if (!response.ok || !data.ok || !data.result) {
+        throw new Error(data.error || `Unified Agent HTTP ${response.status}`);
+      }
+      setReaderUnifiedAgentResult(data.result);
+      toast.success('统一科研 Agent 已完成当前视频窗口分析');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '统一 Agent 分析失败';
+      setReaderUnifiedAgentError(message);
+      toast.error(message);
+    } finally {
+      setReaderUnifiedAgentBusy(false);
+    }
+  }, [gcUsReport, isReaderStudyQueue, readerStudyMode, selectedPatient]);
 
   const siblingImages = useMemo(() => {
     if (!selectedPatient || !allPatients.length) return [];
@@ -471,6 +536,8 @@ export default function Home() {
             }}
             onSystemReport={setSystemReport}
             onDinoFeatures={setDinoFeature}
+            onUnifiedAgentRun={isReaderStudyQueue ? handleReaderUnifiedAgent : undefined}
+            unifiedAgentBusy={readerUnifiedAgentBusy}
             inline={Boolean(selectedPatient)}
           />
           {!isReaderStudyQueue && !isBenignQueue && (
@@ -565,6 +632,16 @@ export default function Home() {
             </div>
           ) : isReaderStudyQueue ? (
             <div className="flex-1 overflow-y-auto p-4">
+              <ReaderEvidencePanel
+                result={readerUnifiedAgentResult}
+                loading={readerUnifiedAgentBusy}
+                zh={language === 'zh'}
+              />
+              {readerUnifiedAgentError ? (
+                <div className="mt-2 rounded-lg border border-rose-400/20 bg-rose-400/5 px-2.5 py-2 text-[10px] leading-relaxed text-rose-200">
+                  {readerUnifiedAgentError}
+                </div>
+              ) : null}
               <ReaderStudyQueuePanel
                 patient={selectedPatient}
                 patients={allPatients}

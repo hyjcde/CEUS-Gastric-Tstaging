@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .react_loop import AgentResult, ReActStep
+from .belief_state import build_case_belief_state
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class PatientReport:
     rag_stage_distribution: Dict[str, int] = field(default_factory=dict)
     num_tool_calls: int = 0
     num_react_steps: int = 0
+    belief_state: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -78,6 +80,7 @@ class PatientReport:
             "rag_stage_distribution": self.rag_stage_distribution,
             "num_tool_calls": self.num_tool_calls,
             "num_react_steps": self.num_react_steps,
+            "belief_state": self.belief_state,
         }
 
 
@@ -220,6 +223,14 @@ class EvidenceHub:
             ),
             num_react_steps=len(agent_result.steps),
         )
+        report.belief_state = build_case_belief_state(
+            case_id=agent_result.patient_id,
+            patient_id=agent_result.patient_id,
+            steps=agent_result.steps,
+            frame_count=num_frames,
+            run_id=f"react_{agent_result.patient_id}",
+            final_report=agent_result.to_dict(),
+        ).to_dict()
         return report
 
     @staticmethod

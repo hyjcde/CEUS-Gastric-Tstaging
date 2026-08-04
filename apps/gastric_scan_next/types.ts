@@ -34,10 +34,12 @@ export const DEFAULT_STATE: ConceptState = {
   neuralInvasion: 0
 };
 
+export type ReaderStudyMode = 'benign_malignancy' | 't_staging';
+
 export interface VideoInfo {
   url: string;
   filename: string;
-  treatment: 'direct_surgery' | 'neoadjuvant';
+  treatment: 'direct_surgery' | 'neoadjuvant' | 'reader_study';
   water_filled: boolean;
 }
 
@@ -80,6 +82,10 @@ export interface PatientReportData {
   ultrasound_report?: string;
   ultrasound_findings?: string;
   ultrasound_impression?: string;
+  ct_report?: string;
+  ct_findings?: string;
+  ct_impression?: string;
+  enhanced_ct_report?: string;
   endoscopy_report?: string;
   pathology_report?: string;
   report_source?: string;
@@ -166,6 +172,10 @@ export interface Patient {
   group: string;
   phase: string;
   source_label: string;
+  queue_id?: string;
+  center_id?: string;
+  center_label?: string;
+  study_mode?: ReaderStudyMode;
   frame_count: number;
   image_url: string;
   overlay_url: string;
@@ -211,6 +221,25 @@ export interface KnowledgeSnippet {
   source: string;
   title: string;
   content: string;
+  guideline_id?: string;
+}
+
+export interface GuidelineEvidence {
+  id: string;
+  title: string;
+  domain?: 'tnm' | 'management' | 'guardrail' | string;
+  statement: string;
+  source_ids?: string[];
+  citations?: string[];
+  match_score?: number;
+}
+
+export interface ManagementAdvice {
+  priority?: 'high' | 'routine' | string;
+  action: string;
+  basis?: string[];
+  source_ids?: string[];
+  citations?: string[];
 }
 
 export interface AgentWorkbenchReport {
@@ -228,6 +257,7 @@ export interface AgentWorkbenchReport {
     sections: Array<{
       heading: string;
       lines: string[];
+      evidence_refs?: string[];
     }>;
     full_text: string;
     review_required: boolean;
@@ -246,6 +276,11 @@ export interface AgentWorkbenchReport {
     stage_distribution: Record<string, number>;
   };
   knowledge_highlights: string[];
+  guideline_evidence?: GuidelineEvidence[];
+  management_advice?: ManagementAdvice[];
+  guideline_sources?: Array<Record<string, unknown>>;
+  guideline_limitations?: string[];
+  guideline_status?: string;
   tool_status: Record<string, string>;
   dino_sign_fusion?: Record<string, unknown>;
   memory_update_candidates?: Array<Record<string, unknown>>;
@@ -253,6 +288,18 @@ export interface AgentWorkbenchReport {
   active_rules_used?: string[];
   governance_trust_labels?: Record<string, string>;
   memory_context_summary?: Record<string, unknown>;
+  clinical_decision?: {
+    status?: string;
+    requires_mdt?: boolean;
+    provisional_stage?: string;
+    recommendation?: string;
+    conflicts?: Array<Record<string, unknown>>;
+    missing_modalities?: string[];
+    evidence?: Array<Record<string, unknown>>;
+    requires_doctor_review?: boolean;
+    [key: string]: unknown;
+  };
+  belief_state_schema_version?: string;
 }
 
 export interface AgentSessionSummary {
@@ -314,7 +361,12 @@ export interface AgentEvidenceItem {
   value?: unknown;
   confidence?: unknown;
   model_version?: unknown;
+  rule_version?: unknown;
   frame_id_or_time?: unknown;
+  supports?: string[];
+  refutes?: string[];
+  quality_score?: number | null;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -330,6 +382,46 @@ export interface AgentProvenance {
   artifact_relative_dir?: string;
   step_count: number;
   model_steps?: Array<Record<string, unknown>>;
+  belief_state_schema_version?: string;
+  reader_context?: Record<string, unknown>;
+  input_mode?: string;
+}
+
+export interface AgentBeliefHypothesis {
+  hypothesis_id: string;
+  label: string;
+  probability: number | null;
+  status?: string;
+  supporting_evidence?: string[];
+  refuting_evidence?: string[];
+  reason?: string;
+}
+
+export interface AgentBeliefAction {
+  action_id: string;
+  action_type: string;
+  reason: string;
+  expected_information_gain: number;
+  status?: string;
+  target_frame_index?: number | null;
+  target_timestamp_sec?: number | null;
+  required_evidence?: string[];
+  selected_at?: string | null;
+}
+
+export interface AgentBeliefState {
+  schema_version: string;
+  run_id: string;
+  case_id: string;
+  patient_id: string;
+  hypotheses: AgentBeliefHypothesis[];
+  evidence: AgentEvidenceItem[];
+  conflicts: Array<Record<string, unknown>>;
+  missing_evidence: string[];
+  action_trace: AgentBeliefAction[];
+  next_actions: AgentBeliefAction[];
+  stop_reason?: string | null;
+  updated_at: string;
 }
 
 export interface AgentAnalysisResponse {
@@ -360,12 +452,15 @@ export interface AgentAnalysisResponse {
     morphology: AgentToolResult;
     clinical: AgentToolResult;
     report?: AgentToolResult;
+    dino?: AgentToolResult;
+    clinical_decision?: AgentToolResult;
   };
   similar_cases: SimilarCaseResult[];
   knowledge_context: KnowledgeSnippet[];
   report: AgentWorkbenchReport;
   evidence?: AgentEvidenceItem[];
   provenance?: AgentProvenance;
+  belief_state?: AgentBeliefState;
   agent_steps?: AgentStep[];
   prediction_artifacts?: Record<string, unknown>;
   runtime_verification?: RuntimeVerification;

@@ -1617,9 +1617,9 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
         "candidate_report": base_report,
         "instruction": (
             "Rewrite only the narrative reasoning as compact JSON. The deterministic pipeline owns "
-            "recommended_t_stage, confidence, supporting_evidence, and uncertainty_flags; preserve "
-            "those fields exactly and never change them. Return an optional reasoning string only. "
-            "Do not invent missing tool outputs."
+            "recommended_t_stage, confidence, supporting_evidence, uncertainty_flags, guideline_evidence, "
+            "and management_advice; preserve those fields exactly and never change them. Return an optional "
+            "reasoning string only. Do not invent missing tool outputs, treatment regimens, or guideline claims."
         ),
     }
     try:
@@ -1814,45 +1814,280 @@ def _format_value(value: Any, fallback: str = "未记录") -> str:
     return str(value)
 
 
-def _format_stage_distribution(summary: Dict[str, Any]) -> str:
-    distribution = summary.get("stage_distribution", {})
-    if not distribution:
-        return "未检索到可用相似病例。"
-    return "，".join(f"{stage}: {count}" for stage, count in distribution.items())
+def _gc_us_field_value(state: Optional[Dict[str, Any]], *path: str, default: Any = None) -> Any:
+    node: Any = state
+    for key in path:
+        if not isinstance(node, dict):
+            return default
+        node = node.get(key)
+    if isinstance(node, dict) and "value" in node:
+        node = node.get("value")
+    return default if node is None or node == "" else node
 
 
-def _zh_status(value: Any) -> str:
+def _gc_us_number(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) and number > 0 else None
+
+
+def _gc_us_format_number(value: Optional[float]) -> str:
+    if value is None:
+        return "未评估"
+    return str(int(value)) if float(value).is_integer() else f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _gc_us_normalize_stage(value: Any) -> Optional[str]:
+    raw = str(value or "").strip()
+    if not raw or re.search(r"T4\s*\+", raw, re.IGNORECASE):
+        return None
+    matches = sorted(set(f"T{item}" for item in re.findall(r"T([1-4])", raw.upper())))
+    return matches[0] if len(matches) == 1 else None
+
+
+def _gc_us_strip_prefix(value: str, prefixes: tuple[str, ...]) -> str:
+    text = str(value or "").strip()
+    for prefix in prefixes:
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+    return text or "未评估"
+
+
+def _gc_us_growth_text(value: str) -> str:
+    text = str(value or "").strip()
+    for suffix in ("生长方式", "生长"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+            break
+    return text or "未评估"
+
+
+def _gc_us_template_report(
+    *,
+    gc_us_report: Optional[Dict[str, Any]],
+    payload: Dict[str, Any],
+    clinical_payload: Dict[str, Any],
+    report: Dict[str, Any],
+    morphology: Dict[str, Any],
+    wall_evidence: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build the clinician-facing report from the seven-sign GC-US template."""
+    state = gc_us_report if isinstance(gc_us_report, dict) else None
+
+    def evidence_refs(*paths: str) -> List[str]:
+        refs: List[str] = []
+        if not isinstance(state, dict):
+            return refs
+        signs = state.get("signs") or {}
+        for path in paths:
+            current: Any = signs
+            for key in path.split("."):
+                current = current.get(key) if isinstance(current, dict) else None
+            if isinstance(current, dict):
+                values = current.get("evidence_ref") or []
+                refs.extend(str(value) for value in values if value)
+        return sorted(set(refs))
+    tumor_size = clinical_payload.get("tumorSize", {}) if isinstance(clinical_payload, dict) else {}
+    if not isinstance(tumor_size, dict):
+        tumor_size = {}
+
+    length = _gc_us_number(_gc_us_field_value(state, "signs", "size", "length"))
+    thickness = _gc_us_number(_gc_us_field_value(state, "signs", "size", "thickness"))
+    length_unit = _gc_us_field_value(state, "signs", "size", "length", default=None)
+    thickness_unit = _gc_us_field_value(state, "signs", "size", "thickness", default=None)
+    if isinstance(state, dict):
+        signs_state = state.get("signs") or {}
+        size_state = signs_state.get("size") if isinstance(signs_state, dict) else {}
+        length_field = size_state.get("length") if isinstance(size_state, dict) else {}
+        thickness_field = size_state.get("thickness") if isinstance(size_state, dict) else {}
+        length_unit = length_field.get("unit") if isinstance(length_field, dict) else None
+        thickness_unit = thickness_field.get("unit") if isinstance(thickness_field, dict) else None
+    if length is None:
+        length = _gc_us_number(tumor_size.get("length"))
+        if length is not None:
+            length *= 10
+        length_unit = "mm"
+    if thickness is None:
+        thickness = _gc_us_number(tumor_size.get("thickness"))
+        if thickness is not None:
+            thickness *= 10
+        thickness_unit = "mm"
+
+    if length is not None and thickness is not None and length_unit != "px" and thickness_unit != "px":
+        size_phrase = (
+            f"大小约{_gc_us_format_number(length)}×{_gc_us_format_number(thickness)} mm，"
+            f"最大厚度{_gc_us_format_number(thickness)} mm"
+        )
+    elif length is None and thickness is None:
+        size_phrase = "大小及最大厚度未评估"
+    else:
+        length_text = (
+            f"{_gc_us_format_number(length)}像素（非毫米）"
+            if length_unit == "px"
+            else f"{_gc_us_format_number(length)} mm"
+        )
+        thickness_text = (
+            f"{_gc_us_format_number(thickness)}像素（非毫米）"
+            if thickness_unit == "px"
+            else f"{_gc_us_format_number(thickness)} mm"
+        )
+        size_phrase = f"大小约{length_text}×{thickness_text}，最大厚度{thickness_text}"
+
+    clinical_location = clinical_payload.get("location") or clinical_payload.get("site")
+    state_clinical = state.get("clinical", {}) if isinstance(state, dict) else {}
+    if not isinstance(state_clinical, dict):
+        state_clinical = {}
+    location = str(state_clinical.get("location") or state_clinical.get("site") or clinical_location or "胃壁").strip()
+
+    morphology_text = str(_gc_us_field_value(state, "signs", "morphology", default="") or "").strip()
+    boundary_text = str(_gc_us_field_value(state, "signs", "boundary", default="") or "").strip()
+    growth_text = str(_gc_us_field_value(state, "signs", "growth_pattern", default="") or "").strip()
+    layer_text = str(_gc_us_field_value(state, "signs", "layer_structure", default="") or "").strip()
+    serosa_text = str(_gc_us_field_value(state, "signs", "serosa_change", default="") or "").strip()
+    perigastric_text = str(_gc_us_field_value(state, "signs", "perigastric_tissue", default="") or "").strip()
+    echo_text = str(_gc_us_field_value(state, "signs", "lesion_echo", default="低回声") or "低回声").strip()
+
+    wall_evidence = wall_evidence or {}
+    penetration_risk = str(wall_evidence.get("penetration_risk") or "").lower()
+    if not layer_text:
+        layer_text = {
+            "high": "结构紊乱",
+            "medium": "局部受累，结构尚可辨",
+            "low": "层次结构清晰",
+        }.get(penetration_risk, "未评估")
+    if not serosa_text:
+        serosa_text = "浆膜面欠光整" if penetration_risk in {"high", "medium"} else (
+            "浆膜连续光滑" if penetration_risk == "low" else "未评估"
+        )
+    if not perigastric_text:
+        perigastric_text = "胃周脂肪间隙欠清" if penetration_risk in {"high", "medium"} else (
+            "胃周组织未见明显异常改变" if penetration_risk == "low" else "未评估"
+        )
+    if not boundary_text:
+        irregularity = _gc_us_number(morphology.get("boundary_irregularity"))
+        if irregularity is not None:
+            boundary_text = "边界不规则" if irregularity >= 0.45 else "边界清晰、规则"
+        else:
+            boundary_text = "未评估"
+    if not growth_text:
+        growth_text = str(
+            state_clinical.get("us_growth_pattern")
+            or state_clinical.get("growth_pattern_us")
+            or "未评估"
+        ).strip()
+    if not morphology_text:
+        morphology_text = str(
+            state_clinical.get("morphology")
+            or state_clinical.get("morphology_pattern")
+            or "未评估"
+        ).strip()
+
+    if morphology_text == "未评估":
+        lesion_noun = f"{echo_text}占位性病变"
+    else:
+        lesion_noun = f"{morphology_text}{echo_text}占位性病变"
+    finding = (
+        f"{location}见{lesion_noun}，{size_phrase}。"
+        f"病灶呈{_gc_us_growth_text(growth_text)}生长方式，"
+        f"边界{_gc_us_strip_prefix(boundary_text, ('边界',))}。"
+        f"胃壁层次表现为{_gc_us_strip_prefix(layer_text, ('胃壁层次', '层次结构'))}，"
+        f"浆膜表现{_gc_us_strip_prefix(serosa_text, ('浆膜面', '浆膜'))}，"
+        f"胃周组织{_gc_us_strip_prefix(perigastric_text, ('胃周组织', '胃周'))}。"
+    )
+
+    reference_stage = state.get("reference_stage", {}) if isinstance(state, dict) else {}
+    if not isinstance(reference_stage, dict):
+        reference_stage = {}
+    conflicts = []
+    if isinstance(state, dict):
+        conflicts = state.get("conflicts") or reference_stage.get("conflicts") or []
+    stage = _gc_us_normalize_stage(reference_stage.get("band"))
+    if stage is None and not conflicts:
+        stage = _gc_us_normalize_stage(reference_stage.get("requested_band"))
+    if stage is None and state is None:
+        stage = _gc_us_normalize_stage(report.get("recommended_t_stage"))
+
+    conflict_messages = [
+        str(item.get("message"))
+        for item in conflicts
+        if isinstance(item, dict) and item.get("message")
+    ]
+    if stage:
+        impression_lines = [
+            "综合超声影像征象及AI辅助分析，考虑：",
+            f"胃癌可能，超声评估c{stage}期。",
+        ]
+    else:
+        impression_lines = [
+            "综合超声影像征象及AI辅助分析，考虑：",
+            "胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。",
+        ]
+    if conflict_messages:
+        impression_lines.append("当前存在需要医生复核的征象冲突：" + "；".join(conflict_messages))
+
+    advice = (
+        "建议针对冲突征象进行多切面核对，必要时补扫病灶外缘及浆膜区。"
+        if conflict_messages
+        else "建议结合胃镜活检明确病理性质。"
+    )
+    patient_id = _format_value(payload.get("patient_id"), "未知")
+    sections = [
+        {
+            "heading": "【检查信息】",
+            "lines": [
+                f"病例编号：{patient_id}；报告由AI辅助起草，待医生审签。",
+            ],
+            "evidence_refs": ["case_input:patient_id", "clinical:location", "clinical:tumor_size"],
+        },
+        {
+            "heading": "【超声所见】",
+            "lines": [finding],
+            "evidence_refs": evidence_refs(
+                "size.length",
+                "size.thickness",
+                "morphology",
+                "boundary",
+                "growth_pattern",
+                "layer_structure",
+                "serosa_change",
+                "perigastric_tissue",
+            ),
+        },
+        {
+            "heading": "【超声印象】",
+            "lines": impression_lines[:2] + ([f"2. {impression_lines[2]}"] if len(impression_lines) > 2 else []),
+            "evidence_refs": evidence_refs("layer_structure", "serosa_change", "perigastric_tissue"),
+        },
+        {
+            "heading": "【建议】",
+            "lines": [
+                f"1. {advice}",
+                "备注：几何与规则辅助，非病理金标准；最终判断权在医生。",
+            ],
+            "evidence_refs": ["clinical_decision:recommendation", "doctor_review:required"],
+        },
+    ]
+    full_text_lines: List[str] = []
+    for section in sections:
+        full_text_lines.extend([section["heading"], *section["lines"], ""])
+    full_text = "\n".join(full_text_lines).strip()
+    review_required = bool(report.get("uncertainty_flags")) or report.get("confidence") == "low" or bool(conflict_messages)
     return {
-        "available": "可用",
-        "fallback": "备用/降级",
-        "partial": "部分可用",
-        "missing": "缺失",
-        "unavailable": "不可用",
-        "unknown": "未知",
-    }.get(str(value), _format_value(value, "未知"))
-
-
-def _zh_confidence(value: Any) -> str:
-    return {
-        "high": "高",
-        "medium": "中等",
-        "low": "低",
-    }.get(str(value), _format_value(value, "未知"))
-
-
-def _zh_evidence_line(text: str) -> str:
-    replacements = {
-        "Classifier top-1": "分类模型首选分期",
-        "Clinical risk score": "临床风险评分",
-        "Similar cases majority stage": "相似病例多数分期",
-        "from": "来自",
-        "retrieved cases": "个检索病例",
-        "Report text cues": "报告文本线索",
+        "title": "胃癌超声标准化辅助诊断报告草稿",
+        "generated_by": "gastric-self-evolving-agent",
+        "language": "zh",
+        "template_id": "gc_us_t_report_template_v1",
+        "schema_version": "gc_us_report_signs_v1",
+        "sections": sections,
+        "full_text": full_text,
+        "review_required": review_required,
+        "structured_signs": state.get("signs") if isinstance(state, dict) else None,
+        "stage": stage or "uncertain",
+        "conflicts": conflicts,
     }
-    translated = text
-    for source, target in replacements.items():
-        translated = translated.replace(source, target)
-    return translated
 
 
 def _build_dynamic_report_draft(
@@ -1865,82 +2100,17 @@ def _build_dynamic_report_draft(
     clinical: Dict[str, Any],
     report_text: Dict[str, Any],
     similar_cases: List[Dict[str, Any]],
+    wall_evidence: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build a clinician-readable draft from structured evidence only."""
-    patient_id = _format_value(payload.get("patient_id"), "未知")
-    case_token = _format_value(payload.get("case_token"), "未知")
-    tumor_size = clinical_payload.get("tumorSize", {}) if isinstance(clinical_payload, dict) else {}
-    biomarkers = clinical_payload.get("biomarkers", {}) if isinstance(clinical_payload, dict) else {}
-    report_cues = report_text.get("report_cues", []) if report_text.get("available") else []
-    cue_text = "，".join(
-        f"{item.get('cue')}({', '.join(item.get('matched_terms', []))})"
-        for item in report_cues
-    ) or "未提取到明确报告文本线索"
-
-    recommended_stage = report.get("recommended_t_stage", "unknown")
-    confidence = report.get("confidence", "unknown")
-    confidence_text = _zh_confidence(confidence)
-    similar_summary = report.get("similar_case_summary", {})
-    review_required = bool(report.get("uncertainty_flags")) or confidence == "low"
-    tool_status = report.get("tool_status", {})
-    support_lines = [_zh_evidence_line(str(item)) for item in report.get("supporting_evidence", [])[:5]]
-    uncertainty_lines = [str(item) for item in report.get("uncertainty_flags", [])[:6]]
-
-    modality_lines = [
-        f"图像/ROI：{'可用' if payload.get('image_path') else '缺失'}；ROI {'可用' if payload.get('roi_path') else '缺失'}；标注 {'可用' if payload.get('annotation_path') else '缺失'}。",
-        f"分割工具：{_zh_status(tool_status.get('segmentation'))}；形态学工具：{_zh_status(tool_status.get('morphology'))}。",
-        f"分类工具：{_zh_status(tool_status.get('classification'))}；临床风险工具：{_zh_status(tool_status.get('clinical'))}；报告文本工具：{_zh_status(tool_status.get('report'))}。",
-    ]
-
-    sections = [
-        {
-            "heading": "一、病例与输入资料",
-            "lines": [
-                f"病例编号：{patient_id}；病例 token：{case_token}。",
-                f"数据来源：{_format_value(payload.get('data_source'))}；队列：{_format_value(payload.get('cohort_year'))}；治疗类型：{_format_value(payload.get('treatment_type'))}。",
-                f"基本信息：{_format_value(clinical_payload.get('sex'))}，{_format_value(clinical_payload.get('age'))} 岁；病灶部位：{_format_value(clinical_payload.get('location'))}。",
-                f"病灶大小：{_format_value(tumor_size.get('length'))} x {_format_value(tumor_size.get('thickness'))} cm；CEA：{_format_value(biomarkers.get('cea'))}；CA19-9：{_format_value(biomarkers.get('ca199'))}。",
-            ],
-        },
-        {
-            "heading": "二、多模态证据摘要",
-            "lines": modality_lines + [
-                f"分类模型输出：top-1 为 {_format_value(classification.get('top1_stage'))}，概率 {_format_value(classification.get('top1_prob'), 'N/A')}。",
-                f"形态学证据：边界不规则度 {_format_value(morphology.get('boundary_irregularity'), 'N/A')}，病灶面积占比 {_format_value(morphology.get('lesion_area_ratio'), 'N/A')}。",
-                f"临床风险评分：{_format_value(clinical.get('clinical_risk_score'), 'N/A')}。",
-                f"报告文本线索：{cue_text}。",
-                f"相似病例：共检索 {len(similar_cases)} 例；分布 {_format_stage_distribution(similar_summary)}。",
-            ],
-        },
-        {
-            "heading": "三、Agent 综合判断",
-            "lines": [
-                f"综合推荐 T 分期：{recommended_stage}；置信度：{confidence_text}。",
-                f"综合判断基于分类模型、临床风险、相似病例分布、分割/形态学证据和报告文本线索的交叉校验；当前不建议由单一工具直接决定最终诊断。",
-                "主要支持证据：" + ("；".join(support_lines) or "暂无。"),
-            ],
-        },
-        {
-            "heading": "四、不确定性与人工复核建议",
-            "lines": [
-                "不确定性提示：" + ("；".join(uncertainty_lines) or "暂无明显不确定性提示。"),
-                "建议：本报告为 Agent 辅助诊断草稿，应由医生结合原始超声图像、完整报告、内镜/病理资料和院内规范复核后签发。",
-            ],
-        },
-    ]
-
-    full_text_lines: List[str] = []
-    for section in sections:
-        full_text_lines.extend([section["heading"], *section["lines"], ""])
-    full_text = "\n".join(full_text_lines).strip()
-    return {
-        "title": "胃癌超声多模态 Agent 辅助诊断报告草稿",
-        "generated_by": "gastric-self-evolving-agent",
-        "language": "zh",
-        "sections": sections,
-        "full_text": full_text,
-        "review_required": review_required,
-    }
+    """Build a clinician-readable draft from the GC-US seven-sign template."""
+    return _gc_us_template_report(
+        gc_us_report=payload.get("gc_us_report"),
+        payload=payload,
+        clinical_payload=clinical_payload,
+        report=report,
+        morphology=morphology,
+        wall_evidence=wall_evidence,
+    )
 
 
 def _build_memory_update_candidates(

@@ -34,7 +34,8 @@ _DEFAULT_TOOL_NAMES = [
     "morphology",              # 6. MorphologyTool
     "clinical_risk",           # 7. ClinicalTool
     "structure_report",        # 8. ReportTool
-    "retrieve_similar",        # 9. SimilarityTool (RAG, optional)
+    "clinical_decision",       # 9. Cross-modal MDT decision support
+    "retrieve_similar",        # 10. SimilarityTool (RAG, optional)
 ]
 
 
@@ -63,6 +64,7 @@ def build_default_registry(
     from ..tools.base import ToolRegistry
     from ..tools.classification_tool import ClassificationTool
     from ..tools.clinical_tool import ClinicalTool
+    from ..tools.clinical_decision_tool import ClinicalDecisionTool
     from ..tools.lumen_detection_tool import LumenDetectionTool
     from ..tools.morphology_tool import MorphologyTool
     from ..tools.quality_tool import QualityTool
@@ -91,6 +93,7 @@ def build_default_registry(
     registry.register(MorphologyTool())
     registry.register(ClinicalTool())
     registry.register(ReportTool())
+    registry.register(ClinicalDecisionTool())
     if enable_rag:
         registry.register(SimilarityTool())
 

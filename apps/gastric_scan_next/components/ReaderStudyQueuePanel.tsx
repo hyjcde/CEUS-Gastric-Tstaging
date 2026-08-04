@@ -181,6 +181,28 @@ export function ReaderStudyQueuePanel({
         }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      try {
+        await fetch('/api/agent/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: patient.patient_id,
+            session_id: sessionRef.current,
+            action: actionType === 'accept' ? 'accept' : actionType === 'reject' ? 'reject' : 'defer',
+            predicted_t_stage: systemReport?.recommended_stage || undefined,
+            recommended_t_stage: systemReport?.recommended_stage || undefined,
+            final_t_stage: selectedValue || undefined,
+            feedback_type: 'doctor_correction',
+            correction_text: reason || (actionType === 'request_more_evidence' ? (zh ? '证据不足' : 'insufficient evidence') : undefined),
+            confidence: systemReport?.calibrated_confidence != null
+              ? String(systemReport.calibrated_confidence)
+              : undefined,
+            reviewer: searchParams.get('reader_id') || 'public_reader',
+          }),
+        });
+      } catch {
+        // Audit remains authoritative; feedback promotion is best effort and governed separately.
+      }
       setCompleted(patient.id);
       if (onSelectPatient && nextPatient) {
         onSelectPatient(nextPatient);

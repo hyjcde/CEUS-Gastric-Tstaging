@@ -11,6 +11,7 @@ import { ReaderToolbar } from '@/components/reader/ReaderToolbar';
 import { ReaderViewer } from '@/components/reader/ReaderViewer';
 import { ReaderReportPanel } from '@/components/reader/ReaderReportPanel';
 import { ReaderTimeline } from '@/components/reader/ReaderTimeline';
+import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
 import { readerMediaUrl } from '@/lib/reader/media-url';
 import {
   captureVideoFrameB64,
@@ -30,10 +31,15 @@ import type {
   ReaderDoctorAction,
   SamReport,
 } from '@/lib/reader/types';
+import type { AgentAnalysisResponse } from '@/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
 import { buildReadingAgentUrl, getReadingAgentPageUrl } from '@/lib/reading-agent-url';
 
 const TRACK_INTERVAL_MS = 1000;
+const VIDEO_SPEEDS = [0.25, 0.5, 1] as const;
+const DEFAULT_VIDEO_SPEED = 0.25;
+const VIDEO_SPEED_STORAGE_KEY = 'gastric-next-reader-video-speed';
 type AuditEventType =
   | 'session_start'
   | 'session_end'
@@ -48,6 +54,18 @@ function newAuditId(prefix: string) {
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${random}`;
+}
+
+function seekVideoForEvidence(video: HTMLVideoElement, time: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      video.removeEventListener('seeked', done);
+      resolve();
+    };
+    video.addEventListener('seeked', done, { once: true });
+    video.currentTime = time;
+    window.setTimeout(done, 1200);
+  });
 }
 
 async function writeReaderAuditEvent(event: {
@@ -87,18 +105,27 @@ export function ReaderWorkbench() {
   const [casesLoading, setCasesLoading] = useState(true);
 
   const [samStatus, setSamStatus] = useState<SamBackendStatus | null>(null);
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>('positive');
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('box');
   const [clicks, setClicks] = useState<SamClick[]>([]);
   const [box, setBox] = useState<SamBox | null>(null);
   const [maskPolygon, setMaskPolygon] = useState<number[][] | null>(null);
   const [maskOverlayPng, setMaskOverlayPng] = useState<string | null>(null);
   const [report, setReport] = useState<SamReport | null>(null);
+  const [unifiedAgentResult, setUnifiedAgentResult] = useState<AgentAnalysisResponse | null>(null);
+  const [unifiedAgentBusy, setUnifiedAgentBusy] = useState(false);
+  const [unifiedAgentError, setUnifiedAgentError] = useState<string | null>(null);
+  const [gcUsReport, setGcUsReport] = useState<GcUsReportState | null>(null);
   const [samScore, setSamScore] = useState<number | null>(null);
   const [showMask, setShowMask] = useState(true);
   const [maskOpacity, setMaskOpacity] = useState(0.3);
   const [samBusy, setSamBusy] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState<number>(() => {
+    if (typeof window === 'undefined') return DEFAULT_VIDEO_SPEED;
+    const saved = Number(window.localStorage.getItem(VIDEO_SPEED_STORAGE_KEY));
+    return VIDEO_SPEEDS.some((speed) => speed === saved) ? saved : DEFAULT_VIDEO_SPEED;
+  });
   const [trackOnPlay, setTrackOnPlay] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -128,6 +155,7 @@ export function ReaderWorkbench() {
   const auditSessionRef = useRef<string | null>(null);
   const auditCaseRef = useRef<string | null>(null);
   const auditSuggestionRef = useRef<string | null>(null);
+  const gcUsAuditSignatureRef = useRef<string | null>(null);
   const auditStartedAtRef = useRef<number | null>(null);
   const lastAuditFrameRef = useRef(0);
   const initialCaseSelectionRef = useRef(false);
@@ -143,6 +171,16 @@ export function ReaderWorkbench() {
 
   const llmReady = llmReportConfigured(samStatus);
   const hasPrompt = Boolean(box) || clicks.length > 0;
+
+  const updatePlaybackRate = (value: number) => {
+    const next = VIDEO_SPEEDS.find((speed) => speed === value) || DEFAULT_VIDEO_SPEED;
+    setPlaybackRate(next);
+    try {
+      window.localStorage.setItem(VIDEO_SPEED_STORAGE_KEY, String(next));
+    } catch {
+      // Browser storage is optional.
+    }
+  };
 
   const recordAudit = useCallback(
     (
@@ -165,6 +203,26 @@ export function ReaderWorkbench() {
     },
     [activeCaseId, patientIdParam, readerIdParam, roundParam, selectedCase?.patient_id],
   );
+
+  const handleGcUsEvidenceState = useCallback((state: GcUsReportState) => {
+    setGcUsReport(state);
+    if (!state.report.doctor_edited) return;
+    const signature = JSON.stringify({
+      signs: state.signs,
+      reference_stage: state.reference_stage,
+    });
+    if (gcUsAuditSignatureRef.current === signature) return;
+    gcUsAuditSignatureRef.current = signature;
+    recordAudit('doctor_action', {
+      action_id: newAuditId('report-signs'),
+      action_type: 'modify',
+      template_id: state.template_id,
+      schema_version: state.schema_version,
+      signs: state.signs,
+      reference_stage: state.reference_stage,
+      conflicts: state.conflicts,
+    });
+  }, [recordAudit]);
 
   const currentFrame = selectedCase?.frames?.[frameIndex] || selectedCase?.frames?.[0];
   const videoSrc = useMemo(() => {
@@ -270,6 +328,10 @@ export function ReaderWorkbench() {
     setMaskPolygon(null);
     setMaskOverlayPng(null);
     setReport(null);
+    setUnifiedAgentResult(null);
+    setUnifiedAgentError(null);
+    setGcUsReport(null);
+    gcUsAuditSignatureRef.current = null;
     setSamScore(null);
     setLayerResult(null);
     setBadge(null);
@@ -363,6 +425,16 @@ export function ReaderWorkbench() {
   const onVideoReady = useCallback((video: HTMLVideoElement) => {
     videoRef.current = video;
     lastVideoTrackFrameRef.current = null;
+    try {
+      video.defaultPlaybackRate = playbackRate;
+    } catch {
+      // Some remote browsers reject defaultPlaybackRate before media metadata is ready.
+    }
+    try {
+      video.playbackRate = playbackRate;
+    } catch {
+      // Keep the reader usable even when the browser rejects the initial rate.
+    }
     setFrameSize({ width: video.videoWidth, height: video.videoHeight });
     setDuration(video.duration || 0);
     try {
@@ -374,7 +446,7 @@ export function ReaderWorkbench() {
     } catch {
       setFrameDataUrl(null);
     }
-  }, []);
+  }, [playbackRate]);
 
   const buildPayload = useCallback(
     (
@@ -401,6 +473,7 @@ export function ReaderWorkbench() {
         clicks: effectiveClicks.map((c) => ({ x: c.x, y: c.y, label: c.label })),
         box: effectiveBox || undefined,
         llm_report: llmReport,
+        gc_us_report: gcUsReport || undefined,
       } as Parameters<typeof runSamAnalyze>[0];
       if (useUpload) {
         payload.frame_png_b64 = captureVideoFrameB64(video);
@@ -415,6 +488,7 @@ export function ReaderWorkbench() {
       currentTime,
       externalImage,
       externalVideo,
+      gcUsReport,
       trackingSessionId,
       videoSrc,
     ],
@@ -432,6 +506,10 @@ export function ReaderWorkbench() {
         sam_score: result.sam_score,
         elapsed_ms: result.elapsed_ms,
       });
+      const structured = result.report.structured;
+      if (structured && typeof structured === 'object' && 'signs' in structured) {
+        setGcUsReport(structured as unknown as GcUsReportState);
+      }
     } else if (result.report) {
       setReport((prev) => ({
         ...(prev || {}),
@@ -439,6 +517,10 @@ export function ReaderWorkbench() {
         sam_score: result.sam_score,
         elapsed_ms: result.elapsed_ms,
       }));
+      const structured = result.report.structured;
+      if (structured && typeof structured === 'object' && 'signs' in structured) {
+        setGcUsReport(structured as unknown as GcUsReportState);
+      }
     }
     recordAudit(withReport ? 'report_generated' : 'ai_suggestion', {
       suggestion_id: suggestionId,
@@ -578,6 +660,135 @@ export function ReaderWorkbench() {
     }
   }, [activeCaseId, box, clicks, currentFrame?.video_rel, currentTime, hasPrompt, recordAudit]);
 
+  const runUnifiedAgent = useCallback(async () => {
+    const video = videoRef.current;
+    if (!selectedCase || !video?.videoWidth || !video.videoHeight) {
+      toast.error('当前视频帧尚未准备好');
+      return;
+    }
+    setUnifiedAgentBusy(true);
+    setUnifiedAgentError(null);
+    try {
+      const originalTime = video.currentTime || currentTime;
+      const durationSec = video.duration || duration;
+      const frameSpan = durationSec > 0 ? Math.max(0.5, Math.min(2, durationSec / 8)) : 0;
+      const positions = Array.from(new Set(
+        [originalTime - frameSpan, originalTime, originalTime + frameSpan]
+          .filter((time) => time >= 0 && (!durationSec || time < durationSec))
+          .map((time) => Number(time.toFixed(3))),
+      ));
+      const wasPlaying = !video.paused;
+      if (wasPlaying) video.pause();
+      const evidenceFrames: Array<{
+        frame_png_b64: string;
+        frame_id: string;
+        frame_index: number;
+        timestamp_sec: number;
+        quality_score: number;
+      }> = [];
+      for (const [index, position] of positions.entries()) {
+        if (Math.abs(video.currentTime - position) > 0.01) {
+          await seekVideoForEvidence(video, position);
+        }
+        evidenceFrames.push({
+          frame_png_b64: captureVideoFrameB64(video),
+          frame_id: `${currentFrame?.media_token || currentFrame?.video_rel || activeCaseId}:${position}`,
+          frame_index: index,
+          timestamp_sec: position,
+          quality_score: 1,
+        });
+      }
+      if (Math.abs(video.currentTime - originalTime) > 0.01) {
+        await seekVideoForEvidence(video, originalTime);
+      }
+      setCurrentTime(originalTime);
+      if (wasPlaying) void video.play().catch(() => {});
+      const response = await fetch('/api/reader/agent/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: selectedCase.case_id,
+          patient_id: selectedCase.patient_id || selectedCase.case_id,
+          reader_id: readerIdParam,
+          round: roundParam,
+          study_mode: selectedCase.study_mode,
+          frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
+          frame_time: currentTime,
+          frame_png_b64: evidenceFrames.find((frame) => Math.abs(frame.timestamp_sec - originalTime) < 0.01)?.frame_png_b64
+            || evidenceFrames[0]?.frame_png_b64,
+          frames: evidenceFrames,
+          gc_us_report: gcUsReport || undefined,
+          mask_override: maskPolygon?.length
+            ? {
+                patientId: selectedCase.patient_id || selectedCase.case_id,
+                frameId: currentFrame?.media_token || currentFrame?.video_rel,
+                imageWidth: video.videoWidth,
+                imageHeight: video.videoHeight,
+                mask_polygon: maskPolygon,
+                roi_bbox: box || undefined,
+                source: 'sam',
+                video_time_sec: currentTime,
+              }
+            : undefined,
+        }),
+      });
+      const data = await response.json() as {
+        ok?: boolean;
+        error?: string;
+        result?: AgentAnalysisResponse;
+      };
+      if (!response.ok || !data.ok || !data.result) {
+        throw new Error(data.error || `Unified Agent HTTP ${response.status}`);
+      }
+      setUnifiedAgentResult(data.result);
+      recordAudit('ai_suggestion', {
+        source: 'unified_agent_bridge',
+        bridge_schema_version: 'reader_unified_agent_bridge_v1',
+        frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
+        frame_time: currentTime,
+        recommended_stage: data.result.report?.recommended_t_stage || null,
+        belief_state_schema_version: data.result.belief_state?.schema_version || null,
+        next_action: data.result.belief_state?.next_actions?.[0]?.action_type || null,
+      });
+      toast.success('统一科研 Agent 已完成当前帧分析');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '统一 Agent 分析失败';
+      setUnifiedAgentError(message);
+      toast.error(message);
+    } finally {
+      setUnifiedAgentBusy(false);
+    }
+  }, [
+    activeCaseId,
+    box,
+    currentFrame?.media_token,
+    currentFrame?.video_rel,
+    currentTime,
+    duration,
+    gcUsReport,
+    maskPolygon,
+    readerIdParam,
+    recordAudit,
+    roundParam,
+    selectedCase,
+  ]);
+
+  const runNextAgentAction = useCallback((actionType?: string) => {
+    if (actionType === 'inspect_next_frame') {
+      const video = videoRef.current;
+      if (video && duration > 0) {
+        const step = Math.max(0.5, Math.min(2, duration / 12));
+        video.pause();
+        const nextTime = Math.min(Math.max(0, duration - 0.02), video.currentTime + step);
+        video.currentTime = nextTime;
+        setCurrentTime(nextTime);
+        window.setTimeout(() => void runUnifiedAgent(), 120);
+        return;
+      }
+    }
+    void runUnifiedAgent();
+  }, [duration, runUnifiedAgent]);
+
   useEffect(() => {
     runSamRef.current = runSam;
   }, [runSam]);
@@ -696,7 +907,7 @@ export function ReaderWorkbench() {
   }, [currentFrame?.media_token, currentFrame?.video_rel, recordAudit]);
 
   const onDoctorAction = useCallback((action: ReaderDoctorAction) => {
-    const recommendedStage = report?.recommended_stage || (
+    const recommendedStage = unifiedAgentResult?.report.recommended_t_stage || report?.recommended_stage || (
       report?.stage_distribution
         ? Object.entries(report.stage_distribution).sort((a, b) => b[1] - a[1])[0]?.[0]
         : undefined
@@ -712,7 +923,10 @@ export function ReaderWorkbench() {
       frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
       frame_time: currentTime,
       elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
-      ai_confidence: report?.calibrated_confidence ?? null,
+      ai_confidence: report?.calibrated_confidence
+        ?? (unifiedAgentResult?.report.confidence === 'high'
+          ? 0.85
+          : unifiedAgentResult?.report.confidence === 'low' ? 0.35 : 0.6),
     });
     toast.success(
       action.action_type === 'accept'
@@ -723,7 +937,7 @@ export function ReaderWorkbench() {
             ? '已记录拒绝'
             : '已记录证据不足',
     );
-  }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, readerIdParam, recordAudit, report]);
+  }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, readerIdParam, recordAudit, report, unifiedAgentResult]);
 
   const caseTitle = selectedCase
     ? `${selectedCase.case_id}${selectedCase.patient_id ? ` · ${selectedCase.patient_id}` : ''}`
@@ -744,11 +958,11 @@ export function ReaderWorkbench() {
           <div>
             <div className="flex items-center gap-2">
               <ScanSearch size={16} className="text-emerald-400" />
-              <h1 className="text-sm font-bold">交互式视频 T 分期</h1>
-              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-300">Next 阅片 Agent</span>
+              <h1 className="text-sm font-bold">胃充盈超声智能诊断系统</h1>
+              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-300">临床智能工作台</span>
             </div>
             <div className="text-[10px] text-gray-500">
-              人机协作阅片 · SAM 分割 + 分层 + 文字报告
+              福建协和医院超声 · 交互式视频 T 分期 · 人机协作阅片 · SAM 分割 + 分层 + 文字报告
               {callbackUrl || searchParams.get('frame_id')
                 ? ' · 结果会回写主工作台右上角'
                 : ' · 从工作台选例进入可自动回写'}
@@ -814,6 +1028,8 @@ export function ReaderWorkbench() {
             onInteractionModeChange={setInteractionMode}
             isPlaying={isPlaying}
             onTogglePlay={togglePlay}
+            playbackRate={playbackRate}
+            onPlaybackRateChange={updatePlaybackRate}
             trackOnPlay={trackOnPlay}
             onToggleTrack={() => setTrackOnPlay((v) => !v)}
             videoTrackBusy={videoTrackBusy}
@@ -839,6 +1055,7 @@ export function ReaderWorkbench() {
             <ReaderViewer
               key={selectedCase?.case_id || externalVideo || externalImage || 'external-reader'}
               videoSrc={videoSrc}
+              playbackRate={playbackRate}
               interactionMode={interactionMode}
               clicks={clicks}
               box={box}
@@ -852,7 +1069,7 @@ export function ReaderWorkbench() {
               onSetBox={setBox}
               onPointerUpAfterBox={onPointerUpAfterBox}
               badge={badge}
-              hint="点击或框选病灶 → 自动分割 → 右侧查看文字报告与胃壁分层"
+              hint="优先框选病灶，再用正/负向点修正 → 自动分割 → 右侧查看文字报告与胃壁分层"
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
@@ -877,20 +1094,45 @@ export function ReaderWorkbench() {
           )}
 
           <ReaderTimeline currentTime={currentTime} duration={duration} onSeek={onSeek} />
+          <div className="max-h-[280px] shrink-0 overflow-hidden border-t border-white/10">
+            <ReaderEvidencePanel
+              result={unifiedAgentResult}
+              loading={unifiedAgentBusy}
+              onRun={() => void runUnifiedAgent()}
+              onNextAction={(actionType) => runNextAgentAction(actionType)}
+            />
+            {unifiedAgentError ? (
+              <div className="border-t border-rose-400/20 bg-rose-400/5 px-3 py-2 text-[10px] text-rose-200">
+                {unifiedAgentError}
+              </div>
+            ) : null}
+          </div>
         </main>
 
         <ReaderReportPanel
           key={selectedCase?.case_id || externalVideo || externalImage || 'external-report'}
           report={report}
+          gcUsReport={gcUsReport}
           loading={reportBusy}
           samScore={samScore}
           maskPolygon={maskPolygon}
           frameSize={frameSize}
           frameDataUrl={frameDataUrl}
+          caseId={activeCaseId}
+          frameId={currentFrame?.media_token || currentFrame?.video_rel || null}
+          frameTime={currentTime}
+          layerResult={layerResult}
           onLayerResult={setLayerResult}
+          onEvidenceStateChange={handleGcUsEvidenceState}
           onDoctorAction={onDoctorAction}
+          unifiedResult={unifiedAgentResult}
           onCopy={() => {
-            const text = report?.llm_report?.narrative || report?.summary || '';
+            const text = unifiedAgentResult?.report.dynamic_report_draft?.full_text
+              || gcUsReport?.report.prose
+              || report?.template_prose
+              || report?.llm_report?.narrative
+              || report?.summary
+              || '';
             if (text) {
               navigator.clipboard.writeText(text);
               toast.success('已复制报告');

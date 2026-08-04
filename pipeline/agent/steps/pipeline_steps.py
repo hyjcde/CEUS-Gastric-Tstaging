@@ -1,4 +1,4 @@
-"""Thirteen deterministic pipeline step agents."""
+"""Auditable pipeline step agents and cross-modal decision support."""
 
 from __future__ import annotations
 
@@ -804,8 +804,6 @@ class DINOv3Agent(BasePipelineStep):
     tool_name = "segment_dinov3_candidate"
 
     def run(self, state, registry, options):
-        if _should_skip_vision(state):
-            return StepResult(status="skipped", observation={"skipped": True}, explanation="跳过 DINOv3。")
         if not options.enable_dino:
             return StepResult(
                 status="skipped",
@@ -836,13 +834,6 @@ class DinoSignFusionAgent(BasePipelineStep):
     tool_name = "dino_sign_fusion"
 
     def run(self, state, registry, options):
-        if _should_skip_vision(state):
-            return StepResult(
-                status="skipped",
-                observation={"skipped": True, "reason": "skip_t"},
-                explanation="跳过 DINO 与结构化征象融合证据。",
-            )
-
         dino = _step_obs(state, "dinov3_seg")
         morphology = _step_obs(state, "morphology")
         wall = _step_obs(state, "wall_evidence")
@@ -1006,6 +997,26 @@ class ReportSynthAgent(BasePipelineStep):
             )
             state.memory_context = memory_context
 
+        from ..memory.guideline_retriever import retrieve_gastric_guideline
+
+        guideline = retrieve_gastric_guideline({
+            "classification": cls_obs,
+            "wall_evidence": wall_obs,
+            "segmentation": seg_obs,
+            "clinical": ci.clinical,
+            "report": report_obs,
+            "gate_decision": state.gate_decision,
+            "triage_path": state.triage_path,
+        })
+        guideline_knowledge = [
+            {
+                "source": "; ".join(item.get("citations") or item.get("source_ids") or []),
+                "title": item.get("title", "胃癌临床指南"),
+                "content": item.get("statement", ""),
+            }
+            for item in guideline.get("evidence", [])
+        ]
+
         if state.gate_decision == "skip_t" and state.per_frame_binary:
             primary_bin = _step_obs(state, "binary_gate").get("primary_frame") or state.per_frame_binary[0]
             fusion = {
@@ -1028,13 +1039,19 @@ class ReportSynthAgent(BasePipelineStep):
                 clinical=clinical_obs,
                 report_text=report_obs,
                 similar_cases=similar_cases,
-                knowledge=[],
+                knowledge=guideline_knowledge,
                 lumen_detection=lumen_obs,
                 wall_evidence=wall_obs,
                 memory_context=state.memory_context,
                 memory_fusion_mode=options.memory_fusion_mode,
             )
             fusion["triage_path"] = state.triage_path or "malignant_run_t"
+
+        fusion["guideline_evidence"] = guideline.get("evidence", [])
+        fusion["management_advice"] = guideline.get("management_advice", [])
+        fusion["guideline_sources"] = guideline.get("sources", [])
+        fusion["guideline_limitations"] = guideline.get("limitations", [])
+        fusion["guideline_status"] = guideline.get("status", "unavailable")
 
         if dino_sign_obs:
             fusion["dino_sign_fusion"] = dino_sign_obs
@@ -1045,12 +1062,47 @@ class ReportSynthAgent(BasePipelineStep):
             "structure_report": report_obs,
             "recommended_t_stage": fusion.get("recommended_t_stage"),
             "confidence": fusion.get("confidence"),
+            "guideline_evidence": fusion.get("guideline_evidence", []),
+            "management_advice": fusion.get("management_advice", []),
         }
         expl = (
             f"综合报告：推荐 {fusion.get('recommended_t_stage')} "
-            f"置信度={fusion.get('confidence')} triage={fusion.get('triage_path')}。"
+            f"置信度={fusion.get('confidence')} triage={fusion.get('triage_path')}；"
+            f"指南命中={len(guideline.get('evidence', []))}。"
         )
         return StepResult(observation=obs, explanation=expl)
+
+
+class ClinicalDecisionAgent(BasePipelineStep):
+    """Cross-modal decision support after evidence and report synthesis."""
+
+    step_number = 14
+    step_id = "clinical_decision"
+    agent_name = "ClinicalDecisionAgent"
+    tool_name = "clinical_decision"
+
+    def run(self, state, registry, options):
+        report = state.final_report or {}
+        wall_obs = _step_obs(state, "wall_evidence")
+        observation = registry.execute(
+            "clinical_decision",
+            clinical=state.case_input.clinical,
+            report_text=state.case_input.report_text,
+            recommended_stage=report.get("recommended_t_stage"),
+            wall_evidence=wall_obs,
+        )
+        if isinstance(state.final_report, dict):
+            state.final_report["clinical_decision"] = observation
+        status = observation.get("status", "insufficient_evidence")
+        expl = (
+            f"临床决策支持：status={status} "
+            f"requires_mdt={observation.get('requires_mdt', False)}。"
+        )
+        return StepResult(
+            observation=observation,
+            status="completed" if observation.get("available") else "partial",
+            explanation=expl,
+        )
 
 
 def _step_obs(state: CasePipelineState, step_id: str) -> Dict[str, Any]:
@@ -1167,4 +1219,5 @@ def get_pipeline_steps() -> List[BasePipelineStep]:
         DinoSignFusionAgent(),
         CaseRAGAgent(),
         ReportSynthAgent(),
+        ClinicalDecisionAgent(),
     ]

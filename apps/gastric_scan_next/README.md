@@ -48,6 +48,28 @@ bash scripts/test_lan_full_stack.sh   # automated acceptance
 
 In **边界编辑**, switch to **视频跟随** to scrub video, enable **播放时 SAM 跟随**, then save overrides (stores `video_time_sec`).
 
+### Scientific Agent workbench
+
+The main workbench (`/`) is the canonical local entry for the unified research
+Agent. `reader_v150` cases can send the current video window to the same
+evidence pipeline used by the historical workbench; `/reader` remains a
+compatibility route for the standalone Reader UI.
+
+```bash
+cd /data/research/gastric/GastricTstaging/apps/gastric_scan_next
+export GASTRIC_ROOT=/data/research/gastric/GastricTstaging
+export GASTRIC_PROJECT_ROOT=/data/research/gastric/GastricTstaging
+export GASTRIC_DATASET_ROOT=/data/research/gastric/GastricTstaging/dataset
+export PYTHON_BIN=/home/hyj/miniconda3/bin/python
+export AGENT_ENABLE_DINO=1
+npm run dev -- --webpack -H 0.0.0.0 -p 3000
+```
+
+Open `http://127.0.0.1:3000/`, select `Reader task · Round 1 · 150 cases`,
+open the video evidence editor, and choose **Unified Agent**. The right
+evidence panel should show the case belief state, frame provenance, DINO
+shadow status, seven-sign/report state, conflicts, and the next active action.
+
 ### Interactive boundary edit → Agent analyze
 
 1. Select a case, click **边界编辑** (bottom-left of the viewer).

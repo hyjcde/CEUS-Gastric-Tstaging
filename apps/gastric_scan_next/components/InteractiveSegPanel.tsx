@@ -62,8 +62,28 @@ interface InteractiveSegPanelProps {
   onSystemReport?: (report: SamReport | null) => void;
   /** Current-frame DINO region feature result shown in the workbench evidence panel. */
   onDinoFeatures?: (result: DinoFeatureResult | null) => void;
+  /** Route the current video evidence into the unified research Agent. */
+  onUnifiedAgentRun?: (capture: UnifiedAgentCapture) => Promise<void> | void;
+  unifiedAgentBusy?: boolean;
   inline?: boolean;
 }
+
+export type UnifiedAgentFrame = {
+  frame_png_b64: string;
+  frame_id: string;
+  frame_index: number;
+  timestamp_sec: number;
+  quality_score: number;
+};
+
+export type UnifiedAgentCapture = {
+  frames: UnifiedAgentFrame[];
+  current_time: number;
+  image_width: number;
+  image_height: number;
+  mask_polygon: number[][];
+  roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
+};
 
 export type ImagingAssistPayload = {
   layerResult: LayerAnalyzeResult | null;
@@ -168,6 +188,21 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function seekVideoForAgent(video: HTMLVideoElement, time: number): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('seeked', done);
+      resolve();
+    };
+    video.addEventListener('seeked', done, { once: true });
+    video.currentTime = time;
+    window.setTimeout(done, 1200);
+  });
+}
+
 function sanitizeSystemCopy(value: unknown): string {
   return String(value ?? '')
     .replace(/\bSAM(?:2)?\b/gi, 'system analysis')
@@ -181,6 +216,8 @@ export function InteractiveSegPanel({
   onImagingAssist,
   onSystemReport,
   onDinoFeatures,
+  onUnifiedAgentRun,
+  unifiedAgentBusy = false,
   inline = false,
 }: InteractiveSegPanelProps) {
   const { language } = useSettings();
@@ -610,6 +647,57 @@ export function InteractiveSegPanel({
     }
     return null;
   }, [mediaMode]);
+
+  const runUnifiedAgent = useCallback(async () => {
+    if (!onUnifiedAgentRun || !simpleVideoMode || mediaMode !== 'video' || unifiedAgentBusy) return;
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight || !videoUrl) {
+      setMessage(zh ? '视频帧尚未准备好' : 'Video frame is not ready');
+      return;
+    }
+    const originalTime = video.currentTime || videoTime;
+    const duration = video.duration || 0;
+    const span = duration > 0 ? Math.max(0.5, Math.min(2, duration / 8)) : 0;
+    const positions = Array.from(new Set(
+      [originalTime - span, originalTime, originalTime + span]
+        .filter((time) => time >= 0 && (!duration || time < duration))
+        .map((time) => Number(time.toFixed(3))),
+    ));
+    const wasPlaying = !video.paused;
+    if (wasPlaying) video.pause();
+    try {
+      const frames: UnifiedAgentFrame[] = [];
+      for (const [index, position] of positions.entries()) {
+        if (Math.abs(video.currentTime - position) > 0.01) {
+          await seekVideoForAgent(video, position);
+        }
+        const frame = await videoOrImageToSamFrame(video, null, true, 1024);
+        frames.push({
+          frame_png_b64: frame.b64,
+          frame_id: `${patient.id}:${position}`,
+          frame_index: index,
+          timestamp_sec: position,
+          quality_score: 1,
+        });
+      }
+      if (Math.abs(video.currentTime - originalTime) > 0.01) {
+        await seekVideoForAgent(video, originalTime);
+      }
+      setVideoTime(originalTime);
+      if (wasPlaying) void video.play().catch(() => {});
+      await onUnifiedAgentRun({
+        frames,
+        current_time: originalTime,
+        image_width: video.videoWidth,
+        image_height: video.videoHeight,
+        mask_polygon: pointsRef.current,
+        roi_bbox: bboxFromPolygon(pointsRef.current) || undefined,
+      });
+      setMessage(zh ? '统一 Agent 已返回当前证据状态' : 'Unified Agent returned the current evidence state');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (zh ? '统一 Agent 分析失败' : 'Unified Agent analysis failed'));
+    }
+  }, [mediaMode, onUnifiedAgentRun, patient, simpleVideoMode, unifiedAgentBusy, videoTime, videoUrl, zh]);
 
   const frameSize = useMemo(() => {
     const video = videoRef.current;
@@ -2229,6 +2317,16 @@ export function InteractiveSegPanel({
                       className="rounded border border-violet-300/40 bg-violet-400/10 px-2 py-1 text-[10px] text-violet-100 disabled:opacity-40"
                     >
                       {keyBusy ? (zh ? '关键帧打分中' : 'Scoring keyframes') : (zh ? '选择关键帧' : 'Select keyframes')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!videoUrl || unifiedAgentBusy || !onUnifiedAgentRun}
+                      onClick={() => void runUnifiedAgent()}
+                      className="flex items-center gap-1 rounded border border-cyan-300/50 bg-cyan-400/10 px-2 py-1 text-[10px] text-cyan-100 disabled:opacity-40"
+                      title={zh ? '把当前窗口视频帧送入统一科研 Agent' : 'Send the current video window to the unified research Agent'}
+                    >
+                      <Sparkles size={10} />
+                      {unifiedAgentBusy ? (zh ? '统一 Agent 分析中' : 'Unified Agent running') : (zh ? '统一 Agent' : 'Unified Agent')}
                     </button>
                     <button
                       type="button"

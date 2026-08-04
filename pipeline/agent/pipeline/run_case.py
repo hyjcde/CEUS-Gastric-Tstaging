@@ -1,4 +1,4 @@
-"""Run the LangGraph 12-step case pipeline (production)."""
+"""Run the auditable LangGraph case pipeline (production)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ run_case_pipeline = run_langgraph_case_pipeline
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run LangGraph 12-step agent pipeline")
+    p = argparse.ArgumentParser(description="Run the LangGraph evidence-and-decision Agent pipeline")
     p.add_argument("--case", required=True, help="Case ID e.g. CASE-001")
     p.add_argument(
         "--input-mode",

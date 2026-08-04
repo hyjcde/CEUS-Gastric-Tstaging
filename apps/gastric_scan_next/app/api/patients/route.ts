@@ -1,8 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { DatasetType, CohortYear, TreatmentType, getClinicalDataPath, getDatasetPaths, parseCohortYear, parseDatasetType } from '@/lib/config';
+import {
+  DatasetType,
+  CohortYear,
+  TreatmentType,
+  getBenignDatasetPaths,
+  getClinicalDataPath,
+  getDatasetPaths,
+  getExternalDatasetPaths,
+  parseCohortYear,
+  parseDatasetType,
+} from '@/lib/config';
+import {
+  BENIGN_CENTER_OPTIONS,
+  EXTERNAL_CENTER_OPTIONS,
+  GASTRIC_COHORT_YEARS,
+  getExternalCenterById,
+  parseWorkbenchQueueId,
+  WorkbenchQueueId,
+} from '@/lib/cohort';
 import { getVideosForPatient } from '@/lib/video-index';
+import { loadReaderCasesBundle } from '@/lib/reader/cases-server';
+import { readerMediaUrl } from '@/lib/reader/media-url';
 import { enrichConceptFeaturesFromClinical } from '@/lib/concept-extract';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
 
@@ -34,9 +54,22 @@ interface CurrentDatasetAssets {
   imageFilename: string;
   annotationFilename?: string;
   overlayFilename?: string;
+  overlayDataset?: DatasetType;
   cropUiFilename?: string;
   roiFilename?: string;
 }
+
+interface PatientPageOptions {
+  offset?: number;
+  limit?: number;
+}
+
+interface PatientQueueSource {
+  count: number;
+  build: (offset: number, limit: number) => Patient[];
+}
+
+const imageFileCache = new Map<string, string[]>();
 
 function normalizePatientId(patientId: string): string {
   if (!patientId) return '';
@@ -99,6 +132,33 @@ function toPublicReport(clinical: Record<string, unknown> | undefined): PatientR
       'impression',
       '超声提示',
       '影像诊断',
+    ]),
+    ct_report: firstTextValue(clinical, [
+      'ct_report',
+      'ct_findings',
+      'ct_impression',
+      'enhanced_ct_report',
+      '增强CT报告',
+      'CT报告',
+      'CT所见',
+      'CT提示',
+    ]),
+    ct_findings: firstTextValue(clinical, [
+      'ct_findings',
+      'enhanced_ct_findings',
+      '增强CT所见',
+      'CT所见',
+    ]),
+    ct_impression: firstTextValue(clinical, [
+      'ct_impression',
+      'enhanced_ct_impression',
+      '增强CT提示',
+      'CT提示',
+    ]),
+    enhanced_ct_report: firstTextValue(clinical, [
+      'enhanced_ct_report',
+      'enhanced_ct',
+      '增强CT报告',
     ]),
     endoscopy_report: firstTextValue(clinical, [
       'endoscopy_report',
@@ -238,11 +298,15 @@ function buildCurrentDatasetLabel(cohortYear: CohortYear, treatmentType: Treatme
   return `internal-${cohortYear}-${treatmentSuffix}`;
 }
 
-function readJpgFiles(dir: string): string[] {
+function readImageFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
-    .filter((file) => !file.startsWith('.') && /\.(jpg|jpeg)$/i.test(file))
+  const cached = imageFileCache.get(dir);
+  if (cached) return cached;
+  const files = fs.readdirSync(dir)
+    .filter((file) => !file.startsWith('.') && /\.(jpg|jpeg|png|webp)$/i.test(file))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  imageFileCache.set(dir, files);
+  return files;
 }
 
 function maybeOverlayFilename(filename: string): string {
@@ -280,7 +344,12 @@ function getClinicalEntryForPatient(
   return undefined;
 }
 
-function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatmentType: TreatmentType, dataset: DatasetType): Patient[] {
+function buildCurrentPatients(
+  cohortYear: Exclude<CohortYear, 'gist'>,
+  treatmentType: TreatmentType,
+  dataset: DatasetType,
+  page?: PatientPageOptions,
+): Patient[] {
   const clinicalDataPath = getClinicalDataPath(cohortYear, treatmentType);
   if (treatmentType === 'nac' && !fs.existsSync(clinicalDataPath)) {
     return [];
@@ -289,21 +358,33 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
   const originalPaths = getDatasetPaths('original', cohortYear, treatmentType);
   const croppedPaths = getDatasetPaths('cropped', cohortYear, treatmentType);
   const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
-  const imageFiles = readJpgFiles(displayPaths.images);
+  const imageFiles = readImageFiles(displayPaths.images);
+  const offset = Math.max(0, page?.offset || 0);
+  const limit = Math.max(1, page?.limit || imageFiles.length || 1);
+  const selectedImageFiles = page ? imageFiles.slice(offset, offset + limit) : imageFiles;
   const clinicalData = readClinicalDataMap(cohortYear, treatmentType);
 
   const grouped = new Map<string, CurrentDatasetAssets[]>();
+  const frameCounts = page
+    ? imageFiles.reduce((counts, filename) => {
+        const patientId = extractPatientId(filename);
+        counts.set(patientId, (counts.get(patientId) || 0) + 1);
+        return counts;
+      }, new Map<string, number>())
+    : null;
 
-  for (const imageFilename of imageFiles) {
+  for (const imageFilename of selectedImageFiles) {
     const patientId = extractPatientId(imageFilename);
     const annotationFilename = maybeAnnotationFilename(imageFilename);
     const overlayFilename = maybeOverlayFilename(imageFilename);
-    const roiFilename = imageFilename;
+    const displayOverlayExists = fs.existsSync(path.join(displayPaths.overlays, overlayFilename));
+    const originalOverlayExists = fs.existsSync(path.join(originalPaths.overlays, overlayFilename));
 
     const item: CurrentDatasetAssets = {
       imageFilename,
       annotationFilename: fs.existsSync(path.join(originalPaths.annotations, annotationFilename)) ? annotationFilename : undefined,
-      overlayFilename: fs.existsSync(path.join(originalPaths.overlays, overlayFilename)) ? overlayFilename : undefined,
+      overlayFilename: displayOverlayExists || originalOverlayExists ? overlayFilename : undefined,
+      overlayDataset: displayOverlayExists ? dataset : (originalOverlayExists ? 'original' : undefined),
       cropUiFilename: fs.existsSync(path.join(croppedPaths.images, imageFilename)) ? imageFilename : undefined,
       roiFilename: fs.existsSync(path.join(croppedPaths.roi, imageFilename)) ? imageFilename : undefined,
     };
@@ -333,7 +414,7 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
         patient_id: patientId,
         dataset: sourceLabel,
         dataset_type: dataset,
-        num_images: sortedAssets.length,
+        num_images: frameCounts?.get(patientId) ?? sortedAssets.length,
         num_annotations: hasAnnotation ? 1 : 0,
         num_overlays: hasOverlay ? 1 : 0,
         num_roi: hasRoi ? 1 : 0,
@@ -351,10 +432,13 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
         group: treatmentType === 'nac' ? 'NAC' : 'Surgery',
         phase: cohortYear,
         source_label: sourceLabel,
-        frame_count: sortedAssets.length,
+        queue_id: `internal:${cohortYear}`,
+        center_id: 'internal_xh',
+        center_label: '福建医科大学附属协和医院',
+        frame_count: frameCounts?.get(patientId) ?? sortedAssets.length,
         image_url: `/api/images/${dataset}/images/${encodeURIComponent(imageFilename)}?cohort=${cohortYear}&treatment=${treatmentType}`,
-        overlay_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
-        overlay_transparent_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
+        overlay_url: hasOverlay ? `/api/images/${asset.overlayDataset || 'original'}/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
+        overlay_transparent_url: hasOverlay ? `/api/images/${asset.overlayDataset || 'original'}/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         roi_url: hasRoi ? `/api/images/cropped/roi/${encodeURIComponent(asset.roiFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         json_url: hasAnnotation ? `/api/images/original/annotations/${encodeURIComponent(asset.annotationFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         video_urls: getVideosForPatient(normalizePatientId(patientId)),
@@ -367,8 +451,8 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
           frame_count: sortedAssets.length,
           roi_url: hasRoi ? `/api/images/cropped/roi/${encodeURIComponent(asset.roiFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
           annotation_url: hasAnnotation ? `/api/images/original/annotations/${encodeURIComponent(asset.annotationFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
-          overlay_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
-          overlay_transparent_url: hasOverlay ? `/api/images/original/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
+          overlay_url: hasOverlay ? `/api/images/${asset.overlayDataset || 'original'}/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
+          overlay_transparent_url: hasOverlay ? `/api/images/${asset.overlayDataset || 'original'}/overlays/${encodeURIComponent(asset.overlayFilename!)}?cohort=${cohortYear}&treatment=${treatmentType}` : '',
         },
         agent_report: buildAgentReport(info, hasAnnotation, hasOverlay, hasRoi),
         clinical,
@@ -386,6 +470,131 @@ function buildCurrentPatients(cohortYear: Exclude<CohortYear, 'gist'>, treatment
   });
 
   return patients;
+}
+
+function extractExternalPatientId(filename: string): string {
+  const base = filename.replace(/\.[^.]+$/i, '');
+  const token = base.split('__').pop() || base;
+  const parenthesizedFrame = token.match(/^(.*?)-_\(\d+\)$/);
+  if (parenthesizedFrame?.[1]) return parenthesizedFrame[1];
+  const numberedFrame = token.match(/^(.*?)-\d+$/);
+  return numberedFrame?.[1] || token;
+}
+
+function buildCenterPatients(
+  centerId: string,
+  centerLabel: string,
+  paths: { images: string; overlays: string; annotations: string; roi: string },
+  queueNamespace: 'external' | 'benign',
+  group: string,
+  phase: string,
+  dataset: DatasetType,
+  page?: PatientPageOptions,
+): Patient[] {
+  const imageFiles = readImageFiles(paths.images);
+  const offset = Math.max(0, page?.offset || 0);
+  const limit = Math.max(1, page?.limit || imageFiles.length || 1);
+  const selectedImageFiles = page ? imageFiles.slice(offset, offset + limit) : imageFiles;
+  const grouped = new Map<string, string[]>();
+  const frameCounts = page
+    ? imageFiles.reduce((counts, filename) => {
+        const patientId = extractExternalPatientId(filename);
+        counts.set(patientId, (counts.get(patientId) || 0) + 1);
+        return counts;
+      }, new Map<string, number>())
+    : null;
+  for (const imageFilename of selectedImageFiles) {
+    const patientId = extractExternalPatientId(imageFilename);
+    const patientAssets = grouped.get(patientId) ?? [];
+    patientAssets.push(imageFilename);
+    grouped.set(patientId, patientAssets);
+  }
+
+  const queueId = `${queueNamespace}:${centerId}`;
+  const sourceLabel = `${queueNamespace}-${centerId}`;
+  const patients: Patient[] = [];
+
+  for (const [patientId, assets] of grouped.entries()) {
+    const sortedAssets = assets.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    for (const imageFilename of sortedAssets) {
+      const annotationFilename = maybeAnnotationFilename(imageFilename);
+      const overlayFilename = maybeOverlayFilename(imageFilename);
+      const hasAnnotation = fs.existsSync(path.join(paths.annotations, annotationFilename));
+      const hasOverlay = fs.existsSync(path.join(paths.overlays, overlayFilename));
+      const hasRoi = fs.existsSync(path.join(paths.roi, imageFilename));
+      const encodedFilename = encodeURIComponent(imageFilename);
+      const queueQuery = `queue=${encodeURIComponent(queueId)}&treatment=surgery`;
+      const info: PatientInfo = {
+        patient_id: patientId,
+        dataset: sourceLabel,
+        dataset_type: dataset,
+        num_images: frameCounts?.get(patientId) ?? sortedAssets.length,
+        num_annotations: hasAnnotation ? 1 : 0,
+        num_overlays: hasOverlay ? 1 : 0,
+        num_roi: hasRoi ? 1 : 0,
+        images: [],
+        annotations: [],
+        overlays: [],
+        roi: [],
+      };
+
+      patients.push({
+        id: `${queueNamespace}:${centerId}::${imageFilename}`,
+        id_short: imageFilename.replace(/\.(jpg|jpeg|png|webp)$/i, ''),
+        patient_id: normalizePatientId(patientId),
+        group,
+        phase,
+        source_label: centerLabel,
+        queue_id: queueId,
+        center_id: centerId,
+        center_label: centerLabel,
+        frame_count: frameCounts?.get(patientId) ?? sortedAssets.length,
+        image_url: `/api/images/${dataset}/images/${encodedFilename}?${queueQuery}`,
+        overlay_url: hasOverlay ? `/api/images/${dataset}/overlays/${encodeURIComponent(overlayFilename)}?${queueQuery}` : '',
+        overlay_transparent_url: hasOverlay ? `/api/images/${dataset}/overlays/${encodeURIComponent(overlayFilename)}?${queueQuery}` : '',
+        roi_url: hasRoi ? `/api/images/cropped/roi/${encodedFilename}?${queueQuery}` : '',
+        json_url: hasAnnotation ? `/api/images/original/annotations/${encodeURIComponent(annotationFilename)}?${queueQuery}` : '',
+        video_urls: getVideosForPatient(normalizePatientId(patientId)),
+        segmentation: {
+          source: sourceLabel,
+          has_annotation: hasAnnotation,
+          has_overlay: hasOverlay,
+          has_roi: hasRoi,
+          annotation_count: hasAnnotation ? 1 : 0,
+          frame_count: frameCounts?.get(patientId) ?? sortedAssets.length,
+          roi_url: hasRoi ? `/api/images/cropped/roi/${encodedFilename}?${queueQuery}` : '',
+          annotation_url: hasAnnotation ? `/api/images/original/annotations/${encodeURIComponent(annotationFilename)}?${queueQuery}` : '',
+          overlay_url: hasOverlay ? `/api/images/${dataset}/overlays/${encodeURIComponent(overlayFilename)}?${queueQuery}` : '',
+          overlay_transparent_url: hasOverlay ? `/api/images/${dataset}/overlays/${encodeURIComponent(overlayFilename)}?${queueQuery}` : '',
+        },
+        agent_report: buildAgentReport(info, hasAnnotation, hasOverlay, hasRoi),
+      });
+    }
+  }
+
+  return patients.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+function buildExternalPatients(
+  centerId: string,
+  dataset: DatasetType,
+  page?: PatientPageOptions,
+): Patient[] {
+  const center = getExternalCenterById(centerId);
+  const paths = getExternalDatasetPaths(dataset, centerId);
+  if (!center || !paths) return [];
+  return buildCenterPatients(center.id, center.label, paths, 'external', 'Surgery', 'external', dataset, page);
+}
+
+function buildBenignPatients(
+  centerId: string,
+  dataset: DatasetType,
+  page?: PatientPageOptions,
+): Patient[] {
+  const center = BENIGN_CENTER_OPTIONS.find((item) => item.id === centerId);
+  const paths = getBenignDatasetPaths(dataset, centerId);
+  if (!center || !paths) return [];
+  return buildCenterPatients(center.id, center.label, paths, 'benign', 'Benign', 'benign', dataset, page);
 }
 
 function buildLegacyGistPatients(dataset: DatasetType): Patient[] {
@@ -428,9 +637,10 @@ function buildLegacyGistPatients(dataset: DatasetType): Patient[] {
       group: 'Surgery',
       phase: 'gist',
       source_label: 'legacy-gist',
+      queue_id: 'legacy:gist',
       frame_count: 1,
       image_url: `/api/images/${dataset}/images/${encodedFilename}?cohort=gist&treatment=surgery`,
-      overlay_url: `/api/images/original/overlays/${encodeURIComponent(overlayFilename)}?cohort=gist&treatment=surgery`,
+      overlay_url: `/api/images/${dataset}/overlays/${encodeURIComponent(overlayFilename)}?cohort=gist&treatment=surgery`,
       overlay_transparent_url: '',
       roi_url: '',
       json_url: `/api/images/original/annotations/${encodeURIComponent(jsonFilename)}?cohort=gist&treatment=surgery`,
@@ -460,15 +670,211 @@ function buildLegacyGistPatients(dataset: DatasetType): Patient[] {
   });
 }
 
+function buildReaderStudyV150Patients(): Patient[] {
+  const bundle = loadReaderCasesBundle();
+  return (bundle.cases || [])
+    .filter((item) => item.has_video !== false)
+    .map((item) => {
+      const frames = (item.frames || []).filter((frame) => Boolean(frame.video_rel));
+      const videoUrls = frames.map((frame, index) => ({
+        url: readerMediaUrl(frame.video_rel || ''),
+        filename: `${item.case_id}_${index + 1}.mp4`,
+        treatment: 'reader_study' as const,
+        water_filled: false,
+      }));
+      return {
+        id: item.case_id,
+        id_short: item.display_id || item.case_id,
+        patient_id: item.case_id,
+        group: 'Reader Baseline',
+        phase: 'reader_v150',
+        frame_count: frames.length,
+        source_label: 'reader_study_v150_round1',
+        queue_id: 'reader:reader_v150',
+        study_mode: item.study_mode === 'benign_malignancy' ? 'benign_malignancy' : 't_staging',
+        image_url: '',
+        overlay_url: '',
+        overlay_transparent_url: '',
+        roi_url: '',
+        json_url: '',
+        video_urls: videoUrls,
+        segmentation: {
+          source: 'reader_study_v150_round1',
+          has_annotation: false,
+          has_overlay: false,
+          has_roi: false,
+          annotation_count: 0,
+          frame_count: frames.length,
+        },
+        agent_report: {
+          schema_version: 'reader_study_v150',
+          case_token: `reader-v150-${item.case_id}`,
+          data_source: 'reader_study_v150_round1',
+          frame_count: frames.length,
+          report_status: 'draft',
+          image_quality: { status: 'pending', summary: 'Use the interactive Reader video workflow.' },
+          segmentation: { status: 'missing', summary: 'Segmentation is created interactively in Reader.' },
+          classification: { status: 'pending', summary: 'Do not run the year-cohort Agent path for this queue.' },
+          similar_case_support: { status: 'pending', summary: 'Reference queue; launch Reader Agent for analysis.' },
+          manual_review_recommended: true,
+        },
+      };
+    });
+}
+
+function mergeUniquePatients(patients: Patient[]): Patient[] {
+  const seen = new Set<string>();
+  return patients.map((patient) => {
+    if (!seen.has(patient.id)) {
+      seen.add(patient.id);
+      return patient;
+    }
+    const nextId = `${patient.queue_id || patient.phase}::${patient.id}`;
+    seen.add(nextId);
+    return { ...patient, id: nextId };
+  });
+}
+
+function createInternalQueueSource(
+  year: Exclude<CohortYear, 'gist' | 'reader_v150'>,
+  treatmentType: TreatmentType,
+  dataset: DatasetType,
+): PatientQueueSource {
+  const paths = getDatasetPaths(dataset, year, treatmentType);
+  const count = readImageFiles(paths.images).length;
+  return {
+    count,
+    build: (offset, limit) => buildCurrentPatients(year, treatmentType, dataset, { offset, limit }),
+  };
+}
+
+function createExternalQueueSource(centerId: string, dataset: DatasetType): PatientQueueSource {
+  const paths = getExternalDatasetPaths(dataset, centerId);
+  const count = paths ? readImageFiles(paths.images).length : 0;
+  return {
+    count,
+    build: (offset, limit) => buildExternalPatients(centerId, dataset, { offset, limit }),
+  };
+}
+
+function createBenignQueueSource(centerId: string, dataset: DatasetType): PatientQueueSource {
+  const paths = getBenignDatasetPaths(dataset, centerId);
+  const count = paths ? readImageFiles(paths.images).length : 0;
+  return {
+    count,
+    build: (offset, limit) => buildBenignPatients(centerId, dataset, { offset, limit }),
+  };
+}
+
+function getQueueSources(
+  queueId: WorkbenchQueueId,
+  treatmentType: TreatmentType,
+  dataset: DatasetType,
+): PatientQueueSource[] {
+  const internalSources = GASTRIC_COHORT_YEARS.map((year) => (
+    createInternalQueueSource(year, treatmentType, dataset)
+  ));
+  const externalSources = EXTERNAL_CENTER_OPTIONS.map((center) => (
+    createExternalQueueSource(center.id, dataset)
+  ));
+  const benignSources = BENIGN_CENTER_OPTIONS.map((center) => (
+    createBenignQueueSource(center.id, dataset)
+  ));
+
+  if (queueId === 'all') {
+    return treatmentType === 'surgery'
+      ? [...internalSources, ...externalSources]
+      : internalSources;
+  }
+  if (queueId === 'internal:all') return internalSources;
+  if (queueId === 'external:all') {
+    return treatmentType === 'surgery' ? externalSources : [];
+  }
+  if (queueId === 'benign:all') return benignSources;
+  if (queueId.startsWith('internal:')) {
+    const year = queueId.slice('internal:'.length) as Exclude<CohortYear, 'gist' | 'reader_v150'>;
+    return treatmentType === 'surgery' || treatmentType === 'nac'
+      ? [createInternalQueueSource(year, treatmentType, dataset)]
+      : [];
+  }
+  if (queueId.startsWith('external:')) {
+    const centerId = queueId.slice('external:'.length);
+    return treatmentType === 'surgery' ? [createExternalQueueSource(centerId, dataset)] : [];
+  }
+  if (queueId.startsWith('benign:')) {
+    const centerId = queueId.slice('benign:'.length);
+    return [createBenignQueueSource(centerId, dataset)];
+  }
+  return [];
+}
+
+function buildQueuePatientsPage(
+  queueId: WorkbenchQueueId,
+  treatmentType: TreatmentType,
+  dataset: DatasetType,
+  offset: number,
+  limit: number,
+): { items: Patient[]; total: number } {
+  if (queueId === 'reader:reader_v150') {
+    const all = treatmentType === 'surgery' ? buildReaderStudyV150Patients() : [];
+    return { items: all.slice(offset, offset + limit), total: all.length };
+  }
+  if (queueId === 'legacy:gist') {
+    const all = treatmentType === 'surgery' ? buildLegacyGistPatients(dataset) : [];
+    return { items: all.slice(offset, offset + limit), total: all.length };
+  }
+
+  const sources = getQueueSources(queueId, treatmentType, dataset);
+  const total = sources.reduce((sum, source) => sum + source.count, 0);
+  let skip = Math.max(0, offset);
+  let remaining = Math.max(1, limit);
+  const items: Patient[] = [];
+
+  for (const source of sources) {
+    if (skip >= source.count) {
+      skip -= source.count;
+      continue;
+    }
+    const localLimit = Math.min(remaining, source.count - skip);
+    items.push(...source.build(skip, localLimit));
+    remaining -= localLimit;
+    skip = 0;
+    if (remaining <= 0) break;
+  }
+
+  return { items: mergeUniquePatients(items), total };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const datasetParam = searchParams.get('dataset');
     const cohortYearParam = searchParams.get('cohort') || '2025';
     const treatmentTypeParam = searchParams.get('treatment') || 'surgery';
+    const queueParam = searchParams.get('queue');
     const dataset = parseDatasetType(datasetParam);
-    const cohortYear = parseCohortYear(cohortYearParam);
     const treatmentType: TreatmentType = treatmentTypeParam === 'nac' ? 'nac' : 'surgery';
+
+    if (queueParam) {
+      const queueId = parseWorkbenchQueueId(queueParam);
+      const rawOffset = Number.parseInt(searchParams.get('offset') || '0', 10);
+      const rawLimit = Number.parseInt(searchParams.get('limit') || '80', 10);
+      const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
+      const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, rawLimit)) : 80;
+      const page = buildQueuePatientsPage(queueId, treatmentType, dataset, offset, limit);
+      return NextResponse.json({
+        items: page.items,
+        total: page.total,
+        offset,
+        limit,
+        has_more: offset + page.items.length < page.total,
+      });
+    }
+
+    if (cohortYearParam === 'reader_v150' || cohortYearParam === 'reader-v150') {
+      return NextResponse.json(buildReaderStudyV150Patients());
+    }
+    const cohortYear = parseCohortYear(cohortYearParam);
 
     if (cohortYear === 'gist') {
       return NextResponse.json(buildLegacyGistPatients(dataset));

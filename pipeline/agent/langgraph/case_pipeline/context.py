@@ -27,7 +27,16 @@ class PipelineContext:
         ]
 
     def should_skip_vision_step(self, step_id: str) -> bool:
-        if step_id in ("triage", "frame_extract", "quality", "binary_gate", "report_synth"):
+        if step_id in (
+            "triage",
+            "frame_extract",
+            "quality",
+            "binary_gate",
+            "report_synth",
+            "clinical_decision",
+            "dinov3_seg",
+            "dino_sign_fusion",
+        ):
             return False
         if self.options.triage_mode == "soft":
             return False

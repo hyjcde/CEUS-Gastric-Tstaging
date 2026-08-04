@@ -1,4 +1,4 @@
-"""Compile 12-step LangGraph case pipeline."""
+"""Compile the auditable LangGraph case pipeline."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class CaseGraphState(Dict[str, Any]):
 
 def build_case_pipeline_graph(ctx: PipelineContext):
     """
-    Linear 12-node graph: triage → … → report_synth.
+    Linear capability graph: triage → … → report_synth → clinical_decision.
 
     Each node: LLM plan → tool/agent run → LLM interpret → trace.
     """

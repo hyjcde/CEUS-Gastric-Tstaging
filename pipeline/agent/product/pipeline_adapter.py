@@ -19,6 +19,8 @@ from ..memory.knowledge_memory import KnowledgeMemory
 from ..memory.session_memory import load_session
 from ..memory.store.paths import resolve_store_paths
 from ..memory.evolver import write_candidates_from_analysis, write_episode_from_analysis
+from ..core.active_policy import ActiveEvidencePolicy
+from ..core.belief_state import build_case_belief_state
 from ..tools.clinical_vector import normalize_frontend_clinical
 
 # Re-use product helpers (artifact URLs, report builders, session I/O).
@@ -47,6 +49,7 @@ def _pipeline_step_to_agent_step(record: StepRecord, order: int) -> Dict[str, An
         "dino_sign_fusion": "DINOv3 + 结构化征象融合证据",
         "case_rag": "Case-RAG 相似病例检索",
         "report_synth": "多证据综合推理",
+        "clinical_decision": "跨模态临床决策支持",
     }
     visual_refs: Dict[str, Any] = {}
     for fig in record.figure_paths:
@@ -109,11 +112,38 @@ def _evidence_domain(step_id: str) -> str:
         return "benign_malignant"
     if "staging" in step_id:
         return "t_staging"
+    if "decision" in step_id:
+        return "clinical_decision"
     if "report" in step_id:
         return "report"
     if "rag" in step_id or "memory" in step_id:
         return "similarity_memory"
     return "pipeline"
+
+
+def _build_belief_state(
+    state: CasePipelineState,
+    payload: Dict[str, Any],
+    report: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build the shared belief snapshot and rank the next evidence action."""
+    belief = build_case_belief_state(
+        case_id=state.case_input.case_id,
+        patient_id=state.case_input.patient_id,
+        steps=state.steps,
+        frame_count=len(state.case_input.frames),
+        run_id=str(payload.get("session_id") or "unsaved_session"),
+        final_report=report,
+    )
+    policy = ActiveEvidencePolicy()
+    belief.next_actions = policy.propose(belief)
+    selected = policy.choose(belief)
+    if selected is not None:
+        belief.next_actions = [
+            selected,
+            *[item for item in belief.next_actions if item.action_id != selected.action_id],
+        ]
+    return belief.to_dict()
 
 
 def _evidence_source_type(record: StepRecord) -> str:
@@ -222,6 +252,9 @@ def _build_provenance(
         "manifest_version": payload.get("manifest_version") or "patient_media_registry",
         "artifact_relative_dir": str(artifact_info["relative_dir"]),
         "step_count": len(state.steps),
+        "belief_state_schema_version": "case_belief_state_v1",
+        "reader_context": payload.get("reader_context"),
+        "input_mode": state.case_input.input_mode.value,
         "model_steps": [
             {
                 "step_id": record.step_id,
@@ -320,7 +353,7 @@ def _resolve_memory_options(payload: Dict[str, Any]) -> tuple[bool, Optional[str
 
 
 def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Run the 13-step pipeline and map results to the Workbench JSON contract."""
+    """Run the auditable evidence pipeline and map it to the Workbench contract."""
     clinical_payload_raw = payload.get("clinical") or {}
     clinical_payload = normalize_frontend_clinical(clinical_payload_raw)
     report_payload = payload.get("report_text") or {}
@@ -425,9 +458,21 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         str(payload.get("patient_id", "")),
     ])
     knowledge_memory = KnowledgeMemory.build()
-    knowledge = knowledge_memory.search(knowledge_query, top_k=3)
+    local_knowledge = knowledge_memory.search(knowledge_query, top_k=3)
 
     report = dict(state.final_report or synth.get("fusion") or {})
+    guideline_evidence = report.get("guideline_evidence") or []
+    guideline_context = [
+        {
+            "source": "; ".join(item.get("citations") or item.get("source_ids") or []),
+            "title": item.get("title", "胃癌临床指南"),
+            "content": item.get("statement", ""),
+            "guideline_id": item.get("id"),
+        }
+        for item in guideline_evidence
+        if isinstance(item, dict)
+    ]
+    knowledge = guideline_context + local_knowledge
     report, llm_invocation = ac._maybe_llm_synthesis(report, payload)
     report["dynamic_report_draft"] = ac._build_dynamic_report_draft(
         payload=payload,
@@ -439,6 +484,7 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         clinical=clinical,
         report_text=report_text,
         similar_cases=similar_cases,
+        wall_evidence=wall_evidence,
     )
     report["memory_update_candidates"] = ac._build_memory_update_candidates(
         payload=payload,
@@ -446,6 +492,8 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         report_text=report_text,
         traces=traces,
     )
+    belief_state = _build_belief_state(state, payload, report)
+    report["belief_state_schema_version"] = belief_state.get("schema_version")
 
     memory_store_ref: Optional[Dict[str, Any]] = None
     if memory_enabled and memory_store_path:
@@ -525,7 +573,7 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         ac._emit_stream_event("runtime_verification", {"verification": runtime_verification})
 
     result = {
-        "schema_version": "agent_result_v1",
+        "schema_version": "agent_result_v2",
         "session_id": session.session_id,
         "session_memory": {
             "session_id": session.session_id,
@@ -554,9 +602,13 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
             "morphology": morphology,
             "clinical": clinical,
             "report": report_text,
+            "dino": _step_obs(state, "dino_sign_fusion") or _step_obs(state, "dinov3_seg"),
+            "clinical_decision": _step_obs(state, "clinical_decision"),
         },
         "similar_cases": similar_cases,
         "knowledge_context": knowledge,
+        "guideline_evidence": report.get("guideline_evidence", []),
+        "management_advice": report.get("management_advice", []),
         "report": report,
         "agent_steps": agent_steps,
         "prediction_artifacts": prediction_artifacts,
@@ -565,7 +617,8 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         "pipeline_state_path": str(pipeline_out / "pipeline_state.json"),
         "memory_context": state.memory_context or {},
         "memory_store_ref": memory_store_ref,
-        "evidence": _build_evidence_items(state, artifact_info),
+        "evidence": belief_state.get("evidence") or _build_evidence_items(state, artifact_info),
+        "belief_state": belief_state,
         "provenance": _build_provenance(payload, state, artifact_info),
     }
     result["trajectory_ref"] = ac._write_trajectory(payload, session.session_id, result)

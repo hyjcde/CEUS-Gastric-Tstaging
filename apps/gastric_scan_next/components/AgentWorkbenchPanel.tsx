@@ -6,10 +6,12 @@ import { Activity, AlertTriangle, ArrowRight, Brain, CheckCircle2, ChevronRight,
 import { useSettings } from '@/contexts/SettingsContext';
 import { AgentAnalysisResponse, AgentReportCue, AgentStep, AgentToolResult, MaskBoundaryOverride, Patient, RuntimeVerification } from '@/types';
 import { maskOverrideToAnalyzePayload } from '@/lib/mask-override';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
 interface AgentWorkbenchPanelProps {
   patient: Patient | null;
   maskOverride?: MaskBoundaryOverride | null;
+  gcUsReport?: GcUsReportState | null;
   onAnalysisComplete?: (result: AgentAnalysisResponse) => void;
 }
 
@@ -106,7 +108,17 @@ function getStepIcon(stepId: string) {
 }
 
 function getStepOutputSummary(step: AgentStep): string {
+  const stepId = step.step_id || '';
   const outputs = step.outputs || {};
+  if (stepId.includes('dino_sign_fusion')) {
+    const signs = outputs.structured_signs as Record<string, unknown> | undefined;
+    return [
+      `DINO=${formatUnknown((outputs.dino as Record<string, unknown> | undefined)?.available)}`,
+      `morph=${formatUnknown(signs?.morphology)}`,
+      `wall=${formatUnknown(signs?.wall)}`,
+      `lumen=${formatUnknown(signs?.lumen)}`,
+    ].join(' · ');
+  }
   if (outputs.recommended_t_stage) return `${outputs.recommended_t_stage} / ${outputs.confidence ?? 'unknown'}`;
   if (outputs.top1_stage) return `${outputs.top1_stage} ${outputs.top1_prob ?? ''}`.trim();
   if (outputs.current_image_dino_feature_panel_url) return 'DINO feature panel ready';
@@ -120,6 +132,37 @@ function getStepOutputSummary(step: AgentStep): string {
   if (outputs.memory_candidate_count !== undefined) return `${outputs.memory_candidate_count} memory candidates`;
   if (outputs.available !== undefined) return `available=${outputs.available}`;
   return step.status;
+}
+
+type RealtimeStepRecord = {
+  step?: number;
+  step_id?: string;
+  agent_name?: string;
+  tool_name?: string | null;
+  status?: string;
+  observation?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  explanation?: string;
+  figure_paths?: string[];
+};
+
+function buildRealtimeAgentStep(record: RealtimeStepRecord, fallbackOrder: number): AgentStep {
+  const stepId = String(record.step_id || `step_${fallbackOrder}`);
+  const outputs = record.observation && typeof record.observation === 'object' ? record.observation : {};
+  const inputs = record.inputs && typeof record.inputs === 'object' ? record.inputs : {};
+  return {
+    order: Number(record.step) || fallbackOrder,
+    step_id: stepId,
+    title: String(record.agent_name || stepId),
+    intent: '后端工具事件已完成',
+    decision: String(record.status || 'completed'),
+    tool_name: record.tool_name || null,
+    status: String(record.status || 'completed'),
+    inputs,
+    outputs,
+    reasoning: String(record.explanation || ''),
+    visual_refs: record.figure_paths?.length ? { figure_paths: record.figure_paths } : {},
+  };
 }
 
 function getStepVisualRef(step: AgentStep | undefined, keys: string[]): string | undefined {
@@ -243,7 +286,12 @@ function VisualFrame({
   );
 }
 
-export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisComplete }: AgentWorkbenchPanelProps) {
+export function AgentWorkbenchPanel({
+  patient,
+  maskOverride = null,
+  gcUsReport = null,
+  onAnalysisComplete,
+}: AgentWorkbenchPanelProps) {
   const { language, cohortYear, treatmentType, dataset } = useSettings();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -285,7 +333,7 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
   }, [liveSteps.length, loading]);
 
   const copyDraft = async () => {
-    const draftText = result?.report.dynamic_report_draft?.full_text;
+    const draftText = gcUsReport?.report.prose || result?.report.dynamic_report_draft?.full_text;
     if (!draftText) return;
     setCopyError(null);
     try {
@@ -367,6 +415,7 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
           treatmentType,
           sessionId,
           memory_enabled: true,
+          gc_us_report: gcUsReport || undefined,
           ...maskOverrideToAnalyzePayload(maskOverride),
         }),
       });
@@ -393,14 +442,29 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
           if (!line.trim()) continue;
           const event = JSON.parse(line) as {
             event?: string;
-            step?: AgentStep;
+            step?: AgentStep | string;
+            record?: RealtimeStepRecord;
             result?: AgentAnalysisResponse;
             verification?: RuntimeVerification;
             message?: string;
             error?: string;
           };
 
-          if (event.event === 'agent_step' && event.step) {
+          if (event.event === 'step_complete' && event.record) {
+            setLiveSteps((prev) => {
+              const realtimeStep = buildRealtimeAgentStep(event.record as RealtimeStepRecord, prev.length + 1);
+              const existingIndex = prev.findIndex((item) => item.step_id === realtimeStep.step_id);
+              if (existingIndex >= 0) {
+                const next = [...prev];
+                next[existingIndex] = realtimeStep;
+                setActiveStep(existingIndex);
+                return next;
+              }
+              const next = [...prev, realtimeStep];
+              setActiveStep(next.length - 1);
+              return next;
+            });
+          } else if (event.event === 'agent_step' && event.step && typeof event.step !== 'string') {
             setLiveSteps((prev) => {
               const next = [...prev, event.step as AgentStep];
               setActiveStep(next.length - 1);
@@ -497,6 +561,13 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
         metrics: getToolMetricRows(result.tool_evidence.morphology, ['boundary_irregularity', 'lesion_area_ratio', 'convexity', 'solidity', 'compactness']),
       },
       {
+        key: 'dino',
+        title: language === 'zh' ? 'DINO 影子证据' : 'DINO shadow evidence',
+        icon: Sparkles,
+        tool: result.tool_evidence.dino,
+        metrics: getToolMetricRows(result.tool_evidence.dino, ['available', 'mask_available', 'fusion_mode', 'uncertainty_flags']),
+      },
+      {
         key: 'clinical',
         title: language === 'zh' ? '临床风险' : 'Clinical risk',
         icon: ShieldCheck,
@@ -509,6 +580,13 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
         icon: FileSearch,
         tool: result.tool_evidence.report,
         metrics: getToolMetricRows(result.tool_evidence.report, ['sections_available', 'text_length', 'report_source']),
+      },
+      {
+        key: 'clinical_decision',
+        title: language === 'zh' ? '跨模态临床决策' : 'Cross-modal clinical decision',
+        icon: Network,
+        tool: result.tool_evidence.clinical_decision,
+        metrics: getToolMetricRows(result.tool_evidence.clinical_decision, ['status', 'requires_mdt', 'provisional_stage', 'missing_modalities']),
       },
       {
         key: 'memory',
@@ -529,101 +607,16 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
 
   const adaptiveSteps = useMemo<AgentDisplayStep[]>(() => {
     const backendSteps = liveSteps.length ? liveSteps : result?.agent_steps;
-    if (backendSteps?.length) {
-      return backendSteps.map((step) => ({
-        key: step.step_id,
-        title: step.title,
-        detail: step.reasoning || step.intent,
-        icon: getStepIcon(step.step_id),
-        output: getStepOutputSummary(step),
-        backendStep: step,
-      }));
-    }
-    if (loading) return [];
-
-    const patientId = patient?.patient_id ?? 'N/A';
-    const hasRoi = Boolean(patient?.roi_url);
-    const hasReport = Boolean(patient?.report && Object.values(patient.report).some(Boolean));
-    const hasClinical = Boolean(patient?.clinical);
-    const imageLabel = dataset === 'cropped'
-      ? (language === 'zh' ? 'CROP UI 图' : 'CROP UI image')
-      : (language === 'zh' ? '原图' : 'original image');
-    const steps = [
-      {
-        key: 'intake',
-        title: language === 'zh' ? '病例接入与资料盘点' : 'Case intake',
-        detail: language === 'zh'
-          ? `读取 ${patientId}，检查 ${imageLabel}、ROI、标注、临床表和报告文本。`
-          : `Reading ${patientId} and checking ${imageLabel}, ROI, annotation, clinical table, and reports.`,
-        icon: Brain,
-        output: hasClinical ? (language === 'zh' ? '临床资料可用' : 'Clinical data available') : (language === 'zh' ? '临床资料不足' : 'Clinical data limited'),
-      },
-      {
-        key: 'localize',
-        title: language === 'zh' ? '定位模型判断病灶候选区' : 'Localization model selects lesion region',
-        detail: language === 'zh'
-          ? `先根据 ${imageLabel} 和既有 ROI 判断是否需要模型重新定位；如果 ROI 不足，则使用分割预测框补位。`
-          : `Use ${imageLabel} and existing ROI first; if ROI is weak, fall back to model-predicted localization.`,
-        icon: Layers3,
-        output: result ? `roi=${formatUnknown(result.tool_evidence.segmentation?.roi_source)}` : (hasRoi ? 'ROI ready' : 'ROI pending'),
-      },
-      {
-        key: 'segment',
-        title: language === 'zh' ? '分割模型生成病灶与胃壁证据' : 'Segmentation model extracts lesion evidence',
-        detail: language === 'zh'
-          ? '分割病灶区域，得到 mask、bbox、面积占比，并给后续形态学和分类模型提供输入。'
-          : 'Produce mask, bbox, area ratio, and downstream morphology/classification inputs.',
-        icon: Activity,
-        output: result ? `area=${formatUnknown(result.tool_evidence.segmentation?.lesion_area_ratio)}` : 'mask running',
-      },
-      {
-        key: 'classify',
-        title: language === 'zh' ? 'T 分期模型输出概率分布' : 'T-stage model outputs probability distribution',
-        detail: language === 'zh'
-          ? '调用分类模型，不只看 top-1，也看 T2/T3 等相邻分期差距和不确定性。'
-          : 'Call classifier and inspect top-1, adjacent-stage gap, and uncertainty.',
-        icon: Microscope,
-        output: result ? `${formatUnknown(result.tool_evidence.classification?.top1_stage)} ${formatUnknown(result.tool_evidence.classification?.top1_prob)}` : 'probability pending',
-      },
-      {
-        key: 'crosscheck',
-        title: language === 'zh' ? '临床与报告线索交叉校验' : 'Clinical and report cross-check',
-        detail: language === 'zh'
-          ? hasReport ? '抽取报告中的胃壁增厚、浆膜、侵犯等词，并与临床风险评分互相验证。' : '当前报告文本不足，Agent 自动降低文本证据权重。'
-          : hasReport ? 'Extract report cues and compare with clinical risk.' : 'Report text is limited, so text evidence receives lower weight.',
-        icon: FileSearch,
-        output: result ? `risk=${formatUnknown(result.tool_evidence.clinical?.clinical_risk_score)}` : 'risk pending',
-      },
-      {
-        key: 'memory',
-        title: language === 'zh' ? '检索历史相似病例并投票' : 'Retrieve similar cases and vote',
-        detail: language === 'zh'
-          ? '用当前病例向量检索历史病例，观察相似病例真实 T 分期分布，而不是只看单模型结论。'
-          : 'Retrieve historical cases and inspect the stage distribution instead of trusting one model.',
-        icon: Database,
-        output: result ? `${result.similar_cases.length} cases` : 'memory search',
-      },
-      {
-        key: 'synthesis',
-        title: language === 'zh' ? '多证据综合推理与冲突处理' : 'Multi-evidence synthesis',
-        detail: language === 'zh'
-          ? '把分类概率、分割质量、形态学、临床、报告、相似病例投票合并，标出冲突和需要人工复核处。'
-          : 'Fuse classifier, segmentation quality, morphology, clinical data, reports, and similar-case voting.',
-        icon: Network,
-        output: result ? `${result.report.recommended_t_stage} / ${result.report.confidence}` : 'reasoning',
-      },
-      {
-        key: 'report',
-        title: language === 'zh' ? '生成动态报告草稿与 memory 候选' : 'Draft report and memory candidates',
-        detail: language === 'zh'
-          ? '生成可复制报告，同时把本次推理轨迹和医生后续反馈预留为 memory 候选。'
-          : 'Generate copy-ready report and keep trace/feedback candidates for memory.',
-        icon: FileText,
-        output: result ? `${result.report.memory_update_candidates?.length ?? 0} memory candidates` : 'drafting',
-      },
-    ];
-    return steps;
-  }, [language, liveSteps, loading, patient, result]);
+    if (!backendSteps?.length) return [];
+    return backendSteps.map((step) => ({
+      key: step.step_id,
+      title: step.title,
+      detail: step.reasoning || step.intent,
+      icon: getStepIcon(step.step_id),
+      output: getStepOutputSummary(step),
+      backendStep: step,
+    }));
+  }, [liveSteps, result]);
 
   const stageVoting = useMemo(() => {
     const stages = ['T1', 'T2', 'T3', 'T4+'];
@@ -713,6 +706,66 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
     const similarCases = Array.isArray(outputs.similar_cases)
       ? outputs.similar_cases as Array<Record<string, unknown>>
       : result?.similar_cases ?? [];
+
+    if (stepId.includes('dino_sign_fusion')) {
+      const signs = (outputs.structured_signs || {}) as Record<string, unknown>;
+      const dino = (outputs.dino || {}) as Record<string, unknown>;
+      const supporting = Array.isArray(outputs.supporting_evidence)
+        ? outputs.supporting_evidence
+        : [];
+      const uncertainty = Array.isArray(outputs.uncertainty_flags)
+        ? outputs.uncertainty_flags
+        : [];
+      const provenance = (outputs.provenance || {}) as Record<string, unknown>;
+      return (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
+            <div className="text-sm font-black text-cyan-100">
+              {language === 'zh' ? 'DINO + 结构化征象' : 'DINO + structured signs'}
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
+              {language === 'zh'
+                ? '此步骤提供可追溯证据，不覆盖 T 分期主模型。'
+                : 'Evidence-only fusion; it does not replace the T-stage model.'}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              {[
+                ['DINO', dino.available],
+                ['形态征象', signs.morphology],
+                ['胃壁证据', signs.wall],
+                ['胃腔对齐', signs.lumen],
+                ['融合模式', outputs.fusion_mode],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                  <div className="text-slate-500">{String(label)}</div>
+                  <div className="mt-1 font-mono text-emerald-100">{formatUnknown(value)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-[10px] text-slate-500">
+              {language === 'zh' ? '探针来源' : 'Probe source'}：{formatUnknown(provenance.probe)}
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-sm font-black text-white">
+              {language === 'zh' ? '支持与限制' : 'Support and limits'}
+            </div>
+            <div className="mt-3 space-y-2 text-xs">
+              {supporting.slice(0, 4).map((item, index) => (
+                <div key={`dino-sign-support-${index}`} className="rounded bg-emerald-300/10 px-3 py-2 text-emerald-100">
+                  {formatUnknown(item)}
+                </div>
+              ))}
+              {uncertainty.slice(0, 4).map((item, index) => (
+                <div key={`dino-sign-uncertainty-${index}`} className="rounded bg-amber-300/10 px-3 py-2 text-amber-100">
+                  {formatUnknown(item)}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     if (!currentBackendStep || stepId.includes('intake')) {
       return (
@@ -1265,6 +1318,11 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
                 <div key={`draft-step-${section.heading}`} className="rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
                   <div className="font-bold text-emerald-100">{section.heading}</div>
                   <div className="mt-2 line-clamp-3 leading-relaxed text-slate-400">{section.lines.join(' ')}</div>
+                    {section.evidence_refs?.length ? (
+                      <div className="mt-2 font-mono text-[9px] text-cyan-200/60">
+                        refs: {section.evidence_refs.join(', ')}
+                      </div>
+                    ) : null}
                 </div>
               ))}
             </div>
@@ -1362,6 +1420,96 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
             </div>
           </div>
 
+          {result?.evidence?.length ? (
+            <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-black text-cyan-100">
+                  {language === 'zh' ? '统一证据总览' : 'Unified evidence'}
+                </div>
+                <div className="font-mono text-[10px] text-cyan-200/80">
+                  {result.evidence.length} items · {result.provenance?.schema_version || 'provenance'}
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {result.evidence.slice(0, 8).map((item) => (
+                  <div key={item.evidence_id} className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                    <div className="truncate text-[10px] font-semibold text-slate-200">{item.feature}</div>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      {String(item.domain)} · {String(item.source_type)}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-emerald-200">{String(item.status)}</div>
+                  </div>
+                ))}
+              </div>
+              {result.provenance ? (
+                <div className="mt-2 text-[10px] text-slate-500">
+                  run={result.provenance.run_id} · manifest={result.provenance.manifest_version} · steps={result.provenance.step_count}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {result?.belief_state ? (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-black text-cyan-100">
+                    <Brain size={13} />
+                    {language === 'zh' ? '病例信念状态' : 'Case belief state'}
+                  </div>
+                  <span className="font-mono text-[9px] text-cyan-200/60">{result.belief_state.schema_version}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+                  {result.belief_state.hypotheses
+                    .filter((item) => item.probability != null)
+                    .sort((a, b) => Number(b.probability || 0) - Number(a.probability || 0))
+                    .slice(0, 6)
+                    .map((item) => (
+                      <div key={item.hypothesis_id} className="rounded-lg border border-white/10 bg-black/25 px-2 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-slate-300">{item.label}</span>
+                          <span className="font-mono text-emerald-200">
+                            {item.probability == null ? '—' : `${Math.round(item.probability * 100)}%`}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1 overflow-hidden rounded bg-white/10">
+                          <div
+                            className="h-full rounded bg-emerald-300/70"
+                            style={{ width: `${Math.max(0, Math.min(100, Number(item.probability || 0) * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                {result.belief_state.missing_evidence.length ? (
+                  <div className="mt-2 rounded-lg border border-amber-300/20 bg-amber-300/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-100/80">
+                    {language === 'zh' ? '缺失证据：' : 'Missing evidence: '}
+                    {result.belief_state.missing_evidence.join(', ')}
+                  </div>
+                ) : null}
+              </div>
+              <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.04] p-3">
+                <div className="text-xs font-black text-amber-100">
+                  {language === 'zh' ? '下一步主动取证' : 'Next active evidence action'}
+                </div>
+                {result.belief_state.next_actions.slice(0, 3).map((action) => (
+                  <div key={action.action_id} className={`mt-2 rounded-lg border px-2.5 py-2 ${action.status === 'selected' ? 'border-cyan-300/35 bg-cyan-300/10' : 'border-white/10 bg-black/20'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold text-slate-200">{action.action_type}</span>
+                      <span className="font-mono text-[9px] text-cyan-200">{Math.round(action.expected_information_gain * 100)}%</span>
+                    </div>
+                    <div className="mt-1 text-[9px] leading-relaxed text-slate-500">{action.reason}</div>
+                  </div>
+                ))}
+                {result.report.clinical_decision?.recommendation ? (
+                  <div className="mt-2 text-[10px] leading-relaxed text-amber-50/80">
+                    {result.report.clinical_decision.recommendation}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {error && (
             <div className="rounded-lg border border-red-500/30 bg-red-950/40 px-3 py-2 text-xs text-red-200">
               {error}
@@ -1404,26 +1552,14 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
                       <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
                         {language === 'zh' ? '实时调用队列' : 'Live Tool Queue'}
                       </div>
-                      {adaptiveSteps.length > 0 && (
+                      {liveSteps.length > 0 && (
                         <div className="mt-1 text-[10px] text-slate-500">
                           {language === 'zh'
-                            ? `工具链 ${adaptiveSteps.length} 步 · 当前查看第 ${activeStep + 1} 步`
-                            : `${adaptiveSteps.length} tools · viewing step ${activeStep + 1}`}
+                            ? `已返回 ${liveSteps.length} 条真实步骤 · 当前查看第 ${activeStep + 1} 条`
+                            : `${liveSteps.length} real steps returned · viewing step ${activeStep + 1}`}
                         </div>
                       )}
                     </div>
-                    {adaptiveSteps.length > 0 && (() => {
-                      const doneCount = adaptiveSteps.filter((_, idx) => idx < liveSteps.length || Boolean(result)).length;
-                      const progress = Math.round((doneCount / adaptiveSteps.length) * 100);
-                      return (
-                        <div className="flex min-w-[140px] flex-col items-end gap-1">
-                          <span className="text-[10px] font-mono text-emerald-200/80">{doneCount}/{adaptiveSteps.length}</span>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-                            <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500" style={{ width: `${progress}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })()}
                   </div>
 
                   {adaptiveSteps.length ? (
@@ -1487,16 +1623,21 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
                     </div>
                   ) : (
                     <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-3 text-xs leading-relaxed text-slate-500">
-                      {language === 'zh' ? '点击启动后，Agent 会先盘点病例资料，然后第一条真实步骤会出现在这里。' : 'Start the agent to see the first real backend step here.'}
+                      {loading
+                        ? '等待后端返回第一条真实工具事件，不预填步骤，不模拟进度。'
+                        : (language === 'zh' ? '点击启动后，Agent 会先盘点病例资料，然后第一条真实步骤会出现在这里。' : 'Start the agent to see the first real backend step here.')}
                     </div>
                   )}
 
-                  {adaptiveSteps.length > 0 && (
+                  {loading && liveSteps.length > 0 ? (
+                    <div className="mt-2 border-t border-white/5 pt-2 text-[10px] text-amber-200/80">
+                      已返回 {liveSteps.length} 条真实步骤，等待后端下一条工具事件。
+                    </div>
+                  ) : null}
+
+                  {liveSteps.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-white/5 pt-2 text-[9px] text-slate-500">
-                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" />{language === 'zh' ? '已完成' : 'done'}</span>
-                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />{language === 'zh' ? '运行中' : 'running'}</span>
-                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-500" />{language === 'zh' ? '等待' : 'pending'}</span>
-                      <span className="text-slate-600">·</span>
+                      <span>{language === 'zh' ? '每条卡片均来自后端已完成事件' : 'Each card is a completed backend event'}</span>
                       <span>{language === 'zh' ? '点击卡片查看该步详情' : 'Click a card for step details'}</span>
                     </div>
                   )}
@@ -1714,6 +1855,43 @@ export function AgentWorkbenchPanel({ patient, maskOverride = null, onAnalysisCo
                             </div>
                           </div>
                         )}
+                        {(result.report.guideline_evidence?.length || result.report.management_advice?.length) ? (
+                          <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/5 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                                {language === 'zh' ? '临床指南 RAG' : 'Clinical guideline RAG'}
+                              </div>
+                              <span className="rounded border border-amber-300/25 px-1.5 py-0.5 text-[8px] text-amber-100">AJCC TNM + NCCN 3.2026</span>
+                            </div>
+                            <div className="mt-2 space-y-1.5">
+                              {(result.report.guideline_evidence ?? []).slice(0, 4).map((item) => (
+                                <div key={`guideline-${item.id}`} className="rounded bg-black/25 px-2 py-1.5 text-[10px] text-amber-50">
+                                  <div className="font-bold">{item.title}</div>
+                                  <div className="mt-0.5 leading-relaxed text-amber-100/75">{item.statement}</div>
+                                  {item.citations?.length ? <div className="mt-0.5 text-[8px] text-slate-500">{item.citations.join(' · ')}</div> : null}
+                                </div>
+                              ))}
+                            </div>
+                            {(result.report.management_advice ?? []).length > 0 && (
+                              <div className="mt-2 rounded border border-emerald-300/20 bg-emerald-300/5 p-2">
+                                <div className="mb-1 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+                                  {language === 'zh' ? '对应处理意见（需 MDT 复核）' : 'Care pathway context (MDT review required)'}
+                                </div>
+                                <div className="space-y-1">
+                                  {(result.report.management_advice ?? []).slice(0, 4).map((item, idx) => (
+                                    <div key={`management-${idx}`} className="text-[10px] leading-relaxed text-emerald-100">{item.action}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <div className="mt-2 text-[8px] leading-relaxed text-slate-500">
+                              {language === 'zh'
+                                ? 'AJCC 用于 TNM 定义；管理路径参考 NCCN。当前 Agent 不输出药物剂量或替代医生决定。'
+                                : 'AJCC defines TNM; management context follows NCCN. The Agent does not issue drug doses or replace clinician decisions.'}
+                            </div>
+                          </div>
+                        ) : null}
+
                         {result.knowledge_context?.length > 0 && (
                           <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-3">
                             <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">{language === 'zh' ? '知识检索' : 'Knowledge context'}</div>
