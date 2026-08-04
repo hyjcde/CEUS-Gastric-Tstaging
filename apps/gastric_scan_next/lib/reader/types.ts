@@ -10,6 +10,7 @@ export type ReaderFrame = {
 
 export type ReaderCase = {
   case_id: string;
+  patient_id?: string;
   display_id?: string;
   study_mode?: 'benign_malignancy' | 't_staging' | string;
   reference_pt?: string;
@@ -39,12 +40,31 @@ export type SamBox = {
 
 export type SamReport = {
   recommended_stage?: string;
+  recommendation_status?: 'suggested' | 'conflict' | 'uncertain' | string;
+  conflicts?: Array<{
+    code?: string;
+    severity?: 'low' | 'medium' | 'high' | string;
+    fields?: string[];
+    message?: string;
+  }>;
+  signs?: Record<string, {
+    value?: unknown;
+    status?: string;
+    source?: string;
+    confidence?: number | null;
+    evidence_ref?: string[];
+  }>;
+  reference_stage?: {
+    band?: string;
+    source?: string;
+    conflicts?: Array<Record<string, unknown>>;
+  };
   stage_distribution?: Record<string, number>;
   calibrated_confidence?: number;
   summary?: string;
   sam_score?: number;
   elapsed_ms?: number;
-  evidence?: Array<{ title?: string; detail?: string }>;
+  evidence?: Array<{ title?: string; detail?: string; status?: string; source?: string }>;
   similar_cases?: Array<{ case_id?: string; stage?: string; score?: number; note?: string }>;
   toolchain?: Array<{ id?: string; title?: string; detail?: string; status?: string }>;
   llm_report?: {
@@ -54,6 +74,12 @@ export type SamReport = {
     error?: string;
     tokens?: number;
   };
+};
+
+export type ReaderDoctorAction = {
+  action_type: 'accept' | 'modify' | 'reject' | 'request_more_evidence' | 'skip';
+  final_t_stage?: string;
+  reason?: string;
 };
 
 export type SamAnalyzeResult = {
@@ -71,6 +97,16 @@ export type SamAnalyzeResult = {
     auto_center_point?: boolean;
     refinement_passes?: number;
   };
+  tracking?: {
+    enabled?: boolean;
+    mode?: string;
+    session_id?: string | null;
+    memory_used?: boolean;
+    reset?: boolean;
+    stored?: boolean;
+    current_frame_time?: number;
+    previous_frame_time?: number;
+  };
   report?: SamReport;
 };
 
@@ -82,6 +118,7 @@ export type SamBackendStatus = {
     ready?: boolean;
     model?: string;
     cuda?: boolean;
+    tracking?: { mode?: string; session_count?: number; ttl_sec?: number };
     minimax?: { configured?: boolean };
     deepseek?: { configured?: boolean };
     llm_report?: { configured?: boolean; preferred?: string; providers?: string[] };

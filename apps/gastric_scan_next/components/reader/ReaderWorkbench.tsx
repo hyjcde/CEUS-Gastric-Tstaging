@@ -207,7 +207,7 @@ export function ReaderWorkbench() {
   const loadCases = useCallback(async (c: ReaderCohort) => {
     setCasesLoading(true);
     try {
-      const res = await fetch(`/api/reader/cases?cohort=${encodeURIComponent(c)}`);
+      const res = await fetch(`/api/reader/cases?cohort=${encodeURIComponent(c)}`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'cases load failed');
       setCaseSummaries(data.cases || []);
@@ -231,7 +231,7 @@ export function ReaderWorkbench() {
       );
     }
     try {
-      const res = await fetch(`/api/reader/cases?case_id=${encodeURIComponent(caseId)}`);
+      const res = await fetch(`/api/reader/cases?case_id=${encodeURIComponent(caseId)}`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
       const data = await res.json();
       if (!data.ok || !data.case) throw new Error('case not found');
       const nextParams = new URLSearchParams(searchParams.toString());

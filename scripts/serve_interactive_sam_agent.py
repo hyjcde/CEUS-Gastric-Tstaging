@@ -2,10 +2,10 @@
 """Serve interactive video Agent UI with real SAM2 click segmentation.
 
 Usage:
-  python3 scripts/serve_interactive_sam_agent.py --port 8767
+  python3 scripts/serve_interactive_sam_agent.py --host 0.0.0.0 --port 8767
 
 Open:
-  http://127.0.0.1:8767/interactive_video_agent.html
+  http://<workstation-lan-ip>:8767/interactive_video_agent.html
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request as UrlRequest, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -187,6 +188,7 @@ class AnalyzeRequest(BaseModel):
 class VideoPropagateRequest(BaseModel):
     case_id: str = ""
     video_rel: str = ""
+    video_url: str = ""
     frame_time: float = 0.0
     image_width: int = Field(..., gt=0)
     image_height: int = Field(..., gt=0)
@@ -334,6 +336,53 @@ def read_video_frame(video_path: Path, frame_time: float) -> np.ndarray:
     if not ok or frame_bgr is None:
         raise HTTPException(status_code=400, detail="Failed to read video frame")
     return cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+
+VIDEO_ALLOWED_ROOTS = (
+    STATIC_ROOT.resolve(),
+    (REPO_ROOT / "apps/gastric_scan_next/public/videos").resolve(),
+    (REPO_ROOT / "dataset/internal/prospective_2025/2025/crop_ui/videos").resolve(),
+    (REPO_ROOT / "dataset/external").resolve(),
+    (REPO_ROOT / "data/raw/qualified_reader_videos").resolve(),
+    (REPO_ROOT / "data/raw/patient_videos_2025").resolve(),
+    (REPO_ROOT / "data/raw/legacy_external_direct_surgery").resolve(),
+    (REPO_ROOT / "data/raw/legacy_gastric_staging").resolve(),
+)
+
+
+def _is_allowed_video_path(candidate: Path) -> bool:
+    resolved = candidate.resolve()
+    return any(
+        resolved == root or str(resolved).startswith(f"{root}{os.sep}")
+        for root in VIDEO_ALLOWED_ROOTS
+    )
+
+
+def resolve_video_reference(video_rel: str, video_url: str) -> Path | None:
+    """Resolve reader-relative or Next stream URLs within audited video roots."""
+    references: list[str] = []
+    if video_rel.strip():
+        references.append(video_rel.strip())
+    if video_url.strip():
+        parsed = urlparse(video_url.strip())
+        references.extend(parse_qs(parsed.query).get("rel", []))
+        if parsed.scheme in {"", "file"} and parsed.path:
+            references.append(parsed.path)
+
+    seen: set[str] = set()
+    for reference in references:
+        rel = reference.replace("\\", "/").lstrip("/")
+        if not rel or ".." in Path(rel).parts or rel in seen:
+            continue
+        seen.add(rel)
+        candidates = (
+            STATIC_ROOT / rel,
+            REPO_ROOT / rel,
+        )
+        for candidate in candidates:
+            if candidate.is_file() and _is_allowed_video_path(candidate):
+                return candidate.resolve()
+    return None
 
 
 def postprocess_mask(
@@ -657,19 +706,24 @@ def estimate_wall_metrics(mask: np.ndarray) -> tuple[float, float, float]:
 
 
 def build_stage_distribution(reference_pt: str | None, thickness_mm: float, sam_score: float) -> dict[str, float]:
-    ref = reference_pt if reference_pt in STAGES else "T2"
-    base = {s: 0.08 for s in STAGES}
-    base[ref] = 0.46
+    """Build a non-pathology stage tendency without using the reference answer."""
+    base = {s: 0.25 for s in STAGES}
     if thickness_mm >= 7.5:
+        base["T1"] -= 0.10
+        base["T2"] -= 0.08
         base["T3"] += 0.12
         base["T4+"] += 0.06
-        base[ref] -= 0.1
     elif thickness_mm <= 4.5:
-        base["T1"] += 0.1
-        base[ref] -= 0.06
-    base[ref] += min(0.12, sam_score * 0.08)
-    total = sum(base.values())
-    return {k: v / total for k, v in base.items()}
+        base["T1"] += 0.12
+        base["T2"] += 0.05
+        base["T3"] -= 0.08
+        base["T4+"] -= 0.09
+    # SAM confidence changes concentration, not the clinical stage prior.
+    concentration = min(0.08, max(0.0, sam_score - 0.5) * 0.12)
+    stage = max(base, key=base.get)
+    base[stage] += concentration
+    total = sum(max(0.01, value) for value in base.values())
+    return {key: max(0.01, value) / total for key, value in base.items()}
 
 
 def prompt_summary(
@@ -686,6 +740,17 @@ def prompt_summary(
     return " · ".join(parts) if parts else "自动关键帧分割"
 
 
+def _sign_field(value: Any, status: str = "unevaluated", source: str = "not_available", evidence_ref: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "value": value,
+        "status": status,
+        "source": source,
+        "confidence": None,
+        "raw_value": value,
+        "evidence_ref": evidence_ref or [],
+    }
+
+
 def build_report(
     case_id: str,
     frame_time: float,
@@ -697,57 +762,74 @@ def build_report(
     outer_risk: float,
     reference_pt: str | None,
 ) -> dict[str, Any]:
-    dist = build_stage_distribution(reference_pt, thickness_mm, sam_score)
-    stage = max(dist.items(), key=lambda kv: kv[1])[0]
-    confidence = min(0.9, max(0.45, dist[stage] + sam_score * 0.08))
+    # reference_pt is intentionally ignored: pathology/reference labels must
+    # never influence an AI suggestion shown during the reader study.
+    dist = build_stage_distribution(None, thickness_mm, sam_score)
+    raw_stage = max(dist.items(), key=lambda kv: kv[1])[0]
+    conflicts: list[dict[str, Any]] = []
+    if thickness_mm >= 7.5 and raw_stage in {"T1", "T2"}:
+        conflicts.append({
+            "code": "thickness_vs_low_stage",
+            "severity": "high",
+            "fields": ["size.thickness", "reference_stage"],
+            "message": f"最大厚度约 {thickness_mm:.1f} mm，但当前低分期倾向为 {raw_stage}，不能直接采纳低分期建议。",
+        })
+    if outer_risk >= 0.75 and raw_stage in {"T1", "T2"}:
+        conflicts.append({
+            "code": "outer_risk_vs_low_stage",
+            "severity": "high",
+            "fields": ["serosa_change", "reference_stage"],
+            "message": f"外缘风险约 {outer_risk:.0%}，与 {raw_stage} 低分期建议冲突，需多切面复核浆膜及胃周组织。",
+        })
+    recommendation_status = "conflict" if conflicts else "suggested"
+    recommended_stage = "uncertain" if conflicts else raw_stage
+    confidence = min(0.9, max(0.45, dist[raw_stage] + sam_score * 0.08))
+    if conflicts:
+        confidence = min(confidence, 0.55)
     mm = int(frame_time // 60)
     ss = int(frame_time % 60)
     frame_clock = f"{mm:02d}:{ss:02d}"
     has_prompt = bool(clicks) or box is not None
+    unresolved = "；".join(item["message"] for item in conflicts)
+    summary = (
+        f"当前帧 {frame_clock} 已完成交互分割。最大厚度约 {thickness_mm:.1f} mm，"
+        f"外缘风险约 {outer_risk:.0%}。"
+        + (f" {unresolved} 暂不输出确定性 cT，需医生结合连续视频和多切面复核。" if conflicts else " 当前仅作为超声倾向参考，最终判断由医生确认。")
+    )
+    signs = {
+        "size": {
+            "length": _sign_field(None, evidence_ref=["mask.length_unavailable"]),
+            "thickness": _sign_field(round(thickness_mm, 1), "suggested", "live_contour", ["mask.thickness_mm"]),
+        },
+        "layer_structure": _sign_field("未评估", evidence_ref=["layer.multiplanar_review_required"]),
+        "morphology": _sign_field("未评估", evidence_ref=["morphology.not_available"]),
+        "boundary": _sign_field("未评估", evidence_ref=["boundary.not_available"]),
+        "growth_pattern": _sign_field("未评估", evidence_ref=["growth.not_available"]),
+        "serosa_change": _sign_field("未评估", evidence_ref=["serosa.multiplanar_review_required"]),
+        "perigastric_tissue": _sign_field("未评估", evidence_ref=["perigastric.multiplanar_review_required"]),
+    }
     return {
-        "recommended_stage": stage,
+        "recommended_stage": recommended_stage,
         "stage_distribution": dist,
         "calibrated_confidence": confidence,
-        "review_flag": confidence < 0.68 or stage in {"T2", "T3"},
+        "recommendation_status": recommendation_status,
+        "review_flag": bool(conflicts) or confidence < 0.68,
+        "conflicts": conflicts,
+        "reference_stage": {"band": recommended_stage, "source": "product_score", "conflicts": conflicts},
+        "signs": signs,
         "sam_score": sam_score,
-        "summary": (
-            f"SAM2 segmented lesion at {frame_clock} from doctor prompt; "
-            f"mask confidence {sam_score:.2f}."
-            if has_prompt
-            else f"SAM2 auto-segmentation at {frame_clock}."
-        ),
+        "summary": summary,
         "evidence": [
-            {
-                "title": "SAM2 segmentation",
-                "detail": f"{prompt_summary(clicks, box)} · score {sam_score:.2f}"
-                if has_prompt
-                else "Auto key-frame segmentation",
-            },
-            {
-                "title": "Wall thickness",
-                "detail": f"Lesion region thickness ~{thickness_mm:.1f} mm; normal wall ~{normal_wall_mm:.1f} mm.",
-            },
-            {
-                "title": "Outer margin risk",
-                "detail": f"Estimated outer-wall involvement risk {outer_risk:.2f}.",
-            },
-            {
-                "title": "Boundary detail",
-                "detail": "Auto-generated ×3.5 zoom on outer/superior/inferior/inner margins for serosa-side review."
-                if has_prompt
-                else "Run segmentation to unlock boundary magnifier panels.",
-            },
-            {
-                "title": "Review hint",
-                "detail": "Combine SAM mask with wall-layer evidence before final T staging."
-                if confidence < 0.72
-                else "Evidence is internally consistent; suitable as second opinion.",
-            },
+            {"title": "交互分割", "detail": f"{prompt_summary(clicks, box)} · score {sam_score:.2f}", "status": "suggested", "source": "live_contour"},
+            {"title": "肿瘤厚度", "detail": f"最大厚度约 {thickness_mm:.1f} mm；该值为辅助估测，需医生复核。", "status": "suggested", "source": "live_contour"},
+            {"title": "胃壁层次结构", "detail": "当前帧未完成多切面层次评估，不能据此断言肌层或浆膜中断。", "status": "unevaluated", "source": "not_available"},
+            {"title": "浆膜/外缘风险", "detail": f"外缘风险约 {outer_risk:.0%}；不能单独作为浆膜突破确诊。", "status": "conflict" if outer_risk >= 0.75 else "suggested", "source": "pixel_proxy"},
+            {"title": "边界与生长方式", "detail": "当前帧未完成结构化征象确认。", "status": "unevaluated", "source": "not_available"},
+            {"title": "胃周组织", "detail": "当前帧未评估胃周脂肪间隙。", "status": "unevaluated", "source": "not_available"},
+            {"title": "阶段建议", "detail": "不确定/需复核" if conflicts else f"倾向 {raw_stage}，仅作参考", "status": recommendation_status, "source": "rule_assist"},
         ],
-        "similar_cases": [
-            {"case_id": "CASE-023", "stage": "T2", "score": 0.84, "note": "Similar wall-layer pattern."},
-            {"case_id": "CASE-048", "stage": "T3", "score": 0.79, "note": "Comparable outer margin risk."},
-        ],
+        "similar_cases": [],
+        "toolchain": [{"id": "sam2_finetuned", "title": "胃超声微调分割", "detail": "仅提供当前帧 mask，不替代医生连续视频判断。", "status": "ok"}],
     }
 
 
@@ -1283,7 +1365,7 @@ def interactive_analyze(req: AnalyzeRequest) -> dict[str, Any]:
         thickness_mm,
         normal_wall_mm,
         outer_risk,
-        lookup_reference_pt(req.case_id),
+        None,
     )
     report = maybe_attach_llm_report(
         report,
@@ -1319,14 +1401,12 @@ def sam_video_status() -> dict[str, Any]:
 
 @app.post("/api/sam/video-propagate")
 def sam_video_propagate(req: VideoPropagateRequest) -> dict[str, Any]:
-    rel = (req.video_rel or "").replace("\\", "/").lstrip("/")
-    if not rel:
-        raise HTTPException(status_code=400, detail="video_rel is required")
-    video_path = (STATIC_ROOT / rel).resolve()
-    if not str(video_path).startswith(str(STATIC_ROOT.resolve())):
-        raise HTTPException(status_code=400, detail="Invalid video path")
-    if not video_path.is_file():
-        raise HTTPException(status_code=404, detail=f"Video not found: {req.video_rel}")
+    video_path = resolve_video_reference(req.video_rel, req.video_url)
+    if video_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Video not found or not allowlisted: {req.video_rel or req.video_url}",
+        )
     tracker = get_video_tracker()
     try:
         result = tracker.propagate(
@@ -1361,8 +1441,17 @@ app.mount("/", StaticFiles(directory=str(STATIC_ROOT), html=True), name="static"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8767)
+    parser.add_argument(
+        "--host",
+        default=os.getenv("SAM_HOST", "0.0.0.0"),
+        help="Bind address, defaulting to SAM_HOST or 0.0.0.0 for LAN access",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("SAM_PORT", "8767")),
+        help="Inference service port, defaulting to SAM_PORT or 8767",
+    )
     args = parser.parse_args()
     llm = llm_report_status_payload()
     ds = deepseek_status_payload()
