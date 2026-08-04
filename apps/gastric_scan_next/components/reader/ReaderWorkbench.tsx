@@ -33,7 +33,7 @@ import type {
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import { buildReadingAgentUrl, getReadingAgentPageUrl } from '@/lib/reading-agent-url';
 
-const TRACK_INTERVAL_MS = 500;
+const TRACK_INTERVAL_MS = 1000;
 type AuditEventType =
   | 'session_start'
   | 'session_end'
@@ -99,7 +99,7 @@ export function ReaderWorkbench() {
   const [samBusy, setSamBusy] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [trackOnPlay, setTrackOnPlay] = useState(true);
+  const [trackOnPlay, setTrackOnPlay] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
@@ -524,6 +524,11 @@ export function ReaderWorkbench() {
       return;
     }
     const requestId = ++videoTrackRequestRef.current;
+    const resumeAfterTrack = !video.paused;
+    if (resumeAfterTrack) {
+      video.pause();
+      setIsPlaying(false);
+    }
     setVideoTrackBusy(true);
     setVideoTrackStatus('SAM2.1 视频 memory 传播中…');
     try {
@@ -564,7 +569,12 @@ export function ReaderWorkbench() {
       setVideoTrackStatus('全视频传播失败');
       toast.error(error instanceof Error ? error.message : '全视频传播失败');
     } finally {
-      if (requestId === videoTrackRequestRef.current) setVideoTrackBusy(false);
+      if (requestId === videoTrackRequestRef.current) {
+        setVideoTrackBusy(false);
+        if (resumeAfterTrack) {
+          void video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+        }
+      }
     }
   }, [activeCaseId, box, clicks, currentFrame?.video_rel, currentTime, hasPrompt, recordAudit]);
 
@@ -652,7 +662,7 @@ export function ReaderWorkbench() {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !trackOnPlay || !isPlaying || !hasPrompt || videoTrack?.frames.length) return;
+    if (!video || !trackOnPlay || !isPlaying || !hasPrompt || videoTrackBusy || videoTrack?.frames.length) return;
     const timer = window.setInterval(() => {
       const now = performance.now();
       if (trackBusyRef.current || now - lastTrackRef.current < TRACK_INTERVAL_MS) return;
@@ -663,7 +673,7 @@ export function ReaderWorkbench() {
       });
     }, TRACK_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [hasPrompt, isPlaying, runSam, trackOnPlay, videoTrack?.frames.length]);
+  }, [hasPrompt, isPlaying, runSam, trackOnPlay, videoTrack?.frames.length, videoTrackBusy]);
 
   const onSeek = (time: number) => {
     const video = videoRef.current;

@@ -183,10 +183,10 @@ export function ReaderViewer({
       redraw();
     };
     const onTime = () => onTimeUpdate(video.currentTime, video.duration || 0);
-    video.addEventListener('loadedmetadata', onLoaded);
+    video.addEventListener('loadeddata', onLoaded);
     video.addEventListener('timeupdate', onTime);
     return () => {
-      video.removeEventListener('loadedmetadata', onLoaded);
+      video.removeEventListener('loadeddata', onLoaded);
       video.removeEventListener('timeupdate', onTime);
     };
   }, [onTimeUpdate, onVideoReady, redraw, videoSrc]);

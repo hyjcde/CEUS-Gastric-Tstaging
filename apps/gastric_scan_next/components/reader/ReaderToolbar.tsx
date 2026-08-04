@@ -90,7 +90,7 @@ export function ReaderToolbar({
           onClick={onToggleTrack}
           className={`reader-btn ${trackOnPlay ? 'reader-btn-primary' : ''}`}
         >
-          播放跟踪 · {trackOnPlay ? '开' : '关'}
+          自动单帧跟踪 · {trackOnPlay ? '开' : '关'}
         </button>
         <button
           type="button"
