@@ -244,7 +244,7 @@ export function ReaderViewer({
         loop
         muted
         playsInline
-        preload="auto"
+        preload="metadata"
       />
       <div
         className={`absolute inset-0 ${interactionMode === 'box' ? 'cursor-crosshair' : 'cursor-pointer'}`}
