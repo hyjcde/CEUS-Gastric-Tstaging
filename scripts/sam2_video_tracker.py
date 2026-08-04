@@ -149,6 +149,11 @@ class Sam2VideoTracker:
         centroid_shift = 0.0
         iou = 1.0
         if previous is not None:
+            previous_mask = previous.get("mask")
+            if isinstance(previous_mask, np.ndarray) and previous_mask.shape == mask.shape:
+                intersection = np.logical_and(mask, previous_mask).sum()
+                union = np.logical_or(mask, previous_mask).sum()
+                iou = float(intersection / union) if union else 0.0
             previous_area = max(1, int(previous.get("area", 0)))
             area_change = max(area / previous_area, previous_area / max(1, area))
             if area_change > 3.0:
@@ -162,6 +167,9 @@ class Sam2VideoTracker:
             if centroid_shift > 0.35:
                 reasons.append("centroid_jump")
                 quality_score *= max(0.0, 1.0 - min(1.0, (centroid_shift - 0.35) / 0.35))
+            if iou < 0.02 and centroid_shift > 0.12:
+                reasons.append("mask_discontinuity")
+                quality_score *= 0.35
 
         accepted = not reasons
         return {
@@ -237,7 +245,12 @@ class Sam2VideoTracker:
                     stopped_at = int(frame_idx)
                     stop_reason = quality["reason"]
                     break
-                previous = {"area": quality["area"], "cx": quality["centroid"][0], "cy": quality["centroid"][1]}
+                previous = {
+                    "mask": mask,
+                    "area": quality["area"],
+                    "cx": quality["centroid"][0],
+                    "cy": quality["centroid"][1],
+                }
                 item = {
                     "frame_index": int(frame_idx),
                     "frame_time": round(float(frame_idx) / max(fps, 1e-6), 4),
