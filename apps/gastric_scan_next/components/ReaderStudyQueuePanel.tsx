@@ -316,6 +316,7 @@ export function ReaderStudyQueuePanel({
         </>
       ) : null}
 
+      {!hideTaskChrome ? (
       <div className={`mt-3 rounded-lg border p-2.5 ${highConflict ? 'border-rose-500/40 bg-rose-500/[0.07]' : 'border-amber-500/25 bg-amber-500/[0.05]'}`}>
         <div className={`flex items-center gap-2 text-[10px] font-semibold ${highConflict ? 'text-rose-300' : 'text-amber-300'}`}>
           <Sparkles size={12} /> {zh ? '结构化辅助证据' : 'Structured assistive evidence'}
@@ -385,6 +386,7 @@ export function ReaderStudyQueuePanel({
             : 'Geometry and rules provide assistive evidence, not a pathology gold standard. The physician makes the final decision; no definitive invasion claim is produced when layers, serosa, or perigastric tissue are unassessed.'}
         </div>
       </div>
+      ) : null}
 
       <div className="mt-4 border-t border-white/10 pt-3">
         <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-300">
