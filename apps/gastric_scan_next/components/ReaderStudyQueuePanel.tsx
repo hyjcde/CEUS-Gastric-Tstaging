@@ -17,11 +17,12 @@ type Props = {
   onStudyModeChange: (mode: ReaderStudyMode) => void;
   onSelectPatient?: (patient: Patient) => void;
   systemReport?: SamReport | null;
+  publicReaderOnly?: boolean;
 };
 
 const TASKS: Array<{ id: ReaderStudyMode; labelZh: string; labelEn: string; shortZh: string; shortEn: string }> = [
-  { id: 'benign_malignancy', labelZh: '任务一 · 良恶性', labelEn: 'Task 1 · Benign vs malignant', shortZh: '良恶性 50 例', shortEn: '50 cases' },
-  { id: 't_staging', labelZh: '任务二 · T 分期', labelEn: 'Task 2 · T staging', shortZh: 'T 分期 100 例', shortEn: '100 cases' },
+  { id: 'benign_malignancy', labelZh: '良恶性判断', labelEn: 'Benignity review', shortZh: '良恶性', shortEn: 'Benign vs malignant' },
+  { id: 't_staging', labelZh: 'T 分期判断', labelEn: 'T-staging review', shortZh: 'T 分期', shortEn: 'T staging' },
 ];
 const STAGES = ['', 'T1', 'T2', 'T3', 'T4+'];
 const NATURES = ['', 'benign', 'malignant'];
@@ -71,6 +72,7 @@ export function ReaderStudyQueuePanel({
   onStudyModeChange,
   onSelectPatient,
   systemReport = null,
+  publicReaderOnly = false,
 }: Props) {
   const searchParams = useSearchParams();
   const { language } = useSettings();
@@ -222,12 +224,14 @@ export function ReaderStudyQueuePanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
-            <PlayCircle size={15} /> {zh ? 'AI 辅助阅片任务' : 'AI-assisted reading task'}
+            <PlayCircle size={15} /> {zh ? (publicReaderOnly ? '医生决策' : 'AI 辅助阅片任务') : (publicReaderOnly ? 'Physician decision' : 'AI-assisted reading task')}
           </div>
           <div className="mt-1 font-mono text-[11px] text-gray-400">
-            {patient.id_short || patient.id} · {frameCount} {zh ? '个视频/帧' : 'videos/frames'}
+            {publicReaderOnly
+              ? (patient.id_short || patient.id)
+              : `${patient.id_short || patient.id} · ${frameCount} ${zh ? '个视频/帧' : 'videos/frames'}`}
           </div>
-          {patient.video_urls?.length ? (
+          {!publicReaderOnly && patient.video_urls?.length ? (
             <div className="mt-1 truncate text-[10px] text-amber-300/80" title={patient.video_urls.map((video) => video.filename).join(', ')}>
               {zh ? '视频：' : 'Videos: '}{patient.video_urls.map((video) => video.filename).join(zh ? '、' : ', ')}
             </div>
@@ -249,18 +253,24 @@ export function ReaderStudyQueuePanel({
           </button>
         ))}
       </div>
-      <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
-        <span>
-          {zh ? '当前任务进度：' : 'Task progress: '}
-          {completedCount}/{taskPatients.length || (isNatureTask ? 50 : 100)}
-        </span>
-        <span>{zh ? 'AI 辅助 · 医生最终确认' : 'AI-assisted · physician final confirmation'}</span>
-      </div>
+      {!publicReaderOnly ? (
+        <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
+          <span>
+            {zh ? '当前任务进度：' : 'Task progress: '}
+            {completedCount}/{taskPatients.length || (isNatureTask ? 50 : 100)}
+          </span>
+          <span>{zh ? 'AI 辅助 · 医生最终确认' : 'AI-assisted · physician final confirmation'}</span>
+        </div>
+      ) : null}
 
       <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
         {zh
-          ? '先播放视频并在画面上点选或框选当前帧，系统返回结构化征象；医生仍需结合连续视频完成本任务判断。'
-          : 'Play the video, then click or box the current frame. The system returns structured signs; the physician should review the full sequence before deciding.'}
+          ? (publicReaderOnly
+            ? '播放视频并检查当前帧；证据面板显示可追溯征象、冲突和需要医生确认的内容。'
+            : '先播放视频并在画面上点选或框选当前帧，系统返回结构化征象；医生仍需结合连续视频完成本任务判断。')
+          : (publicReaderOnly
+            ? 'Review the current video frame; the evidence panel shows traceable signs, conflicts, and items requiring physician confirmation.'
+            : 'Play the video, then click or box the current frame. The system returns structured signs; the physician should review the full sequence before deciding.')}
       </p>
 
       <div className={`mt-3 rounded-lg border p-2.5 ${highConflict ? 'border-rose-500/40 bg-rose-500/[0.07]' : 'border-amber-500/25 bg-amber-500/[0.05]'}`}>

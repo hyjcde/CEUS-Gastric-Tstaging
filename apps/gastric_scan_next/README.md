@@ -70,6 +70,17 @@ open the video evidence editor, and choose **Unified Agent**. The right
 evidence panel should show the case belief state, frame provenance, DINO
 shadow status, seven-sign/report state, conflicts, and the next active action.
 
+### Public reader-only build
+
+The public edge exposes only the `reader_v150` queue. Build it with:
+
+```bash
+NEXT_PUBLIC_READER_ONLY=1 NEXT_DIST_DIR=.next-aliyun npm run build
+```
+
+Agent/DINO/SAM requests are forwarded to the workstation through the
+authenticated reverse tunnel; the public host does not need the model stack.
+
 ### Interactive boundary edit → Agent analyze
 
 1. Select a case, click **边界编辑** (bottom-left of the viewer).

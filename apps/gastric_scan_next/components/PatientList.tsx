@@ -116,8 +116,9 @@ async function fetchPatientPage(
 }
 
 export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded, readerStudyMode }) => {
-  const { dataset, cohortYear, queueId, setQueueId, language, t } = useSettings();
+  const { dataset, cohortYear, queueId, setQueueId, language, readerOnly, t } = useSettings();
   const zh = language === 'zh';
+  const publicQueueLabel = zh ? '阅片任务 · 第一轮' : 'Reader task · Round 1';
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -385,15 +386,19 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
             {t.cohort.title}
           </span>
           <span className="text-[9px] font-mono text-gray-500">
-            {zh ? `${groupedPatients.length}组 / ${totalFrames}帧` : `${groupedPatients.length} groups / ${totalFrames} frames`}
+            {readerOnly
+              ? (zh ? '当前队列' : 'Current queue')
+              : (zh ? `${groupedPatients.length}组 / ${totalFrames}帧` : `${groupedPatients.length} groups / ${totalFrames} frames`)}
           </span>
         </div>
-        <div className="mt-0.5 truncate text-[8px] font-mono text-cyan-300/70" title={getQueueDisplayLabel(queueId, language)}>
-          {getQueueDisplayLabel(queueId, language)}
+        <div className="mt-0.5 truncate text-[8px] font-mono text-cyan-300/70" title={readerOnly ? publicQueueLabel : getQueueDisplayLabel(queueId, language)}>
+          {readerOnly ? publicQueueLabel : getQueueDisplayLabel(queueId, language)}
         </div>
-        <div className="relative z-[60] mt-1.5">
-          <QueueTreeSelect value={queueId} onChange={setQueueId} />
-        </div>
+        {!readerOnly ? (
+          <div className="relative z-[60] mt-1.5">
+            <QueueTreeSelect value={queueId} onChange={setQueueId} />
+          </div>
+        ) : null}
       </div>
 
       {/* Search */}
@@ -446,12 +451,14 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                           <span className={`block truncate text-[11px] font-mono ${isGroupSelected ? 'text-gray-200' : 'text-gray-400'}`}>
                               {cohortYear === 'gist' ? `Patient ${group.baseId}` : group.baseId}
                           </span>
-                          {group.scopeLabel ? (
+                          {group.scopeLabel && !readerOnly ? (
                             <span className="block truncate text-[8px] font-mono text-gray-600">{group.scopeLabel}</span>
                           ) : null}
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {!readerOnly ? (
+                        <>
                         <span className={`
                             text-[8px] font-bold px-1 py-0.5 rounded-sm uppercase
                             ${group.groupType === 'NAC'
@@ -470,6 +477,8 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                         <span className="text-[9px] text-gray-600 bg-white/5 px-1.5 rounded-full">
                             {group.items.length}
                         </span>
+                        </>
+                      ) : null}
                     </div>
                   </div>
 

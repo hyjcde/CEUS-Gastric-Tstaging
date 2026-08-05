@@ -848,6 +848,7 @@ function buildQueuePatientsPage(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const publicReaderOnly = process.env.NEXT_PUBLIC_READER_ONLY === '1';
     const datasetParam = searchParams.get('dataset');
     const cohortYearParam = searchParams.get('cohort') || '2025';
     const treatmentTypeParam = searchParams.get('treatment') || 'surgery';
@@ -855,8 +856,10 @@ export async function GET(request: NextRequest) {
     const dataset = parseDatasetType(datasetParam);
     const treatmentType: TreatmentType = treatmentTypeParam === 'nac' ? 'nac' : 'surgery';
 
-    if (queueParam) {
-      const queueId = parseWorkbenchQueueId(queueParam);
+    if (queueParam || publicReaderOnly) {
+      const queueId = publicReaderOnly
+        ? 'reader:reader_v150'
+        : parseWorkbenchQueueId(queueParam);
       const rawOffset = Number.parseInt(searchParams.get('offset') || '0', 10);
       const rawLimit = Number.parseInt(searchParams.get('limit') || '80', 10);
       const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
@@ -871,7 +874,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (cohortYearParam === 'reader_v150' || cohortYearParam === 'reader-v150') {
+    if (publicReaderOnly || cohortYearParam === 'reader_v150' || cohortYearParam === 'reader-v150') {
       return NextResponse.json(buildReaderStudyV150Patients());
     }
     const cohortYear = parseCohortYear(cohortYearParam);

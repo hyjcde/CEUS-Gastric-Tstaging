@@ -15,6 +15,7 @@ import {
 
 interface SettingsContextType {
   language: Language;
+  readerOnly: boolean;
   setLanguage: (lang: Language) => void;
   dataset: DatasetType;
   setDataset: (ds: DatasetType) => void;
@@ -28,6 +29,7 @@ interface SettingsContextType {
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+const READER_ONLY_MODE = process.env.NEXT_PUBLIC_READER_ONLY === '1';
 
 function readStoredDataset(): DatasetType {
   if (typeof window === 'undefined') return DEFAULT_DATASET;
@@ -43,6 +45,7 @@ function readStoredLanguage(): Language {
 }
 
 function readStoredQueue(): WorkbenchQueueId {
+  if (READER_ONLY_MODE) return DEFAULT_WORKBENCH_QUEUE;
   if (typeof window === 'undefined') return DEFAULT_WORKBENCH_QUEUE;
   return parseWorkbenchQueueId(window.localStorage.getItem('gastric_queue'));
 }
@@ -93,6 +96,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const setQueueId = (nextQueueId: WorkbenchQueueId) => {
+    if (READER_ONLY_MODE && nextQueueId !== DEFAULT_WORKBENCH_QUEUE) return;
     setQueueIdState(nextQueueId);
     setCohortYear(queueToCohortYear(nextQueueId));
     if (typeof window !== 'undefined') {
@@ -103,7 +107,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   const t = dictionary[language];
 
   return (
-    <SettingsContext.Provider value={{ language, setLanguage, dataset, setDataset, cohortYear, setCohortYear, queueId, setQueueId, treatmentType, setTreatmentType, t }}>
+    <SettingsContext.Provider value={{ language, readerOnly: READER_ONLY_MODE, setLanguage, dataset, setDataset, cohortYear, setCohortYear, queueId, setQueueId, treatmentType, setTreatmentType, t }}>
       {children}
     </SettingsContext.Provider>
   );

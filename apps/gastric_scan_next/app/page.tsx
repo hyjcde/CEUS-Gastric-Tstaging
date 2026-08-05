@@ -42,7 +42,7 @@ import {
 } from '@/lib/concept-agent-merge';
 
 export default function Home() {
-  const { dataset, cohortYear, queueId, language } = useSettings();
+  const { dataset, cohortYear, queueId, language, readerOnly } = useSettings();
   const [conceptState, setConceptState] = useState<ConceptState>(DEFAULT_STATE);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [readerStudyMode, setReaderStudyMode] = useState<ReaderStudyMode>('benign_malignancy');
@@ -650,6 +650,7 @@ export default function Home() {
                 onStudyModeChange={setReaderStudyMode}
                 onSelectPatient={setSelectedPatient}
                 systemReport={systemReport}
+                publicReaderOnly={readerOnly}
               />
             </div>
           ) : isBenignQueue ? (

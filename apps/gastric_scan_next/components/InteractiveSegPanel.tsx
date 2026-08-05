@@ -28,6 +28,7 @@ type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam';
 type MediaMode = 'image' | 'video';
 type ContourLayer = 'lesion' | 'wall';
 type DragLayer = ContourLayer;
+const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 1.5] as const;
 type KeyframeCandidate = {
   timestamp_sec: number;
   score: number;
@@ -248,6 +249,7 @@ export function InteractiveSegPanel({
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [videoTime, setVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [videoPlaybackRate, setVideoPlaybackRate] = useState<number>(0.5);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackOnPlay, setTrackOnPlay] = useState(false);
   const [trackingPrepared, setTrackingPrepared] = useState(false);
@@ -1272,6 +1274,13 @@ export function InteractiveSegPanel({
   }, [open, mediaMode, videoUrl, syncFrameFromVideo]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.defaultPlaybackRate = videoPlaybackRate;
+    video.playbackRate = videoPlaybackRate;
+  }, [videoPlaybackRate, videoUrl]);
+
+  useEffect(() => {
     if (!open) return;
     const resizeCanvas = () => {
       const canvas = canvasRef.current;
@@ -2241,6 +2250,19 @@ export function InteractiveSegPanel({
                     {isPlaying ? <Pause size={13} /> : <Play size={13} />}
                     {isPlaying ? (zh ? '暂停' : 'Pause') : (zh ? '播放' : 'Play')}
                   </button>
+                  <label className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-black/25 px-2 py-1.5 text-[10px] text-cyan-100/80">
+                    <span>{zh ? '倍速' : 'Speed'}</span>
+                    <select
+                      value={String(videoPlaybackRate)}
+                      onChange={(event) => setVideoPlaybackRate(Number(event.target.value))}
+                      className="bg-transparent text-cyan-100 outline-none"
+                      aria-label={zh ? '视频倍速' : 'Video playback speed'}
+                    >
+                      {VIDEO_PLAYBACK_RATES.map((rate) => (
+                        <option key={rate} value={rate}>{rate}×</option>
+                      ))}
+                    </select>
+                  </label>
                   <input
                     type="range"
                     min={0}
