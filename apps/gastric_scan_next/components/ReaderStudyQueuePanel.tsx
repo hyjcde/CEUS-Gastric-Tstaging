@@ -18,6 +18,7 @@ type Props = {
   onSelectPatient?: (patient: Patient) => void;
   systemReport?: SamReport | null;
   onSystemReportChange?: (report: SamReport) => void;
+  hideTaskChrome?: boolean;
   publicReaderOnly?: boolean;
 };
 
@@ -75,6 +76,7 @@ export function ReaderStudyQueuePanel({
   onSelectPatient,
   systemReport = null,
   onSystemReportChange,
+  hideTaskChrome = false,
   publicReaderOnly = false,
 }: Props) {
   const searchParams = useSearchParams();
@@ -261,7 +263,7 @@ export function ReaderStudyQueuePanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
-            <PlayCircle size={15} /> {zh ? (publicReaderOnly ? '医生决策' : 'AI 辅助阅片任务') : (publicReaderOnly ? 'Physician decision' : 'AI-assisted reading task')}
+            <PlayCircle size={15} /> {zh ? (hideTaskChrome ? '病例决策' : (publicReaderOnly ? '医生决策' : 'AI 辅助分析')) : (hideTaskChrome ? 'Case decision' : (publicReaderOnly ? 'Physician decision' : 'AI-assisted analysis'))}
           </div>
           <div className="mt-1 font-mono text-[11px] text-gray-400">
             {publicReaderOnly
@@ -277,38 +279,42 @@ export function ReaderStudyQueuePanel({
         <ShieldCheck size={16} className="text-emerald-300" />
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg border border-white/10 bg-black/20 p-1">
-        {TASKS.map((task) => (
-          <button
-            key={task.id}
-            type="button"
-            onClick={() => chooseTask(task.id)}
-            className={`rounded-md px-2 py-2 text-left text-[10px] transition ${studyMode === task.id ? 'bg-amber-500/20 text-amber-200' : 'text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}
-          >
-            <span className="block font-semibold">{zh ? task.labelZh : task.labelEn}</span>
-            <span className="mt-0.5 block text-[9px] opacity-70">{zh ? task.shortZh : task.shortEn}</span>
-          </button>
-        ))}
-      </div>
-      {!publicReaderOnly ? (
-        <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
-          <span>
-            {zh ? '当前任务进度：' : 'Task progress: '}
-            {completedCount}/{taskPatients.length || (isNatureTask ? 50 : 100)}
-          </span>
-          <span>{zh ? 'AI 辅助 · 医生最终确认' : 'AI-assisted · physician final confirmation'}</span>
-        </div>
-      ) : null}
+      {!hideTaskChrome ? (
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg border border-white/10 bg-black/20 p-1">
+            {TASKS.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={() => chooseTask(task.id)}
+                className={`rounded-md px-2 py-2 text-left text-[10px] transition ${studyMode === task.id ? 'bg-amber-500/20 text-amber-200' : 'text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}
+              >
+                <span className="block font-semibold">{zh ? task.labelZh : task.labelEn}</span>
+                <span className="mt-0.5 block text-[9px] opacity-70">{zh ? task.shortZh : task.shortEn}</span>
+              </button>
+            ))}
+          </div>
+          {!publicReaderOnly ? (
+            <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
+              <span>
+                {zh ? '当前任务进度：' : 'Task progress: '}
+                {completedCount}/{taskPatients.length || (isNatureTask ? 50 : 100)}
+              </span>
+              <span>{zh ? 'AI 辅助 · 医生最终确认' : 'AI-assisted · physician final confirmation'}</span>
+            </div>
+          ) : null}
 
-      <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
-        {zh
-          ? (publicReaderOnly
-            ? '播放视频并检查当前帧；证据面板显示可追溯征象、冲突和需要医生确认的内容。'
-            : '先播放视频并在画面上点选或框选当前帧，系统返回结构化征象；医生仍需结合连续视频完成本任务判断。')
-          : (publicReaderOnly
-            ? 'Review the current video frame; the evidence panel shows traceable signs, conflicts, and items requiring physician confirmation.'
-            : 'Play the video, then click or box the current frame. The system returns structured signs; the physician should review the full sequence before deciding.')}
-      </p>
+          <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+            {zh
+              ? (publicReaderOnly
+                ? '播放视频并检查当前帧；证据面板显示可追溯征象、冲突和需要医生确认的内容。'
+                : '先播放视频并在画面上点选或框选当前帧，系统返回结构化征象；医生仍需结合连续视频完成本任务判断。')
+              : (publicReaderOnly
+                ? 'Review the current video frame; the evidence panel shows traceable signs, conflicts, and items requiring physician confirmation.'
+                : 'Play the video, then click or box the current frame. The system returns structured signs; the physician should review the full sequence before deciding.')}
+          </p>
+        </>
+      ) : null}
 
       <div className={`mt-3 rounded-lg border p-2.5 ${highConflict ? 'border-rose-500/40 bg-rose-500/[0.07]' : 'border-amber-500/25 bg-amber-500/[0.05]'}`}>
         <div className={`flex items-center gap-2 text-[10px] font-semibold ${highConflict ? 'text-rose-300' : 'text-amber-300'}`}>

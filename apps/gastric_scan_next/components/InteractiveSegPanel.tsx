@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import {
   Check, Eraser, Layers, Loader2, MousePointer2, PanelTop, Pause, Pencil, Play, Plus, Save, SkipBack, SkipForward, Sparkles, Trash2, Video, X, ZoomIn,
 } from 'lucide-react';
-import type { MaskBoundaryOverride, Patient, ReaderStudyMode, VideoInfo, VideoMaskFrameOverride } from '@/types';
+import type { MaskBoundaryOverride, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
 import { bboxFromPolygon } from '@/lib/mask-override';
 import { parseLesionMaskFromLabelMe, parseWallMaskFromLabelMe } from '@/lib/direction-annotation/labelme-utils';
@@ -70,8 +70,6 @@ interface InteractiveSegPanelProps {
   /** Route the current video evidence into the unified research Agent. */
   onUnifiedAgentRun?: (capture: UnifiedAgentCapture) => Promise<void> | void;
   unifiedAgentBusy?: boolean;
-  readerStudyMode?: ReaderStudyMode;
-  onReaderStudyModeChange?: (mode: ReaderStudyMode) => void;
   inline?: boolean;
 }
 
@@ -330,8 +328,6 @@ export function InteractiveSegPanel({
   onDinoFeatures,
   onUnifiedAgentRun,
   unifiedAgentBusy = false,
-  readerStudyMode,
-  onReaderStudyModeChange,
   inline = false,
 }: InteractiveSegPanelProps) {
   const { language } = useSettings();
@@ -2640,24 +2636,6 @@ export function InteractiveSegPanel({
                       >
                         {zh ? '框选' : 'Box'}
                       </button>
-                      {readerStudyMode && onReaderStudyModeChange ? (
-                        <div className="ml-1 flex items-center gap-1 border-l border-white/10 pl-1">
-                          <button
-                            type="button"
-                            onClick={() => onReaderStudyModeChange('benign_malignancy')}
-                            className={`rounded-md border px-2 py-1.5 text-[10px] ${readerStudyMode === 'benign_malignancy' ? 'border-amber-300/60 bg-amber-300/15 text-amber-100' : 'border-white/10 text-slate-500 hover:bg-white/5'}`}
-                          >
-                            {zh ? '良恶性' : 'Benignity'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onReaderStudyModeChange('t_staging')}
-                            className={`rounded-md border px-2 py-1.5 text-[10px] ${readerStudyMode === 't_staging' ? 'border-amber-300/60 bg-amber-300/15 text-amber-100' : 'border-white/10 text-slate-500 hover:bg-white/5'}`}
-                          >
-                            {zh ? 'T 分期' : 'T staging'}
-                          </button>
-                        </div>
-                      ) : null}
                       <label className="ml-1 flex items-center gap-1 rounded-md border border-white/10 px-2 py-1.5 text-[10px] text-slate-500">
                         <span>{zh ? '模型' : 'Model'}</span>
                         <select

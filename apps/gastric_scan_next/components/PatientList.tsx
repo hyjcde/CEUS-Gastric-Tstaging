@@ -14,6 +14,7 @@ interface PatientListProps {
   selectedId: string | null;
   onPatientsLoaded?: (patients: Patient[]) => void;
   readerStudyMode?: ReaderStudyMode;
+  onReaderStudyModeChange?: (mode: ReaderStudyMode) => void;
 }
 
 // Helper type for grouped patients
@@ -115,7 +116,7 @@ async function fetchPatientPage(
   };
 }
 
-export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded, readerStudyMode }) => {
+export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded, readerStudyMode, onReaderStudyModeChange }) => {
   const { dataset, cohortYear, queueId, setQueueId, language, readerOnly, t } = useSettings();
   const zh = language === 'zh';
   const publicQueueLabel = zh ? '阅片任务 · 第一轮' : 'Reader task · Round 1';
@@ -397,6 +398,24 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
         {!readerOnly ? (
           <div className="relative z-[60] mt-1.5">
             <QueueTreeSelect value={queueId} onChange={setQueueId} />
+          </div>
+        ) : null}
+        {queueId === 'reader:reader_v150' && readerStudyMode && onReaderStudyModeChange ? (
+          <div className="mt-2 grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/30 p-1">
+            <button
+              type="button"
+              onClick={() => onReaderStudyModeChange('benign_malignancy')}
+              className={`rounded px-2 py-1 text-[10px] font-semibold transition ${readerStudyMode === 'benign_malignancy' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+            >
+              {zh ? '良恶性' : 'Benignity'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onReaderStudyModeChange('t_staging')}
+              className={`rounded px-2 py-1 text-[10px] font-semibold transition ${readerStudyMode === 't_staging' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+            >
+              {zh ? 'T 分期' : 'T staging'}
+            </button>
           </div>
         ) : null}
       </div>

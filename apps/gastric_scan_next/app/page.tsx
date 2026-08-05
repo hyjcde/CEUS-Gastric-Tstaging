@@ -497,6 +497,7 @@ export default function Home() {
             <PatientList
               key={`${dataset}-${queueId}-${cohortYear}-${readerStudyMode}`}
               readerStudyMode={readerStudyMode}
+              onReaderStudyModeChange={setReaderStudyMode}
               onSelect={setSelectedPatient}
               selectedId={selectedPatient?.id || null}
               onPatientsLoaded={handlePatientsLoaded}
@@ -551,8 +552,6 @@ export default function Home() {
             onDinoFeatures={setDinoFeature}
             onUnifiedAgentRun={isReaderStudyQueue ? handleReaderUnifiedAgent : undefined}
             unifiedAgentBusy={readerUnifiedAgentBusy}
-            readerStudyMode={isReaderStudyQueue ? readerStudyMode : undefined}
-            onReaderStudyModeChange={isReaderStudyQueue ? setReaderStudyMode : undefined}
             inline={Boolean(selectedPatient)}
           />
           {!isReaderStudyQueue && !isBenignQueue && (
@@ -667,6 +666,7 @@ export default function Home() {
                 onSelectPatient={setSelectedPatient}
                 systemReport={systemReport}
                 onSystemReportChange={setSystemReport}
+                hideTaskChrome
                 publicReaderOnly={readerOnly}
               />
             </div>
