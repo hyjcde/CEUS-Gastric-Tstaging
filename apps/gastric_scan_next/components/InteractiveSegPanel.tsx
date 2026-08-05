@@ -28,7 +28,7 @@ type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam';
 type MediaMode = 'image' | 'video';
 type ContourLayer = 'lesion' | 'wall';
 type DragLayer = ContourLayer;
-const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 1.5] as const;
+const VIDEO_PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 type KeyframeCandidate = {
   timestamp_sec: number;
   score: number;
@@ -249,7 +249,7 @@ export function InteractiveSegPanel({
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [videoTime, setVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
-  const [videoPlaybackRate, setVideoPlaybackRate] = useState<number>(0.5);
+  const [videoPlaybackRate, setVideoPlaybackRate] = useState<number>(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackOnPlay, setTrackOnPlay] = useState(false);
   const [trackingPrepared, setTrackingPrepared] = useState(false);
@@ -301,6 +301,8 @@ export function InteractiveSegPanel({
   const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const undoStackRef = useRef<Array<{ lesion: number[][]; wall: number[][] }>>([]);
   const originalRef = useRef<{ lesion: number[][]; wall: number[][] } | null>(null);
+  const playbackRafRef = useRef<number | null>(null);
+  const playbackUiAtRef = useRef(0);
   const samAbortRef = useRef<AbortController | null>(null);
   const samGenRef = useRef(0);
   const draggingRef = useRef(false);
@@ -326,6 +328,25 @@ export function InteractiveSegPanel({
   useEffect(() => {
     frameFrozenRef.current = frameFrozen;
   }, [frameFrozen]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (playbackRafRef.current !== null) {
+      cancelAnimationFrame(playbackRafRef.current);
+      playbackRafRef.current = null;
+    }
+    video?.pause();
+    if (video) {
+      video.removeAttribute('src');
+      video.load();
+    }
+    setIsPlaying(false);
+    setVideoTime(0);
+    setVideoDuration(0);
+    setVideoUrl('');
+    setVideos([]);
+    setImgLoaded(false);
+  }, [patient?.id]);
 
   const snapshotOriginal = useCallback((lesion: number[][], wall: number[][]) => {
     originalRef.current = { lesion: clonePoly(lesion), wall: clonePoly(wall) };
@@ -1079,11 +1100,14 @@ export function InteractiveSegPanel({
     const dx = (cw - dw) / 2;
     const dy = (ch - dh) / 2;
 
+    const nativeVideoPlayback = simpleVideoMode && useVideo;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(0, 0, cw, ch);
-    if (useVideo) ctx.drawImage(video!, dx, dy, dw, dh);
-    else if (img) ctx.drawImage(img, dx, dy, dw, dh);
+    if (!nativeVideoPlayback) {
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, cw, ch);
+      if (useVideo) ctx.drawImage(video!, dx, dy, dw, dh);
+      else if (img) ctx.drawImage(img, dx, dy, dw, dh);
+    }
 
     const map = (x: number, y: number) => ({ x: dx + x * scale, y: dy + y * scale });
     const trackedFrame = simpleVideoMode && useVideo && videoFrameOverrides.length
@@ -1229,8 +1253,35 @@ export function InteractiveSegPanel({
     if (!video) return;
     setFrameFrozen(false);
     frameFrozenRef.current = false;
+    const stopPlaybackLoop = () => {
+      if (playbackRafRef.current !== null) {
+        cancelAnimationFrame(playbackRafRef.current);
+        playbackRafRef.current = null;
+      }
+    };
+    const playbackTick = () => {
+      playbackRafRef.current = null;
+      if (video.paused || video.ended) return;
+      const now = performance.now();
+      if (now - playbackUiAtRef.current >= 80) {
+        playbackUiAtRef.current = now;
+        setVideoTime(video.currentTime || 0);
+      }
+      if (!frameFrozenRef.current && dragIndexRef.current === null) {
+        redrawRef.current();
+        void maybeTrackWhilePlayingRef.current();
+      }
+      playbackRafRef.current = requestAnimationFrame(playbackTick);
+    };
+    const startPlaybackLoop = () => {
+      if (playbackRafRef.current === null) {
+        playbackRafRef.current = requestAnimationFrame(playbackTick);
+      }
+    };
     const onMeta = () => {
       setVideoDuration(video.duration || 0);
+      video.defaultPlaybackRate = videoPlaybackRate;
+      video.playbackRate = videoPlaybackRate;
       syncFrameFromVideo({ force: true });
       redraw();
     };
@@ -1242,20 +1293,18 @@ export function InteractiveSegPanel({
         }
         return;
       }
-      setVideoTime(video.currentTime || 0);
-      if (!video.paused) {
-        syncFrameFromVideo();
-        redrawRef.current();
-        void maybeTrackWhilePlayingRef.current();
-      }
+      if (!video.paused) startPlaybackLoop();
     };
     const onPlay = () => {
       setIsPlaying(true);
       setFrameFrozen(false);
       frameFrozenRef.current = false;
+      startPlaybackLoop();
     };
     const onPause = () => {
       setIsPlaying(false);
+      stopPlaybackLoop();
+      setVideoTime(video.currentTime || 0);
       syncFrameFromVideo({ force: true });
       redrawRef.current();
     };
@@ -1266,12 +1315,13 @@ export function InteractiveSegPanel({
     video.src = videoUrl;
     video.load();
     return () => {
+      stopPlaybackLoop();
       video.removeEventListener('loadedmetadata', onMeta);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
     };
-  }, [open, mediaMode, videoUrl, syncFrameFromVideo]);
+  }, [open, mediaMode, videoPlaybackRate, videoUrl, syncFrameFromVideo]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -2013,14 +2063,14 @@ export function InteractiveSegPanel({
 
   const modal = open ? (
         <div className={inline
-          ? 'pointer-events-auto absolute inset-0 z-[200500] flex min-w-0 items-stretch justify-stretch overflow-hidden bg-slate-950'
+          ? 'pointer-events-auto relative flex min-h-0 min-w-0 flex-1 items-stretch justify-stretch overflow-hidden bg-[#080b0f]'
           : 'pointer-events-auto fixed inset-0 z-[200500] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm'}>
           <div className={inline
-            ? 'flex h-full w-full min-w-0 flex-col overflow-hidden border border-cyan-400/25 bg-slate-950'
+            ? 'flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080b0f]'
             : 'flex h-[min(94vh,920px)] w-[min(1380px,98vw)] flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-slate-950 shadow-2xl'}>
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-white/10 bg-[#0e141b] px-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold text-cyan-100">
+                <div className="text-sm font-bold text-slate-100">
                   {zh ? (mediaMode === 'video' ? '视频分析' : '静态图分割') : (mediaMode === 'video' ? 'Video analysis' : 'Static image segmentation')}
                 </div>
                 <div className="mt-0.5 text-[11px] text-slate-400">
@@ -2085,14 +2135,16 @@ export function InteractiveSegPanel({
                       </button>
                     </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="rounded-lg border border-white/15 p-2 text-slate-300 hover:bg-white/5"
-                    aria-label={zh ? '关闭分割编辑器' : 'Close segmentation editor'}
-                  >
-                    <X size={16} />
-                  </button>
+                  {!inline && (
+                    <button
+                      type="button"
+                      onClick={() => setOpen(false)}
+                      className="rounded-lg border border-white/15 p-2 text-slate-300 hover:bg-white/5"
+                      aria-label={zh ? '关闭分割编辑器' : 'Close segmentation editor'}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
               </div>
             </div>
 
@@ -2230,9 +2282,8 @@ export function InteractiveSegPanel({
 
             {mediaMode === 'video' && (
               <>
-                <video ref={videoRef} className="hidden" muted playsInline preload="auto" crossOrigin="anonymous" />
               {simpleVideoMode ? (
-                <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-white/10 bg-cyan-950/25 px-4 py-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-white/10 bg-[#0e141b] px-4 py-2">
                   <span className="min-w-0 flex-[1_1_10rem] truncate text-[11px] text-cyan-100">
                     {videos[0]?.filename || (videoUrl ? (zh ? '当前视频' : 'Current video') : (zh ? '视频加载中…' : 'Loading video…'))}
                   </span>
@@ -2281,7 +2332,7 @@ export function InteractiveSegPanel({
                       frameFrozenRef.current = false;
                       syncFrameFromVideo({ force: true });
                     }}
-                    className="min-w-[8rem] flex-[2_1_10rem]"
+                    className="video-progress min-w-[8rem] flex-[2_1_10rem]"
                     aria-label={zh ? '视频进度' : 'Video progress'}
                   />
                   <span className="shrink-0 font-mono text-[10px] text-cyan-200/80">
@@ -2575,9 +2626,19 @@ export function InteractiveSegPanel({
 
             <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
               <div ref={containerRef} className="relative h-full w-full bg-black">
+                {mediaMode === 'video' && (
+                  <video
+                    ref={videoRef}
+                    className={simpleVideoMode ? 'absolute inset-0 z-0 h-full w-full bg-black object-contain' : 'hidden'}
+                    muted
+                    playsInline
+                    preload="auto"
+                    crossOrigin="anonymous"
+                  />
+                )}
                 <canvas
                   ref={canvasRef}
-                  className="h-full w-full touch-none"
+                  className="relative z-10 h-full w-full touch-none"
                   style={{ cursor: dragIndex !== null ? 'grabbing' : simpleEditMode ? 'grab' : mode === 'soft' || mode === 'hard' ? 'grab' : 'crosshair' }}
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}

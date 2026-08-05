@@ -97,6 +97,12 @@ export default function Home() {
   const [isDirty, setIsDirty] = useState(false);
   const [fieldSources, setFieldSources] = useState<ConceptFieldSources>(createDefaultFieldSources());
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1180) {
+      setIsSidebarOpen(false);
+    }
+  }, []);
+
   const clinicalBaselinesRef = useRef<Map<string, ConceptState>>(new Map());
   const fieldSourcesRef = useRef<Map<string, ConceptFieldSources>>(new Map());
   const userEditedRef = useRef<Set<string>>(new Set());
@@ -494,7 +500,7 @@ export default function Home() {
         {!isReportExpanded && (
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`absolute top-1/2 -translate-y-1/2 z-40 bg-neutral-800/80 backdrop-blur border border-white/10 text-gray-400 hover:text-white p-1.5 rounded-r-lg shadow-lg transition-all duration-300 hover:bg-blue-600 hover:border-blue-500 ${
+            className={`absolute top-1/2 z-[200600] -translate-y-1/2 rounded-r-lg border border-white/10 bg-neutral-800/90 p-1.5 text-gray-400 shadow-lg backdrop-blur transition-all duration-300 hover:border-blue-500 hover:bg-blue-600 hover:text-white ${
               isSidebarOpen ? 'left-72' : 'left-0'
             }`}
             title={isSidebarOpen

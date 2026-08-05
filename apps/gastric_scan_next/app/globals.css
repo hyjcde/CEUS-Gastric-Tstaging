@@ -69,6 +69,44 @@ input[type="range"] {
   cursor: pointer;
 }
 
+.video-progress {
+  height: 18px;
+  accent-color: #67e8f9;
+}
+.video-progress::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.85), rgba(255, 255, 255, 0.16));
+}
+.video-progress::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 2px solid #081018;
+  border-radius: 50%;
+  background: #67e8f9;
+  box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.18);
+}
+.video-progress::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.video-progress::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: #67e8f9;
+}
+.video-progress::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #081018;
+  border-radius: 50%;
+  background: #67e8f9;
+}
+
 /* Medical Grid Background for Viewer */
 .medical-grid {
   background-image: 
