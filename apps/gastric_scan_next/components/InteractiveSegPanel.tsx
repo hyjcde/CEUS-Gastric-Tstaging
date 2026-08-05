@@ -34,6 +34,9 @@ type KeyframeCandidate = {
   score: number;
   reasons?: string[];
   thumb_url?: string;
+  predicted_polygon?: number[][];
+  prediction_status?: 'pending' | 'predicted' | 'needs_roi' | 'failed';
+  prediction_error?: string;
 };
 
 export type DinoFeatureResult = {
@@ -304,6 +307,7 @@ export function InteractiveSegPanel({
   const originalRef = useRef<{ lesion: number[][]; wall: number[][] } | null>(null);
   const playbackRafRef = useRef<number | null>(null);
   const playbackUiAtRef = useRef(0);
+  const predictKeyframesRef = useRef<(candidates: KeyframeCandidate[]) => Promise<void>>(async () => {});
   const samAbortRef = useRef<AbortController | null>(null);
   const samGenRef = useRef(0);
   const draggingRef = useRef(false);
@@ -574,12 +578,20 @@ export function InteractiveSegPanel({
       });
       const data = await res.json() as { ok?: boolean; error?: string; keyframes?: KeyframeCandidate[] };
       if (!res.ok || !data.ok) throw new Error(data.error || 'keyframe failed');
-      setKeyCandidates(data.keyframes || []);
-      setMessage(
-        zh
-          ? `关键帧候选 ${data.keyframes?.length || 0} 帧（锚点 ${videoTime.toFixed(2)}s）`
-          : `${data.keyframes?.length || 0} keyframe candidates`,
-      );
+      const candidates = (data.keyframes || []).map((candidate) => ({
+        ...candidate,
+        prediction_status: pointsRef.current.length >= 3 ? 'pending' as const : 'needs_roi' as const,
+      }));
+      setKeyCandidates(candidates);
+      if (pointsRef.current.length < 3) {
+        setMessage(
+          zh
+            ? `已选出 ${candidates.length} 个关键帧；请先框选病灶，再生成对应病灶预测`
+            : `${candidates.length} keyframes selected; draw an ROI box first to predict the lesion on each frame`,
+        );
+      } else {
+        await predictKeyframesRef.current(candidates);
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'keyframe failed');
     } finally {
@@ -946,6 +958,90 @@ export function InteractiveSegPanel({
     snapshotOriginal,
     onSystemReport,
   ]);
+
+  const predictKeyframes = useCallback(async (candidates: KeyframeCandidate[]) => {
+    const video = videoRef.current;
+    const seed = clonePoly(pointsRef.current);
+    const box = bboxFromPolygon(seed);
+    const centroid = polygonCentroid(seed);
+    if (!simpleVideoMode || mediaMode !== 'video' || !video?.videoWidth || !video.videoHeight || !box || !centroid) {
+      setKeyCandidates((current) => current.map((candidate) => ({ ...candidate, prediction_status: 'needs_roi' })));
+      setMessage(zh ? '请先框选病灶，再生成关键帧病灶预测' : 'Draw an ROI box first, then generate keyframe lesion predictions');
+      return;
+    }
+
+    const originalTime = video.currentTime || videoTime;
+    const wasFrozen = frameFrozenRef.current;
+    let predictedCount = 0;
+    video.pause();
+    setFrameFrozen(true);
+    frameFrozenRef.current = true;
+    try {
+      for (const [index, candidate] of candidates.entries()) {
+        const timestamp = Number(candidate.timestamp_sec || 0);
+        setMessage(
+          zh
+            ? `关键帧病灶预测 ${index + 1}/${candidates.length}…`
+            : `Predicting lesion on keyframe ${index + 1}/${candidates.length}…`,
+        );
+        try {
+          await seekVideoForAgent(video, timestamp);
+          setVideoTime(timestamp);
+          const poly = await runSamAtPoint(centroid, {
+            silent: true,
+            source: 'video_track',
+            box,
+            keepEditing: false,
+          });
+          if (!poly || poly.length < 3) {
+            setKeyCandidates((current) => current.map((item) => (
+              item.timestamp_sec === candidate.timestamp_sec
+                ? { ...item, prediction_status: 'failed', prediction_error: 'no polygon' }
+                : item
+            )));
+            continue;
+          }
+          predictedCount += 1;
+          const normalized = poly.map((point) => [
+            Number((point[0] / video.videoWidth).toFixed(6)),
+            Number((point[1] / video.videoHeight).toFixed(6)),
+          ]);
+          setKeyCandidates((current) => current.map((item) => (
+            item.timestamp_sec === candidate.timestamp_sec
+              ? { ...item, predicted_polygon: normalized, prediction_status: 'predicted' }
+              : item
+          )));
+        } catch (error) {
+          setKeyCandidates((current) => current.map((item) => (
+            item.timestamp_sec === candidate.timestamp_sec
+              ? {
+                  ...item,
+                  prediction_status: 'failed',
+                  prediction_error: error instanceof Error ? error.message : 'prediction failed',
+                }
+              : item
+          )));
+        }
+      }
+    } finally {
+      await seekVideoForAgent(video, originalTime);
+      setVideoTime(originalTime);
+      pointsRef.current = seed;
+      setPoints(seed);
+      setFrameFrozen(wasFrozen);
+      frameFrozenRef.current = wasFrozen;
+      redrawRef.current();
+    }
+    setMessage(
+      zh
+        ? `已完成 ${predictedCount}/${candidates.length} 个关键帧的病灶预测`
+        : `Lesion predictions completed for ${predictedCount}/${candidates.length} keyframes`,
+    );
+  }, [mediaMode, runSamAtPoint, simpleVideoMode, videoTime, zh]);
+
+  useEffect(() => {
+    predictKeyframesRef.current = predictKeyframes;
+  }, [predictKeyframes]);
 
   const recordVideoFrameOverride = useCallback((poly: number[][], status: 'seed' | 'accepted' = 'accepted') => {
     if (!simpleVideoMode || mediaMode !== 'video') return;
@@ -2286,10 +2382,10 @@ export function InteractiveSegPanel({
               <>
               {simpleVideoMode ? (
                 <>
-                  <div className={`pointer-events-auto absolute left-1/2 top-12 z-40 w-[min(820px,calc(100%-1.5rem))] -translate-x-1/2 transition-all duration-200 ${
-                    simpleToolsOpen ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0'
-                  }`}>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/90 px-2 py-2 shadow-2xl shadow-black/50 backdrop-blur-md">
+                  <div className="relative z-40 flex w-full shrink-0 flex-col items-center px-2 pt-1">
+                    <div className={`flex max-w-full flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/90 px-2 py-2 shadow-2xl shadow-black/50 backdrop-blur-md transition-all duration-200 ${
+                      simpleToolsOpen ? 'max-h-40 translate-y-0 overflow-visible opacity-100' : 'pointer-events-none max-h-0 -translate-y-2 overflow-hidden border-transparent p-0 opacity-0'
+                    }`}>
                       <button
                         type="button"
                         onClick={() => { setSimplePromptMode('point'); setSimpleEditMode(false); }}
@@ -2380,7 +2476,7 @@ export function InteractiveSegPanel({
                         {dinoBusy ? (zh ? 'DINO 中' : 'DINO running') : 'DINO'}
                       </button>
                     </div>
-                    <div className="mt-1 text-center text-[10px] text-slate-500">
+                    <div className={`mt-1 text-center text-[10px] text-slate-500 transition-opacity ${simpleToolsOpen ? 'opacity-100' : 'pointer-events-none h-0 overflow-hidden opacity-0'}`}>
                       {simpleEditMode
                         ? (zh ? '拖动轮廓控制点' : 'Drag contour handles')
                         : simplePromptMode === 'box'
@@ -2391,12 +2487,37 @@ export function InteractiveSegPanel({
                   <button
                     type="button"
                     onClick={() => setSimpleToolsOpen((value) => !value)}
-                    className="pointer-events-auto absolute right-3 top-12 z-50 flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-black/80 text-slate-300 shadow-lg backdrop-blur hover:bg-white/10 hover:text-white"
+                    className="pointer-events-auto absolute right-3 top-1 z-50 flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-black/80 text-slate-300 shadow-lg backdrop-blur hover:bg-white/10 hover:text-white"
                     aria-label={simpleToolsOpen ? (zh ? '隐藏工具栏' : 'Hide tools') : (zh ? '显示工具栏' : 'Show tools')}
                     title={simpleToolsOpen ? (zh ? '隐藏工具栏' : 'Hide tools') : (zh ? '显示工具栏' : 'Show tools')}
                   >
                     <PanelTop size={14} />
                   </button>
+                  {dinoResult ? (
+                    <div className="pointer-events-auto mt-1 w-[min(220px,calc(100%-1.5rem))] self-end rounded-lg border border-white/15 bg-black/90 p-2 shadow-2xl backdrop-blur-md">
+                      <div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-100">
+                        <span>DINOv3</span>
+                        <span className={dinoResult.available ? 'text-emerald-200' : 'text-amber-200'}>
+                          {dinoResult.available ? 'ready' : 'failed'}
+                        </span>
+                      </div>
+                      {dinoResult.available ? (
+                        <>
+                          <div className="mt-1 text-[9px] text-slate-400">
+                            {dinoResult.feature_dim || 0}D · {dinoResult.token_grid?.join(' × ') || '—'} tokens
+                          </div>
+                          {dinoResult.feature_overlay_png ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={dinoResult.feature_overlay_png} alt="DINO feature overlay" className="mt-1.5 h-16 w-full rounded border border-white/10 object-contain" />
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="mt-1 break-words text-[9px] leading-relaxed text-amber-100/80">
+                          {dinoResult.error || (zh ? 'DINO 未返回结果' : 'DINO returned no result')}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </>
               ) : (
               <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-black/80 px-4 py-2">
@@ -2579,21 +2700,50 @@ export function InteractiveSegPanel({
                       v.currentTime = kf.timestamp_sec;
                       setVideoTime(kf.timestamp_sec);
                       syncFrameFromVideo();
+                      if (kf.predicted_polygon?.length && v.videoWidth && v.videoHeight) {
+                        const predicted = kf.predicted_polygon.map((point) => [
+                          point[0] * v.videoWidth,
+                          point[1] * v.videoHeight,
+                        ]);
+                        pointsRef.current = predicted;
+                        setPoints(predicted);
+                        setFrameFrozen(true);
+                        frameFrozenRef.current = true;
+                        redrawRef.current();
+                      }
                       setMessage(
                         zh
-                          ? `跳转到候选 ${kf.timestamp_sec.toFixed(2)}s, score=${kf.score}`
-                          : `Seek ${kf.timestamp_sec.toFixed(2)}s, score=${kf.score}`,
+                          ? `${kf.prediction_status === 'predicted' ? '已应用病灶预测' : '跳转到候选'} ${kf.timestamp_sec.toFixed(2)}s, score=${kf.score}`
+                          : `${kf.prediction_status === 'predicted' ? 'Lesion prediction applied' : 'Seek'} ${kf.timestamp_sec.toFixed(2)}s, score=${kf.score}`,
                       );
                     }}
-                    className="flex w-[108px] shrink-0 flex-col overflow-hidden rounded-lg border border-violet-400/30 bg-violet-950/40 text-left hover:border-violet-300/60"
+                    className="flex w-[124px] shrink-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/80 text-left hover:border-white/30"
                   >
-                    {kf.thumb_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={kf.thumb_url} alt="" className="h-14 w-full object-cover" />
-                    ) : (
-                      <div className="flex h-14 items-center justify-center text-[10px] text-slate-500">no thumb</div>
-                    )}
-                    <div className="px-1.5 py-1 font-mono text-[9px] text-violet-100">
+                    <div className="relative h-16 w-full bg-black">
+                      {kf.thumb_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={kf.thumb_url} alt="" className="h-full w-full object-contain" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-slate-500">no thumb</div>
+                      )}
+                      {kf.predicted_polygon?.length ? (
+                        <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+                          <polygon
+                            points={kf.predicted_polygon.map((point) => point.join(',')).join(' ')}
+                            fill="rgba(255,255,255,0.16)"
+                            stroke="rgba(255,255,255,0.95)"
+                            strokeWidth="0.008"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        </svg>
+                      ) : null}
+                      {kf.prediction_status ? (
+                        <span className="absolute right-1 top-1 rounded bg-black/75 px-1 py-0.5 text-[8px] text-slate-200">
+                          {kf.prediction_status === 'predicted' ? 'ROI ✓' : kf.prediction_status === 'needs_roi' ? 'ROI needed' : kf.prediction_status === 'pending' ? '...' : 'failed'}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="px-1.5 py-1 font-mono text-[9px] text-slate-200">
                       {kf.timestamp_sec.toFixed(2)}s, {kf.score.toFixed(2)}
                     </div>
                     <div className="truncate px-1.5 pb-1 text-[8px] text-slate-400">
