@@ -666,6 +666,7 @@ export default function Home() {
                 onStudyModeChange={setReaderStudyMode}
                 onSelectPatient={setSelectedPatient}
                 systemReport={systemReport}
+                onSystemReportChange={setSystemReport}
                 publicReaderOnly={readerOnly}
               />
             </div>

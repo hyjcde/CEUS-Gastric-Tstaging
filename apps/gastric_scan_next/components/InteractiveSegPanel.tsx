@@ -28,6 +28,7 @@ type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam';
 type MediaMode = 'image' | 'video';
 type ContourLayer = 'lesion' | 'wall';
 type DragLayer = ContourLayer;
+type LesionSegmentationModel = 'dinov3' | 'convnext';
 const VIDEO_PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 type KeyframeCandidate = {
   timestamp_sec: number;
@@ -215,6 +216,111 @@ function sanitizeSystemCopy(value: unknown): string {
     .replace(/\bSegment Anything(?: Model)?\b/gi, 'system analysis');
 }
 
+function buildModelAssistReport(
+  patient: Patient,
+  polygon: number[][],
+  frameWidth: number,
+  frameHeight: number,
+  model: LesionSegmentationModel,
+  areaRatio?: number,
+): SamReport {
+  const clinicalText = [
+    patient.report?.ultrasound_findings,
+    patient.report?.ultrasound_impression,
+    patient.report?.ct_findings,
+    patient.report?.ct_impression,
+    patient.report?.enhanced_ct_report,
+    patient.report?.endoscopy_report,
+  ].filter(Boolean).join(' ');
+  const text = clinicalText.toLowerCase();
+  const bbox = bboxFromPolygon(polygon);
+  const lengthPx = bbox ? Math.max(bbox.x2 - bbox.x1, bbox.y2 - bbox.y1) : 0;
+  const thicknessPx = bbox ? Math.min(bbox.x2 - bbox.x1, bbox.y2 - bbox.y1) : 0;
+  const polygonArea = polygon.reduce((sum, point, index) => {
+    const next = polygon[(index + 1) % polygon.length] || point;
+    return sum + point[0] * next[1] - next[0] * point[1];
+  }, 0) / 2;
+  const boxArea = Math.max(1, (bbox?.x2 || 0) - (bbox?.x1 || 0)) * Math.max(1, (bbox?.y2 || 0) - (bbox?.y1 || 0));
+  const solidity = Math.abs(polygonArea) / boxArea;
+  const shape = solidity < 0.72 || (lengthPx > 0 && lengthPx / Math.max(thicknessPx, 1) > 2.8)
+    ? '局部浸润型'
+    : '局限隆起型';
+  const boundary = solidity < 0.72 ? '边界不规则' : '边界相对清晰，需结合连续帧复核';
+  const layer = /突破肌层|侵犯肌层|固有肌层.*(破坏|受累)/.test(text)
+    ? '固有肌层受累/结构破坏'
+    : /层次.*(完整|清晰)|肌层结构完整/.test(text)
+      ? '胃壁层次结构相对完整'
+      : '当前帧层次显示有限，需多切面复核';
+  const serosa = /浆膜.*(中断|破坏|侵犯|不完整)/.test(text)
+    ? '浆膜连续性中断/受侵犯'
+    : /浆膜.*(完整|连续|光滑)/.test(text)
+      ? '浆膜连续'
+      : '当前帧未能确认浆膜连续性';
+  const perigastric = /胃周|脂肪间隙|邻近器官/.test(text)
+    ? '已从影像文字资料纳入胃周组织评估'
+    : '当前帧未能确认胃周组织';
+  const stage = /浆膜.*(中断|破坏|侵犯|不完整)/.test(text)
+    ? 'T4+'
+    : /突破肌层|侵犯肌层|浆膜下/.test(text)
+      ? 'T3'
+      : /固有肌层.*(受累|侵犯)|肌层.*受累/.test(text)
+        ? 'T2'
+        : /黏膜下|肌层结构完整/.test(text)
+          ? 'T1'
+          : 'cTx';
+  const location = patient.clinical?.location || '胃';
+  const clinicalLength = patient.clinical?.tumorSize?.length;
+  const clinicalThickness = patient.clinical?.tumorSize?.thickness;
+  const lengthText = clinicalLength
+    ? `${clinicalLength} mm（临床资料）`
+    : `${Math.round(lengthPx)} px（当前帧几何估计）`;
+  const thicknessText = clinicalThickness
+    ? `${clinicalThickness} mm（临床资料）`
+    : `${Math.round(thicknessPx)} px（当前帧几何估计）`;
+  const modelLabel = model === 'dinov3' ? 'DINOv3 lesion candidate' : 'ConvNeXt-Base UNet';
+  const signs = {
+    size: {
+      length: {
+        value: lengthText,
+        status: 'suggested',
+        source: clinicalLength ? 'clinical_data' : 'model_geometry',
+        confidence: 0.62,
+        evidence_ref: ['lesion_mask.bbox', 'clinical.tumor_size'],
+      },
+      thickness: {
+        value: thicknessText,
+        status: 'suggested',
+        source: clinicalThickness ? 'clinical_data' : 'model_geometry',
+        confidence: 0.62,
+        evidence_ref: ['lesion_mask.bbox', 'clinical.tumor_size'],
+      },
+    },
+    layer_structure: { value: layer, status: /当前帧/.test(layer) ? 'uncertain' : 'suggested', source: /当前帧/.test(layer) ? 'limited_frame' : 'clinical_text', confidence: 0.5, evidence_ref: ['clinical.imaging_text'] },
+    morphology: { value: shape, status: 'suggested', source: 'mask_geometry', confidence: 0.58, evidence_ref: ['lesion_mask.solidity', 'lesion_mask.aspect_ratio'] },
+    boundary: { value: boundary, status: 'suggested', source: 'mask_geometry', confidence: 0.55, evidence_ref: ['lesion_mask.boundary'] },
+    growth_pattern: { value: shape, status: 'suggested', source: 'mask_geometry', confidence: 0.45, evidence_ref: ['lesion_mask.shape'] },
+    serosa_change: { value: serosa, status: /当前帧/.test(serosa) ? 'uncertain' : 'suggested', source: /当前帧/.test(serosa) ? 'limited_frame' : 'clinical_text', confidence: 0.45, evidence_ref: ['clinical.imaging_text'] },
+    perigastric_tissue: { value: perigastric, status: /未能/.test(perigastric) ? 'uncertain' : 'suggested', source: /未能/.test(perigastric) ? 'limited_frame' : 'clinical_text', confidence: 0.4, evidence_ref: ['clinical.imaging_text'] },
+  } as unknown as NonNullable<SamReport['signs']>;
+  const prose = `【超声所见】${location}见低回声占位性病变，大小约${lengthText}，最大厚度${thicknessText}。病灶呈${shape}，${boundary}。胃壁层次：${layer}；浆膜：${serosa}；胃周组织：${perigastric}。\n\n【辅助分析】${modelLabel} 当前帧病灶面积占比 ${areaRatio != null ? `${(areaRatio * 100).toFixed(2)}%` : '未返回'}。该结果为模型辅助证据，需医生在关键帧上修正。\n\n【分期倾向】${stage}（仅基于当前模型与影像文字证据，非病理结论）。`;
+  return {
+    recommended_stage: stage,
+    recommendation_status: stage === 'cTx' ? 'uncertain' : 'suggested',
+    signs,
+    calibrated_confidence: stage === 'cTx' ? 0.4 : 0.58,
+    summary: prose,
+    template_id: 'gc_us_t_report_template_v1',
+    schema_version: 'gc_us_report_signs_v1',
+    source_doc: '胃癌T分期自进化智能辅助诊断_报告模板_讨论版.docx',
+    template_prose: prose,
+    evidence: [
+      { title: '病灶分割', detail: `${modelLabel} · ${polygon.length} contour points`, status: 'suggested', source: modelLabel },
+      { title: '形态与边界', detail: `${shape} · ${boundary}`, status: 'suggested', source: 'mask_geometry' },
+      { title: '层次与浆膜', detail: `${layer} · ${serosa}`, status: 'uncertain', source: 'clinical_text_or_limited_frame' },
+    ],
+  };
+}
+
 export function InteractiveSegPanel({
   patient,
   override,
@@ -249,6 +355,14 @@ export function InteractiveSegPanel({
   const [samReport, setSamReport] = useState<SamReport | null>(null);
   const [dinoBusy, setDinoBusy] = useState(false);
   const [dinoResult, setDinoResult] = useState<DinoFeatureResult | null>(null);
+  const [segmentationModel, setSegmentationModel] = useState<LesionSegmentationModel>('dinov3');
+  const [segmentationBusy, setSegmentationBusy] = useState(false);
+  const [segmentationModelResult, setSegmentationModelResult] = useState<{
+    model?: string;
+    lesion_area_ratio?: number;
+    validation_summary?: Record<string, unknown>;
+    error?: string;
+  } | null>(null);
   const [samClicks, setSamClicks] = useState<Array<{ x: number; y: number; label: 'positive' | 'negative' }>>([]);
   const [samBoxPreview, setSamBoxPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [samAvailable, setSamAvailable] = useState<boolean | null>(null);
@@ -313,6 +427,9 @@ export function InteractiveSegPanel({
   const playbackRafRef = useRef<number | null>(null);
   const playbackUiAtRef = useRef(0);
   const predictKeyframesRef = useRef<(candidates: KeyframeCandidate[]) => Promise<void>>(async () => {});
+  const runLesionModelRef = useRef<
+    (imgPt: number[] | null, box: { x1: number; y1: number; x2: number; y2: number } | null, clicks: Array<{ x: number; y: number; label: 'positive' | 'negative' }>) => Promise<number[][] | null>
+  >(async () => null);
   const samAbortRef = useRef<AbortController | null>(null);
   const samGenRef = useRef(0);
   const draggingRef = useRef(false);
@@ -411,6 +528,8 @@ export function InteractiveSegPanel({
     if (!(inline && patient.phase === 'reader_v150')) setOpen(false);
     setSamReport(null);
     setDinoResult(null);
+    setSegmentationModelResult(null);
+    setSegmentationBusy(false);
     onDinoFeatures?.(null);
     setSimplePromptMode('box');
     setSimpleEditMode(false);
@@ -993,12 +1112,14 @@ export function InteractiveSegPanel({
         try {
           await seekVideoForAgent(video, timestamp);
           setVideoTime(timestamp);
-          const poly = await runSamAtPoint(centroid, {
-            silent: true,
-            source: 'video_track',
-            box,
-            keepEditing: false,
-          });
+          const poly = simpleVideoMode
+            ? await runLesionModelRef.current(centroid, box, samClicksRef.current)
+            : await runSamAtPoint(centroid, {
+                silent: true,
+                source: 'video_track',
+                box,
+                keepEditing: false,
+              });
           if (!poly || poly.length < 3) {
             setKeyCandidates((current) => current.map((item) => (
               item.timestamp_sec === candidate.timestamp_sec
@@ -1137,12 +1258,7 @@ export function InteractiveSegPanel({
         const bbox = bboxFromPolygon(current);
         const centroid = polygonCentroid(current);
         if (!bbox || !centroid) break;
-        const next = await runSamAtPoint(centroid, {
-          silent: true,
-          source: 'video_track',
-          box: bbox,
-          keepEditing: false,
-        });
+        const next = await runLesionModelRef.current(centroid, bbox, samClicksRef.current);
         if (next && next.length >= 3) {
           pointsRef.current = next;
           setPoints(next);
@@ -1162,13 +1278,13 @@ export function InteractiveSegPanel({
       setPrecomputeBusy(false);
       setPrecomputeProgress(null);
     }
-  }, [mediaMode, precomputeBusy, recordVideoFrameOverride, runSamAtPoint, simpleVideoMode, zh]);
+  }, [mediaMode, precomputeBusy, recordVideoFrameOverride, simpleVideoMode, zh]);
 
   const maybeTrackWhilePlaying = useCallback(async () => {
     if (!trackOnPlay || mediaMode !== 'video' || !isPlaying) return;
     if (simpleVideoMode && (simpleEditMode || trackingPrepared)) return;
     if (frameFrozenRef.current || dragIndexRef.current !== null) return;
-    if (trackBusyRef.current || samAvailable === false) return;
+    if (trackBusyRef.current || (!simpleVideoMode && samAvailable === false)) return;
     const now = Date.now();
     if (now - lastTrackAtRef.current < 500) return;
     const poly = pointsRef.current;
@@ -1179,12 +1295,14 @@ export function InteractiveSegPanel({
     trackBusyRef.current = true;
     lastTrackAtRef.current = now;
     try {
-      const nextPoly = await runSamAtPoint(centroid, {
-        silent: true,
-        source: 'video_track',
-        box: bbox,
-        keepEditing: false,
-      });
+      const nextPoly = simpleVideoMode
+        ? await runLesionModelRef.current(centroid, bbox, samClicksRef.current)
+        : await runSamAtPoint(centroid, {
+            silent: true,
+            source: 'video_track',
+            box: bbox,
+            keepEditing: false,
+          });
       if (nextPoly && nextPoly.length >= 3) recordVideoFrameOverride(nextPoly);
     } finally {
       trackBusyRef.current = false;
@@ -1272,9 +1390,9 @@ export function InteractiveSegPanel({
     };
 
     if (simpleVideoMode) {
-      drawPoly(displayPoints, 'rgba(34, 211, 238, 0.10)', 'rgba(34, 211, 238, 0.88)');
+      drawPoly(displayPoints, 'rgba(74, 222, 128, 0.18)', 'rgba(74, 222, 128, 0.96)');
       if (simpleEditMode && displayPoints.length >= 3) {
-        drawHandles(displayPoints, Math.min(12, LESION_CTRL_COUNT), '#22d3ee', 'lesion');
+        drawHandles(displayPoints, Math.min(12, LESION_CTRL_COUNT), '#4ade80', 'lesion');
       }
       if (samBoxPreview) {
         const a = map(samBoxPreview.x1, samBoxPreview.y1);
@@ -1521,6 +1639,109 @@ export function InteractiveSegPanel({
     setSamBoxPreview(null);
   }, []);
 
+  const runLesionModel = useCallback(async (
+    imgPt: number[] | null,
+    box: { x1: number; y1: number; x2: number; y2: number } | null = null,
+    clicks: Array<{ x: number; y: number; label: 'positive' | 'negative' }> = [],
+  ): Promise<number[][] | null> => {
+    if (!patient || segmentationBusy) return null;
+    setSegmentationBusy(true);
+    setSegmentationModelResult(null);
+    setMessage(
+      zh
+        ? `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} 病灶预测中…`
+        : `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} lesion prediction…`,
+    );
+    try {
+      const frame = await videoOrImageToSamFrame(
+        videoRef.current,
+        imgRef.current,
+        mediaMode === 'video',
+        1024,
+      );
+      const scale = frame.scale || 1;
+      const response = await fetch('/api/agent/lesion-segmentation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          frame_png_b64: frame.b64,
+          model: segmentationModel,
+          threshold: 0.5,
+          image_width: frame.width,
+          image_height: frame.height,
+          box: box
+            ? {
+                x1: box.x1 * scale,
+                y1: box.y1 * scale,
+                x2: box.x2 * scale,
+                y2: box.y2 * scale,
+              }
+            : undefined,
+          clicks: clicks.length
+            ? clicks.map((point) => ({
+                x: point.x * scale,
+                y: point.y * scale,
+                label: point.label,
+              }))
+            : imgPt
+              ? [{ x: imgPt[0] * scale, y: imgPt[1] * scale, label: 'positive' }]
+              : [],
+        }),
+      });
+      const data = await response.json() as {
+        ok?: boolean;
+        error?: string;
+        mask_polygon?: number[][];
+        model?: string;
+        lesion_area_ratio?: number;
+        validation_summary?: Record<string, unknown>;
+      };
+      if (!response.ok || !data.ok || !Array.isArray(data.mask_polygon) || data.mask_polygon.length < 3) {
+        throw new Error(data.error || 'Lesion model returned no valid mask');
+      }
+      setSegmentationModelResult({
+        model: data.model,
+        lesion_area_ratio: data.lesion_area_ratio,
+        validation_summary: data.validation_summary,
+      });
+      const maxCoord = Math.max(...data.mask_polygon.flatMap((point) => point));
+      const polyFull = maxCoord <= 1.5
+        ? data.mask_polygon.map((point) => [point[0] * frame.fullWidth, point[1] * frame.fullHeight])
+        : data.mask_polygon.map((point) => [point[0] / scale, point[1] / scale]);
+      const poly = prepareEditableContour(polyFull, 96);
+      pointsRef.current = poly;
+      setPoints(poly);
+      snapshotOriginal(poly, wallPointsRef.current);
+      const assistReport = buildModelAssistReport(
+        patient,
+        poly,
+        frame.fullWidth,
+        frame.fullHeight,
+        segmentationModel,
+        data.lesion_area_ratio,
+      );
+      setSamReport(assistReport);
+      onSystemReport?.(assistReport);
+      setMessage(
+        zh
+          ? `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} 已生成病灶 ROI（${poly.length} 点）`
+          : `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} lesion ROI ready (${poly.length} points)`,
+      );
+      return poly;
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : 'Lesion model failed';
+      setSegmentationModelResult({ error: messageText });
+      setMessage(messageText);
+      return null;
+    } finally {
+      setSegmentationBusy(false);
+    }
+  }, [mediaMode, onSystemReport, patient, segmentationBusy, segmentationModel, snapshotOriginal, wallPointsRef, zh]);
+
+  useEffect(() => {
+    runLesionModelRef.current = runLesionModel;
+  }, [runLesionModel]);
+
   const runSamClick = useCallback(async (
     imgPt: number[],
     label: 'positive' | 'negative' = 'positive',
@@ -1538,6 +1759,9 @@ export function InteractiveSegPanel({
       samClicksRef.current = next;
       setSamClicks(next);
     }
+    if (simpleVideoMode && mediaMode === 'video') {
+      return runLesionModel(imgPt, box || null, next);
+    }
     return runSamAtPoint(imgPt, {
       keepEditing: true,
       stayInSam: true,
@@ -1545,14 +1769,14 @@ export function InteractiveSegPanel({
       clicks: next.length ? next : undefined,
       box: box || undefined,
     });
-  }, [runSamAtPoint, freezeCurrentFrame]);
+  }, [freezeCurrentFrame, mediaMode, runLesionModel, runSamAtPoint, simpleVideoMode]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const imgPt = canvasToImage(e);
     if (!imgPt) return;
 
     if (simpleVideoMode && mediaMode === 'video') {
-      if (samBusy) return;
+      if (samBusy || segmentationBusy) return;
       e.preventDefault();
       if (simpleEditMode && points.length >= 3) {
         const editablePoints = getCurrentTrackedPolygon();
@@ -2434,6 +2658,18 @@ export function InteractiveSegPanel({
                           </button>
                         </div>
                       ) : null}
+                      <label className="ml-1 flex items-center gap-1 rounded-md border border-white/10 px-2 py-1.5 text-[10px] text-slate-500">
+                        <span>{zh ? '模型' : 'Model'}</span>
+                        <select
+                          value={segmentationModel}
+                          onChange={(event) => setSegmentationModel(event.target.value as LesionSegmentationModel)}
+                          className="max-w-[112px] bg-transparent text-slate-200 outline-none"
+                          aria-label={zh ? '病灶分割模型' : 'Lesion segmentation model'}
+                        >
+                          <option value="dinov3">DINOv3 lesion</option>
+                          <option value="convnext">ConvNeXt-UNet</option>
+                        </select>
+                      </label>
                       <button
                         type="button"
                         disabled={points.length < 3}
@@ -2571,6 +2807,23 @@ export function InteractiveSegPanel({
                       ) : (
                         <div className="mt-1 break-words text-[9px] leading-relaxed text-amber-100/80">
                           {dinoResult.error || (zh ? 'DINO 未返回结果' : 'DINO returned no result')}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                  {segmentationModelResult ? (
+                    <div className="pointer-events-auto mt-1 w-[min(260px,calc(100%-1.5rem))] self-end rounded-lg border border-emerald-300/20 bg-black/90 px-2 py-1.5 text-[9px] shadow-lg">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-400">{segmentationModelResult.model || segmentationModel}</span>
+                        <span className={segmentationModelResult.error ? 'text-amber-200' : 'text-emerald-200'}>
+                          {segmentationModelResult.error ? 'error' : 'mask ready'}
+                        </span>
+                      </div>
+                      {segmentationModelResult.error ? (
+                        <div className="mt-1 break-words text-amber-100/80">{segmentationModelResult.error}</div>
+                      ) : (
+                        <div className="mt-1 text-slate-500">
+                          {zh ? '病灶占比' : 'lesion area'}: {segmentationModelResult.lesion_area_ratio != null ? `${(segmentationModelResult.lesion_area_ratio * 100).toFixed(2)}%` : '—'}
                         </div>
                       )}
                     </div>

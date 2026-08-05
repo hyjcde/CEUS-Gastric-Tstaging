@@ -17,6 +17,7 @@ type Props = {
   onStudyModeChange: (mode: ReaderStudyMode) => void;
   onSelectPatient?: (patient: Patient) => void;
   systemReport?: SamReport | null;
+  onSystemReportChange?: (report: SamReport) => void;
   publicReaderOnly?: boolean;
 };
 
@@ -56,6 +57,7 @@ function signStatus(status?: string, zh = true): string {
   if (status === 'doctor_edited') return zh ? '医生修正' : 'Doctor edited';
   if (status === 'conflict') return zh ? '冲突' : 'Conflict';
   if (status === 'pending') return zh ? '待补充' : 'Pending';
+  if (status === 'uncertain') return zh ? '不确定，需复核' : 'Uncertain, review required';
   return zh ? '未评估' : 'Not assessed';
 }
 
@@ -72,6 +74,7 @@ export function ReaderStudyQueuePanel({
   onStudyModeChange,
   onSelectPatient,
   systemReport = null,
+  onSystemReportChange,
   publicReaderOnly = false,
 }: Props) {
   const searchParams = useSearchParams();
@@ -82,7 +85,12 @@ export function ReaderStudyQueuePanel({
   const [reason, setReason] = useState('');
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
+  const [editableReport, setEditableReport] = useState<SamReport | null>(systemReport);
   const sessionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setEditableReport(systemReport);
+  }, [systemReport]);
 
   const taskPatients = useMemo(
     () => patients.filter((item) => item.study_mode === studyMode),
@@ -117,11 +125,40 @@ export function ReaderStudyQueuePanel({
   const taskLabel = isNatureTask
     ? (zh ? '良恶性判断' : 'benign-versus-malignant classification')
     : (zh ? 'T 分期判断' : 'T-staging classification');
-  const conflicts = systemReport?.conflicts || [];
+  const activeReport = editableReport || systemReport;
+  const conflicts = activeReport?.conflicts || [];
   const highConflict = conflicts.some((item) => item.severity === 'high');
   const recommendationBlocked = !isNatureTask && (
-    !systemReport || highConflict || systemReport.recommended_stage === 'uncertain'
+    !activeReport || highConflict || activeReport.recommended_stage === 'uncertain'
   );
+
+  const updateReportSign = (fieldPath: string, value: string) => {
+    if (!activeReport) return;
+    const currentSigns = (activeReport.signs || {}) as Record<string, Record<string, unknown>>;
+    const [group, key] = fieldPath.split('.');
+    const nextSigns: Record<string, Record<string, unknown>> = { ...currentSigns };
+    if (key) {
+      nextSigns[group] = {
+        ...(currentSigns[group] || {}),
+        [key]: {
+          ...((currentSigns[group]?.[key] as Record<string, unknown> | undefined) || {}),
+          value,
+          status: 'doctor_edited',
+          source: 'doctor',
+        },
+      };
+    } else {
+      nextSigns[group] = {
+        ...(currentSigns[group] || {}),
+        value,
+        status: 'doctor_edited',
+        source: 'doctor',
+      };
+    }
+    const next = { ...activeReport, signs: nextSigns };
+    setEditableReport(next);
+    onSystemReportChange?.(next);
+  };
 
   const chooseTask = (nextMode: ReaderStudyMode) => {
     if (nextMode === studyMode) return;
@@ -168,14 +205,14 @@ export function ReaderStudyQueuePanel({
           payload: {
             action_id: `action-${Date.now()}`,
             action_type: actionType,
-            before_value: systemReport?.recommended_stage || null,
+            before_value: activeReport?.recommended_stage || null,
             after_value: selectedValue || null,
             reason: reason || (actionType === 'request_more_evidence' ? (zh ? '证据不足' : 'insufficient evidence') : null),
             queue: 'reader_v150',
             study_mode: studyMode,
             ai_assisted: true,
-            system_report_available: Boolean(systemReport),
-            recommendation_status: systemReport?.recommendation_status || null,
+            system_report_available: Boolean(activeReport),
+            recommendation_status: activeReport?.recommendation_status || null,
             conflicts,
             environment: searchParams.get('round') === 'qa' ? 'qa' : 'research',
           },
@@ -191,13 +228,13 @@ export function ReaderStudyQueuePanel({
             patient_id: patient.patient_id,
             session_id: sessionRef.current,
             action: actionType === 'accept' ? 'accept' : actionType === 'reject' ? 'reject' : 'defer',
-            predicted_t_stage: systemReport?.recommended_stage || undefined,
-            recommended_t_stage: systemReport?.recommended_stage || undefined,
+            predicted_t_stage: activeReport?.recommended_stage || undefined,
+            recommended_t_stage: activeReport?.recommended_stage || undefined,
             final_t_stage: selectedValue || undefined,
             feedback_type: 'doctor_correction',
             correction_text: reason || (actionType === 'request_more_evidence' ? (zh ? '证据不足' : 'insufficient evidence') : undefined),
-            confidence: systemReport?.calibrated_confidence != null
-              ? String(systemReport.calibrated_confidence)
+            confidence: activeReport?.calibrated_confidence != null
+              ? String(activeReport.calibrated_confidence)
               : undefined,
             reviewer: searchParams.get('reader_id') || 'public_reader',
           }),
@@ -277,15 +314,15 @@ export function ReaderStudyQueuePanel({
         <div className={`flex items-center gap-2 text-[10px] font-semibold ${highConflict ? 'text-rose-300' : 'text-amber-300'}`}>
           <Sparkles size={12} /> {zh ? '结构化辅助证据' : 'Structured assistive evidence'}
         </div>
-        {systemReport ? (
+        {activeReport ? (
           <>
             <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-slate-300">
-              <span>{zh ? '建议' : 'Recommendation'}: {stageLabel(systemReport.recommended_stage, zh)}</span>
-              {systemReport.calibrated_confidence != null
-                ? <span>{zh ? '置信度' : 'Confidence'}: {Math.round(systemReport.calibrated_confidence * 100)}%</span>
+              <span>{zh ? '建议' : 'Recommendation'}: {stageLabel(activeReport.recommended_stage, zh)}</span>
+              {activeReport.calibrated_confidence != null
+                ? <span>{zh ? '置信度' : 'Confidence'}: {Math.round(activeReport.calibrated_confidence * 100)}%</span>
                 : null}
-              <span>{zh ? '证据项' : 'Evidence items'}: {systemReport.evidence?.length || 0}</span>
-              {systemReport.recommendation_status === 'conflict'
+              <span>{zh ? '证据项' : 'Evidence items'}: {activeReport.evidence?.length || 0}</span>
+              {activeReport.recommendation_status === 'conflict'
                 ? <span className="font-semibold text-rose-300">{zh ? '高风险冲突' : 'High-risk conflict'}</span>
                 : null}
             </div>
@@ -300,14 +337,28 @@ export function ReaderStudyQueuePanel({
             ) : null}
             <div className="mt-2 grid grid-cols-2 gap-1.5">
               {SIGN_FIELDS.map(([path, labelZh, labelEn]) => {
-                const field = getSign(systemReport, path);
+                const field = getSign(activeReport, path);
                 const value = field?.value == null || String(field.value).trim() === ''
                   ? (zh ? '未评估' : 'Not assessed')
                   : String(field.value);
                 return (
                   <div key={path} className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
                     <div className="text-[9px] text-gray-500">{zh ? labelZh : labelEn}</div>
-                    <div className="mt-0.5 truncate text-[10px] text-gray-200" title={value}>{value}</div>
+                    {path === 'size.length' || path === 'size.thickness' ? (
+                      <input
+                        value={value}
+                        onChange={(event) => updateReportSign(path, event.target.value)}
+                        className="mt-0.5 w-full rounded border border-white/10 bg-black/30 px-1 py-0.5 text-[10px] text-gray-200 outline-none focus:border-emerald-300/50"
+                        aria-label={zh ? labelZh : labelEn}
+                      />
+                    ) : (
+                      <input
+                        value={value}
+                        onChange={(event) => updateReportSign(path, event.target.value)}
+                        className="mt-0.5 w-full rounded border border-white/10 bg-black/30 px-1 py-0.5 text-[10px] text-gray-200 outline-none focus:border-emerald-300/50"
+                        aria-label={zh ? labelZh : labelEn}
+                      />
+                    )}
                     <div className={`mt-0.5 text-[8px] ${field?.status === 'conflict' ? 'text-rose-300' : 'text-gray-500'}`}>
                       {signStatus(field?.status, zh)} · {field?.source || 'not_available'}
                     </div>
@@ -315,7 +366,7 @@ export function ReaderStudyQueuePanel({
                 );
               })}
             </div>
-            {systemReport.summary ? <div className="mt-2 text-[10px] leading-relaxed text-slate-300">{cleanSystemCopy(systemReport.summary, zh)}</div> : null}
+            {activeReport.summary ? <div className="mt-2 text-[10px] leading-relaxed text-slate-300">{cleanSystemCopy(activeReport.summary, zh)}</div> : null}
           </>
         ) : (
           <div className="mt-1 text-[10px] leading-relaxed text-gray-500">
@@ -367,7 +418,7 @@ export function ReaderStudyQueuePanel({
           <button type="button" onClick={() => void writeDoctorAction('reject')} className="reader-btn justify-center border-rose-500/30 text-rose-300">{zh ? '拒绝系统建议' : 'Reject recommendation'}</button>
           <button type="button" onClick={() => void writeDoctorAction('request_more_evidence')} className="reader-btn justify-center border-slate-500/30 text-slate-300">{zh ? '证据不足' : 'Insufficient evidence'}</button>
         </div>
-        {recommendationBlocked && systemReport
+        {recommendationBlocked && activeReport
           ? <div className="mt-2 text-[10px] text-rose-300">
             {zh
               ? '存在冲突或未确定建议，不能直接采纳；请由医生修改、拒绝或标记证据不足。'
