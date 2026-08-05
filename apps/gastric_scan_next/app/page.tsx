@@ -26,7 +26,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import toast from 'react-hot-toast';
 import type { SamReport } from '@/lib/reader/types';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
-import { ChevronLeft, Users, BarChart2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Users, BarChart2, X } from 'lucide-react';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
 import {
   mergeAgentIntoConceptState,
@@ -81,6 +81,7 @@ export default function Home() {
     if (task === 'task1') setReaderStudyMode('benign_malignancy');
   }, [cohortYear]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isEvidencePanelOpen, setIsEvidencePanelOpen] = useState(true);
   const [isReportExpanded, setIsReportExpanded] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
@@ -100,6 +101,12 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1180) {
       setIsSidebarOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 900) {
+      setIsEvidencePanelOpen(false);
     }
   }, []);
 
@@ -482,7 +489,7 @@ export default function Home() {
 
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
         <div
-          className={`z-40 flex min-h-0 shrink-0 flex-col border-r border-white/10 bg-[#0b0b0d] transition-all duration-300 ease-in-out ${
+          className={`z-40 flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-white/10 bg-[#0b0b0d] transition-all duration-300 ease-in-out ${
             isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full opacity-0 border-none'
           }`}
         >
@@ -631,6 +638,7 @@ export default function Home() {
           )}
         </div>
 
+        {isEvidencePanelOpen && (
         <div className="z-40 flex min-h-0 w-[min(420px,34vw)] min-w-[18rem] shrink-0 flex-col border-l border-white/10 bg-panel-bg transition-all duration-300">
           {!selectedPatient ? (
             <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-gray-500">
@@ -712,6 +720,22 @@ export default function Home() {
             </>
           )}
         </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setIsEvidencePanelOpen((value) => !value)}
+          className={`absolute top-1/2 z-[200600] -translate-y-1/2 rounded-l-lg border border-white/10 bg-neutral-800/90 p-1.5 text-gray-400 shadow-lg backdrop-blur transition-all hover:border-white/30 hover:bg-neutral-700 hover:text-white ${
+            isEvidencePanelOpen ? 'right-[min(420px,34vw)]' : 'right-0'
+          }`}
+          title={isEvidencePanelOpen
+            ? (language === 'zh' ? '收起证据面板' : 'Collapse evidence panel')
+            : (language === 'zh' ? '展开证据面板' : 'Expand evidence panel')}
+          aria-label={isEvidencePanelOpen
+            ? (language === 'zh' ? '收起证据面板' : 'Collapse evidence panel')
+            : (language === 'zh' ? '展开证据面板' : 'Expand evidence panel')}
+        >
+          {isEvidencePanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
 
         {showStatistics && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8">

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Check, Eraser, Layers, Loader2, MousePointer2, Pause, Pencil, Play, Plus, Save, Sparkles, Trash2, Video, X, ZoomIn,
+  Check, Eraser, Layers, Loader2, MousePointer2, PanelTop, Pause, Pencil, Play, Plus, Save, SkipBack, SkipForward, Sparkles, Trash2, Video, X, ZoomIn,
 } from 'lucide-react';
 import type { MaskBoundaryOverride, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
@@ -224,8 +224,9 @@ export function InteractiveSegPanel({
   const { language } = useSettings();
   const zh = language === 'zh';
   const simpleVideoMode = inline && patient?.phase === 'reader_v150';
-  const [simplePromptMode, setSimplePromptMode] = useState<'point' | 'box'>('point');
+  const [simplePromptMode, setSimplePromptMode] = useState<'point' | 'box'>('box');
   const [simpleEditMode, setSimpleEditMode] = useState(false);
+  const [simpleToolsOpen, setSimpleToolsOpen] = useState(true);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EditMode>('soft');
   const [mediaMode, setMediaMode] = useState<MediaMode>('image');
@@ -402,8 +403,9 @@ export function InteractiveSegPanel({
     setSamReport(null);
     setDinoResult(null);
     onDinoFeatures?.(null);
-    setSimplePromptMode('point');
+    setSimplePromptMode('box');
     setSimpleEditMode(false);
+    setSimpleToolsOpen(true);
     videoFrameOverridesRef.current = override?.video_frames || [];
     setVideoFrameOverrides(override?.video_frames || []);
     setKeyCandidates([]);
@@ -518,8 +520,8 @@ export function InteractiveSegPanel({
         setMode('sam');
         setMessage(
           zh
-            ? `已打开对应视频：${list[0].filename}, 点击画面进行系统分析`
-            : `Opened ${list[0].filename}, click the frame for analysis`,
+            ? `已打开对应视频：${list[0].filename}，点击目标或框选 ROI`
+            : `Opened ${list[0].filename}; click the target or draw an ROI box`,
         );
       } else if (pendingOpenVideoSam && !list.length) {
         setPendingOpenVideoSam(false);
@@ -534,8 +536,8 @@ export function InteractiveSegPanel({
     const filename = videos.find((video) => video.url === videoUrl)?.filename || videos[0].filename;
     setMessage(
       zh
-        ? `已打开对应视频：${filename}, 点击画面进行系统分析`
-        : `Opened ${filename}; click the frame for system analysis`,
+        ? `已打开对应视频：${filename}，点击目标或框选 ROI`
+        : `Opened ${filename}; click the target or draw an ROI box`,
     );
   }, [mediaMode, simpleVideoMode, videoUrl, videos, zh]);
 
@@ -550,8 +552,8 @@ export function InteractiveSegPanel({
     setMode('sam');
     setMessage(
       zh
-        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}, 点击画面进行系统分析`
-        : `Opened patient video, click the frame for analysis`,
+        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}，点击目标或框选 ROI`
+        : `Opened patient video; click the target or draw an ROI box`,
     );
   }, [videos, videoUrl, zh]);
 
@@ -860,6 +862,20 @@ export function InteractiveSegPanel({
             : 'No valid region returned — try another point',
         );
       }
+      const promptMeta = (data.result.prompt_meta || {}) as Record<string, unknown>;
+      const maskArea = Number(promptMeta.mask_area_px);
+      const maskAreaRatio = Number.isFinite(maskArea) && frame.width > 0 && frame.height > 0
+        ? maskArea / (frame.width * frame.height)
+        : null;
+      if (!opts?.silent && maskAreaRatio != null && maskAreaRatio > 0.65) {
+        setSamAvailable(true);
+        setMessage(
+          zh
+            ? `未采用过大的分割区域（${Math.round(maskAreaRatio * 100)}%），请改用框选或补充负点`
+            : `Rejected an oversized region (${Math.round(maskAreaRatio * 100)}%); draw a box or add negative points`,
+        );
+        return null;
+      }
       const maxCoord = Math.max(...rawPoly.flatMap((p) => p));
       const polyFull =
         maxCoord <= 1.5
@@ -889,12 +905,12 @@ export function InteractiveSegPanel({
       }
 
       if (!opts?.silent) {
-        const nCtrl = controlIndices(poly.length, LESION_CTRL_COUNT).length;
-        const nPrompt = promptClicks.length;
+        const score = Number(data.result.sam_score);
+        const scoreText = Number.isFinite(score) ? ` · score ${score.toFixed(2)}` : '';
         setMessage(
           zh
-            ? `系统分析完成: 当前帧已返回关注区域（${poly.length} 点）`
-            : `System analysis complete: ${poly.length} contour points`,
+            ? `当前帧 ROI 已更新（${poly.length} 点${scoreText}）`
+            : `Current-frame ROI updated (${poly.length} points${scoreText})`,
         );
       } else {
         setMessage(
@@ -1382,24 +1398,6 @@ export function InteractiveSegPanel({
     return [ix, iy];
   }, [mediaMode]);
 
-  /** Build a hidden local context box for one click; never draw it on the video. */
-  const buildAnalysisBox = useCallback((imgPt: number[]) => {
-    const video = videoRef.current;
-    const img = imgRef.current;
-    const useVideo = mediaMode === 'video' && video && video.videoWidth > 0;
-    const iw = useVideo ? video!.videoWidth : (img?.naturalWidth || 0);
-    const ih = useVideo ? video!.videoHeight : (img?.naturalHeight || 0);
-    if (!iw || !ih) return null;
-    const halfW = Math.max(80, iw * 0.18);
-    const halfH = Math.max(60, ih * 0.18);
-    return {
-      x1: Math.max(0, Math.min(iw, imgPt[0] - halfW)),
-      y1: Math.max(0, Math.min(ih, imgPt[1] - halfH)),
-      x2: Math.max(0, Math.min(iw, imgPt[0] + halfW)),
-      y2: Math.max(0, Math.min(ih, imgPt[1] + halfH)),
-    };
-  }, [mediaMode]);
-
   const hitThreshold = useCallback(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -1476,19 +1474,20 @@ export function InteractiveSegPanel({
         }
         return;
       }
-      clearSamPrompts();
       videoFrameOverridesRef.current = [];
       setVideoFrameOverrides([]);
       setTrackingPrepared(false);
       setSimpleEditMode(false);
       if (simplePromptMode === 'box') {
+        clearSamPrompts();
         e.currentTarget.setPointerCapture(e.pointerId);
         samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
         setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
         return;
       }
-      // Each point prompt is independent and receives a hidden local context box.
-      void runSamClick(imgPt, e.shiftKey ? 'negative' : 'positive', buildAnalysisBox(imgPt))
+      // Point prompts stay in the native multimask path; only an explicit doctor
+      // box should constrain the model to a rectangular context.
+      void runSamClick(imgPt, e.shiftKey ? 'negative' : 'positive')
         .then((poly) => resumeSimpleTracking(poly));
       return;
     }
@@ -1712,7 +1711,6 @@ export function InteractiveSegPanel({
         void runSamClick(
           [boxDrag.x0, boxDrag.y0],
           neg ? 'negative' : 'positive',
-          buildAnalysisBox([boxDrag.x0, boxDrag.y0]),
         )
           .then((poly) => resumeSimpleTracking(poly));
       }
@@ -2066,24 +2064,28 @@ export function InteractiveSegPanel({
           ? 'pointer-events-auto relative flex min-h-0 min-w-0 flex-1 items-stretch justify-stretch overflow-hidden bg-[#080b0f]'
           : 'pointer-events-auto fixed inset-0 z-[200500] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm'}>
           <div className={inline
-            ? 'flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080b0f]'
+            ? 'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-black'
             : 'flex h-[min(94vh,920px)] w-[min(1380px,98vw)] flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-slate-950 shadow-2xl'}>
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-white/10 bg-[#0e141b] px-4 py-3">
+            <div className={`flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black px-3 ${simpleVideoMode ? 'py-1.5' : 'py-3'}`}>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-slate-100">
-                  {zh ? (mediaMode === 'video' ? '视频分析' : '静态图分割') : (mediaMode === 'video' ? 'Video analysis' : 'Static image segmentation')}
+                  {simpleVideoMode
+                    ? (patient.id_short || patient.patient_id || 'Case')
+                    : (zh ? (mediaMode === 'video' ? '视频工具' : '静态图分割') : (mediaMode === 'video' ? 'Video tools' : 'Static image segmentation'))}
                 </div>
-                <div className="mt-0.5 text-[11px] text-slate-400">
-                  {patient.id_short}, {zh
-                    ? mediaMode === 'video'
-                      ? '当前视频，点击画面标记关注区域，系统返回当前帧证据'
-                      : '当前静态图，点击或框选病灶进行分割'
-                    : mediaMode === 'video'
-                      ? 'Current video, click the frame for system evidence'
-                      : 'Current static image, click or box the lesion to segment'}
+                <div className="mt-0.5 truncate text-[10px] text-slate-500">
+                  {simpleVideoMode
+                    ? (videos.find((video) => video.url === videoUrl)?.filename || videoUrl || (zh ? '病例视频' : 'Case video'))
+                    : `${patient.id_short}, ${zh
+                      ? mediaMode === 'video'
+                        ? '当前帧证据与 ROI 工具'
+                        : '当前静态图，点击或框选病灶'
+                      : mediaMode === 'video'
+                        ? 'Current-frame evidence and ROI tools'
+                        : 'Current image, click or box the lesion'}`}
                 </div>
               </div>
-              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <div className={simpleVideoMode ? 'hidden' : 'flex min-w-0 flex-wrap items-center justify-end gap-2'}>
                   <button
                     type="button"
                     disabled={dinoBusy}
@@ -2263,7 +2265,7 @@ export function InteractiveSegPanel({
                 }`}
               >
                 <Video size={13} />
-                {zh ? `视频分析${videos.length ? ` (${videos.length})` : ''}` : `Video analysis${videos.length ? ` (${videos.length})` : ''}`}
+                {zh ? `视频工具${videos.length ? ` (${videos.length})` : ''}` : `Video tools${videos.length ? ` (${videos.length})` : ''}`}
               </button>
               <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-400">
                 <span>ROI</span>
@@ -2283,143 +2285,121 @@ export function InteractiveSegPanel({
             {mediaMode === 'video' && (
               <>
               {simpleVideoMode ? (
-                <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-white/10 bg-[#0e141b] px-4 py-2">
-                  <span className="min-w-0 flex-[1_1_10rem] truncate text-[11px] text-cyan-100">
-                    {videos[0]?.filename || (videoUrl ? (zh ? '当前视频' : 'Current video') : (zh ? '视频加载中…' : 'Loading video…'))}
-                  </span>
+                <>
+                  <div className={`pointer-events-auto absolute left-1/2 top-12 z-40 w-[min(820px,calc(100%-1.5rem))] -translate-x-1/2 transition-all duration-200 ${
+                    simpleToolsOpen ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0'
+                  }`}>
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/90 px-2 py-2 shadow-2xl shadow-black/50 backdrop-blur-md">
+                      <button
+                        type="button"
+                        onClick={() => { setSimplePromptMode('point'); setSimpleEditMode(false); }}
+                        className={`rounded-md border px-2.5 py-1.5 text-[10px] ${simplePromptMode === 'point' && !simpleEditMode ? 'border-white/50 bg-white/15 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {zh ? '点选' : 'Point'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setSimplePromptMode('box'); setSimpleEditMode(false); }}
+                        className={`rounded-md border px-2.5 py-1.5 text-[10px] ${simplePromptMode === 'box' && !simpleEditMode ? 'border-white/50 bg-white/15 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {zh ? '框选' : 'Box'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={points.length < 3}
+                        onClick={() => setSimpleEditMode((value) => {
+                          const next = !value;
+                          setTrackOnPlay(!next);
+                          return next;
+                        })}
+                        className={`rounded-md border px-2.5 py-1.5 text-[10px] disabled:opacity-40 ${simpleEditMode ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {simpleEditMode ? (zh ? '完成修正' : 'Finish edit') : (zh ? '修正轮廓' : 'Edit contour')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!samClicks.length}
+                        onClick={() => {
+                          clearSamPrompts();
+                          setMessage(zh ? '已清除提示点，可重新点选' : 'Prompt points cleared; add new points');
+                        }}
+                        className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
+                      >
+                        {zh ? `清除点 (${samClicks.length})` : `Clear points (${samClicks.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void handleClear()}
+                        className="rounded-md border border-amber-300/30 px-2.5 py-1.5 text-[10px] text-amber-100 hover:bg-amber-300/10 disabled:opacity-40"
+                      >
+                        {zh ? '重置预测' : 'Reset prediction'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={points.length < 3 || precomputeBusy}
+                        onClick={() => void precomputeVideoTracking()}
+                        className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
+                      >
+                        {precomputeBusy
+                          ? (zh ? `跟踪 ${precomputeProgress || ''}` : `Track ${precomputeProgress || ''}`)
+                          : (zh ? '预计算跟踪' : 'Precompute track')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!videoUrl || keyBusy}
+                        onClick={() => void scoreKeyframes()}
+                        className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
+                      >
+                        {keyBusy ? (zh ? '关键帧中' : 'Scoring') : (zh ? '关键帧' : 'Keyframes')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!videoUrl || unifiedAgentBusy || !onUnifiedAgentRun}
+                        onClick={() => void runUnifiedAgent()}
+                        className="flex items-center gap-1 rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-[10px] text-white hover:bg-white/15 disabled:opacity-40"
+                      title={zh ? '启动当前病例 Agent，汇总知识检索与 memory 证据' : 'Start the current-case Agent with knowledge and memory evidence'}
+                      >
+                        <Sparkles size={10} />
+                        {unifiedAgentBusy ? (zh ? 'Agent 中' : 'Agent running') : (zh ? '病例 Agent' : 'Case Agent')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={points.length < 3 || precomputeBusy}
+                        onClick={() => setTrackOnPlay((value) => !value)}
+                        className={`rounded-md border px-2.5 py-1.5 text-[10px] disabled:opacity-40 ${trackOnPlay ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {trackOnPlay ? (zh ? '跟踪开' : 'Track on') : (zh ? '跟踪关' : 'Track off')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={dinoBusy}
+                        onClick={() => void extractDinoFeatures()}
+                        className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
+                      >
+                        {dinoBusy ? (zh ? 'DINO 中' : 'DINO running') : 'DINO'}
+                      </button>
+                    </div>
+                    <div className="mt-1 text-center text-[10px] text-slate-500">
+                      {simpleEditMode
+                        ? (zh ? '拖动轮廓控制点' : 'Drag contour handles')
+                        : simplePromptMode === 'box'
+                          ? (zh ? '拖动框选目标区域；框外内容不会被保留' : 'Draw a box; content outside it is discarded')
+                          : (zh ? '点击目标为正点，Shift+点击背景为负点' : 'Click target for positive points; Shift-click background for negative points')}
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    disabled={!videoUrl}
-                    onClick={() => {
-                      const v = videoRef.current;
-                      if (!v) return;
-                      if (v.paused) void v.play();
-                      else v.pause();
-                    }}
-                    className="flex items-center gap-1 rounded-lg border border-cyan-400/40 px-2.5 py-1.5 text-[11px] text-cyan-100 disabled:opacity-40"
+                    onClick={() => setSimpleToolsOpen((value) => !value)}
+                    className="pointer-events-auto absolute right-3 top-12 z-50 flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-black/80 text-slate-300 shadow-lg backdrop-blur hover:bg-white/10 hover:text-white"
+                    aria-label={simpleToolsOpen ? (zh ? '隐藏工具栏' : 'Hide tools') : (zh ? '显示工具栏' : 'Show tools')}
+                    title={simpleToolsOpen ? (zh ? '隐藏工具栏' : 'Hide tools') : (zh ? '显示工具栏' : 'Show tools')}
                   >
-                    {isPlaying ? <Pause size={13} /> : <Play size={13} />}
-                    {isPlaying ? (zh ? '暂停' : 'Pause') : (zh ? '播放' : 'Play')}
+                    <PanelTop size={14} />
                   </button>
-                  <label className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-black/25 px-2 py-1.5 text-[10px] text-cyan-100/80">
-                    <span>{zh ? '倍速' : 'Speed'}</span>
-                    <select
-                      value={String(videoPlaybackRate)}
-                      onChange={(event) => setVideoPlaybackRate(Number(event.target.value))}
-                      className="bg-transparent text-cyan-100 outline-none"
-                      aria-label={zh ? '视频倍速' : 'Video playback speed'}
-                    >
-                      {VIDEO_PLAYBACK_RATES.map((rate) => (
-                        <option key={rate} value={rate}>{rate}×</option>
-                      ))}
-                    </select>
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(videoDuration, 0.01)}
-                    step={0.01}
-                    value={videoTime}
-                    disabled={!videoUrl}
-                    onChange={(e) => {
-                      const nextTime = Number(e.target.value);
-                      const v = videoRef.current;
-                      if (!v) return;
-                      v.pause();
-                      v.currentTime = nextTime;
-                      setVideoTime(nextTime);
-                      setFrameFrozen(false);
-                      frameFrozenRef.current = false;
-                      syncFrameFromVideo({ force: true });
-                    }}
-                    className="video-progress min-w-[8rem] flex-[2_1_10rem]"
-                    aria-label={zh ? '视频进度' : 'Video progress'}
-                  />
-                  <span className="shrink-0 font-mono text-[10px] text-cyan-200/80">
-                    {videoTime.toFixed(2)}s / {videoDuration.toFixed(2)}s
-                  </span>
-                  <div className="flex min-w-0 flex-[4_1_22rem] flex-wrap items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => { setSimplePromptMode('point'); setSimpleEditMode(false); }}
-                      className={`rounded border px-2 py-1 text-[10px] ${simplePromptMode === 'point' && !simpleEditMode ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
-                    >
-                      {zh ? '点选' : 'Point'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setSimplePromptMode('box'); setSimpleEditMode(false); }}
-                      className={`rounded border px-2 py-1 text-[10px] ${simplePromptMode === 'box' && !simpleEditMode ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
-                    >
-                      {zh ? '框选' : 'Box'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={points.length < 3}
-                      onClick={() => setSimpleEditMode((value) => {
-                        const next = !value;
-                        setTrackOnPlay(!next);
-                        return next;
-                      })}
-                      className={`rounded border px-2 py-1 text-[10px] disabled:opacity-40 ${simpleEditMode ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
-                    >
-                      {simpleEditMode ? (zh ? '完成修正' : 'Finish edit') : (zh ? '修正轮廓' : 'Edit contour')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={points.length < 3 || precomputeBusy}
-                      onClick={() => void precomputeVideoTracking()}
-                      className="rounded border border-cyan-300/40 bg-cyan-400/10 px-2 py-1 text-[10px] text-cyan-100 disabled:opacity-40"
-                    >
-                      {precomputeBusy
-                        ? (zh ? `预计算 ${precomputeProgress || ''}` : `Precomputing ${precomputeProgress || ''}`)
-                        : (zh ? '预计算跟踪' : 'Precompute track')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!videoUrl || keyBusy || propagateBusy || points.length < 3}
-                      onClick={() => void propagateMaskAcrossVideo()}
-                      className="rounded border border-emerald-300/40 bg-emerald-400/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40"
-                    >
-                      {propagateBusy ? (zh ? `全视频传播 ${propagateProgress || ''}` : `Propagating ${propagateProgress || ''}`) : (zh ? '全视频传播' : 'Propagate video')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!videoUrl || keyBusy}
-                      onClick={() => void scoreKeyframes()}
-                      className="rounded border border-violet-300/40 bg-violet-400/10 px-2 py-1 text-[10px] text-violet-100 disabled:opacity-40"
-                    >
-                      {keyBusy ? (zh ? '关键帧打分中' : 'Scoring keyframes') : (zh ? '选择关键帧' : 'Select keyframes')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!videoUrl || unifiedAgentBusy || !onUnifiedAgentRun}
-                      onClick={() => void runUnifiedAgent()}
-                      className="flex items-center gap-1 rounded border border-cyan-300/50 bg-cyan-400/10 px-2 py-1 text-[10px] text-cyan-100 disabled:opacity-40"
-                      title={zh ? '把当前窗口视频帧送入统一科研 Agent' : 'Send the current video window to the unified research Agent'}
-                    >
-                      <Sparkles size={10} />
-                      {unifiedAgentBusy ? (zh ? '统一 Agent 分析中' : 'Unified Agent running') : (zh ? '统一 Agent' : 'Unified Agent')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={points.length < 3 || precomputeBusy}
-                      onClick={() => setTrackOnPlay((value) => !value)}
-                      className={`rounded border px-2 py-1 text-[10px] disabled:opacity-40 ${trackOnPlay ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100' : 'border-white/10 text-slate-400'}`}
-                    >
-                      {trackOnPlay ? (zh ? '连续跟踪：开' : 'Track: on') : (zh ? '连续跟踪：关' : 'Track: off')}
-                    </button>
-                  </div>
-                  <span className="basis-full text-[10px] text-slate-400">
-                    {simpleEditMode
-                      ? (zh ? '拖动青色控制点' : 'Drag cyan handles')
-                      : simplePromptMode === 'box'
-                        ? (zh ? '拖动框选当前帧' : 'Drag a box on the frame')
-                        : (zh ? '点击画面分析当前帧' : 'Click the frame to analyze')}
-                  </span>
-                </div>
+                </>
               ) : (
-              <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-violet-950/30 px-4 py-2">
+              <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-black/80 px-4 py-2">
                 <select
                   value={videoUrl}
                   onChange={(e) => {
@@ -2692,6 +2672,110 @@ export function InteractiveSegPanel({
                 </div>
               </div>
             </div>
+            {simpleVideoMode && (
+              <div className="shrink-0 border-t border-white/10 bg-black px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-11 shrink-0 text-right font-mono text-[10px] text-slate-500">
+                    {videoTime.toFixed(2)}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(videoDuration, 0.01)}
+                    step={0.01}
+                    value={videoTime}
+                    disabled={!videoUrl}
+                    onChange={(event) => {
+                      const nextTime = Number(event.target.value);
+                      const video = videoRef.current;
+                      if (!video) return;
+                      video.pause();
+                      video.currentTime = nextTime;
+                      setVideoTime(nextTime);
+                      setFrameFrozen(false);
+                      frameFrozenRef.current = false;
+                      syncFrameFromVideo({ force: true });
+                      redrawRef.current();
+                    }}
+                    className="video-progress min-w-0 flex-1"
+                    aria-label={zh ? '视频进度' : 'Video progress'}
+                  />
+                  <span className="w-11 shrink-0 font-mono text-[10px] text-slate-500">
+                    {videoDuration.toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[10px] text-slate-500">
+                    {videos.find((video) => video.url === videoUrl)?.filename || (zh ? '病例视频' : 'Case video')}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={!videoUrl}
+                      onClick={() => {
+                        const video = videoRef.current;
+                        if (!video) return;
+                        video.pause();
+                        const nextTime = Math.max(0, video.currentTime - 1 / 30);
+                        video.currentTime = nextTime;
+                        setVideoTime(nextTime);
+                        syncFrameFromVideo({ force: true });
+                        redrawRef.current();
+                      }}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                      title={zh ? '后退一帧' : 'Previous frame'}
+                    >
+                      <SkipBack size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!videoUrl}
+                      onClick={() => {
+                        const video = videoRef.current;
+                        if (!video) return;
+                        if (video.paused) void video.play();
+                        else video.pause();
+                      }}
+                      className="flex h-7 min-w-12 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/10 px-2 text-[10px] text-white hover:bg-white/15 disabled:opacity-30"
+                    >
+                      {isPlaying ? <Pause size={12} /> : <Play size={12} />}
+                      {isPlaying ? (zh ? '暂停' : 'Pause') : (zh ? '播放' : 'Play')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!videoUrl}
+                      onClick={() => {
+                        const video = videoRef.current;
+                        if (!video) return;
+                        video.pause();
+                        const nextTime = Math.min(video.duration || videoTime, video.currentTime + 1 / 30);
+                        video.currentTime = nextTime;
+                        setVideoTime(nextTime);
+                        syncFrameFromVideo({ force: true });
+                        redrawRef.current();
+                      }}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30"
+                      title={zh ? '前进一帧' : 'Next frame'}
+                    >
+                      <SkipForward size={13} />
+                    </button>
+                    <label className="ml-1 flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400">
+                      <span>{zh ? '速度' : 'Speed'}</span>
+                      <select
+                        value={String(videoPlaybackRate)}
+                        onChange={(event) => setVideoPlaybackRate(Number(event.target.value))}
+                        className="bg-transparent text-slate-200 outline-none"
+                        aria-label={zh ? '视频倍速' : 'Video playback speed'}
+                      >
+                        {VIDEO_PLAYBACK_RATES.map((rate) => (
+                          <option key={rate} value={rate}>{rate}×</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">
               {!simpleVideoMode && (
                 <button
@@ -2715,7 +2799,7 @@ export function InteractiveSegPanel({
                     void runSamAtPoint(c, { source: 'sam', box, keepEditing: true, stayInSam: true, llmReport: true });
                   }
                 }}
-                className="flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-40"
               >
                 {samBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {zh ? '生成系统证据' : 'Generate system evidence'}
@@ -2725,7 +2809,7 @@ export function InteractiveSegPanel({
                   type="button"
                   disabled={saving}
                   onClick={() => void handleSave()}
-                  className="flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-40"
+                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-40"
                 >
                   {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                   {zh ? '保存当前轮廓' : 'Save contour'}
@@ -2770,8 +2854,8 @@ export function InteractiveSegPanel({
               </div>
             </div>
             {samReport && (
-              <div className="border-t border-cyan-400/15 bg-cyan-500/[0.04] px-4 py-3 text-[11px] text-slate-200">
-                <div className="font-semibold text-cyan-200">{zh ? '系统证据（辅助意见）' : 'System evidence (assistive)'}</div>
+              <div className="border-t border-white/10 bg-black px-4 py-3 text-[11px] text-slate-200">
+                <div className="font-semibold text-slate-100">{zh ? '系统证据（辅助意见）' : 'System evidence (assistive)'}</div>
                 <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-slate-400">
                   <span>{zh ? '推荐' : 'Recommendation'}: {samReport.recommended_stage || '—'}</span>
                   <span>{zh ? '置信度' : 'Confidence'}: {samReport.calibrated_confidence != null ? `${Math.round(samReport.calibrated_confidence * 100)}%` : '—'}</span>
@@ -2800,10 +2884,10 @@ export function InteractiveSegPanel({
               ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100'
               : 'border-white/15 bg-black/70 text-gray-200 hover:border-cyan-400/40'
           }`}
-          title={zh ? '打开视频分析' : 'Open video analysis'}
+          title={zh ? '打开边界工具' : 'Open boundary tools'}
         >
           <Pencil size={14} />
-          <span>{zh ? '视频分析' : 'Video analysis'}</span>
+          <span>{zh ? '边界工具' : 'Boundary tools'}</span>
           {override && (
             <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.5 text-[9px] text-cyan-200">
               {override.mask_polygon.length}pt
@@ -2813,11 +2897,11 @@ export function InteractiveSegPanel({
         <button
           type="button"
           onClick={() => openEditor({ videoSam: true })}
-          className="flex items-center gap-2 rounded-xl border border-violet-400/40 bg-violet-500/20 px-3 py-2 text-[11px] font-semibold text-violet-100 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:border-violet-300/60"
-          title={zh ? '免上传：直接打开本例对应视频并分析' : 'Open matched patient video for analysis (no upload)'}
+          className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/75 px-3 py-2 text-[11px] font-semibold text-slate-200 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:border-white/30"
+          title={zh ? '直接打开本例对应视频工具' : 'Open matched patient video tools'}
         >
           <Video size={14} />
-          <span>{zh ? '视频分析' : 'Video analysis'}</span>
+          <span>{zh ? '视频工具' : 'Video tools'}</span>
         </button>
       </div>)}
       {typeof document !== 'undefined' && !inline ? createPortal(modal, document.body) : modal}
