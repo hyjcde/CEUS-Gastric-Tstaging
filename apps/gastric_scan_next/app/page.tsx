@@ -9,6 +9,7 @@ import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { StatisticsPanel } from '@/components/StatisticsPanel';
 import { AgentWorkbenchPanel } from '@/components/AgentWorkbenchPanel';
 import {
+  buildModelAssistReport,
   InteractiveSegPanel,
   type DinoFeatureResult,
   type ImagingAssistPayload,
@@ -20,6 +21,7 @@ import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
 import { BenignTissueObservationCard } from '@/components/BenignTissueObservationCard';
 import { AssistHub } from '@/components/AssistHub';
 import { GcUsImagingReportCard } from '@/components/GcUsImagingReportCard';
+import { GcUsEvidencePanel } from '@/components/GcUsEvidencePanel';
 // VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -230,6 +232,17 @@ export default function Home() {
       if (!response.ok || !data.ok || !data.result) {
         throw new Error(data.error || `Unified Agent HTTP ${response.status}`);
       }
+      if (capture.mask_polygon.length >= 3) {
+        setSystemReport(
+          buildModelAssistReport(
+            selectedPatient,
+            capture.mask_polygon,
+            capture.image_width,
+            capture.image_height,
+            'sabm_sam2_guided',
+          ),
+        );
+      }
       setReaderUnifiedAgentResult(data.result);
       toast.success('统一科研 Agent 已完成当前视频窗口分析');
     } catch (error) {
@@ -248,6 +261,18 @@ export default function Home() {
   }, [selectedPatient, allPatients]);
 
   const imagingNarrative = gcUsReport?.report.prose || null;
+  const readerClinical = useMemo(() => {
+    const clinical = selectedPatient?.clinical;
+    if (!clinical) return {};
+    return {
+      location: clinical.location,
+      tumor_size_mm: clinical.tumorSize?.length,
+      tumor_thickness_mm: clinical.tumorSize?.thickness,
+      differentiation: clinical.differentiation,
+      lauren: clinical.lauren,
+      concept_features: clinical.concept_features,
+    };
+  }, [selectedPatient?.clinical]);
 
   const applyConceptState = useCallback((patientId: string, state: ConceptState, markDirty = false) => {
     setConceptState(state);
@@ -651,6 +676,21 @@ export default function Home() {
                 result={readerUnifiedAgentResult}
                 loading={readerUnifiedAgentBusy}
                 zh={language === 'zh'}
+              />
+              <GcUsEvidencePanel
+                caseId={selectedPatient.id}
+                frameId={selectedPatient.id}
+                frameTime={maskOverride?.video_time_sec ?? 0}
+                clinical={readerClinical}
+                lesionPolygon={imagingAssist?.lesionPolygon || maskOverride?.mask_polygon || []}
+                wallPolygon={imagingAssist?.wallPolygon || maskOverride?.wall_polygon || []}
+                frameSize={imagingAssist?.frameSize || (maskOverride ? { width: maskOverride.imageWidth, height: maskOverride.imageHeight } : null)}
+                layerResult={imagingAssist?.layerResult || null}
+                productStage={systemReport?.recommended_stage || null}
+                initialState={gcUsReport}
+                zh={language === 'zh'}
+                compact
+                onStateChange={setGcUsReport}
               />
               {readerUnifiedAgentError ? (
                 <div className="mt-2 rounded-lg border border-rose-400/20 bg-rose-400/5 px-2.5 py-2 text-[10px] leading-relaxed text-rose-200">

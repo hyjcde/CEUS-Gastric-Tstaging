@@ -28,7 +28,7 @@ type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam';
 type MediaMode = 'image' | 'video';
 type ContourLayer = 'lesion' | 'wall';
 type DragLayer = ContourLayer;
-type LesionSegmentationModel = 'dinov3' | 'convnext';
+type LesionSegmentationModel = 'sabm_sam2_guided' | 'dinov3' | 'convnext';
 const VIDEO_PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 type KeyframeCandidate = {
   timestamp_sec: number;
@@ -214,7 +214,7 @@ function sanitizeSystemCopy(value: unknown): string {
     .replace(/\bSegment Anything(?: Model)?\b/gi, 'system analysis');
 }
 
-function buildModelAssistReport(
+export function buildModelAssistReport(
   patient: Patient,
   polygon: number[][],
   frameWidth: number,
@@ -275,7 +275,11 @@ function buildModelAssistReport(
   const thicknessText = clinicalThickness
     ? `${clinicalThickness} mm（临床资料）`
     : `${Math.round(thicknessPx)} px（当前帧几何估计）`;
-  const modelLabel = model === 'dinov3' ? 'DINOv3 lesion candidate' : 'ConvNeXt-Base UNet';
+  const modelLabel = model === 'sabm_sam2_guided'
+    ? 'SABM-GUS guided prompt model'
+    : model === 'dinov3'
+      ? 'DINOv3 lesion candidate'
+      : 'ConvNeXt-Base UNet';
   const signs = {
     size: {
       length: {
@@ -351,7 +355,7 @@ export function InteractiveSegPanel({
   const [samReport, setSamReport] = useState<SamReport | null>(null);
   const [dinoBusy, setDinoBusy] = useState(false);
   const [dinoResult, setDinoResult] = useState<DinoFeatureResult | null>(null);
-  const [segmentationModel, setSegmentationModel] = useState<LesionSegmentationModel>('dinov3');
+  const [segmentationModel, setSegmentationModel] = useState<LesionSegmentationModel>('sabm_sam2_guided');
   const [segmentationBusy, setSegmentationBusy] = useState(false);
   const [segmentationModelResult, setSegmentationModelResult] = useState<{
     model?: string;
@@ -1108,14 +1112,21 @@ export function InteractiveSegPanel({
         try {
           await seekVideoForAgent(video, timestamp);
           setVideoTime(timestamp);
-          const poly = simpleVideoMode
-            ? await runLesionModelRef.current(centroid, box, samClicksRef.current)
-            : await runSamAtPoint(centroid, {
+          const poly = simpleVideoMode && segmentationModel === 'sabm_sam2_guided'
+            ? await runSamAtPoint(centroid, {
                 silent: true,
                 source: 'video_track',
                 box,
                 keepEditing: false,
-              });
+              })
+            : simpleVideoMode
+              ? await runLesionModelRef.current(centroid, box, samClicksRef.current)
+              : await runSamAtPoint(centroid, {
+                  silent: true,
+                  source: 'video_track',
+                  box,
+                  keepEditing: false,
+                });
           if (!poly || poly.length < 3) {
             setKeyCandidates((current) => current.map((item) => (
               item.timestamp_sec === candidate.timestamp_sec
@@ -1160,7 +1171,7 @@ export function InteractiveSegPanel({
         ? `已完成 ${predictedCount}/${candidates.length} 个关键帧的病灶预测`
         : `Lesion predictions completed for ${predictedCount}/${candidates.length} keyframes`,
     );
-  }, [mediaMode, runSamAtPoint, simpleVideoMode, videoTime, zh]);
+  }, [mediaMode, runSamAtPoint, segmentationModel, simpleVideoMode, videoTime, zh]);
 
   useEffect(() => {
     predictKeyframesRef.current = predictKeyframes;
@@ -1254,7 +1265,14 @@ export function InteractiveSegPanel({
         const bbox = bboxFromPolygon(current);
         const centroid = polygonCentroid(current);
         if (!bbox || !centroid) break;
-        const next = await runLesionModelRef.current(centroid, bbox, samClicksRef.current);
+        const next = segmentationModel === 'sabm_sam2_guided'
+          ? await runSamAtPoint(centroid, {
+              silent: true,
+              source: 'video_track',
+              box: bbox,
+              keepEditing: false,
+            })
+          : await runLesionModelRef.current(centroid, bbox, samClicksRef.current);
         if (next && next.length >= 3) {
           pointsRef.current = next;
           setPoints(next);
@@ -1274,7 +1292,7 @@ export function InteractiveSegPanel({
       setPrecomputeBusy(false);
       setPrecomputeProgress(null);
     }
-  }, [mediaMode, precomputeBusy, recordVideoFrameOverride, simpleVideoMode, zh]);
+  }, [mediaMode, precomputeBusy, recordVideoFrameOverride, runSamAtPoint, segmentationModel, simpleVideoMode, zh]);
 
   const maybeTrackWhilePlaying = useCallback(async () => {
     if (!trackOnPlay || mediaMode !== 'video' || !isPlaying) return;
@@ -1291,7 +1309,7 @@ export function InteractiveSegPanel({
     trackBusyRef.current = true;
     lastTrackAtRef.current = now;
     try {
-      const nextPoly = simpleVideoMode
+      const nextPoly = simpleVideoMode && segmentationModel !== 'sabm_sam2_guided'
         ? await runLesionModelRef.current(centroid, bbox, samClicksRef.current)
         : await runSamAtPoint(centroid, {
             silent: true,
@@ -1303,7 +1321,7 @@ export function InteractiveSegPanel({
     } finally {
       trackBusyRef.current = false;
     }
-  }, [trackOnPlay, mediaMode, isPlaying, samAvailable, runSamAtPoint, recordVideoFrameOverride, simpleEditMode, simpleVideoMode, trackingPrepared]);
+  }, [trackOnPlay, mediaMode, isPlaying, samAvailable, runSamAtPoint, recordVideoFrameOverride, segmentationModel, simpleEditMode, simpleVideoMode, trackingPrepared]);
 
 
   const redraw = useCallback(() => {
@@ -1645,8 +1663,8 @@ export function InteractiveSegPanel({
     setSegmentationModelResult(null);
     setMessage(
       zh
-        ? `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} 病灶预测中…`
-        : `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} lesion prediction…`,
+        ? `${segmentationModel === 'sabm_sam2_guided' ? 'SABM-GUS 引导式模型' : segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} 病灶预测中…`
+        : `${segmentationModel === 'sabm_sam2_guided' ? 'SABM-GUS guided model' : segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} lesion prediction…`,
     );
     try {
       const frame = await videoOrImageToSamFrame(
@@ -1718,10 +1736,16 @@ export function InteractiveSegPanel({
       );
       setSamReport(assistReport);
       onSystemReport?.(assistReport);
+      onImagingAssist?.({
+        layerResult,
+        lesionPolygon: poly,
+        wallPolygon: wallPointsRef.current,
+        frameSize: { width: frame.fullWidth, height: frame.fullHeight },
+      });
       setMessage(
         zh
-          ? `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} 已生成病灶 ROI（${poly.length} 点）`
-          : `${segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} lesion ROI ready (${poly.length} points)`,
+          ? `${segmentationModel === 'sabm_sam2_guided' ? 'SABM-GUS 引导式模型' : segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} 已生成病灶 ROI（${poly.length} 点）`
+          : `${segmentationModel === 'sabm_sam2_guided' ? 'SABM-GUS guided model' : segmentationModel === 'dinov3' ? 'DINOv3' : 'ConvNeXt-UNet'} lesion ROI ready (${poly.length} points)`,
       );
       return poly;
     } catch (error) {
@@ -1732,7 +1756,7 @@ export function InteractiveSegPanel({
     } finally {
       setSegmentationBusy(false);
     }
-  }, [mediaMode, onSystemReport, patient, segmentationBusy, segmentationModel, snapshotOriginal, wallPointsRef, zh]);
+  }, [layerResult, mediaMode, onImagingAssist, onSystemReport, patient, segmentationBusy, segmentationModel, snapshotOriginal, wallPointsRef, zh]);
 
   useEffect(() => {
     runLesionModelRef.current = runLesionModel;
@@ -1756,6 +1780,34 @@ export function InteractiveSegPanel({
       setSamClicks(next);
     }
     if (simpleVideoMode && mediaMode === 'video') {
+      if (segmentationModel === 'sabm_sam2_guided') {
+        const predicted = await runSamAtPoint(imgPt, {
+          keepEditing: true,
+          stayInSam: true,
+          source: 'sam',
+          clicks: next.length ? next : undefined,
+          box: box || undefined,
+        });
+        const video = videoRef.current;
+        if (predicted && video?.videoWidth && video.videoHeight && patient) {
+          const assistReport = buildModelAssistReport(
+            patient,
+            predicted,
+            video.videoWidth,
+            video.videoHeight,
+            segmentationModel,
+          );
+          setSamReport(assistReport);
+          onSystemReport?.(assistReport);
+          onImagingAssist?.({
+            layerResult,
+            lesionPolygon: predicted,
+            wallPolygon: wallPointsRef.current,
+            frameSize: { width: video.videoWidth, height: video.videoHeight },
+          });
+        }
+        return predicted;
+      }
       return runLesionModel(imgPt, box || null, next);
     }
     return runSamAtPoint(imgPt, {
@@ -1765,7 +1817,7 @@ export function InteractiveSegPanel({
       clicks: next.length ? next : undefined,
       box: box || undefined,
     });
-  }, [freezeCurrentFrame, mediaMode, runLesionModel, runSamAtPoint, simpleVideoMode]);
+  }, [freezeCurrentFrame, layerResult, mediaMode, onImagingAssist, onSystemReport, patient, runLesionModel, runSamAtPoint, segmentationModel, simpleVideoMode]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const imgPt = canvasToImage(e);
@@ -2644,7 +2696,8 @@ export function InteractiveSegPanel({
                           className="max-w-[112px] bg-transparent text-slate-200 outline-none"
                           aria-label={zh ? '病灶分割模型' : 'Lesion segmentation model'}
                         >
-                          <option value="dinov3">DINOv3 lesion</option>
+                          <option value="sabm_sam2_guided">SABM-GUS guided ROI</option>
+                          <option value="dinov3">DINOv3 lesion candidate</option>
                           <option value="convnext">ConvNeXt-UNet</option>
                         </select>
                       </label>
