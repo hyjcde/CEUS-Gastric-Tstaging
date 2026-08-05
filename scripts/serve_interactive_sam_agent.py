@@ -389,7 +389,7 @@ def postprocess_mask(
     mask: np.ndarray,
     box: BoxPayload | None = None,
 ) -> np.ndarray:
-    """Keep largest component, smooth boundary, optionally clip to ROI box."""
+    """Keep largest component, smooth boundary, and softly clip to the ROI box."""
     mask_u8 = (mask > 0).astype(np.uint8)
     if mask_u8.sum() == 0:
         return mask.astype(bool)
@@ -399,6 +399,16 @@ def postprocess_mask(
         x2 = int(np.clip(round(max(box.x1, box.x2)), 0, mask.shape[1] - 1))
         y1 = int(np.clip(round(min(box.y1, box.y2)), 0, mask.shape[0] - 1))
         y2 = int(np.clip(round(max(box.y1, box.y2)), 0, mask.shape[0] - 1))
+        try:
+            padding_ratio = min(max(float(os.getenv("SAM_BOX_PADDING_RATIO", "0.08")), 0.0), 0.25)
+        except ValueError:
+            padding_ratio = 0.08
+        pad_x = max(4, int(round((x2 - x1) * padding_ratio)))
+        pad_y = max(4, int(round((y2 - y1) * padding_ratio)))
+        x1 = max(0, x1 - pad_x)
+        x2 = min(mask.shape[1] - 1, x2 + pad_x)
+        y1 = max(0, y1 - pad_y)
+        y2 = min(mask.shape[0] - 1, y2 + pad_y)
         clip = np.zeros_like(mask_u8)
         clip[y1 : y2 + 1, x1 : x2 + 1] = 1
         mask_u8 = mask_u8 & clip

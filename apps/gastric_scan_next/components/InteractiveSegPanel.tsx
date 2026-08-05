@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import {
   Check, Eraser, Layers, Loader2, MousePointer2, PanelTop, Pause, Pencil, Play, Plus, Save, SkipBack, SkipForward, Sparkles, Trash2, Video, X, ZoomIn,
 } from 'lucide-react';
-import type { MaskBoundaryOverride, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
+import type { MaskBoundaryOverride, Patient, ReaderStudyMode, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
 import { bboxFromPolygon } from '@/lib/mask-override';
 import { parseLesionMaskFromLabelMe, parseWallMaskFromLabelMe } from '@/lib/direction-annotation/labelme-utils';
@@ -69,6 +69,8 @@ interface InteractiveSegPanelProps {
   /** Route the current video evidence into the unified research Agent. */
   onUnifiedAgentRun?: (capture: UnifiedAgentCapture) => Promise<void> | void;
   unifiedAgentBusy?: boolean;
+  readerStudyMode?: ReaderStudyMode;
+  onReaderStudyModeChange?: (mode: ReaderStudyMode) => void;
   inline?: boolean;
 }
 
@@ -222,6 +224,8 @@ export function InteractiveSegPanel({
   onDinoFeatures,
   onUnifiedAgentRun,
   unifiedAgentBusy = false,
+  readerStudyMode,
+  onReaderStudyModeChange,
   inline = false,
 }: InteractiveSegPanelProps) {
   const { language } = useSettings();
@@ -230,6 +234,7 @@ export function InteractiveSegPanel({
   const [simplePromptMode, setSimplePromptMode] = useState<'point' | 'box'>('box');
   const [simpleEditMode, setSimpleEditMode] = useState(false);
   const [simpleToolsOpen, setSimpleToolsOpen] = useState(true);
+  const [simplePromptBox, setSimplePromptBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EditMode>('soft');
   const [mediaMode, setMediaMode] = useState<MediaMode>('image');
@@ -410,6 +415,7 @@ export function InteractiveSegPanel({
     setSimplePromptMode('box');
     setSimpleEditMode(false);
     setSimpleToolsOpen(true);
+    setSimplePromptBox(null);
     videoFrameOverridesRef.current = override?.video_frames || [];
     setVideoFrameOverrides(override?.video_frames || []);
     setKeyCandidates([]);
@@ -1522,7 +1528,12 @@ export function InteractiveSegPanel({
   ) => {
     freezeCurrentFrame();
     let next = samClicksRef.current;
-    if (!box) {
+    const alreadyPrompted = next.some((point) => (
+      Math.abs(point.x - imgPt[0]) < 1
+      && Math.abs(point.y - imgPt[1]) < 1
+      && point.label === label
+    ));
+    if (!alreadyPrompted) {
       next = [...samClicksRef.current, { x: imgPt[0], y: imgPt[1], label }];
       samClicksRef.current = next;
       setSamClicks(next);
@@ -1576,6 +1587,7 @@ export function InteractiveSegPanel({
       setSimpleEditMode(false);
       if (simplePromptMode === 'box') {
         clearSamPrompts();
+        setSimplePromptBox(null);
         e.currentTarget.setPointerCapture(e.pointerId);
         samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
         setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
@@ -1583,7 +1595,7 @@ export function InteractiveSegPanel({
       }
       // Point prompts stay in the native multimask path; only an explicit doctor
       // box should constrain the model to a rectangular context.
-      void runSamClick(imgPt, e.shiftKey ? 'negative' : 'positive')
+      void runSamClick(imgPt, e.shiftKey ? 'negative' : 'positive', simplePromptBox)
         .then((poly) => resumeSimpleTracking(poly));
       return;
     }
@@ -1802,6 +1814,8 @@ export function InteractiveSegPanel({
         // Box prompt resets click history (cleaner region seed).
         samClicksRef.current = [{ x: cx, y: cy, label: 'positive' }];
         setSamClicks(samClicksRef.current);
+        setSimplePromptBox(box);
+        setSimplePromptMode('point');
         void runSamClick([cx, cy], 'positive', box).then((poly) => resumeSimpleTracking(poly));
       } else {
         void runSamClick(
@@ -2089,6 +2103,7 @@ export function InteractiveSegPanel({
       wallPointsRef.current = [];
       setVideoFrameOverrides([]);
       clearSamPrompts();
+      setSimplePromptBox(null);
       setLayerResult(null);
       onImagingAssist?.(null);
       onOverrideChange(null);
@@ -2110,6 +2125,7 @@ export function InteractiveSegPanel({
     samClicksRef.current = [];
     setSamClicks([]);
     setSamBoxPreview(null);
+    setSimplePromptBox(null);
     // Keep dense contours — soft-deform uses sparse control handles (direction_demo)
     setOpen(true);
     setMessage(
@@ -2391,7 +2407,7 @@ export function InteractiveSegPanel({
                         onClick={() => { setSimplePromptMode('point'); setSimpleEditMode(false); }}
                         className={`rounded-md border px-2.5 py-1.5 text-[10px] ${simplePromptMode === 'point' && !simpleEditMode ? 'border-white/50 bg-white/15 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
                       >
-                        {zh ? '点选' : 'Point'}
+                        {zh ? (simplePromptBox ? '点选修正' : '点选') : (simplePromptBox ? 'Refine points' : 'Point')}
                       </button>
                       <button
                         type="button"
@@ -2400,6 +2416,24 @@ export function InteractiveSegPanel({
                       >
                         {zh ? '框选' : 'Box'}
                       </button>
+                      {readerStudyMode && onReaderStudyModeChange ? (
+                        <div className="ml-1 flex items-center gap-1 border-l border-white/10 pl-1">
+                          <button
+                            type="button"
+                            onClick={() => onReaderStudyModeChange('benign_malignancy')}
+                            className={`rounded-md border px-2 py-1.5 text-[10px] ${readerStudyMode === 'benign_malignancy' ? 'border-amber-300/60 bg-amber-300/15 text-amber-100' : 'border-white/10 text-slate-500 hover:bg-white/5'}`}
+                          >
+                            {zh ? '良恶性' : 'Benignity'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onReaderStudyModeChange('t_staging')}
+                            className={`rounded-md border px-2 py-1.5 text-[10px] ${readerStudyMode === 't_staging' ? 'border-amber-300/60 bg-amber-300/15 text-amber-100' : 'border-white/10 text-slate-500 hover:bg-white/5'}`}
+                          >
+                            {zh ? 'T 分期' : 'T staging'}
+                          </button>
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         disabled={points.length < 3}
@@ -2461,6 +2495,27 @@ export function InteractiveSegPanel({
                       </button>
                       <button
                         type="button"
+                        disabled={samBusy || points.length < 3}
+                        onClick={() => {
+                          const center = polygonCentroid(points);
+                          const currentBox = bboxFromPolygon(points);
+                          if (center && currentBox) {
+                            freezeCurrentFrame();
+                            void runSamAtPoint(center, {
+                              source: 'sam',
+                              box: currentBox,
+                              keepEditing: true,
+                              stayInSam: true,
+                              llmReport: true,
+                            });
+                          }
+                        }}
+                        className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
+                      >
+                        {samBusy ? (zh ? '证据中' : 'Evidence') : (zh ? '证据' : 'Evidence')}
+                      </button>
+                      <button
+                        type="button"
                         disabled={points.length < 3 || precomputeBusy}
                         onClick={() => setTrackOnPlay((value) => !value)}
                         className={`rounded-md border px-2.5 py-1.5 text-[10px] disabled:opacity-40 ${trackOnPlay ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
@@ -2481,7 +2536,9 @@ export function InteractiveSegPanel({
                         ? (zh ? '拖动轮廓控制点' : 'Drag contour handles')
                         : simplePromptMode === 'box'
                           ? (zh ? '拖动框选目标区域；框外内容不会被保留' : 'Draw a box; content outside it is discarded')
-                          : (zh ? '点击目标为正点，Shift+点击背景为负点' : 'Click target for positive points; Shift-click background for negative points')}
+                          : simplePromptBox
+                            ? (zh ? '在框内点选修正：正点保留，Shift+点击排除' : 'Refine inside the box: positive points keep, Shift-click excludes')
+                            : (zh ? '点击目标为正点，Shift+点击背景为负点' : 'Click target for positive points; Shift-click background for negative points')}
                     </div>
                   </div>
                   <button
@@ -2938,22 +2995,24 @@ export function InteractiveSegPanel({
                   {zh ? '保存覆盖' : 'Save override'}
                 </button>
               )}
-              <button
-                type="button"
-                disabled={samBusy || points.length < 3}
-                onClick={() => {
-                  const c = polygonCentroid(points);
-                  const box = bboxFromPolygon(points);
-                  if (c && box) {
-                    freezeCurrentFrame();
-                    void runSamAtPoint(c, { source: 'sam', box, keepEditing: true, stayInSam: true, llmReport: true });
-                  }
-                }}
-                className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-40"
-              >
-                {samBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                {zh ? '生成系统证据' : 'Generate system evidence'}
-              </button>
+              {!simpleVideoMode && (
+                <button
+                  type="button"
+                  disabled={samBusy || points.length < 3}
+                  onClick={() => {
+                    const c = polygonCentroid(points);
+                    const box = bboxFromPolygon(points);
+                    if (c && box) {
+                      freezeCurrentFrame();
+                      void runSamAtPoint(c, { source: 'sam', box, keepEditing: true, stayInSam: true, llmReport: true });
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                >
+                  {samBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  {zh ? '生成系统证据' : 'Generate system evidence'}
+                </button>
+              )}
               {simpleVideoMode && points.length >= 3 && (
                 <button
                   type="button"
@@ -3003,7 +3062,7 @@ export function InteractiveSegPanel({
                 )}
               </div>
             </div>
-            {samReport && (
+            {!simpleVideoMode && samReport && (
               <div className="border-t border-white/10 bg-black px-4 py-3 text-[11px] text-slate-200">
                 <div className="font-semibold text-slate-100">{zh ? '系统证据（辅助意见）' : 'System evidence (assistive)'}</div>
                 <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-slate-400">

@@ -551,6 +551,8 @@ export default function Home() {
             onDinoFeatures={setDinoFeature}
             onUnifiedAgentRun={isReaderStudyQueue ? handleReaderUnifiedAgent : undefined}
             unifiedAgentBusy={readerUnifiedAgentBusy}
+            readerStudyMode={isReaderStudyQueue ? readerStudyMode : undefined}
+            onReaderStudyModeChange={isReaderStudyQueue ? setReaderStudyMode : undefined}
             inline={Boolean(selectedPatient)}
           />
           {!isReaderStudyQueue && !isBenignQueue && (
