@@ -214,6 +214,27 @@ export function GcUsEvidencePanel({
         conflicts: [],
       },
     });
+    if (lesionPolygon.length >= 3) {
+      const proxyField = (value: string, evidenceRef: string): GcUsField<string> => ({
+        value,
+        status: 'pending',
+        source: 'live_contour',
+        confidence: 0.25,
+        raw_value: value,
+        doctor_override: null,
+        evidence_ref: [evidenceRef],
+        note: '当前帧几何/界面代理，需医生结合多切面核对',
+      });
+      if (derivedState.signs.layer_structure.value == null) {
+        derivedState.signs.layer_structure = proxyField('当前帧层次显示有限，需多切面复核', 'layer.multiplanar_review');
+      }
+      if (derivedState.signs.serosa_change.value == null) {
+        derivedState.signs.serosa_change = proxyField('当前帧浆膜连续性需多切面核对', 'serosa.multiplanar_review');
+      }
+      if (derivedState.signs.perigastric_tissue.value == null) {
+        derivedState.signs.perigastric_tissue = proxyField('当前帧胃周组织需多切面核对', 'perigastric.multiplanar_review');
+      }
+    }
     if (!initialState) return derivedState;
     const seeded = createGcUsReportState(initialState);
     const chooseField = <T,>(fresh: GcUsField<T>, seed: GcUsField<T>) => (
