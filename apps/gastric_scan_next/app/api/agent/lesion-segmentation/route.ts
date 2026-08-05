@@ -80,9 +80,9 @@ def apply_prompt_gate(mask, box, clicks):
         item for item in (clicks or [])
         if str(item.get("label", "positive")).lower() == "negative"
     ]
+    chosen = set()
     if positive and clipped.any():
         count, labels, stats, centroids = cv2.connectedComponentsWithStats(clipped, connectivity=8)
-        chosen = set()
         ys, xs = np.where(clipped > 0)
         for point in positive:
             px = float(point.get("x", 0))
@@ -104,6 +104,19 @@ def apply_prompt_gate(mask, box, clicks):
             ix = int(np.clip(round(float(point.get("x", 0))), 0, width - 1))
             iy = int(np.clip(round(float(point.get("y", 0))), 0, height - 1))
             cv2.circle(clipped, (ix, iy), radius, 0, -1)
+    if clipped.any():
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(clipped, connectivity=8)
+        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA])) if count > 1 else 1
+        candidate_labels = chosen or {largest}
+        largest_area = int(stats[largest, cv2.CC_STAT_AREA]) if count > 1 else int(clipped.sum())
+        min_area = max(16, int(largest_area * 0.08))
+        keep = {
+            label for label in candidate_labels
+            if 0 < label < count and int(stats[label, cv2.CC_STAT_AREA]) >= min_area
+        }
+        if not keep:
+            keep = {largest}
+        clipped = np.isin(labels, list(keep)).astype(np.uint8)
     return clipped.astype(bool)
 
 
