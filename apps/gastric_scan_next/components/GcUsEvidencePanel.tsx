@@ -11,6 +11,8 @@ import {
   deriveGcUsSigns,
   normalizeGcUsStage,
   type GcUsField,
+  type GcUsDoctorAction,
+  type GcUsEvidenceProvenance,
   type GcUsReportState,
   type GcUsSigns,
   type GcUsStageBand,
@@ -18,7 +20,18 @@ import {
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 
 const SIGN_OPTIONS: Record<string, string[]> = {
-  layer_structure: ['层次结构清晰', '局部受累，结构尚可辨', '结构紊乱', '连续性可疑破坏', '不可辨'],
+  layer_structure: [
+    '层次结构清晰',
+    '黏膜/黏膜下层（T1）',
+    '固有肌层（T2）',
+    '浆膜下层（T3）',
+    '浆膜连续性中断（T4a）',
+    '邻近器官侵犯（T4b）',
+    '局部受累，结构尚可辨',
+    '结构紊乱',
+    '连续性可疑破坏',
+    '不可辨',
+  ],
   morphology: ['浅表隆起型', '局限隆起型', '局部浸润型', '溃疡浸润型', '巨大浸润型', '未评估'],
   boundary: ['边界清晰、规则', '边界部分欠清', '边界不规则', '外侵样改变，边界消失倾向', '未评估'],
   growth_pattern: ['膨胀型', '局部浸润性', '明显浸润性', '跨壁向外侵犯倾向', '未评估'],
@@ -72,8 +85,34 @@ type Props = {
   initialState?: GcUsReportState | null;
   zh?: boolean;
   compact?: boolean;
+  actorId?: string | null;
+  modelVersion?: string | null;
+  ruleVersion?: string;
   onStateChange?: (state: GcUsReportState) => void;
 };
+
+const EVIDENCE_SOFTWARE_VERSION = 'next-gc-us-evidence-panel-v1';
+
+function makeAuditId(prefix: string, caseId?: string | null, fieldId?: string | null): string {
+  const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}:${caseId || 'unknown'}:${fieldId || 'stage'}:${nonce}`;
+}
+
+function buildSourceRefs(
+  caseId: string | null | undefined,
+  frameId: string | null | undefined,
+  frameTime: number | null | undefined,
+  fieldId?: string | null,
+): string[] {
+  return [
+    caseId ? `case:${caseId}` : 'case:unknown',
+    fieldId ? `field:${fieldId}` : 'field:stage',
+    frameId ? `frame:${frameId}` : 'frame:unknown',
+    frameTime != null ? `time:${frameTime}` : 'time:unknown',
+  ];
+}
 
 function fieldFor(signs: GcUsSigns, id: string): GcUsField<unknown> {
   if (id === 'length') return signs.size.length as GcUsField<unknown>;
@@ -114,6 +153,12 @@ function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportS
     signs,
     report: previous.report,
     reference_stage: previous.reference_stage,
+    doctor_actions: Array.from(
+      new Map(
+        [...(previous.doctor_actions || []), ...(fresh.doctor_actions || [])]
+          .map((action) => [action.action_id, action] as const),
+      ).values(),
+    ),
   };
 }
 
@@ -157,6 +202,9 @@ export function GcUsEvidencePanel({
   initialState = null,
   zh = true,
   compact = false,
+  actorId = null,
+  modelVersion = null,
+  ruleVersion = GC_US_REPORT_SCHEMA_VERSION,
   onStateChange,
 }: Props) {
   const derived = useMemo(() => {
@@ -300,13 +348,72 @@ export function GcUsEvidencePanel({
     if (isMeasurement && value !== null && !Number.isFinite(value)) return;
     let nextField = applyGcUsDoctorOverride(old, value) as GcUsField<unknown>;
     if (isMeasurement && value !== null) nextField = { ...nextField, unit: 'mm' };
+    const evidenceId = makeAuditId('evidence', caseId, id);
+    const sourceRefs = buildSourceRefs(caseId, frameId, frameTime, id);
+    const provenance: GcUsEvidenceProvenance = {
+      evidence_id: evidenceId,
+      source_type: 'doctor_input',
+      source_refs: sourceRefs,
+      frame_id_or_time: frameId || frameTime || null,
+      model_version: modelVersion,
+      rule_version: ruleVersion,
+      actor_id: actorId,
+      created_at: new Date().toISOString(),
+    };
+    nextField = {
+      ...nextField,
+      evidence_ref: Array.from(new Set([...(nextField.evidence_ref || []), evidenceId])),
+      provenance: [...(old.provenance || []), provenance],
+    };
+    const action: GcUsDoctorAction = {
+      action_id: makeAuditId('action', caseId, id),
+      action_type: 'field_edit',
+      field_id: id,
+      suggestion_id: old.evidence_ref?.[0] || null,
+      before_value: old.value,
+      after_value: value,
+      reason: 'Doctor override from the structured evidence panel.',
+      evidence_ids: [evidenceId],
+      source_refs: sourceRefs,
+      frame_id_or_time: frameId || frameTime || null,
+      actor_id: actorId,
+      software_version: EVIDENCE_SOFTWARE_VERSION,
+      model_version: modelVersion,
+      rule_version: ruleVersion,
+      created_at: new Date().toISOString(),
+    };
     setState((previous) => ({
       ...setField(previous, id, nextField),
+      doctor_actions: [...previous.doctor_actions, action],
       report: { ...previous.report, doctor_edited: true, source: 'doctor' },
     }));
   };
 
   const chooseStage = (stage: GcUsStageBand) => {
+    const sourceRefs = buildSourceRefs(caseId, frameId, frameTime);
+    const evidenceIds = Object.values(state.signs)
+      .flatMap((field) => (
+        field && typeof field === 'object' && 'provenance' in field
+          ? ((field as GcUsField<unknown>).provenance || []).map((item) => item.evidence_id)
+          : []
+      ));
+    const action: GcUsDoctorAction = {
+      action_id: makeAuditId('action', caseId, 'stage'),
+      action_type: 'stage_override',
+      field_id: null,
+      suggestion_id: state.reference_stage.raw,
+      before_value: state.reference_stage.band,
+      after_value: stage,
+      reason: 'Doctor selected the provisional stage band.',
+      evidence_ids: evidenceIds,
+      source_refs: sourceRefs,
+      frame_id_or_time: frameId || frameTime || null,
+      actor_id: actorId,
+      software_version: EVIDENCE_SOFTWARE_VERSION,
+      model_version: modelVersion,
+      rule_version: ruleVersion,
+      created_at: new Date().toISOString(),
+    };
     setState((previous) => ({
       ...previous,
       reference_stage: {
@@ -316,6 +423,7 @@ export function GcUsEvidencePanel({
         raw: stage,
         source: 'doctor',
       },
+      doctor_actions: [...previous.doctor_actions, action],
       report: { ...previous.report, doctor_edited: true, source: 'doctor' },
     }));
   };
@@ -396,6 +504,7 @@ export function GcUsEvidencePanel({
                 <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[8px] text-gray-600">
                   <span>{SOURCE_LABELS[field.source] || field.source}</span>
                   {field.doctor_override != null ? <span className="text-orange-300">原始建议；医生修正</span> : null}
+                  {field.provenance?.length ? <span className="text-emerald-300/80">evidence:{field.provenance.length}</span> : null}
                 </div>
               </div>
             </div>
@@ -419,7 +528,7 @@ export function GcUsEvidencePanel({
         <RotateCcw size={10} />恢复 AI/规则建议
       </button>
       <div className="mt-1 flex items-center gap-1 text-[8px] text-gray-600">
-        <Pencil size={9} />医生修正后会按病例保存在当前浏览器，并进入 Agent 报告请求。
+        <Pencil size={9} />医生修正后会按病例保存字段变更、证据来源和版本信息，并进入 Agent 报告请求。
       </div>
     </section>
   );

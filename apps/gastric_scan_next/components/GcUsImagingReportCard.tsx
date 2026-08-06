@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FileText, Gauge } from 'lucide-react';
 import type { Patient } from '@/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
@@ -8,6 +8,7 @@ import {
   bboxShortAxisRatio,
   computeGcUsTscore,
   polygonIrregularity,
+  structuralStageFromExplicitSigns,
   type GcUsTscoreResult,
 } from '@/lib/gc-us-tscore';
 import { GcUsEvidencePanel } from '@/components/GcUsEvidencePanel';
@@ -38,6 +39,12 @@ export function GcUsImagingReportCard({
   onApplyCtStage,
   onEvidenceStateChange,
 }: Props) {
+  const [evidenceState, setEvidenceState] = useState<GcUsReportState | null>(null);
+  const handleEvidenceStateChange = useCallback((next: GcUsReportState) => {
+    setEvidenceState(next);
+    onEvidenceStateChange?.(next);
+  }, [onEvidenceStateChange]);
+
   const packed = useMemo(() => {
     const clin = patient?.clinical;
     const lengthCmClin = clin?.tumorSize?.length ?? null;
@@ -54,8 +61,14 @@ export function GcUsImagingReportCard({
     const tHint = layer?.layer?.tHint || null;
     const inContact = layer?.inContact ?? null;
     const occ = layer?.pen?.ratio ?? layer?.analysis?.ratioHint ?? null;
+    const doctorLayer = evidenceState?.signs.layer_structure;
+    const doctorSerosa = evidenceState?.signs.serosa_change;
+    const doctorLayerValue = doctorLayer?.source === 'doctor' ? doctorLayer.value : null;
+    const doctorSerosaValue = doctorSerosa?.source === 'doctor' ? doctorSerosa.value : null;
     const clinicalRecord = clin as (Record<string, unknown> | undefined);
-    const clinicalSerosa = String(clinicalRecord?.serosaChange || clinicalRecord?.serosa_status || '').trim();
+    const clinicalSerosa = String(
+      doctorSerosaValue || clinicalRecord?.serosaChange || clinicalRecord?.serosa_status || '',
+    ).trim();
     const serosaDisrupted = /中断|破坏|受侵|disrupt|involv/i.test(clinicalSerosa);
 
     const ceaRaw = clin?.biomarkers?.cea_positive ?? clin?.biomarkers?.cea;
@@ -74,16 +87,17 @@ export function GcUsImagingReportCard({
       irregularity: irreg,
       shortAxisRatio: shortR,
       ceaPositive,
-      layerLabel: label,
-      tHint,
+      layerLabel: doctorLayerValue || label,
+      tHint: doctorLayerValue ? null : tHint,
       inContact,
       occupationRatio: typeof occ === 'number' ? occ : null,
       serosaDisrupted,
-      structuralEvidence: 'proxy',
+      structuralEvidence: doctorLayerValue || doctorSerosaValue ? 'explicit' : 'proxy',
+      structuralStage: structuralStageFromExplicitSigns(doctorLayerValue, doctorSerosaValue),
     });
 
     return { tscore };
-  }, [patient, assist]);
+  }, [patient, assist, evidenceState]);
 
   if (!patient) return null;
 
@@ -149,7 +163,7 @@ export function GcUsImagingReportCard({
           layerResult={assist?.layerResult}
           productStage={tscore.ctStage}
           zh={zh}
-          onStateChange={onEvidenceStateChange}
+          onStateChange={handleEvidenceStateChange}
         />
       </div>
 

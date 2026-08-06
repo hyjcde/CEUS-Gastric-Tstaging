@@ -26,6 +26,7 @@ export type GcUsTscoreInput = {
   serosaDisrupted?: boolean | null;
   /** Explicit doctor/video structural evidence; proxy geometry is not enough. */
   structuralEvidence?: 'explicit' | 'proxy' | 'missing' | null;
+  structuralStage?: GcUsCtStage | null;
 };
 
 export type GcUsScoreItem = {
@@ -88,13 +89,17 @@ function layerPoints(label?: string | null, tHint?: string | null): { points: nu
   return { points: 0, detail: '达层未判定' };
 }
 
-function mapTotalToCt(total: number): { ctStage: GcUsCtStage; mappingNote: string } {
-  // Extended scale (size + morph + wall soft, ~0–20). Example: 16 → cT3.
-  if (total <= 4) return { ctStage: 'cT1', mappingNote: '总分≤4 → cT1（偏粘膜/粘膜下）' };
-  if (total <= 9) return { ctStage: 'cT2', mappingNote: '总分≤9 → cT2（偏固有肌层）' };
-  if (total <= 16) return { ctStage: 'cT3', mappingNote: '总分≤16 → cT3（偏浆膜下/浆膜外）' };
-  if (total <= 19) return { ctStage: 'cT4a', mappingNote: '总分≤19 → cT4a（浆膜受累倾向）' };
-  return { ctStage: 'cT4b', mappingNote: '总分>19 → cT4b（深侵犯/邻近倾向）' };
+export function structuralStageFromExplicitSigns(
+  layerLabel?: string | null,
+  serosaText?: string | null,
+): GcUsCtStage | null {
+  const layer = `${layerLabel || ''} ${serosaText || ''}`;
+  if (/邻近器官|器官侵犯|adjacent\s+organ|T4b/i.test(layer)) return 'cT4b';
+  if (/浆膜.*(中断|破坏|受侵)|serosa.*(disrupt|breach|involv)/i.test(layer)) return 'cT4a';
+  if (/浆膜下|subserosa/i.test(layer)) return 'cT3';
+  if (/固有肌层|肌层结构|muscularis|proper\s+muscle/i.test(layer)) return 'cT2';
+  if (/黏膜|粘膜|mucosa|submucosa/i.test(layer)) return 'cT1';
+  return null;
 }
 
 export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
@@ -197,7 +202,9 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
   const hasExplicitStructuralEvidence =
     structuralEvidence === 'explicit' &&
     input.inContact !== false &&
-    (hasLayerSignal || input.serosaDisrupted === true);
+    (hasLayerSignal || input.serosaDisrupted === true) &&
+    input.structuralStage != null &&
+    input.structuralStage !== 'cTx';
   const uncertaintyReasons: string[] = [];
   if (!items.length) uncertaintyReasons.push('no_scoring_evidence');
   if (structuralEvidence !== 'explicit') uncertaintyReasons.push('wall_layer_not_explicitly_confirmed');
@@ -209,7 +216,10 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
       ? 'uncertain'
       : 'not_assessable';
   const { ctStage, mappingNote } = hasExplicitStructuralEvidence
-    ? mapTotalToCt(total)
+    ? {
+        ctStage: input.structuralStage as GcUsCtStage,
+        mappingNote: `显式结构证据确认，软评分 ${total} 分仅作辅助参考`,
+      }
     : {
         ctStage: 'cTx' as const,
         mappingNote: '缺少经确认的胃壁层次/浆膜证据，仅展示软评分，不输出确定 cT 分期',
