@@ -649,8 +649,8 @@ export function InteractiveSegPanel({
         setMode('sam');
         setMessage(
           zh
-            ? `已打开对应视频：${list[0].filename}，点击目标或框选 ROI`
-            : `Opened ${list[0].filename}; click the target or draw an ROI box`,
+            ? `已打开对应视频：${list[0].filename}，请用 SAM 框选病灶`
+            : `Opened ${list[0].filename}; draw an ROI box with SAM`,
         );
       } else if (pendingOpenVideoSam && !list.length) {
         setPendingOpenVideoSam(false);
@@ -665,8 +665,8 @@ export function InteractiveSegPanel({
     const filename = videos.find((video) => video.url === videoUrl)?.filename || videos[0].filename;
     setMessage(
       zh
-        ? `已打开对应视频：${filename}，点击目标或框选 ROI`
-        : `Opened ${filename}; click the target or draw an ROI box`,
+        ? `已打开对应视频：${filename}，请用 SAM 框选病灶`
+        : `Opened ${filename}; draw an ROI box with SAM`,
     );
   }, [mediaMode, simpleVideoMode, videoUrl, videos, zh]);
 
@@ -681,8 +681,8 @@ export function InteractiveSegPanel({
     setMode('sam');
     setMessage(
       zh
-        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}，点击目标或框选 ROI`
-        : `Opened patient video; click the target or draw an ROI box`,
+        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}，请用 SAM 框选病灶`
+        : `Opened patient video; draw an ROI box with SAM`,
     );
   }, [videos, videoUrl, zh]);
 
@@ -2674,33 +2674,22 @@ export function InteractiveSegPanel({
                     <div className={`flex max-w-full flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-black/90 px-2 py-2 shadow-2xl shadow-black/50 backdrop-blur-md transition-all duration-200 ${
                       simpleToolsOpen ? 'max-h-40 translate-y-0 overflow-visible opacity-100' : 'pointer-events-none max-h-0 -translate-y-2 overflow-hidden border-transparent p-0 opacity-0'
                     }`}>
-                      <button
-                        type="button"
-                        onClick={() => { setSimplePromptMode('point'); setSimpleEditMode(false); }}
-                        className={`rounded-md border px-2.5 py-1.5 text-[10px] ${simplePromptMode === 'point' && !simpleEditMode ? 'border-white/50 bg-white/15 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                      >
-                        {zh ? (simplePromptBox ? '点选修正' : '点选') : (simplePromptBox ? 'Refine points' : 'Point')}
-                      </button>
+                      <div className="basis-full flex items-center justify-between gap-3 border-b border-white/10 pb-1 text-[9px]">
+                        <span className="font-semibold uppercase tracking-[0.16em] text-cyan-100">
+                          {zh ? 'SAM 轮廓编辑' : 'SAM contour editor'}
+                        </span>
+                        <span className="text-slate-500">
+                          {zh ? '框选 → 编辑 → 证据' : 'Box → Edit → Evidence'}
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => { setSimplePromptMode('box'); setSimpleEditMode(false); }}
                         className={`rounded-md border px-2.5 py-1.5 text-[10px] ${simplePromptMode === 'box' && !simpleEditMode ? 'border-white/50 bg-white/15 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                        title={zh ? '使用 SAM 框选 ROI 并生成病灶轮廓' : 'Draw an ROI box with SAM'}
                       >
-                        {zh ? '框选' : 'Box'}
+                        {zh ? 'SAM 框选' : 'SAM box'}
                       </button>
-                      <label className="ml-1 flex items-center gap-1 rounded-md border border-white/10 px-2 py-1.5 text-[10px] text-slate-500">
-                        <span>{zh ? '模型' : 'Model'}</span>
-                        <select
-                          value={segmentationModel}
-                          onChange={(event) => setSegmentationModel(event.target.value as LesionSegmentationModel)}
-                          className="max-w-[112px] bg-transparent text-slate-200 outline-none"
-                          aria-label={zh ? '病灶分割模型' : 'Lesion segmentation model'}
-                        >
-                          <option value="sabm_sam2_guided">SABM-GUS guided ROI</option>
-                          <option value="dinov3">DINOv3 lesion candidate</option>
-                          <option value="convnext">ConvNeXt-UNet</option>
-                        </select>
-                      </label>
                       <button
                         type="button"
                         disabled={points.length < 3}
@@ -2709,20 +2698,10 @@ export function InteractiveSegPanel({
                           setTrackOnPlay(!next);
                           return next;
                         })}
-                        className={`rounded-md border px-2.5 py-1.5 text-[10px] disabled:opacity-40 ${simpleEditMode ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                        className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold disabled:opacity-40 ${simpleEditMode ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                        title={zh ? '进入 SAM 结果轮廓编辑，拖动控制点修正边界' : 'Edit the SAM contour by dragging handles'}
                       >
-                        {simpleEditMode ? (zh ? '完成修正' : 'Finish edit') : (zh ? '修正轮廓' : 'Edit contour')}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!samClicks.length}
-                        onClick={() => {
-                          clearSamPrompts();
-                          setMessage(zh ? '已清除提示点，可重新点选' : 'Prompt points cleared; add new points');
-                        }}
-                        className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
-                      >
-                        {zh ? `清除点 (${samClicks.length})` : `Clear points (${samClicks.length})`}
+                        {simpleEditMode ? (zh ? '完成编辑' : 'Finish edit') : (zh ? 'SAM 编辑轮廓' : 'Edit SAM contour')}
                       </button>
                       <button
                         type="button"
@@ -2730,7 +2709,7 @@ export function InteractiveSegPanel({
                         onClick={() => void handleClear()}
                         className="rounded-md border border-amber-300/30 px-2.5 py-1.5 text-[10px] text-amber-100 hover:bg-amber-300/10 disabled:opacity-40"
                       >
-                        {zh ? '重置预测' : 'Reset prediction'}
+                        {zh ? '重置当前轮廓' : 'Reset contour'}
                       </button>
                       <button
                         type="button"
@@ -2740,7 +2719,7 @@ export function InteractiveSegPanel({
                       >
                         {precomputeBusy
                           ? (zh ? `跟踪 ${precomputeProgress || ''}` : `Track ${precomputeProgress || ''}`)
-                          : (zh ? '预计算跟踪' : 'Precompute track')}
+                          : (zh ? '视频跟踪' : 'Video tracking')}
                       </button>
                       <button
                         type="button"
@@ -2748,7 +2727,7 @@ export function InteractiveSegPanel({
                         onClick={() => void scoreKeyframes()}
                         className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
                       >
-                        {keyBusy ? (zh ? '关键帧中' : 'Scoring') : (zh ? '关键帧' : 'Keyframes')}
+                        {keyBusy ? (zh ? '关键帧中' : 'Scoring') : (zh ? '选关键帧' : 'Select keyframes')}
                       </button>
                       <button
                         type="button"
@@ -2758,7 +2737,7 @@ export function InteractiveSegPanel({
                       title={zh ? '启动当前病例 Agent，汇总知识检索与 memory 证据' : 'Start the current-case Agent with knowledge and memory evidence'}
                       >
                         <Sparkles size={10} />
-                        {unifiedAgentBusy ? (zh ? 'Agent 中' : 'Agent running') : (zh ? '病例 Agent' : 'Case Agent')}
+                        {unifiedAgentBusy ? (zh ? 'Agent 中' : 'Agent running') : (zh ? '病例证据' : 'Case evidence')}
                       </button>
                       <button
                         type="button"
@@ -2779,7 +2758,7 @@ export function InteractiveSegPanel({
                         }}
                         className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
                       >
-                        {samBusy ? (zh ? '证据中' : 'Evidence') : (zh ? '证据' : 'Evidence')}
+                        {samBusy ? (zh ? '分析中' : 'Analyzing') : (zh ? '结构证据' : 'Structural evidence')}
                       </button>
                       <button
                         type="button"
@@ -2787,7 +2766,7 @@ export function InteractiveSegPanel({
                         onClick={() => setTrackOnPlay((value) => !value)}
                         className={`rounded-md border px-2.5 py-1.5 text-[10px] disabled:opacity-40 ${trackOnPlay ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
                       >
-                        {trackOnPlay ? (zh ? '跟踪开' : 'Track on') : (zh ? '跟踪关' : 'Track off')}
+                        {trackOnPlay ? (zh ? '跟踪：开' : 'Tracking: on') : (zh ? '跟踪：关' : 'Tracking: off')}
                       </button>
                       <button
                         type="button"
@@ -2795,17 +2774,13 @@ export function InteractiveSegPanel({
                         onClick={() => void extractDinoFeatures()}
                         className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-slate-400 hover:bg-white/5 disabled:opacity-40"
                       >
-                        {dinoBusy ? (zh ? 'DINO 中' : 'DINO running') : 'DINO'}
+                        {dinoBusy ? (zh ? 'DINO 中' : 'DINO running') : (zh ? 'DINO 证据' : 'DINO evidence')}
                       </button>
                     </div>
                     <div className={`mt-1 text-center text-[10px] text-slate-500 transition-opacity ${simpleToolsOpen ? 'opacity-100' : 'pointer-events-none h-0 overflow-hidden opacity-0'}`}>
                       {simpleEditMode
                         ? (zh ? '拖动轮廓控制点' : 'Drag contour handles')
-                        : simplePromptMode === 'box'
-                          ? (zh ? '拖动框选目标区域；框外内容不会被保留' : 'Draw a box; content outside it is discarded')
-                          : simplePromptBox
-                            ? (zh ? '在框内点选修正：正点保留，Shift+点击排除' : 'Refine inside the box: positive points keep, Shift-click excludes')
-                            : (zh ? '点击目标为正点，Shift+点击背景为负点' : 'Click target for positive points; Shift-click background for negative points')}
+                        : (zh ? '拖动框选 ROI；SAM 返回轮廓后点击“编辑轮廓”修正' : 'Draw an ROI; edit the returned SAM contour')}
                     </div>
                   </div>
                   <button

@@ -13,6 +13,8 @@ type Props = {
   onInteractionModeChange: (mode: InteractionMode) => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  playbackRate: number;
+  onPlaybackRateChange: (value: number) => void;
   trackOnPlay: boolean;
   onToggleTrack: () => void;
   videoTrackBusy: boolean;
@@ -35,10 +37,8 @@ type Props = {
 };
 
 const MODES: { id: InteractionMode; label: string; hint: string }[] = [
-  { id: 'positive', label: '正向点', hint: '1' },
-  { id: 'negative', label: '负向点', hint: '2' },
-  { id: 'box', label: '框选', hint: '3' },
-  { id: 'inspect', label: '检视', hint: '4' },
+  { id: 'box', label: 'SAM 框选', hint: '1' },
+  { id: 'inspect', label: '检视轮廓', hint: '2' },
 ];
 
 export function ReaderToolbar({
@@ -48,6 +48,8 @@ export function ReaderToolbar({
   onInteractionModeChange,
   isPlaying,
   onTogglePlay,
+  playbackRate,
+  onPlaybackRateChange,
   trackOnPlay,
   onToggleTrack,
   videoTrackBusy,
@@ -85,6 +87,19 @@ export function ReaderToolbar({
           {isPlaying ? <Pause size={12} /> : <Play size={12} />}
           {isPlaying ? '暂停' : '播放'}
         </button>
+        <label className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400" title="播放倍速（与阅片1一致）">
+          倍速
+          <select
+            aria-label="播放倍速"
+            value={String(playbackRate)}
+            onChange={(event) => onPlaybackRateChange(Number(event.target.value))}
+            className="bg-transparent text-gray-200 outline-none"
+          >
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1">1×</option>
+          </select>
+        </label>
         <button
           type="button"
           onClick={onToggleTrack}
@@ -97,7 +112,7 @@ export function ReaderToolbar({
           onClick={onPropagateVideo}
           className="reader-btn"
           disabled={videoTrackBusy || !hasPrompt}
-          title={!hasPrompt ? '请先框选或点击病灶' : '使用 SAM2.1 视频 memory 对整个视频传播'}
+          title={!hasPrompt ? '请先用 SAM 框选病灶' : '使用 SAM2.1 视频 memory 对整个视频传播'}
         >
           {videoTrackBusy ? <Loader2 size={12} className="animate-spin" /> : <Route size={12} />}
           {videoTrackBusy ? '全视频传播中' : '全视频传播'}
@@ -112,7 +127,7 @@ export function ReaderToolbar({
           onClick={onGenerateReport}
           className="reader-btn reader-btn-primary"
           disabled={reportBusy || !llmReady || !hasPrompt}
-          title={!llmReady ? '未配置 DeepSeek / MiniMax' : !hasPrompt ? '请先框选或点击病灶' : ''}
+          title={!llmReady ? '未配置 DeepSeek / MiniMax' : !hasPrompt ? '请先用 SAM 框选病灶' : ''}
         >
           {reportBusy ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
           生成文字报告
@@ -121,7 +136,7 @@ export function ReaderToolbar({
           <Eraser size={12} /> 清除
         </button>
         <button type="button" onClick={onUndoPoint} className="reader-btn">
-          <Undo2 size={12} /> 撤销
+          <Undo2 size={12} /> 撤销轮廓
         </button>
       </div>
 
