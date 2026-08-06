@@ -686,7 +686,10 @@ export default function Home() {
                 wallPolygon={imagingAssist?.wallPolygon || maskOverride?.wall_polygon || []}
                 frameSize={imagingAssist?.frameSize || (maskOverride ? { width: maskOverride.imageWidth, height: maskOverride.imageHeight } : null)}
                 layerResult={imagingAssist?.layerResult || null}
-                productStage={systemReport?.recommended_stage || null}
+                // Unified Agent stage is shown in ReaderEvidencePanel. Do not
+                // inject it into the independent GC-US evidence state, where
+                // it could silently override cTx or doctor-confirmed signs.
+                productStage={null}
                 initialState={gcUsReport}
                 zh={language === 'zh'}
                 compact

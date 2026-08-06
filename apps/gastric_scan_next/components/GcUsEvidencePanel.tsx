@@ -152,7 +152,9 @@ function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportS
     ...fresh,
     signs,
     report: previous.report,
-    reference_stage: previous.reference_stage,
+    reference_stage: previous.reference_stage.source === 'doctor'
+      ? previous.reference_stage
+      : fresh.reference_stage,
     doctor_actions: Array.from(
       new Map(
         [...(previous.doctor_actions || []), ...(fresh.doctor_actions || [])]
@@ -257,8 +259,11 @@ export function GcUsEvidencePanel({
         ],
       }),
       reference_stage: {
-        ...normalizeGcUsStage(layerResult?.inContact === false ? null : (productStage || tHint)),
-        source: productStage ? 'product_score' : 'model',
+        // A ContactGeom tHint is proxy geometry, not an independent stage.
+        // Only an explicitly supplied product/doctor stage may populate this
+        // reference slot.
+        ...normalizeGcUsStage(productStage),
+        source: productStage ? 'product_score' : 'not_available',
         conflicts: [],
       },
     });
@@ -302,6 +307,16 @@ export function GcUsEvidencePanel({
           thickness: chooseField(derivedState.signs.size.thickness, seeded.signs.size.thickness),
         },
       },
+      reference_stage: seeded.reference_stage.source === 'doctor'
+        ? seeded.reference_stage
+        : derivedState.reference_stage,
+      report: seeded.report.doctor_edited || seeded.report.source === 'doctor'
+        ? seeded.report
+        : derivedState.report,
+      conflicts: seeded.reference_stage.source === 'doctor'
+        ? seeded.conflicts
+        : derivedState.conflicts,
+      doctor_actions: seeded.doctor_actions || [],
     };
   }, [caseId, clinical, frameId, frameSize, frameTime, initialState, layerResult, lesionPolygon, productStage, wallPolygon]);
 
@@ -313,7 +328,7 @@ export function GcUsEvidencePanel({
     if (storageKey && typeof window !== 'undefined') {
       try {
         const saved = window.localStorage.getItem(storageKey);
-        if (saved) next = mergeFreshEvidence(next, createGcUsReportState(JSON.parse(saved)));
+        if (saved) next = mergeFreshEvidence(createGcUsReportState(JSON.parse(saved)), next);
       } catch {
         // Ignore stale browser state.
       }
