@@ -6,12 +6,12 @@ import type { Patient } from '@/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import {
   bboxShortAxisRatio,
-  buildImagingNarrative,
   computeGcUsTscore,
-  estimateAxesMm,
   polygonIrregularity,
   type GcUsTscoreResult,
 } from '@/lib/gc-us-tscore';
+import { GcUsEvidencePanel } from '@/components/GcUsEvidencePanel';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
 export type ImagingAssistState = {
   layerResult: LayerAnalyzeResult | null;
@@ -25,25 +25,28 @@ type Props = {
   assist: ImagingAssistState | null;
   zh?: boolean;
   onApplyCtStage?: (ct: string) => void;
+  onEvidenceStateChange?: (state: GcUsReportState) => void;
 };
 
-function mmFromCm(cm?: number | null): number | null {
-  if (cm == null || !Number.isFinite(cm) || cm <= 0) return null;
-  return cm * 10;
-}
+const EMPTY_CLINICAL: Record<string, unknown> = {};
+const EMPTY_POLYGON: number[][] = [];
 
-export function GcUsImagingReportCard({ patient, assist, zh = true, onApplyCtStage }: Props) {
+export function GcUsImagingReportCard({
+  patient,
+  assist,
+  zh = true,
+  onApplyCtStage,
+  onEvidenceStateChange,
+}: Props) {
   const packed = useMemo(() => {
     const clin = patient?.clinical;
     const lengthCmClin = clin?.tumorSize?.length ?? null;
     const thicknessCmClin = clin?.tumorSize?.thickness ?? null;
     const poly = assist?.lesionPolygon || [];
-    const axes =
-      poly.length >= 3 && assist?.frameSize ? estimateAxesMm(poly, assist.frameSize) : null;
-    const lengthCm =
-      lengthCmClin ?? (axes ? axes.lengthMm / 10 : null);
-    const thicknessCm =
-      thicknessCmClin ?? (axes ? axes.thicknessMm / 10 : null);
+    // Pixel geometry has no device calibration. Keep it as px in the evidence
+    // panel; do not convert it to pseudo-mm with a fixed FOV assumption.
+    const lengthCm = lengthCmClin;
+    const thicknessCm = thicknessCmClin;
     const irreg = polygonIrregularity(poly);
     const shortR = bboxShortAxisRatio(poly);
     const layer = assist?.layerResult;
@@ -51,15 +54,19 @@ export function GcUsImagingReportCard({ patient, assist, zh = true, onApplyCtSta
     const tHint = layer?.layer?.tHint || null;
     const inContact = layer?.inContact ?? null;
     const occ = layer?.pen?.ratio ?? layer?.analysis?.ratioHint ?? null;
-    const serosaDisrupted = /L5|浆膜|T4|T3–T4|T3-T4/i.test(`${label || ''} ${tHint || ''}`);
+    const clinicalRecord = clin as (Record<string, unknown> | undefined);
+    const clinicalSerosa = String(clinicalRecord?.serosaChange || clinicalRecord?.serosa_status || '').trim();
+    const serosaDisrupted = /中断|破坏|受侵|disrupt|involv/i.test(clinicalSerosa);
 
-    const ceaRaw = (clin as { cea?: string | number | boolean } | undefined)?.cea;
+    const ceaRaw = clin?.biomarkers?.cea_positive ?? clin?.biomarkers?.cea;
     const ceaPositive =
       typeof ceaRaw === 'boolean'
         ? ceaRaw
         : typeof ceaRaw === 'string'
           ? /阳|\+|positive/i.test(ceaRaw)
-          : null;
+          : typeof ceaRaw === 'number' && Number.isFinite(ceaRaw)
+            ? ceaRaw > 5
+            : null;
 
     const tscore: GcUsTscoreResult = computeGcUsTscore({
       lengthCm,
@@ -72,28 +79,15 @@ export function GcUsImagingReportCard({ patient, assist, zh = true, onApplyCtSta
       inContact,
       occupationRatio: typeof occ === 'number' ? occ : null,
       serosaDisrupted,
+      structuralEvidence: 'proxy',
     });
 
-    const narrative = buildImagingNarrative({
-      location: clin?.location || null,
-      lengthMm: mmFromCm(lengthCmClin) ?? axes?.lengthMm ?? null,
-      thicknessMm: mmFromCm(thicknessCmClin) ?? axes?.thicknessMm ?? null,
-      irregularity: irreg,
-      inContact,
-      layerLabel: label,
-      tHint,
-      occupationRatio: typeof occ === 'number' ? occ : null,
-      serosaDisrupted,
-      tscore,
-      zh,
-    });
-
-    return { tscore, narrative, label, tHint, inContact, occ };
-  }, [patient, assist, zh]);
+    return { tscore };
+  }, [patient, assist]);
 
   if (!patient) return null;
 
-  const { tscore, narrative } = packed;
+  const { tscore } = packed;
   const hasFeatures = Boolean(assist?.layerResult || (assist?.lesionPolygon?.length || 0) >= 3);
 
   return (
@@ -111,13 +105,13 @@ export function GcUsImagingReportCard({ patient, assist, zh = true, onApplyCtSta
       {!hasFeatures ? (
         <div className="mb-2 rounded-lg border border-dashed border-white/15 bg-black/20 p-2 text-[10px] text-slate-400">
           {zh
-            ? '打开「边界编辑 / SAM」点选病灶后，此处自动生成超声所见与 GC-US 评分。'
-            : 'Open boundary edit / SAM and click the lesion to generate findings and score.'}
+            ? '先框选或点选病灶，质量通过后再进行胃壁和 T 分期观察。'
+            : 'Create a lesion prompt before wall and T-stage analysis.'}
         </div>
       ) : (
         <div className="mb-2 flex items-start gap-1.5 rounded-lg border border-white/10 bg-black/30 p-2 text-[10px] leading-relaxed text-slate-200">
           <FileText size={12} className="mt-0.5 shrink-0 text-cyan-300" />
-          <span>{narrative}</span>
+          <span>{zh ? '报告正文按七项核心影像征象生成，评分仅作为软参考。' : 'The report follows seven core imaging signs; the score is a soft reference.'}</span>
         </div>
       )}
 
@@ -136,8 +130,30 @@ export function GcUsImagingReportCard({ patient, assist, zh = true, onApplyCtSta
       </div>
 
       <div className="mt-2 text-[9px] leading-relaxed text-slate-500">{tscore.mappingNote}</div>
+      {tscore.status !== 'supported' ? (
+        <div className="mt-1 rounded border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100">
+          {zh
+            ? `阶段状态：${tscore.status === 'not_assessable' ? '不可评估' : '待补充证据'}；${tscore.uncertaintyReasons.join('、')}`
+            : `Stage status: ${tscore.status}; ${tscore.uncertaintyReasons.join(', ')}`}
+        </div>
+      ) : null}
 
-      {onApplyCtStage && hasFeatures ? (
+      <div className="mt-3">
+        <GcUsEvidencePanel
+          caseId={patient.patient_id}
+          frameId={patient.id}
+          clinical={(patient.clinical || EMPTY_CLINICAL) as unknown as Record<string, unknown>}
+          lesionPolygon={assist?.lesionPolygon || EMPTY_POLYGON}
+          wallPolygon={assist?.wallPolygon || EMPTY_POLYGON}
+          frameSize={assist?.frameSize}
+          layerResult={assist?.layerResult}
+          productStage={tscore.ctStage}
+          zh={zh}
+          onStateChange={onEvidenceStateChange}
+        />
+      </div>
+
+      {onApplyCtStage && hasFeatures && tscore.status === 'supported' && tscore.ctStage !== 'cTx' ? (
         <button
           type="button"
           onClick={() => onApplyCtStage(tscore.ctStage.replace(/^c/, ''))}

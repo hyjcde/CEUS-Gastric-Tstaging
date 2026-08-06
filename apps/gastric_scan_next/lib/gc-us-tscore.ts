@@ -7,6 +7,7 @@
  */
 
 export type GcUsCtStage = 'cT1' | 'cT2' | 'cT3' | 'cT4a' | 'cT4b' | 'cTx';
+export type GcUsTscoreStatus = 'supported' | 'uncertain' | 'not_assessable' | 'conflicting';
 
 export type GcUsTscoreInput = {
   lengthCm?: number | null;
@@ -23,6 +24,8 @@ export type GcUsTscoreInput = {
   /** wall occupation ratio 0–1 */
   occupationRatio?: number | null;
   serosaDisrupted?: boolean | null;
+  /** Explicit doctor/video structural evidence; proxy geometry is not enough. */
+  structuralEvidence?: 'explicit' | 'proxy' | 'missing' | null;
 };
 
 export type GcUsScoreItem = {
@@ -40,6 +43,8 @@ export type GcUsTscoreResult = {
   maxTotal: number;
   items: GcUsScoreItem[];
   ctStage: GcUsCtStage;
+  status: GcUsTscoreStatus;
+  uncertaintyReasons: string[];
   mappingNote: string;
 };
 
@@ -135,8 +140,12 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
     });
   }
 
-  const lay = layerPoints(input.layerLabel, input.tHint);
-  items.push({ id: 'layer', label: '超声达层', points: lay.points, max: 4, detail: lay.detail, group: 'wall' });
+  const layerSignal = `${input.layerLabel || ''} ${input.tHint || ''}`;
+  const hasLayerSignal = /L[1-5]|粘膜|黏膜|肌层|浆膜|SEROSA|MUCOSA|MUSCLE|PROPER|SUBMUC/i.test(layerSignal);
+  if (hasLayerSignal) {
+    const lay = layerPoints(input.layerLabel, input.tHint);
+    items.push({ id: 'layer', label: '超声达层', points: lay.points, max: 4, detail: lay.detail, group: 'wall' });
+  }
 
   if (input.inContact === false) {
     items.push({
@@ -184,7 +193,27 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
 
   const total = items.reduce((s, it) => s + it.points, 0);
   const maxTotal = items.reduce((s, it) => s + it.max, 0) || 20;
-  const { ctStage, mappingNote } = mapTotalToCt(total);
+  const structuralEvidence = input.structuralEvidence || 'missing';
+  const hasExplicitStructuralEvidence =
+    structuralEvidence === 'explicit' &&
+    input.inContact !== false &&
+    (hasLayerSignal || input.serosaDisrupted === true);
+  const uncertaintyReasons: string[] = [];
+  if (!items.length) uncertaintyReasons.push('no_scoring_evidence');
+  if (structuralEvidence !== 'explicit') uncertaintyReasons.push('wall_layer_not_explicitly_confirmed');
+  if (input.inContact === false) uncertaintyReasons.push('lesion_wall_contact_not_reliable');
+  if (!hasLayerSignal && input.serosaDisrupted !== true) uncertaintyReasons.push('layer_or_serosa_not_assessable');
+  const status: GcUsTscoreStatus = hasExplicitStructuralEvidence
+    ? 'supported'
+    : items.length
+      ? 'uncertain'
+      : 'not_assessable';
+  const { ctStage, mappingNote } = hasExplicitStructuralEvidence
+    ? mapTotalToCt(total)
+    : {
+        ctStage: 'cTx' as const,
+        mappingNote: '缺少经确认的胃壁层次/浆膜证据，仅展示软评分，不输出确定 cT 分期',
+      };
 
   return {
     scheme: 'gc_us_v1',
@@ -192,6 +221,8 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
     maxTotal,
     items,
     ctStage,
+    status,
+    uncertaintyReasons,
     mappingNote,
   };
 }
@@ -276,7 +307,7 @@ export function buildImagingNarrative(input: ImagingNarrativeInput): string {
           : 'perigastric fat relatively clear';
 
   const score = input.tscore;
-  const scoreLine = score
+  const scoreLine = score && score.status === 'supported' && score.ctStage !== 'cTx'
     ? zh
       ? `AI综合分析提示胃癌可能，GC-US T-score为${score.total}分，考虑${score.ctStage}期。`
       : `AI analysis suggests gastric cancer; GC-US T-score ${score.total}, favoring ${score.ctStage}.`
