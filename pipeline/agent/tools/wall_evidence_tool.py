@@ -111,6 +111,43 @@ def compute_wall_features(
     }
 
 
+def bbox_geometry_quality(
+    lumen_bbox: Dict[str, int],
+    image_height: int,
+    image_width: int,
+) -> tuple[float, list[str]]:
+    """Score whether a lumen bbox is usable for a geometry-only proxy."""
+    flags: list[str] = []
+    try:
+        x1 = float(lumen_bbox["x1"])
+        y1 = float(lumen_bbox["y1"])
+        x2 = float(lumen_bbox["x2"])
+        y2 = float(lumen_bbox["y2"])
+    except (KeyError, TypeError, ValueError):
+        return 0.0, ["invalid_bbox_coordinates"]
+
+    width = x2 - x1
+    height = y2 - y1
+    if width <= 0 or height <= 0:
+        return 0.0, ["non_positive_bbox_area"]
+
+    score = 1.0
+    if x1 < 0 or y1 < 0 or x2 > image_width or y2 > image_height:
+        score -= 0.25
+        flags.append("bbox_out_of_bounds")
+    area_ratio = (width * height) / max(float(image_height * image_width), 1.0)
+    if area_ratio < 0.02:
+        score -= 0.30
+        flags.append("bbox_too_small")
+    elif area_ratio > 0.85:
+        score -= 0.35
+        flags.append("bbox_too_large")
+    if width < 16 or height < 16:
+        score -= 0.20
+        flags.append("bbox_low_resolution")
+    return max(0.0, min(1.0, score)), flags
+
+
 def render_wall_visuals(
     image_bgr: np.ndarray,
     lesion_mask: Optional[np.ndarray],
@@ -212,6 +249,7 @@ class WallEvidenceTool(BaseTool):
                 "image_width": w,
             }
 
+        bbox_quality, quality_flags = bbox_geometry_quality(lumen_bbox, h, w)
         lesion = lesion_mask.astype(np.uint8)
         if lesion.shape[:2] != (h, w):
             lesion = cv2.resize(lesion, (w, h), interpolation=cv2.INTER_NEAREST)
@@ -231,9 +269,20 @@ class WallEvidenceTool(BaseTool):
         features = compute_wall_features(lesion, lumen_mask, sdf)
         visuals = render_wall_visuals(image, lesion, lumen_mask, sdf, lumen_bbox)
 
+        contact_arc_ratio = float(features.get("contact_arc_ratio", 0.0))
+        proxy_quality = bbox_quality
+        if contact_arc_ratio <= 0.01:
+            proxy_quality = min(proxy_quality, 0.35)
+            quality_flags.append("lesion_not_contacting_lumen_boundary")
+        elif contact_arc_ratio < 0.03:
+            proxy_quality = min(proxy_quality, 0.55)
+            quality_flags.append("weak_lesion_lumen_contact")
+
         penetration_risk = "low"
         frac_out = features.get("fraction_outside_lumen", 0.0)
-        if frac_out >= 0.5 or features.get("max_outward_depth", 0.0) >= 15:
+        if proxy_quality < 0.55:
+            penetration_risk = "uncertain"
+        elif frac_out >= 0.5 or features.get("max_outward_depth", 0.0) >= 15:
             penetration_risk = "high"
         elif frac_out >= 0.2 or features.get("max_outward_depth", 0.0) >= 8:
             penetration_risk = "medium"
@@ -245,6 +294,8 @@ class WallEvidenceTool(BaseTool):
             "penetration_risk": penetration_risk,
             "risk_semantics": "proxy_only_not_pathological_layer_truth",
             "wall_layer_estimate": False,
+            "proxy_quality_score": round(float(proxy_quality), 4),
+            "quality_flags": sorted(set(quality_flags)),
             "threshold_units": "pixels_and_fraction",
             "risk_thresholds": {
                 "medium_fraction_outside_lumen": 0.2,
