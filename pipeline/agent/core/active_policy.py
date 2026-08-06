@@ -47,11 +47,26 @@ class ActiveEvidencePolicy:
         if "wall_layer_evidence" in missing:
             actions.append(
                 ActionCandidate(
-                    action_id="policy_wall_evidence",
+                    action_id="policy_wall_layer_annotation",
+                    action_type="request_wall_layer_annotation",
+                    reason=(
+                        "The current wall result is a proxy geometry signal; "
+                        "request explicit wall-layer/serosal annotation instead "
+                        "of treating it as layer truth."
+                    ),
+                    expected_information_gain=0.84,
+                    required_evidence=["explicit_wall_layer_evidence"],
+                )
+            )
+
+        if "wall_proxy_geometry" in missing:
+            actions.append(
+                ActionCandidate(
+                    action_id="policy_wall_proxy",
                     action_type="run_wall_evidence",
-                    reason="Wall-layer evidence is missing from the current belief state.",
-                    expected_information_gain=0.78,
-                    required_evidence=["wall_layer_evidence"],
+                    reason="Run the lumen-relative proxy to localize the wall region before annotation.",
+                    expected_information_gain=0.62,
+                    required_evidence=["wall_proxy_geometry"],
                 )
             )
 

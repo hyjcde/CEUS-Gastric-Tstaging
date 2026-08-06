@@ -45,3 +45,30 @@ def test_belief_state_preserves_frame_provenance_and_policy_actions():
     assert state.conflicts
     assert state.next_actions
     assert ActiveEvidencePolicy().choose(state).action_type == "inspect_conflict_frame"
+
+
+def test_proxy_wall_evidence_does_not_satisfy_layer_requirement():
+    steps = [
+        SimpleNamespace(
+            step_id="wall_evidence",
+            inputs={"frame_index": 1},
+            observation={
+                "available": True,
+                "evidence_role": "proxy_geometry",
+                "wall_layer_estimate": False,
+                "penetration_risk": "high",
+            },
+            explanation="Proxy geometry only.",
+        )
+    ]
+    state = build_case_belief_state(
+        case_id="TST-PROXY",
+        patient_id="TST-PROXY",
+        steps=steps,
+        frame_count=2,
+        run_id="proxy-test",
+    )
+
+    assert "wall_layer_evidence" in state.missing_evidence
+    assert "wall_proxy_geometry" not in state.missing_evidence
+    assert ActiveEvidencePolicy().choose(state).action_type == "request_wall_layer_annotation"

@@ -290,7 +290,23 @@ def _append_observation_evidence(
         ("recommendation_status", "decision"),
     ):
         if observation.get(feature) is not None:
-            add(domain, feature, observation.get(feature))
+            metadata = None
+            if feature == "penetration_risk":
+                metadata = {
+                    "proxy_only": observation.get("evidence_role")
+                    in {"proxy_geometry", "proxy_geometry_unavailable"}
+                    or observation.get("wall_layer_estimate") is False
+                }
+            add(domain, feature, observation.get(feature), metadata=metadata)
+
+    for feature in ("wall_layer", "wall_layer_estimate_value", "layer_structure"):
+        if observation.get(feature) is not None:
+            add(
+                "wall",
+                feature,
+                observation.get(feature),
+                metadata={"explicit_layer": True, "proxy_only": False},
+            )
 
     frame_rows = observation.get("frames") or observation.get("per_frame")
     if isinstance(frame_rows, list):
@@ -418,7 +434,15 @@ def build_case_belief_state(
         belief.missing_evidence.append("frame_level_provenance")
     if not any(node.domain == "dino" for node in belief.evidence):
         belief.missing_evidence.append("dino_shadow_evidence")
-    if not any(node.domain == "wall" for node in belief.evidence):
+    wall_nodes = [node for node in belief.evidence if node.domain == "wall"]
+    if not wall_nodes:
+        belief.missing_evidence.append("wall_proxy_geometry")
+        belief.missing_evidence.append("wall_layer_evidence")
+    elif not any(
+        node.metadata.get("explicit_layer") is True
+        and node.metadata.get("proxy_only") is not True
+        for node in wall_nodes
+    ):
         belief.missing_evidence.append("wall_layer_evidence")
 
     final_report = final_report or {}
