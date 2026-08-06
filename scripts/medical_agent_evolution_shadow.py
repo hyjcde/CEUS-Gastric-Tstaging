@@ -306,6 +306,7 @@ def build_t_stage_gate_input(
         ),
         "wall_quality": wall_obs.get("quality_score")
         or wall_obs.get("wall_quality")
+        or wall_obs.get("proxy_quality_score")
         or quality_obs.get("quality_score")
         or quality_obs.get("score"),
     }
