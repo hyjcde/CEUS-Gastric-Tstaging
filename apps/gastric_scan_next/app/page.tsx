@@ -117,6 +117,8 @@ export default function Home() {
   const userEditedRef = useRef<Set<string>>(new Set());
   const lastMergedAgentSessionRef = useRef<string | null>(null);
   const lastMergedExplainableRef = useRef<string | null>(null);
+  const gcUsActionIdsRef = useRef<Set<string>>(new Set());
+  const gcUsAuditSessionRef = useRef<string | null>(null);
   const patientConceptStatesRef = useRef<Map<string, ConceptState>>(new Map());
   const conceptLoadTokenRef = useRef(0);
   const conceptStateRef = useRef(conceptState);
@@ -164,6 +166,13 @@ export default function Home() {
       ?? getConceptStateFromPatient(selectedPatient);
     syncFieldSourcesForPatient(selectedPatient.id, buildClinicalFieldSources(baseline));
   }, [selectedPatient?.id, syncFieldSourcesForPatient]);
+
+  useEffect(() => {
+    gcUsActionIdsRef.current.clear();
+    gcUsAuditSessionRef.current = selectedPatient
+      ? `gcus-${selectedPatient.id}-${Date.now()}`
+      : null;
+  }, [selectedPatient?.id]);
 
   const conceptPopulatedCount = useMemo(
     () => countPopulatedConceptFields(conceptState),
@@ -253,6 +262,43 @@ export default function Home() {
       setReaderUnifiedAgentBusy(false);
     }
   }, [gcUsReport, isReaderStudyQueue, readerStudyMode, selectedPatient]);
+
+  const handleGcUsEvidenceState = useCallback((next: GcUsReportState) => {
+    setGcUsReport(next);
+    if (!selectedPatient || !isReaderStudyQueue) return;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const sessionId = gcUsAuditSessionRef.current || `gcus-${selectedPatient.id}`;
+    const readerId = params?.get('reader_id') || 'workbench_reader';
+    const round = params?.get('round') || 'round2';
+    for (const action of next.doctor_actions || []) {
+      if (gcUsActionIdsRef.current.has(action.action_id)) continue;
+      gcUsActionIdsRef.current.add(action.action_id);
+      void fetch('/api/reader-audit/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: action.action_id,
+          event_type: 'doctor_action',
+          session_id: sessionId,
+          case_id: selectedPatient.id,
+          reader_id: readerId,
+          round,
+          patient_id: selectedPatient.patient_id,
+          payload: {
+            action,
+            report_schema_version: next.schema_version,
+            template_id: next.template_id,
+            reference_stage: next.reference_stage,
+            signs: next.signs,
+            doctor_actions: next.doctor_actions,
+          },
+          client_recorded_at: new Date().toISOString(),
+        }),
+      }).catch(() => {
+        // Audit failure must not interrupt the reading workflow.
+      });
+    }
+  }, [isReaderStudyQueue, selectedPatient]);
 
   const siblingImages = useMemo(() => {
     if (!selectedPatient || !allPatients.length) return [];
@@ -693,7 +739,7 @@ export default function Home() {
                 initialState={gcUsReport}
                 zh={language === 'zh'}
                 compact
-                onStateChange={setGcUsReport}
+                onStateChange={handleGcUsEvidenceState}
               />
               {readerUnifiedAgentError ? (
                 <div className="mt-2 rounded-lg border border-rose-400/20 bg-rose-400/5 px-2.5 py-2 text-[10px] leading-relaxed text-rose-200">

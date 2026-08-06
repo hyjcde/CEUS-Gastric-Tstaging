@@ -7,7 +7,11 @@
  */
 
 import assert from 'node:assert/strict';
-import { buildImagingNarrative, computeGcUsTscore } from '../lib/gc-us-tscore.ts';
+import {
+  buildImagingNarrative,
+  computeGcUsTscore,
+  structuralStageFromExplicitSigns,
+} from '../lib/gc-us-tscore.ts';
 
 function expectIncludes(values, expected) {
   assert.ok(values.includes(expected), `Expected ${expected} in ${JSON.stringify(values)}`);
@@ -52,8 +56,26 @@ const explicit = computeGcUsTscore({
 assert.equal(explicit.status, 'supported');
 assert.equal(explicit.ctStage, 'cT2');
 
+const ambiguousL5 = computeGcUsTscore({
+  layerLabel: 'L5 / serosa',
+  inContact: true,
+  structuralEvidence: 'explicit',
+  structuralStage: structuralStageFromExplicitSigns('L5 / serosa', null),
+});
+assert.equal(ambiguousL5.status, 'uncertain');
+assert.equal(ambiguousL5.ctStage, 'cTx');
+
+const explicitSerosa = computeGcUsTscore({
+  layerLabel: '浆膜连续性中断',
+  inContact: true,
+  structuralEvidence: 'explicit',
+  structuralStage: structuralStageFromExplicitSigns(null, '浆膜连续性中断'),
+});
+assert.equal(explicitSerosa.status, 'supported');
+assert.equal(explicitSerosa.ctStage, 'cT4a');
+
 const narrative = buildImagingNarrative({ tscore: proxyOnly, zh: true });
 assert.match(narrative, /进一步评估/);
 assert.doesNotMatch(narrative, /考虑cT[1-4]/);
 
-console.log('gc_us_tscore regression: 5/5 passed');
+console.log('gc_us_tscore regression: 7/7 passed');
