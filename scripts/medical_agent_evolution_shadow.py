@@ -32,7 +32,7 @@ except ModuleNotFoundError:  # pragma: no cover - package-style import fallback
     from scripts.t_stage_evidence_gate import evaluate_t_stage_evidence
 
 
-SCRIPT_VERSION = "medical-agent-evolution-shadow-0.1"
+SCRIPT_VERSION = "medical-agent-evolution-shadow-0.2"
 DEFAULT_CASES = (
     "CASE-003",
     "CASE-005",
