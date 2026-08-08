@@ -201,9 +201,22 @@ function setField(state: GcUsReportState, id: string, field: GcUsField<unknown>)
   return { ...state, signs: { ...state.signs, [id]: field } };
 }
 
-function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportState): GcUsReportState {
+function latestDoctorFieldAction(
+  state: GcUsReportState,
+  fieldId: string,
+): GcUsDoctorAction | null {
+  return (state.doctor_actions || [])
+    .filter((action) => action.field_id === fieldId)
+    .reduce<GcUsDoctorAction | null>((latest, action) => {
+      if (!latest || action.created_at >= latest.created_at) return action;
+      return latest;
+    }, null);
+}
+
+export function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportState): GcUsReportState {
   if (!previous || previous.case_id !== fresh.case_id) return fresh;
   let signs = fresh.signs;
+  const template_fields = { ...fresh.template_fields };
   let changed = false;
   for (const id of ['length', 'thickness', 'layer_structure', 'morphology', 'boundary', 'growth_pattern', 'serosa_change', 'perigastric_tissue']) {
     const old = fieldFor(previous.signs, id);
@@ -213,18 +226,71 @@ function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportS
     else if (id === 'thickness') signs = { ...signs, size: { ...signs.size, thickness: old as GcUsField<number> } };
     else signs = { ...signs, [id]: old } as GcUsSigns;
   }
+  for (const id of Object.keys(fresh.template_fields) as Array<keyof GcUsReportState['template_fields']>) {
+    const old = previous.template_fields[id];
+    const next = fresh.template_fields[id];
+    if (!old) continue;
+    if (next.status === 'doctor_edited' || next.doctor_override != null) {
+      (template_fields as unknown as Record<string, GcUsField<unknown>>)[id] = next;
+    } else if (old.status === 'doctor_edited' || old.doctor_override != null || next.value == null) {
+      (template_fields as unknown as Record<string, GcUsField<unknown>>)[id] = old;
+      changed = true;
+    }
+  }
   if (!changed
     && previous.reference_stage.source !== 'doctor'
+    && previous.report.status !== 'finalized'
     && !(previous.report.doctor_edited || previous.report.source === 'doctor')
     && !(previous.doctor_actions || []).length) {
     return fresh;
   }
+  const freshOwnsReport = fresh.report.status !== 'draft'
+    || fresh.report.doctor_edited
+    || fresh.report.source === 'doctor';
+  const previousOwnsReport = previous.report.status === 'finalized'
+    || previous.report.doctor_edited
+    || previous.report.source === 'doctor';
+  const previousSignedByAction = latestDoctorFieldAction(previous, 'signed_by');
+  const freshSignedByAction = latestDoctorFieldAction(fresh, 'signed_by');
+  const isSameSignedByAction = Boolean(
+    previousSignedByAction
+      && freshSignedByAction
+      && previousSignedByAction.action_id === freshSignedByAction.action_id,
+  );
+  const freshSignedByIsNewer = Boolean(
+    freshSignedByAction
+      && !isSameSignedByAction
+      && (!previousSignedByAction || freshSignedByAction.created_at >= previousSignedByAction.created_at),
+  );
+  const mergedReport = freshOwnsReport || !previousOwnsReport
+    ? fresh.report
+    : previous.report;
+  const report = {
+    ...mergedReport,
+    // Evidence panels can echo an older report while a doctor is typing. Do not
+    // let that echo erase a newer signing physician unless it explicitly
+    // records a signed_by edit.
+    signed_by: freshSignedByIsNewer || (
+      fresh.report.signed_by != null
+      && !previousSignedByAction
+      && !freshSignedByAction
+    )
+      ? fresh.report.signed_by
+      : previous.report.signed_by,
+    signed_at: freshSignedByIsNewer || (
+      fresh.report.signed_at != null
+      && !previousSignedByAction
+      && !freshSignedByAction
+    )
+      ? fresh.report.signed_at
+      : previous.report.signed_at,
+  };
   return {
     ...fresh,
     signs,
-    report: previous.report.doctor_edited || previous.report.source === 'doctor'
-      ? previous.report
-      : fresh.report,
+    template_fields,
+    report_images: previous.report_images.length ? previous.report_images : fresh.report_images,
+    report,
     reference_stage: previous.reference_stage.source === 'doctor'
       ? previous.reference_stage
       : fresh.reference_stage,
@@ -390,6 +456,17 @@ export function GcUsEvidencePanel({
   }, [initialState]);
 
   useEffect(() => {
+    const handleExternalReportUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<GcUsReportState>).detail;
+      if (!detail || detail.case_id !== caseId) return;
+      const incoming = createGcUsReportState(detail);
+      setState((previous) => mergeFreshEvidence(previous, incoming));
+    };
+    window.addEventListener('gastric:template-report-updated', handleExternalReportUpdate);
+    return () => window.removeEventListener('gastric:template-report-updated', handleExternalReportUpdate);
+  }, [caseId]);
+
+  useEffect(() => {
     let next = derivedBase;
     const caseChanged = caseId !== seededCaseRef.current;
     if (caseChanged) {
@@ -430,7 +507,9 @@ export function GcUsEvidencePanel({
           reference_stage: seeded.reference_stage.source === 'doctor'
             ? seeded.reference_stage
             : derivedBase.reference_stage,
-          report: seeded.report.doctor_edited || seeded.report.source === 'doctor'
+          report: seeded.report.status === 'finalized'
+            || seeded.report.doctor_edited
+            || seeded.report.source === 'doctor'
             ? seeded.report
             : derivedBase.report,
           conflicts: seeded.reference_stage.source === 'doctor'
@@ -488,13 +567,26 @@ export function GcUsEvidencePanel({
     : report.prose;
   const geometryProse = contourGeometry.available
     ? (zh
-      ? `当前帧胃腔-病灶几何辅助：两者${contourGeometry.relation === 'overlap' ? '存在重叠' : contourGeometry.relation === 'near_lumen' ? '邻近' : '分离'}，间隙${contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)}像素` : '待测'}；轮廓平滑度${contourGeometry.smoothnessIndex != null ? `${Math.round(contourGeometry.smoothnessIndex * 100)}%` : '待测'}，向外扩张几何代理${contourGeometry.outwardExpansionRatio != null ? `${contourGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(contourGeometry.outwardExpansionRatio * 100)}%` : '待测'}。该信息仅用于当前帧形态参考，不等同于病理浸润或真实生长速度。`
-      : `Current-frame lumen-lesion geometry: the lesion is ${contourGeometry.relation === 'overlap' ? 'overlapping' : contourGeometry.relation === 'near_lumen' ? 'near the lumen' : 'separate from the lumen'}, with a ${contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)} px` : 'pending'} gap. Contour smoothness is ${contourGeometry.smoothnessIndex != null ? `${Math.round(contourGeometry.smoothnessIndex * 100)}%` : 'pending'}, and the outward-expansion geometry proxy is ${contourGeometry.outwardExpansionRatio != null ? `${contourGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(contourGeometry.outwardExpansionRatio * 100)}%` : 'pending'}. This is a current-frame morphology cue, not pathological invasion or true growth rate.`)
+      ? `当前帧胃腔关系代理：两者${contourGeometry.relation === 'overlap' ? '存在重叠' : contourGeometry.relation === 'near_lumen' ? '邻近' : '分离'}，间隙${contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)}像素` : '待测'}。该信息仅用于定位与复核，不能独立决定 cT。`
+      : `Current-frame lumen relation proxy: the lesion is ${contourGeometry.relation === 'overlap' ? 'overlapping' : contourGeometry.relation === 'near_lumen' ? 'near the lumen' : 'separate from the lumen'}, with a ${contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)} px` : 'pending'} gap. Use only for localization/review; it cannot decide cT alone.`)
     : '';
   const visibleProse = [stageProse, geometryProse].filter(Boolean).join('\n');
 
   useEffect(() => {
-    const next = report.structured;
+    let next = report.structured;
+    if (storageKey && typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem(storageKey);
+        if (saved) {
+          next = mergeFreshEvidence(createGcUsReportState(JSON.parse(saved)), next);
+        }
+      } catch {
+        // Ignore malformed browser state and keep the live evidence state.
+      }
+    }
+    if (initialStateRef.current?.case_id === caseId) {
+      next = mergeFreshEvidence(initialStateRef.current, next);
+    }
     let serialized = '';
     try {
       serialized = JSON.stringify(next);
@@ -506,12 +598,13 @@ export function GcUsEvidencePanel({
     if (storageKey && typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(storageKey, JSON.stringify(next));
+        window.localStorage.setItem(`${storageKey}:updated_at`, String(Date.now()));
       } catch {
         // Browser storage is optional.
       }
     }
     onStateChange?.(next);
-  }, [onStateChange, report.structured, storageKey]);
+  }, [caseId, onStateChange, report.structured, storageKey]);
 
   const doctorEdit = (id: string, rawValue: string) => {
     const old = fieldFor(state.signs, id);
@@ -687,7 +780,7 @@ export function GcUsEvidencePanel({
         <div className="mb-2.5 rounded border border-fuchsia-300/20 bg-fuchsia-400/[0.04] px-2.5 py-2 text-[10px]">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold text-fuchsia-100">
-              {zh ? '胃腔-病灶轮廓辅助' : 'Lumen-lesion contour assist'}
+              {zh ? '胃腔关系（定位/复核代理）' : 'Lumen relation (localization/review proxy)'}
             </span>
             <span className="text-[9px] uppercase text-slate-500">{contourGeometry.quality}</span>
           </div>
@@ -699,11 +792,15 @@ export function GcUsEvidencePanel({
               </div>
             </div>
             <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-              <div className="text-[8px] text-slate-500">{zh ? '平滑度' : 'Smooth'}</div>
+              <div className="text-[8px] text-slate-500">{zh ? '状态' : 'Status'}</div>
               <div className="font-mono text-lime-100">
-                {contourGeometry.smoothnessIndex != null
-                  ? `${Math.round(contourGeometry.smoothnessIndex * 100)}%`
-                  : '—'}
+                {contourGeometry.relation === 'overlap'
+                  ? (zh ? '重叠' : 'overlap')
+                  : contourGeometry.relation === 'near_lumen'
+                    ? (zh ? '邻近' : 'near')
+                    : contourGeometry.relation === 'separated'
+                      ? (zh ? '分离' : 'separated')
+                      : (zh ? '未评估' : 'unknown')}
               </div>
             </div>
             <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
@@ -715,10 +812,10 @@ export function GcUsEvidencePanel({
               </div>
             </div>
           </div>
-          <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
+          <div className="mt-1 text-[9px] leading-relaxed text-amber-100/80">
             {zh
-              ? '当前帧几何代理，仅用于显示胃腔侧关系和轮廓形态，不替代病理或多切面判断。'
-              : 'Current-frame geometry proxy for lumen-side relation and contour shape; not pathology or multiplanar proof.'}
+              ? '当前帧定位与复核代理，不能独立决定 cT；矩形胃腔框更只是框代理，不等于真实胃壁或胃腔边界。'
+              : 'Current-frame localization/review proxy only; it cannot decide cT alone. A rectangular lumen box is a box proxy, not true wall or lumen boundary.'}
           </div>
         </div>
       ) : null}
@@ -728,8 +825,13 @@ export function GcUsEvidencePanel({
         zh={zh}
         compact={compact}
       />
-      <div className="mb-2.5 grid grid-cols-4 gap-1.5">
-        {(['T1', 'T2', 'T3', 'T4'] as const).map((stage) => (
+      <div className="mb-1.5 rounded border border-cyan-300/15 bg-cyan-400/[0.04] px-2 py-1.5 text-[9px] leading-relaxed text-slate-300">
+        {zh
+          ? 'cT 阶梯：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。本工作台评估 cT，不等于完整 TNM（N=淋巴结，M=远处转移）。无经确认壁层/浆膜/邻近器官证据时保持 cTx。T4+ 仅为模型聚合标签，亚型未定时勿当作确定分期。'
+          : 'cT ladder: T1 mucosa/submucosa; T2 muscularis propria; T3 subserosa; T4a serosa; T4b adjacent organs. This workbench estimates cT, not full TNM (N=nodes, M=metastasis). Keep cTx without confirmed wall/serosa/adjacent-organ evidence. T4+ is only a model aggregate label when subtype is unresolved.'}
+      </div>
+      <div className="mb-2.5 grid grid-cols-5 gap-1.5">
+        {(['T1', 'T2', 'T3', 'T4', 'uncertain'] as const).map((stage) => (
           <button
             key={stage}
             type="button"
@@ -740,7 +842,7 @@ export function GcUsEvidencePanel({
                 : 'border-white/10 text-gray-400 hover:bg-white/5'
             }`}
           >
-            {stage}
+            {stage === 'uncertain' ? 'cTx' : stage === 'T4' ? 'T4+' : stage}
           </button>
         ))}
       </div>

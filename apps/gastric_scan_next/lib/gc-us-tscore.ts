@@ -116,10 +116,9 @@ function layerPoints(label?: string | null, tHint?: string | null): { points: nu
   if (/L5|浆膜|SEROSA|T4|T3–T4|T3-T4/.test(raw)) {
     return { points: 4, detail: `达层 ${label || tHint || 'L5/浆膜'}` };
   }
-  if (/L4|固有肌|PROPER/.test(raw)) return { points: 3, detail: `达层 ${label || 'L4'}` };
-  if (/L3|肌层|MUSCLE/.test(raw)) return { points: 2, detail: `达层 ${label || 'L3'}` };
-  if (/L2|粘膜下|SUBMUC/.test(raw)) return { points: 1, detail: `达层 ${label || 'L2'}` };
-  if (/L1|粘膜|MUCOSA|不可分期|N\/A|无接触/.test(raw)) {
+  if (/L4|固有肌|PROPER/.test(raw)) return { points: 3, detail: `达层 ${label || 'L4/固有肌层'}` };
+  if (/L3|粘膜下|SUBMUC/.test(raw)) return { points: 1, detail: `达层 ${label || 'L3/黏膜下层'}` };
+  if (/L2|L1|粘膜|MUCOSA|不可分期|N\/A|无接触/.test(raw)) {
     return { points: 0, detail: `达层 ${label || '浅层/不可分期'}` };
   }
   return { points: 0, detail: '达层未判定' };
@@ -135,6 +134,11 @@ export function structuralStageFromExplicitSigns(
   if (/浆膜下|subserosa/i.test(layer)) return 'cT3';
   if (/固有肌层|肌层结构|muscularis|proper\s+muscle/i.test(layer)) return 'cT2';
   if (/黏膜|粘膜|mucosa|submucosa/i.test(layer)) return 'cT1';
+  if (/L5|浆膜|serosa/i.test(layer)) return null;
+  // Common 5-layer EUS: L1/L2 mucosa-related, L3 submucosa → cT1; L4 MP → cT2.
+  if (/L4/i.test(layer)) return 'cT2';
+  if (/L3/i.test(layer)) return 'cT1';
+  if (/L2|L1/i.test(layer)) return 'cT1';
   return null;
 }
 

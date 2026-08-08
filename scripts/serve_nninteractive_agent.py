@@ -180,6 +180,54 @@ def _polygon_to_mask(
     return mask
 
 
+MAX_PROMPT_POINTS = 96
+MIN_SCRIBBLE_LENGTH_PX = 4.0
+MIN_LASSO_AREA_PX2 = 64.0
+
+
+def _path_length(points: np.ndarray) -> float:
+    if len(points) < 2:
+        return 0.0
+    deltas = np.diff(points, axis=0)
+    return float(np.linalg.norm(deltas, axis=1).sum())
+
+
+def _polygon_area(points: np.ndarray) -> float:
+    if len(points) < 3:
+        return 0.0
+    x = points[:, 0]
+    y = points[:, 1]
+    return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+
+def _downsample_points(points: np.ndarray, max_points: int) -> np.ndarray:
+    if len(points) <= max_points:
+        return points
+    idx = np.linspace(0, len(points) - 1, max_points).round().astype(int)
+    return points[idx]
+
+
+def _validated_prompt_points(
+    prompt: ScribblePrompt,
+    *,
+    closed: bool,
+) -> np.ndarray | None:
+    if len(prompt.points) < (3 if closed else 2):
+        return None
+    points = np.asarray([[item.x, item.y] for item in prompt.points], dtype=np.float32)
+    if not np.isfinite(points).all():
+        return None
+    points = _downsample_points(points, MAX_PROMPT_POINTS)
+    if _path_length(points) < MIN_SCRIBBLE_LENGTH_PX:
+        return None
+    if closed:
+        if np.linalg.norm(points[0] - points[-1]) > 0.5:
+            points = np.vstack([points, points[0]])
+        if _polygon_area(points) < MIN_LASSO_AREA_PX2:
+            return None
+    return points
+
+
 def _stroke_array(
     prompt: ScribblePrompt,
     height: int,
@@ -187,9 +235,10 @@ def _stroke_array(
     *,
     closed: bool,
 ) -> tuple[np.ndarray, list[list[int]]] | None:
-    if len(prompt.points) < 2:
+    points = _validated_prompt_points(prompt, closed=closed)
+    if points is None:
         return None
-    points = np.asarray([[item.x, item.y] for item in prompt.points], dtype=np.float32)
+    points = points.copy()
     points[:, 0] = np.clip(points[:, 0], 0, max(width - 1, 0))
     points[:, 1] = np.clip(points[:, 1], 0, max(height - 1, 0))
     x1 = max(0, int(np.floor(points[:, 0].min())) - prompt.width)
@@ -207,7 +256,8 @@ def _stroke_array(
         color=1,
         thickness=max(1, int(prompt.width)),
     )
-    # The session uses image-axis order: height, width, depth.
+    # Keep lasso semantics as closed outline strokes for nnInteractive; do not
+    # silently convert a lasso into a filled mask region.
     bbox = [[y1, y2], [x1, x2], [0, 1]]
     return crop, bbox
 
@@ -378,6 +428,26 @@ def refine(payload: RefineRequest) -> dict[str, Any]:
                 "Decoded frame dimensions do not match the request: "
                 f"{image.shape[1]}x{image.shape[0]} vs "
                 f"{payload.image_width}x{payload.image_height}"
+            )
+        invalid_scribbles = [
+            index
+            for index, scribble in enumerate(payload.scribbles)
+            if _validated_prompt_points(scribble, closed=False) is None
+        ]
+        invalid_lassos = [
+            index
+            for index, lasso in enumerate(payload.lassos)
+            if _validated_prompt_points(lasso, closed=True) is None
+        ]
+        if payload.scribbles and len(invalid_scribbles) == len(payload.scribbles) and not payload.points and not payload.lassos:
+            raise ValueError(
+                "All scribble prompts failed contract checks "
+                f"(min length {MIN_SCRIBBLE_LENGTH_PX}px, max points {MAX_PROMPT_POINTS})"
+            )
+        if payload.lassos and len(invalid_lassos) == len(payload.lassos) and not payload.points and not payload.scribbles:
+            raise ValueError(
+                "All lasso prompts failed contract checks "
+                f"(closed path, min area {MIN_LASSO_AREA_PX2}px^2, max points {MAX_PROMPT_POINTS})"
             )
         session_id, entry = _get_or_create_session(
             payload.session_id,

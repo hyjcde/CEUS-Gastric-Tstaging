@@ -20,6 +20,7 @@ interface DiagnosisPanelProps {
   systemReport?: SamReport | null;
   dinoFeature?: DinoFeatureResult | null;
   gcUsReport?: GcUsReportState | null;
+  onGcUsReportChange?: (state: GcUsReportState) => void;
   onExpandedChange?: (expanded: boolean) => void;
   /** GC-US imaging paragraph from SAM + wall features */
   imagingNarrative?: string | null;
@@ -38,6 +39,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
   systemReport = null,
   dinoFeature = null,
   gcUsReport = null,
+  onGcUsReportChange,
   onExpandedChange,
   imagingNarrative = null,
 }) => {
@@ -218,8 +220,8 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
         : 'No definitive high-risk nodal signals (N0).';
 
     const stageText = language !== 'en'
-      ? `CBM模型推断 ${tStage}${nStage}（置信度 ${confidence.overall}%）。`
-      : `CBM Model infers ${tStage}${nStage} with ${confidence.overall}% confidence.`;
+      ? `工作台评估的是 cT（浸润深度），不等于完整 TNM；N 为淋巴结，M 为远处转移。当前辅助推断 ${tStage}${nStage}（置信度 ${confidence.overall}%）。无经确认壁层/浆膜/邻近器官证据时保持 cTx 或待确认。`
+      : `This workbench estimates cT (invasion depth), not full TNM; N is nodal and M is distant metastasis. Current assistive inference is ${tStage}${nStage} (${confidence.overall}% confidence). Keep cTx / pending without confirmed wall, serosa, or adjacent-organ evidence.`;
 
     const recommendationText = flags.highRisk
       ? language !== 'en'
@@ -568,6 +570,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                           analysis={agentAnalysis}
                           gcUsReport={gcUsReport}
                           systemReport={systemReport}
+                          onGcUsReportChange={onGcUsReportChange}
                         />
                         <details className="rounded-xl border border-white/10 bg-black/20">
                           <summary className="cursor-pointer px-4 py-3 text-[11px] font-semibold text-slate-400 hover:text-slate-200">
@@ -826,6 +829,11 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                                     {agentAnalysis?.report.recommended_t_stage
                                       ? `${agentAnalysis.report.recommended_t_stage}${nStage}`
                                       : `${tStage}${nStage}`}
+                                </div>
+                                <div className="max-w-[220px] text-center text-[9px] leading-relaxed text-slate-500">
+                                  {language !== 'en'
+                                    ? 'cT 阶梯：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下；T4a 浆膜；T4b 邻近器官。T4+ 仅为亚型未定聚合标签。'
+                                    : 'cT ladder: T1 mucosa/SM; T2 MP; T3 subserosa; T4a serosa; T4b adjacent organs. T4+ is aggregate when subtype is unresolved.'}
                                 </div>
                                 <div className="text-[10px] font-mono text-gray-400">
                                   {language !== 'en' ? '置信度' : 'Confidence'}: {agentAnalysis ? formatAgentConfidence(agentAnalysis.report.confidence) : `${confidence.overall}%`}

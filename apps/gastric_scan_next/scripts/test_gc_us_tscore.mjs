@@ -99,4 +99,8 @@ const narrative = buildImagingNarrative({ tscore: proxyOnly, zh: true });
 assert.match(narrative, /进一步评估/);
 assert.doesNotMatch(narrative, /考虑cT[1-4]/);
 
-console.log('gc_us_tscore regression: 8/8 passed');
+assert.equal(structuralStageFromExplicitSigns('L3'), 'cT1');
+assert.equal(structuralStageFromExplicitSigns('L4'), 'cT2');
+assert.equal(structuralStageFromExplicitSigns('L5 / serosa'), null);
+
+console.log('gc_us_tscore regression: passed');

@@ -1,6 +1,6 @@
 export const GC_US_REPORT_TEMPLATE_ID = 'gc_us_t_report_template_v1' as const;
 export const GC_US_REPORT_SCHEMA_VERSION = 'gc_us_report_signs_v1' as const;
-export const GC_US_REPORT_SOURCE_DOC = 'GC_US_T报告模板_20260803.docx' as const;
+export const GC_US_REPORT_SOURCE_DOC = '胃充盈超声报告模板.docx' as const;
 
 export type GcUsEvidenceStatus =
   | 'pending'
@@ -32,7 +32,7 @@ export type GcUsField<T> = {
   raw_value: T | null;
   doctor_override: T | null;
   evidence_ref: string[];
-  unit?: 'mm' | 'px' | null;
+  unit?: 'mm' | 'cm' | 'px' | null;
   note?: string;
   provenance?: GcUsEvidenceProvenance[];
 };
@@ -50,7 +50,7 @@ export type GcUsEvidenceProvenance = {
 
 export type GcUsDoctorAction = {
   action_id: string;
-  action_type: 'field_edit' | 'stage_override' | 'reset';
+  action_type: 'field_edit' | 'template_field_edit' | 'stage_override' | 'reset' | 'revision_start' | 'finalize';
   field_id: string | null;
   suggestion_id: string | null;
   before_value: unknown;
@@ -95,6 +95,72 @@ export type GcUsReferenceStage = {
   conflicts: GcUsConflict[];
 };
 
+export type GcUsTemplateFieldId =
+  | 'lesion_site'
+  | 'maximum_diameter_cm'
+  | 'maximum_thickness_cm'
+  | 'gross_type'
+  | 'wall_layer_summary'
+  | 'layer_1_mucosa'
+  | 'layer_2_submucosa'
+  | 'layer_3_muscularis'
+  | 'layer_4_subserosa'
+  | 'layer_5_serosa'
+  | 'perigastric_involvement'
+  | 'lymph_nodes'
+  | 'distant_metastasis'
+  | 'ascites'
+  | 'ct_stage'
+  | 'cn_stage'
+  | 'cm_stage'
+  | 'impression'
+  | 'recommendation';
+
+export type GcUsTemplateFields = {
+  lesion_site: GcUsField<string>;
+  maximum_diameter_cm: GcUsField<number>;
+  maximum_thickness_cm: GcUsField<number>;
+  gross_type: GcUsField<string>;
+  wall_layer_summary: GcUsField<string>;
+  layer_1_mucosa: GcUsField<string>;
+  layer_2_submucosa: GcUsField<string>;
+  layer_3_muscularis: GcUsField<string>;
+  layer_4_subserosa: GcUsField<string>;
+  layer_5_serosa: GcUsField<string>;
+  perigastric_involvement: GcUsField<string>;
+  lymph_nodes: GcUsField<string>;
+  distant_metastasis: GcUsField<string>;
+  ascites: GcUsField<string>;
+  ct_stage: GcUsField<string>;
+  cn_stage: GcUsField<string>;
+  cm_stage: GcUsField<string>;
+  impression: GcUsField<string>;
+  recommendation: GcUsField<string>;
+};
+
+export type GcUsReportImage = {
+  id: string;
+  label: string;
+  url: string;
+  kind: 'original' | 'overlay' | 'roi' | 'wall' | 'evidence' | 'other';
+  caption?: string;
+  selected?: boolean;
+};
+
+export type GcUsReportStatus = 'draft' | 'reviewed' | 'finalized';
+
+export type GcUsReportValidationIssue = {
+  code: string;
+  severity: 'error' | 'warning';
+  field_id: string | null;
+  message: string;
+};
+
+export type GcUsReportValidationResult = {
+  ok: boolean;
+  issues: GcUsReportValidationIssue[];
+};
+
 export type GcUsReportState = {
   schema_version: typeof GC_US_REPORT_SCHEMA_VERSION;
   template_id: typeof GC_US_REPORT_TEMPLATE_ID;
@@ -104,11 +170,18 @@ export type GcUsReportState = {
   frame_time: number | null;
   clinical: Record<string, unknown>;
   signs: GcUsSigns;
+  template_fields: GcUsTemplateFields;
+  report_images: GcUsReportImage[];
   reference_stage: GcUsReferenceStage;
   report: {
     prose: string;
     source: 'template' | 'ai' | 'doctor';
     doctor_edited: boolean;
+    status: GcUsReportStatus;
+    report_id: string | null;
+    revision: number;
+    signed_by: string | null;
+    signed_at: string | null;
   };
   conflicts: GcUsConflict[];
   doctor_actions: GcUsDoctorAction[];
@@ -215,6 +288,216 @@ export function createEmptyGcUsSigns(): GcUsSigns {
     serosa_change: createGcUsField<string>(),
     perigastric_tissue: createGcUsField<string>(),
     lesion_echo: createGcUsField<string>(),
+  };
+}
+
+export const GC_US_TEMPLATE_FIELD_DEFINITIONS: Array<{
+  id: GcUsTemplateFieldId;
+  label: string;
+  kind: 'number' | 'select' | 'textarea';
+  group: 'basic' | 'wall' | 'spread' | 'stage' | 'text';
+}> = [
+  { id: 'lesion_site', label: '病灶部位', kind: 'select', group: 'basic' },
+  { id: 'maximum_diameter_cm', label: '最大径', kind: 'number', group: 'basic' },
+  { id: 'maximum_thickness_cm', label: '最大厚度', kind: 'number', group: 'basic' },
+  { id: 'gross_type', label: '大体类型', kind: 'select', group: 'basic' },
+  { id: 'wall_layer_summary', label: '胃壁层次总评', kind: 'select', group: 'wall' },
+  { id: 'layer_1_mucosa', label: '第一层', kind: 'select', group: 'wall' },
+  { id: 'layer_2_submucosa', label: '第二层', kind: 'select', group: 'wall' },
+  { id: 'layer_3_muscularis', label: '第三层', kind: 'select', group: 'wall' },
+  { id: 'layer_4_subserosa', label: '第四层', kind: 'select', group: 'wall' },
+  { id: 'layer_5_serosa', label: '第五层', kind: 'select', group: 'wall' },
+  { id: 'perigastric_involvement', label: '侵及胃周组织', kind: 'textarea', group: 'spread' },
+  { id: 'lymph_nodes', label: '淋巴结', kind: 'textarea', group: 'spread' },
+  { id: 'distant_metastasis', label: '远处转移', kind: 'textarea', group: 'spread' },
+  { id: 'ascites', label: '腹腔游离液性区', kind: 'select', group: 'spread' },
+  { id: 'ct_stage', label: '超声 uT', kind: 'select', group: 'stage' },
+  { id: 'cn_stage', label: '超声 N', kind: 'select', group: 'stage' },
+  { id: 'cm_stage', label: '超声 M', kind: 'select', group: 'stage' },
+  { id: 'impression', label: '超声印象', kind: 'textarea', group: 'text' },
+  { id: 'recommendation', label: '检查建议', kind: 'textarea', group: 'text' },
+];
+
+export const GC_US_TEMPLATE_SELECT_OPTIONS: Partial<Record<GcUsTemplateFieldId, string[]>> = {
+  lesion_site: [
+    '贲门',
+    '胃底',
+    '胃体',
+    '胃体（大弯）',
+    '胃体（小弯）',
+    '胃体（前壁）',
+    '胃体（后壁）',
+    '胃角',
+    '胃窦',
+    '胃窦（大弯）',
+    '胃窦（小弯）',
+    '胃窦（前壁）',
+    '胃窦（后壁）',
+    '幽门',
+  ],
+  gross_type: [
+    '表浅型',
+    '隆起型',
+    '局限溃疡型',
+    '浸润溃疡型',
+    '弥漫浸润型',
+  ],
+  wall_layer_summary: [
+    '层次结构清晰',
+    '局部受累，结构尚可辨',
+    '固有肌层受累',
+    '浆膜下层受累',
+    '浆膜连续性可疑破坏',
+    '邻近器官侵犯倾向',
+  ],
+  layer_1_mucosa: ['存在', '模糊/变薄', '消失'],
+  layer_2_submucosa: ['存在', '模糊/变薄', '消失'],
+  layer_3_muscularis: ['存在', '模糊/变薄', '消失'],
+  layer_4_subserosa: ['存在', '模糊/变薄', '消失'],
+  layer_5_serosa: ['存在', '模糊/变薄', '消失', '角征'],
+  ascites: ['无', '少量', '中量', '大量'],
+  ct_stage: ['uT1', 'uT2', 'uT3', 'uT4', 'uTx'],
+  cn_stage: ['N0', 'N1', 'N2', 'N3', 'Nx'],
+  cm_stage: ['M0', 'M1', 'Mx'],
+};
+
+const GC_US_REQUIRED_TEMPLATE_FIELDS: Array<{ id: GcUsTemplateFieldId; label: string }> = [
+  { id: 'lesion_site', label: '病灶部位' },
+  { id: 'maximum_diameter_cm', label: '最大径' },
+  { id: 'maximum_thickness_cm', label: '最大厚度' },
+  { id: 'gross_type', label: '大体类型' },
+  { id: 'wall_layer_summary', label: '胃壁层次总评' },
+  { id: 'impression', label: '超声印象' },
+];
+
+const GC_US_REVIEW_TEMPLATE_FIELDS: Array<{ id: GcUsTemplateFieldId; label: string }> = [
+  { id: 'layer_1_mucosa', label: '第一层' },
+  { id: 'layer_2_submucosa', label: '第二层' },
+  { id: 'layer_3_muscularis', label: '第三层' },
+  { id: 'layer_4_subserosa', label: '第四层' },
+  { id: 'layer_5_serosa', label: '第五层' },
+  { id: 'perigastric_involvement', label: '侵及胃周组织' },
+  { id: 'lymph_nodes', label: '淋巴结' },
+  { id: 'distant_metastasis', label: '远处转移' },
+  { id: 'ascites', label: '腹腔游离液性区' },
+  { id: 'ct_stage', label: '超声 uT' },
+  { id: 'cn_stage', label: '超声 N' },
+  { id: 'cm_stage', label: '超声 M' },
+];
+
+export function createEmptyGcUsTemplateFields(): GcUsTemplateFields {
+  return {
+    lesion_site: createGcUsField<string>(),
+    maximum_diameter_cm: createGcUsField<number>(),
+    maximum_thickness_cm: createGcUsField<number>(),
+    gross_type: createGcUsField<string>(),
+    wall_layer_summary: createGcUsField<string>(),
+    layer_1_mucosa: createGcUsField<string>(),
+    layer_2_submucosa: createGcUsField<string>(),
+    layer_3_muscularis: createGcUsField<string>(),
+    layer_4_subserosa: createGcUsField<string>(),
+    layer_5_serosa: createGcUsField<string>(),
+    perigastric_involvement: createGcUsField<string>(),
+    lymph_nodes: createGcUsField<string>(),
+    distant_metastasis: createGcUsField<string>(),
+    ascites: createGcUsField<string>(),
+    ct_stage: createGcUsField<string>(),
+    cn_stage: createGcUsField<string>(),
+    cm_stage: createGcUsField<string>(),
+    impression: createGcUsField<string>(),
+    recommendation: createGcUsField<string>(),
+  };
+}
+
+function clinicalText(clinical: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = normalizedText(clinical[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function templateTextField(value: string | null, source: GcUsEvidenceSource = 'clinical'): GcUsField<string> {
+  return createGcUsField(value, { source });
+}
+
+function templateNumberField(value: number | null, unit: 'cm' | null = 'cm'): GcUsField<number> {
+  return createGcUsField(value, { source: value == null ? 'not_available' : 'clinical', unit });
+}
+
+export function deriveGcUsTemplateFields(input: {
+  clinical?: Record<string, unknown>;
+  signs?: GcUsSigns;
+  referenceStage?: GcUsReferenceStage;
+  reportProse?: string;
+}): GcUsTemplateFields {
+  const clinical = input.clinical || {};
+  const signs = input.signs || createEmptyGcUsSigns();
+  const referenceStage = input.referenceStage;
+  const empty = createEmptyGcUsTemplateFields();
+  const lengthMm = signs.size.length.value != null && signs.size.length.unit !== 'px'
+    ? Number(signs.size.length.value)
+    : clinicalMm(clinical, ['tumor_size_mm', 'length_mm'], ['length_cm'], 'length');
+  const thicknessMm = signs.size.thickness.value != null && signs.size.thickness.unit !== 'px'
+    ? Number(signs.size.thickness.value)
+    : clinicalMm(clinical, ['tumor_thickness_mm', 'thickness_mm'], ['thickness_cm'], 'thickness');
+  const stage = referenceStage?.requested_band || referenceStage?.band;
+  const stageValue = stage && stage !== 'uncertain' ? `u${stage}` : null;
+
+  return {
+    ...empty,
+    lesion_site: templateTextField(
+      clinicalText(clinical, ['location', 'site', 'lesion_site']),
+      'clinical',
+    ),
+    maximum_diameter_cm: templateNumberField(lengthMm == null ? null : lengthMm / 10),
+    maximum_thickness_cm: templateNumberField(thicknessMm == null ? null : thicknessMm / 10),
+    gross_type: templateTextField(
+      normalizedText(signs.morphology.value) || clinicalText(clinical, ['morphology', 'morphology_pattern']),
+      signs.morphology.source || 'clinical',
+    ),
+    wall_layer_summary: templateTextField(
+      normalizedText(signs.layer_structure.value) || clinicalText(clinical, ['layer_structure', 'wall_layer_id']),
+      signs.layer_structure.source || 'not_available',
+    ),
+    layer_5_serosa: templateTextField(
+      normalizedText(signs.serosa_change.value) || clinicalText(clinical, ['serosa_status', 'serosa_change']),
+      signs.serosa_change.source || 'not_available',
+    ),
+    perigastric_involvement: templateTextField(
+      normalizedText(signs.perigastric_tissue.value) || clinicalText(clinical, ['perigastric_tissue', 'fat_status']),
+      signs.perigastric_tissue.source || 'not_available',
+    ),
+    lymph_nodes: templateTextField(
+      clinicalText(clinical, ['lymph_nodes', 'lymph_node_status', 'nodes', 'nodal_status']),
+      'clinical',
+    ),
+    distant_metastasis: templateTextField(
+      clinicalText(clinical, ['distant_metastasis', 'metastasis', 'm_stage', 'cm_stage']),
+      'clinical',
+    ),
+    ascites: templateTextField(
+      clinicalText(clinical, ['ascites', 'free_fluid', 'peritoneal_fluid']),
+      'clinical',
+    ),
+    ct_stage: templateTextField(stageValue, referenceStage?.source || 'product_score'),
+    cn_stage: templateTextField(
+      clinicalText(clinical, ['cN', 'cn_stage', 'n_stage', 'clinical_n_stage']),
+      'clinical',
+    ),
+    cm_stage: templateTextField(
+      clinicalText(clinical, ['cM', 'cm_stage', 'm_stage', 'clinical_m_stage']),
+      'clinical',
+    ),
+    impression: templateTextField(
+      clinicalText(clinical, ['ultrasound_impression', 'impression']) || input.reportProse || null,
+      input.reportProse ? 'template_reference' : 'clinical',
+    ),
+    recommendation: templateTextField(
+      clinicalText(clinical, ['recommendation', 'ultrasound_recommendation'])
+        || '建议结合胃镜活检及其他影像学资料，必要时进行多切面复核。',
+      'template_reference',
+    ),
   };
 }
 
@@ -404,12 +687,12 @@ export function normalizeGcUsStage(value: unknown): {
   return { band: unique[0] as GcUsStageBand, raw };
 }
 
-function fieldText(field: GcUsField<unknown>, fallback = '未评估'): string {
+function fieldText(field: GcUsField<unknown>, fallback = '____'): string {
   const value = normalizedText(field.value);
   return value || fallback;
 }
 
-function measurementText(field: GcUsField<number>, fallback = '未评估'): string {
+function measurementText(field: GcUsField<number>, fallback = '____'): string {
   if (field.value == null || !Number.isFinite(Number(field.value))) return fallback;
   const value = Number(field.value);
   const numberText = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
@@ -418,20 +701,20 @@ function measurementText(field: GcUsField<number>, fallback = '未评估'): stri
 }
 
 function normalizedBoundary(value: string): string {
-  return value.replace(/^边界/, '').trim() || '未评估';
+  return value.replace(/^边界/, '').trim() || '____';
 }
 
 function normalizedLayer(value: string): string {
-  return value.replace(/^胃壁层次|^层次结构/, '').trim() || '未评估';
+  return value.replace(/^胃壁层次|^层次结构/, '').trim() || '____';
 }
 
 function normalizedSerosa(value: string): string {
-  return value.replace(/^浆膜面?/, '').trim() || '未评估';
+  return value.replace(/^浆膜面?/, '').trim() || '____';
 }
 
 function normalizedPerigastric(value: string): string {
-  if (value.startsWith('胃周组织')) return value.slice('胃周组织'.length).trim() || '未评估';
-  if (value.startsWith('胃周')) return value.slice('胃周'.length).trim() || '未评估';
+  if (value.startsWith('胃周组织')) return value.slice('胃周组织'.length).trim() || '____';
+  if (value.startsWith('胃周')) return value.slice('胃周'.length).trim() || '____';
   return value;
 }
 
@@ -445,7 +728,7 @@ function buildSizePhrase(state: GcUsReportState): string {
     const t = measurementText(thickness).replace(/ mm$/, '');
     return `大小约${l}×${t} mm，最大厚度${t} mm`;
   }
-  if (length.value == null && thickness.value == null) return '大小及最大厚度未评估';
+  if (length.value == null && thickness.value == null) return '大小约____×____ mm，最大厚度____ mm';
   return `大小约${measurementText(length)}×${measurementText(thickness)}，最大厚度${measurementText(thickness)}`;
 }
 
@@ -460,7 +743,7 @@ export function buildGcUsFindingSentence(state: GcUsReportState): string {
   const layer = normalizedLayer(fieldText(state.signs.layer_structure));
   const serosa = normalizedSerosa(fieldText(state.signs.serosa_change));
   const perigastric = normalizedPerigastric(fieldText(state.signs.perigastric_tissue));
-  const morphologyPrefix = morphology && morphology !== '未评估' ? morphology : '';
+  const morphologyPrefix = morphology && morphology !== '____' ? morphology : '';
   return `${location}${morphologyPrefix}${lesionNoun}，${buildSizePhrase(state)}。病灶呈${growth}生长方式，边界${boundary}。胃壁层次表现为${layer}，浆膜表现${serosa}，胃周组织${perigastric}。`;
 }
 
@@ -526,6 +809,30 @@ function normalizeField<T>(value: unknown): GcUsField<T> {
   return createGcUsField((value ?? null) as T | null);
 }
 
+function normalizeTemplateFields(
+  value: unknown,
+  fallback: GcUsTemplateFields,
+): GcUsTemplateFields {
+  const raw = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const next = { ...fallback } as GcUsTemplateFields;
+  for (const definition of GC_US_TEMPLATE_FIELD_DEFINITIONS) {
+    const rawValue = raw[definition.id];
+    if (rawValue == null) continue;
+    const field = normalizeField<unknown>(rawValue);
+    if (
+      field.value != null
+      || field.status === 'doctor_edited'
+      || field.doctor_override != null
+      || (rawValue && typeof rawValue === 'object')
+    ) {
+      (next as unknown as Record<string, GcUsField<unknown>>)[definition.id] = field;
+    }
+  }
+  return next;
+}
+
 export function createGcUsReportState(
   input: Partial<GcUsReportState> & { signs?: Partial<GcUsSigns> } = {},
 ): GcUsReportState {
@@ -559,6 +866,23 @@ export function createGcUsReportState(
     source: rawReference.source || 'product_score',
     conflicts: rawReference.conflicts || [],
   };
+  const reportInput = (input.report || {}) as Partial<GcUsReportState['report']>;
+  const report = {
+    prose: reportInput.prose || '',
+    source: reportInput.source || 'template',
+    doctor_edited: Boolean(reportInput.doctor_edited),
+    status: reportInput.status || 'draft',
+    report_id: reportInput.report_id || null,
+    revision: Number.isFinite(Number(reportInput.revision)) ? Number(reportInput.revision) : 0,
+    signed_by: reportInput.signed_by || null,
+    signed_at: reportInput.signed_at || null,
+  } satisfies GcUsReportState['report'];
+  const derivedTemplateFields = deriveGcUsTemplateFields({
+    clinical: input.clinical || {},
+    signs,
+    referenceStage,
+    reportProse: report.prose,
+  });
   return {
     schema_version: GC_US_REPORT_SCHEMA_VERSION,
     template_id: GC_US_REPORT_TEMPLATE_ID,
@@ -572,8 +896,17 @@ export function createGcUsReportState(
       ...signs,
       size: { ...empty.size, ...signs.size },
     },
+    template_fields: normalizeTemplateFields(input.template_fields, derivedTemplateFields),
+    report_images: Array.isArray(input.report_images)
+      ? input.report_images.filter((item): item is GcUsReportImage => (
+        Boolean(item)
+        && typeof item === 'object'
+        && typeof (item as GcUsReportImage).id === 'string'
+        && typeof (item as GcUsReportImage).url === 'string'
+      ))
+      : [],
     reference_stage: referenceStage,
-    report: input.report || { prose: '', source: 'template', doctor_edited: false },
+    report,
     conflicts: input.conflicts || referenceStage.conflicts || [],
     doctor_actions: input.doctor_actions || [],
   };
@@ -593,11 +926,13 @@ export function buildGcUsReport(
   const conflicts = detectGcUsConflicts(state.signs, requested);
   const stage = conflicts.length ? 'uncertain' : requested;
   const stageLine = stage === 'uncertain'
-    ? '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。'
-    : `胃癌可能，超声评估c${stage}期。`;
+    ? '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。无经确认的壁层、浆膜或邻近器官证据时不得输出确定 cT。'
+    : stage === 'T4'
+      ? '胃癌可能，超声评估cT4期（亚型未定；需区分浆膜受侵 T4a 与邻近器官侵犯 T4b）。'
+      : `胃癌可能，超声评估c${stage}期。`;
   const advice = conflicts.length
     ? '建议针对冲突征象进行多切面核对，必要时补扫病灶外缘及浆膜区。'
-    : '建议结合胃镜活检明确病理性质。';
+    : '建议结合胃镜活检明确病理性质。当前工作台评估的是 cT，不等于完整 TNM（N=淋巴结，M=远处转移）。';
   const prose = [
     '【超声所见】',
     buildGcUsFindingSentence(state),
@@ -605,14 +940,15 @@ export function buildGcUsReport(
     '【超声印象】',
     '1. 综合超声影像征象及AI辅助分析，考虑：',
     stageLine,
+    '2. cT 阶梯提示：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。',
     ...(conflicts.length
-      ? [`2. 当前存在需要医生复核的征象冲突：${conflicts.map((item) => item.message).join('；')}`]
+      ? [`3. 当前存在需要医生复核的征象冲突：${conflicts.map((item) => item.message).join('；')}`]
       : []),
     '',
     '【建议】',
     `1. ${advice}`,
     '',
-    '备注：几何与规则辅助，非病理金标准；最终判断权在医生。',
+    '备注：几何与规则辅助，非病理金标准；最终判断权在医生。频谱、涂鸦、胃腔框代理均不能独立决定 cT。',
   ].join('\n');
   const structured: GcUsReportState = {
     ...state,
@@ -629,6 +965,176 @@ export function buildGcUsReport(
     },
   };
   return { prose, structured, stage, conflicts };
+}
+
+function templateValue(
+  fields: GcUsTemplateFields,
+  id: keyof GcUsTemplateFields,
+  fallback = '____',
+): string {
+  const value = fields[id]?.value;
+  if (value == null || String(value).trim() === '') return fallback;
+  return String(value).trim();
+}
+
+function templateNumber(
+  fields: GcUsTemplateFields,
+  id: 'maximum_diameter_cm' | 'maximum_thickness_cm',
+): string {
+  const value = fields[id].value;
+  if (value == null || !Number.isFinite(Number(value))) return '____';
+  return Number(value).toFixed(1).replace(/\.0$/, '');
+}
+
+function templateImpressionText(
+  fields: GcUsTemplateFields,
+  stageText: string,
+): string {
+  const fallback = stageText
+    ? `综合超声影像征象，考虑${stageText}。`
+    : '综合超声影像征象，浸润深度尚不确定。';
+  return templateValue(fields, 'impression', fallback);
+}
+
+export function buildGcUsTemplateImpression(stateInput: GcUsReportState): string {
+  const state = createGcUsReportState(stateInput);
+  const stageText = [
+    templateValue(state.template_fields, 'ct_stage'),
+    templateValue(state.template_fields, 'cn_stage'),
+    templateValue(state.template_fields, 'cm_stage'),
+  ].filter((value) => value && value !== '____').join(' ');
+  return templateImpressionText(state.template_fields, stageText);
+}
+
+export function buildGcUsTemplateReportText(stateInput: GcUsReportState): string {
+  const state = createGcUsReportState(stateInput);
+  const fields = state.template_fields;
+  const site = templateValue(fields, 'lesion_site');
+  const uT = templateValue(fields, 'ct_stage');
+  const n = templateValue(fields, 'cn_stage');
+  const m = templateValue(fields, 'cm_stage');
+  const impression = templateImpressionText(
+    fields,
+    [uT, n, m].filter((value) => value && value !== '____').join(' '),
+  );
+
+  return [
+    '胃癌超声报告',
+    '',
+    '超声描述：',
+    `病灶位于［${site}］；`,
+    `最大径 ${templateNumber(fields, 'maximum_diameter_cm')} cm，最厚径 ${templateNumber(fields, 'maximum_thickness_cm')} cm；`,
+    `大体分型（${templateValue(fields, 'gross_type')}）`,
+    '胃壁层次结构（由内往外）［',
+    `第一层（${templateValue(fields, 'layer_1_mucosa')}）、第二层（${templateValue(fields, 'layer_2_submucosa')}）、第三层（${templateValue(fields, 'layer_3_muscularis')}）、第四层（${templateValue(fields, 'layer_4_subserosa')}）、第五层（${templateValue(fields, 'layer_5_serosa')}）］；`,
+    `侵及胃周组织 ${templateValue(fields, 'perigastric_involvement')}；`,
+    `淋巴结（${templateValue(fields, 'lymph_nodes', '待补充')}）；`,
+    `远处转移（${templateValue(fields, 'distant_metastasis', '待补充')}）；`,
+    `腹腔游离液性区（${templateValue(fields, 'ascites')}）。`,
+    '',
+    '超声提示：',
+    `${site}（部位）胃壁 ${impression}`,
+    `考虑胃癌（${uT === '____' ? 'uT ____' : uT} ${n === '____' ? 'N ____' : n} ${m === '____' ? 'M ____' : m}）`,
+    '',
+    '注：',
+    '形态、生长方式并入大体分型；边界并入层次结构，细化并勾选累及最深层次。',
+    '',
+    `核心影像征象：${buildGcUsFindingSentence(state)}`,
+    '',
+    '检查建议：',
+    templateValue(fields, 'recommendation', '建议结合胃镜活检及其他影像学资料。'),
+    '',
+    '说明：本报告按《胃充盈超声报告模板.docx》版式生成，影像辅助结果需由医生复核后签发。',
+  ].join('\n');
+}
+
+export function buildGcUsTemplateReport(stateInput: GcUsReportState): GcUsReportState {
+  const state = createGcUsReportState(stateInput);
+  return {
+    ...state,
+    report: {
+      ...state.report,
+      prose: buildGcUsTemplateReportText(state),
+    },
+  };
+}
+
+export function validateGcUsReportForFinalize(
+  stateInput: GcUsReportState,
+): GcUsReportValidationResult {
+  const state = createGcUsReportState(stateInput);
+  const issues: GcUsReportValidationIssue[] = [];
+  const seen = new Set<string>();
+  const addIssue = (issue: GcUsReportValidationIssue) => {
+    if (seen.has(issue.code)) return;
+    seen.add(issue.code);
+    issues.push(issue);
+  };
+
+  if (!state.report.signed_by?.trim()) {
+    addIssue({
+      code: 'missing_signed_by',
+      severity: 'error',
+      field_id: null,
+      message: '请填写签发医生。',
+    });
+  }
+
+  for (const definition of GC_US_REQUIRED_TEMPLATE_FIELDS) {
+    const field = state.template_fields[definition.id];
+    const value = field?.value;
+    const missing = value == null
+      || (typeof value === 'string' && value.trim() === '')
+      || field?.status === 'unevaluated';
+    if (!missing) continue;
+    addIssue({
+      code: `missing_${definition.id}`,
+      severity: 'error',
+      field_id: definition.id,
+      message: `请补充${definition.label}。`,
+    });
+  }
+
+  for (const definition of GC_US_REVIEW_TEMPLATE_FIELDS) {
+    const field = state.template_fields[definition.id];
+    const missing = field?.value == null
+      || (typeof field.value === 'string' && field.value.trim() === '')
+      || field.status === 'unevaluated';
+    if (!missing) continue;
+    addIssue({
+      code: `unassessed_${definition.id}`,
+      severity: 'warning',
+      field_id: definition.id,
+      message: `${definition.label}尚未明确评估，签发前请确认是否为未评估。`,
+    });
+  }
+
+  const conflicts = [...state.conflicts, ...state.reference_stage.conflicts];
+  for (const conflict of conflicts) {
+    const severity = conflict.severity === 'high' ? 'error' : 'warning';
+    addIssue({
+      code: `conflict_${conflict.code}`,
+      severity,
+      field_id: conflict.fields[0] || null,
+      message: conflict.message || `存在${conflict.code}征象冲突，请复核。`,
+    });
+  }
+
+  for (const definition of GC_US_TEMPLATE_FIELD_DEFINITIONS) {
+    const field = state.template_fields[definition.id];
+    if (field?.status !== 'conflict') continue;
+    addIssue({
+      code: `field_conflict_${definition.id}`,
+      severity: 'error',
+      field_id: definition.id,
+      message: `${definition.label}存在证据冲突，请先复核。`,
+    });
+  }
+
+  return {
+    ok: issues.every((issue) => issue.severity !== 'error'),
+    issues,
+  };
 }
 
 export function applyGcUsDoctorOverride<T>(

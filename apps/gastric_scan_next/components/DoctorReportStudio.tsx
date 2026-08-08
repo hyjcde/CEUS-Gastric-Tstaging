@@ -19,7 +19,7 @@ import {
   TableProperties,
 } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
-import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import type { GcUsReportImage, GcUsReportState } from '@/lib/gc-us-report-template';
 import type {
   AgentAnalysisResponse,
   AgentReportPack,
@@ -28,8 +28,11 @@ import type {
 } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
 import { CaseQuestioner } from '@/components/CaseQuestioner';
+import { SpectralFeaturePanel } from '@/components/SpectralFeaturePanel';
+import { TemplateReportEditor } from '@/components/TemplateReportEditor';
+import { createGcUsReportState } from '@/lib/gc-us-report-template';
 
-type StudioTab = 'overview' | 'evidence' | 'report' | 'review';
+type StudioTab = 'template' | 'overview' | 'evidence' | 'report' | 'review';
 type ReviewAction = 'accept' | 'modify' | 'reject' | 'request_more_evidence';
 type SubmitState = 'idle' | 'submitting' | 'submitted' | 'error';
 
@@ -38,6 +41,8 @@ interface DoctorReportStudioProps {
   analysis: AgentAnalysisResponse | null;
   gcUsReport?: GcUsReportState | null;
   systemReport?: SamReport | null;
+  extraImages?: GcUsReportImage[];
+  onGcUsReportChange?: (state: GcUsReportState) => void;
 }
 
 type Metric = {
@@ -249,7 +254,7 @@ function ArtifactStrip({ patient, analysis, zh }: { patient: Patient; analysis: 
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
       {candidates.map((item) => (
-        <div key={item.key} className="overflow-hidden rounded-lg border border-white/10 bg-black/35">
+        <div key={item.key} className="overflow-hidden rounded-lg border border-white/10 bg-slate-900">
           <div className="relative h-28 bg-black">
             <Image src={item.src} alt={item.label} fill sizes="(max-width: 1024px) 50vw, 25vw" className="object-contain" unoptimized />
           </div>
@@ -265,10 +270,12 @@ export function DoctorReportStudio({
   analysis,
   gcUsReport = null,
   systemReport = null,
+  extraImages = [],
+  onGcUsReportChange,
 }: DoctorReportStudioProps) {
   const { language } = useSettings();
   const zh = language !== 'en';
-  const [tab, setTab] = useState<StudioTab>('overview');
+  const [tab, setTab] = useState<StudioTab>('template');
   const [doctorStage, setDoctorStage] = useState('');
   const [pathologyStage, setPathologyStage] = useState('');
   const [reviewNote, setReviewNote] = useState('');
@@ -278,6 +285,15 @@ export function DoctorReportStudio({
   const [submitMessage, setSubmitMessage] = useState('');
   const [candidateState, setCandidateState] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
+
+  const templateState = useMemo(
+    () => gcUsReport || createGcUsReportState({
+      case_id: patient?.patient_id || patient?.id || null,
+      frame_id: patient?.id || null,
+      clinical: (patient?.clinical || {}) as unknown as Record<string, unknown>,
+    }),
+    [gcUsReport, patient],
+  );
 
   const report = analysis?.report;
   const pack = report?.report_pack as AgentReportPack | undefined;
@@ -468,6 +484,7 @@ export function DoctorReportStudio({
   };
 
   const tabs: Array<{ id: StudioTab; label: string; icon: React.ReactNode }> = [
+    { id: 'template', label: zh ? '模板报告' : 'Template report', icon: <FileText size={14} /> },
     { id: 'overview', label: zh ? '总览' : 'Overview', icon: <Gauge size={14} /> },
     { id: 'evidence', label: zh ? '证据图谱' : 'Evidence map', icon: <TableProperties size={14} /> },
     { id: 'report', label: zh ? '报告正文' : 'Report', icon: <FileText size={14} /> },
@@ -476,7 +493,7 @@ export function DoctorReportStudio({
 
   if (!patient) {
     return (
-      <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-5 py-10 text-center text-sm text-slate-500">
+      <div className="rounded-xl border border-dashed border-white/10 bg-slate-900 px-5 py-10 text-center text-sm text-slate-500">
         {zh ? '运行当前病例 Agent 后，这里会显示完整证据报告。' : 'Run the case Agent to populate the complete evidence report.'}
       </div>
     );
@@ -504,35 +521,37 @@ export function DoctorReportStudio({
           </div>
         </div>
 
+        <TemplateReportEditor
+          patient={patient}
+          state={templateState}
+          analysis={analysis}
+          extraImages={extraImages}
+          zh={zh}
+          onChange={(next) => onGcUsReportChange?.(next)}
+        />
+
         <section className="rounded-2xl border border-cyan-300/20 bg-[linear-gradient(135deg,rgba(8,37,53,0.42),rgba(6,10,15,0.94))] p-5">
           <SectionTitle icon={<MessageSquareText size={15} />} title={zh ? '自然语言报告输出' : 'Natural-language report output'} detail={zh ? '当前已加载的报告文本' : 'Currently loaded report text'} />
-          <div className="whitespace-pre-wrap rounded-xl border border-white/10 bg-black/35 p-4 text-[13px] leading-7 text-slate-200">
+          <div className="whitespace-pre-wrap rounded-xl border border-white/10 bg-slate-900 p-4 text-[13px] leading-7 text-slate-200">
             {reportText || patient.report?.ultrasound_impression || patient.report?.ultrasound_report || (zh ? '暂无自然语言报告正文。' : 'No natural-language report is available.')}
           </div>
         </section>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 lg:col-span-2">
+          <div className="rounded-xl border border-white/10 bg-slate-800 p-4 lg:col-span-3">
             <SectionTitle icon={<FileText size={15} />} title={zh ? '临床辅助资料' : 'Clinical auxiliary data'} detail={zh ? '仅供医生参考' : 'Physician reference only'} />
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {clinicalRows.map((row) => (
-                <div key={row.label} className="rounded-lg border border-white/8 bg-black/20 p-3">
+                <div key={row.label} className="rounded-lg border border-white/8 bg-slate-900 p-3">
                   <div className="text-[10px] text-slate-500">{row.label}</div>
                   <div className="mt-1 font-mono text-[12px] text-slate-100">{String(row.value)}</div>
                 </div>
               ))}
             </div>
           </div>
-          <div className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
-            <SectionTitle icon={<Sparkles size={15} />} title={zh ? '频谱特征' : 'Spectral feature'} detail={zh ? '边界高频代理' : 'Boundary high-frequency proxy'} />
-            <div className="text-3xl font-black text-amber-100">
-              {spectralRoughness == null ? '未评估' : spectralRoughness.toFixed(2)}
-            </div>
-            <div className="mt-2 text-[10px] leading-relaxed text-amber-100/70">
-              {zh ? '当前病例尚未返回频谱粗糙度。仓库未发现独立 Fourier 模型或频域服务。' : 'No spectral roughness was returned. No independent Fourier model or frequency-domain service is available.'}
-            </div>
-          </div>
         </div>
+
+        <SpectralFeaturePanel analysis={null} boundaryRoughness={spectralRoughness} zh={zh} />
 
         <details open={Boolean(pathologyReport)} className="rounded-2xl border border-rose-300/20 bg-rose-300/[0.04]">
           <summary className="cursor-pointer list-none px-5 py-4 text-sm font-bold text-rose-100">
@@ -545,7 +564,7 @@ export function DoctorReportStudio({
           </summary>
           <div className="space-y-3 border-t border-rose-300/15 p-5">
             {sourceReports.length ? sourceReports.map((item) => (
-              <div key={item.label} className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div key={item.label} className="rounded-xl border border-white/8 bg-slate-900 p-3">
                 <div className="mb-1 text-[10px] font-semibold text-rose-100">{item.label}</div>
                 <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">{item.value}</div>
               </div>
@@ -567,7 +586,7 @@ export function DoctorReportStudio({
 
   return (
     <div className="space-y-4 text-[12px] text-slate-200">
-      <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-[#0c1118]/95 p-1.5 shadow-xl backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-1 rounded-xl border border-white/12 bg-slate-950/90 p-1.5 shadow-xl backdrop-blur-md">
         {tabs.map((item) => (
           <button
             key={item.id}
@@ -584,6 +603,17 @@ export function DoctorReportStudio({
           {review.required ? (zh ? '需人工复核' : 'Review required') : (zh ? '常规复核' : 'Routine review')}
         </div>
       </div>
+
+      {tab === 'template' ? (
+        <TemplateReportEditor
+          patient={patient}
+          state={templateState}
+          analysis={analysis}
+          extraImages={extraImages}
+          zh={zh}
+          onChange={(next) => onGcUsReportChange?.(next)}
+        />
+      ) : null}
 
       {tab === 'overview' ? (
         <div className="space-y-4">
@@ -609,7 +639,7 @@ export function DoctorReportStudio({
                 {report.reasoning || (zh ? '当前病例已完成结构化证据融合，仍需医生结合原始影像复核。' : 'Structured evidence fusion completed. Review the original images before signing.')}
               </p>
             </div>
-            <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-900 p-4">
               <SectionTitle icon={<Gauge size={15} />} title={zh ? 'T 分期概率分布' : 'T-stage probability'} />
               <StageProbabilityChart probabilities={stageProbabilities} zh={zh} />
             </div>
@@ -623,35 +653,26 @@ export function DoctorReportStudio({
               title={zh ? '自然语言报告输出' : 'Natural-language report output'}
               detail={dynamicDraft?.generated_by || (zh ? '规则与证据融合' : 'Evidence and rule fusion')}
             />
-            <div className="whitespace-pre-wrap rounded-xl border border-white/10 bg-black/35 p-4 text-[13px] leading-7 text-slate-200">
+            <div className="whitespace-pre-wrap rounded-xl border border-white/10 bg-slate-900 p-4 text-[13px] leading-7 text-slate-200">
               {reportText || (zh ? '暂无自然语言报告正文。请先运行当前病例 Agent。' : 'No natural-language report is available. Run the case Agent first.')}
             </div>
           </section>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 lg:col-span-2">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4 lg:col-span-3">
               <SectionTitle icon={<FileText size={15} />} title={zh ? '临床辅助资料' : 'Clinical auxiliary data'} detail={zh ? '仅供医生参考' : 'Physician reference only'} />
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {clinicalRows.map((row) => (
-                  <div key={row.label} className="rounded-lg border border-white/8 bg-black/20 p-3">
+                  <div key={row.label} className="rounded-lg border border-white/8 bg-slate-900 p-3">
                     <div className="text-[10px] text-slate-500">{row.label}</div>
                     <div className="mt-1 font-mono text-[12px] text-slate-100">{String(row.value)}</div>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
-              <SectionTitle icon={<Sparkles size={15} />} title={zh ? '频谱特征' : 'Spectral feature'} detail={zh ? '边界高频代理' : 'Boundary high-frequency proxy'} />
-              <div className="text-3xl font-black text-amber-100">
-                {spectralRoughness == null ? '未评估' : spectralRoughness.toFixed(2)}
-              </div>
-              <div className="mt-2 text-[10px] leading-relaxed text-amber-100/70">
-                {zh
-                  ? '当前数据契约提供边界频谱粗糙度代理。仓库未发现独立 Fourier 模型或频域服务，因此不把该值解释为独立 Fourier 结论。'
-                  : 'The current contract provides a boundary spectral roughness proxy. No independent Fourier model or frequency-domain service is available.'}
-              </div>
-            </div>
           </div>
+
+          <SpectralFeaturePanel analysis={analysis} boundaryRoughness={spectralRoughness} zh={zh} />
 
           <details open={Boolean(pathologyReport)} className="rounded-2xl border border-rose-300/20 bg-rose-300/[0.04]">
             <summary className="cursor-pointer list-none px-5 py-4 text-sm font-bold text-rose-100">
@@ -665,7 +686,7 @@ export function DoctorReportStudio({
             <div className="space-y-3 border-t border-rose-300/15 p-5">
               {sourceReports.length ? (
                 sourceReports.map((item) => (
-                  <div key={item.label} className="rounded-xl border border-white/8 bg-black/25 p-3">
+                  <div key={item.label} className="rounded-xl border border-white/8 bg-slate-900 p-3">
                     <div className="mb-1 text-[10px] font-semibold text-rose-100">{item.label}</div>
                     <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">{item.value}</div>
                   </div>
@@ -684,11 +705,11 @@ export function DoctorReportStudio({
           <CaseQuestioner patient={patient} analysis={analysis} reportText={reportText} zh={zh} />
 
           <div className="grid gap-4 xl:grid-cols-3">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 xl:col-span-2">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4 xl:col-span-2">
               <SectionTitle icon={<Layers3 size={15} />} title={zh ? '证据可用性' : 'Evidence availability'} detail={zh ? `${modalityStatus.filter((item) => item.status === 'available').length}/${modalityStatus.length} 项可用` : `${modalityStatus.filter((item) => item.status === 'available').length}/${modalityStatus.length} available`} />
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {modalityStatus.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-white/8 bg-black/20 p-3">
+                  <div key={item.id} className="rounded-lg border border-white/8 bg-slate-900 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-[11px] text-slate-300">{item.label}</span>
                       <span className={`rounded border px-1.5 py-0.5 text-[9px] ${statusTone(item.status)}`}>{statusLabel(item.status, zh)}</span>
@@ -719,7 +740,7 @@ export function DoctorReportStudio({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<MessageSquareText size={15} />} title={zh ? '腹腔积液/游离液' : 'Free fluid'} />
               <div className={`rounded-lg border px-3 py-3 ${statusTone(fluidEvidence.status)}`}>
                 <div className="text-lg font-bold">{statusLabel(fluidEvidence.status, zh)}</div>
@@ -731,7 +752,7 @@ export function DoctorReportStudio({
                 </div>
               ) : null}
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<Sparkles size={15} />} title={zh ? 'LLM 服务护栏' : 'LLM guardrail'} />
               <div className="space-y-2 text-[11px] leading-relaxed">
                 <div className="flex items-center justify-between gap-2"><span className="text-slate-500">角色</span><span className="text-cyan-100">{zh ? '语言层润色' : 'Language refinement only'}</span></div>
@@ -740,11 +761,11 @@ export function DoctorReportStudio({
                 {llmNotes.slice(0, 2).map((note) => <div key={note} className="text-amber-100/80">{note}</div>)}
               </div>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<RefreshCw size={15} />} title={zh ? '记忆闭环状态' : 'Memory loop'} />
               <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="rounded-lg bg-black/20 p-2"><div className="text-slate-500">{zh ? '已应用规则' : 'Rules applied'}</div><div className="mt-1 font-mono text-white">{pack?.memory_loop?.active_rules_used?.length || report.active_rules_used?.length || 0}</div></div>
-                <div className="rounded-lg bg-black/20 p-2"><div className="text-slate-500">{zh ? '候选记忆' : 'Candidates'}</div><div className="mt-1 font-mono text-white">{candidates.length}</div></div>
+                <div className="rounded-lg bg-slate-900 p-2"><div className="text-slate-500">{zh ? '已应用规则' : 'Rules applied'}</div><div className="mt-1 font-mono text-white">{pack?.memory_loop?.active_rules_used?.length || report.active_rules_used?.length || 0}</div></div>
+                <div className="rounded-lg bg-slate-900 p-2"><div className="text-slate-500">{zh ? '候选记忆' : 'Candidates'}</div><div className="mt-1 font-mono text-white">{candidates.length}</div></div>
               </div>
               <div className="mt-2 text-[10px] leading-relaxed text-slate-500">{zh ? '医生反馈先进入候选记忆，经过 QA 和离线回放后才可晋升。' : 'Feedback enters candidate memory first and requires QA and replay before promotion.'}</div>
             </div>
@@ -755,12 +776,17 @@ export function DoctorReportStudio({
       {tab === 'evidence' ? (
         <div className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<TableProperties size={15} />} title={zh ? '边界和形态统计' : 'Boundary and morphology'} detail={zh ? 'mask-derived proxy' : 'mask-derived proxy'} />
               <MetricBars metrics={boundaryMetrics} accent="cyan" zh={zh} />
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<Layers3 size={15} />} title={zh ? '胃腔和壁层统计' : 'Lumen and wall geometry'} detail={String(wall.penetration_risk || 'unknown')} />
+              <div className="mb-2 rounded border border-fuchsia-300/15 bg-fuchsia-400/[0.04] px-2.5 py-2 text-[10px] leading-relaxed text-fuchsia-50/85">
+                {zh
+                  ? '胃腔关系、SDF 与外凸深度属于定位/复核代理，不能独立决定 cT；确定分期仍需经确认的壁层、浆膜或邻近器官证据。'
+                  : 'Lumen relation, SDF, and outward depth are localization/review proxies and cannot decide cT alone; definite staging still needs confirmed wall, serosa, or adjacent-organ evidence.'}
+              </div>
               <MetricBars metrics={wallMetrics} accent="amber" zh={zh} />
               {Array.isArray(wall.quality_flags) && wall.quality_flags.length ? (
                 <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/5 p-2 text-[10px] leading-relaxed text-amber-100">{wall.quality_flags.join('，')}</div>
@@ -768,7 +794,7 @@ export function DoctorReportStudio({
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
             <SectionTitle icon={<TableProperties size={15} />} title={zh ? '七项核心影像征象' : 'Seven core imaging signs'} detail={zh ? '每项保留来源和状态' : 'Status and provenance preserved'} />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-left text-[11px]">
@@ -791,11 +817,11 @@ export function DoctorReportStudio({
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
             <SectionTitle icon={<ShieldAlert size={15} />} title={zh ? '证据矩阵和冲突' : 'Evidence matrix and conflicts'} />
             <div className="grid gap-2 lg:grid-cols-2">
               {evidenceMatrix.map((item) => (
-                <div key={item.id} className="rounded-lg border border-white/8 bg-black/20 p-3">
+                <div key={item.id} className="rounded-lg border border-white/8 bg-slate-900 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-slate-200">{item.label}</span>
                     <span className={`rounded border px-1.5 py-0.5 text-[9px] ${statusTone(item.status)}`}>{statusLabel(item.status, zh)}</span>
@@ -832,7 +858,7 @@ export function DoctorReportStudio({
                 {copied ? (zh ? '已复制' : 'Copied') : (zh ? '复制正文' : 'Copy text')}
               </button>
             </div>
-            <div className="mt-5 rounded-xl border border-white/10 bg-black/35 p-4">
+            <div className="mt-5 rounded-xl border border-white/10 bg-slate-900 p-4">
               {dynamicDraft?.sections?.length ? (
                 <div className="space-y-4">
                   {dynamicDraft.sections.map((section) => (
@@ -852,17 +878,17 @@ export function DoctorReportStudio({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<Stethoscope size={15} />} title={zh ? '临床决策支持' : 'Clinical decision support'} />
               <div className="space-y-3">
                 {clinicalDecision.recommendation ? <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-3 leading-relaxed text-cyan-50">{String(clinicalDecision.recommendation)}</div> : null}
-                {managementAdvice.map((item) => <div key={item.action} className="rounded-lg border border-white/8 bg-black/20 p-3"><div className="font-semibold text-slate-200">{item.action}</div>{item.basis?.length ? <div className="mt-1 text-[10px] text-slate-500">{item.basis.join('，')}</div> : null}</div>)}
+                {managementAdvice.map((item) => <div key={item.action} className="rounded-lg border border-white/8 bg-slate-900 p-3"><div className="font-semibold text-slate-200">{item.action}</div>{item.basis?.length ? <div className="mt-1 text-[10px] text-slate-500">{item.basis.join('，')}</div> : null}</div>)}
                 {missingModalities.map((item) => <div key={item} className="flex gap-2 text-[11px] text-amber-100"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{item}</div>)}
               </div>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<Sparkles size={15} />} title={zh ? '语言层复述和限制' : 'Language-layer refinement'} />
-              <div className="rounded-lg border border-white/8 bg-black/20 p-3 text-[11px] leading-relaxed text-slate-300">{report.llm_reasoning || report.reasoning}</div>
+              <div className="rounded-lg border border-white/8 bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-300">{report.llm_reasoning || report.reasoning}</div>
               {llmNotes.length ? <div className="mt-3 space-y-1.5">{llmNotes.map((note) => <div key={note} className="text-[10px] text-amber-100/80">- {note}</div>)}</div> : null}
               <div className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/5 p-3 text-[10px] leading-relaxed text-amber-100/80">{zh ? '报告文本不能把自由文本、几何代理或病理后验直接写成确定 T 分期。' : 'Free text, geometry proxies, and pathology hindsight cannot be written as a definite T stage.'}</div>
             </div>
@@ -880,14 +906,19 @@ export function DoctorReportStudio({
                   {zh ? '医生确认的 cT' : 'Physician cT'}
                   <select value={doctorStage} onChange={(event) => setDoctorStage(event.target.value)} className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
                     <option value="">{zh ? `沿用 Agent: ${recommendedStage}` : `Use Agent: ${recommendedStage}`}</option>
-                    {['T1', 'T2', 'T3', 'T4+'].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                    {['cTx', 'T1', 'T2', 'T3', 'T4a', 'T4b', 'T4+'].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
                   </select>
+                  <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                    {zh
+                      ? 'T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下；T4a 浆膜；T4b 邻近器官。T4+ 仅表示亚型未定。'
+                      : 'T1 mucosa/SM; T2 MP; T3 subserosa; T4a serosa; T4b adjacent organs. T4+ means subtype unresolved.'}
+                  </div>
                 </label>
                 <label className="text-[11px] text-slate-400">
                   {zh ? '最终病理 T 分期，可选' : 'Final pathology T stage, optional'}
                   <select value={pathologyStage} onChange={(event) => setPathologyStage(event.target.value)} className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
                     <option value="">{zh ? '暂未获得' : 'Not available'}</option>
-                    {['T1', 'T2', 'T3', 'T4+'].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                    {['T1', 'T2', 'T3', 'T4a', 'T4b', 'T4+'].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
                   </select>
                 </label>
               </div>
@@ -907,7 +938,7 @@ export function DoctorReportStudio({
                   ['reject', '拒绝 AI', 'border-rose-300/30 text-rose-100'],
                   ['request_more_evidence', '证据不足', 'border-amber-300/30 text-amber-100'],
                 ] as Array<[ReviewAction, string, string]>).map(([action, label, style]) => (
-                  <button key={action} type="button" onClick={() => { setReviewAction(action); void submitReview(action); }} disabled={submitState === 'submitting'} className={`rounded-lg border bg-black/20 px-2 py-2.5 text-[11px] font-semibold hover:bg-white/5 disabled:opacity-50 ${style}`}>{label}</button>
+                  <button key={action} type="button" onClick={() => { setReviewAction(action); void submitReview(action); }} disabled={submitState === 'submitting'} className={`rounded-lg border bg-slate-900 px-2 py-2.5 text-[11px] font-semibold hover:bg-white/5 disabled:opacity-50 ${style}`}>{label}</button>
                 ))}
               </div>
               {submitState !== 'idle' ? <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] ${submitState === 'error' ? 'border-rose-300/25 bg-rose-300/5 text-rose-100' : 'border-emerald-300/25 bg-emerald-300/5 text-emerald-100'}`}>{submitState === 'submitting' ? (zh ? '正在记录复核...' : 'Recording review...') : submitMessage}</div> : null}
@@ -916,7 +947,7 @@ export function DoctorReportStudio({
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<RefreshCw size={15} />} title={zh ? '记忆候选审核' : 'Memory candidate review'} detail={zh ? '不会自动改模型权重' : 'Never updates weights automatically'} />
               {candidates.length ? (
                 <div className="space-y-3">
@@ -932,7 +963,7 @@ export function DoctorReportStudio({
                         ? (zh ? '已暂缓，保留在候选队列。' : 'Deferred and retained in the candidate queue.')
                         : null;
                     return (
-                      <div key={recordId} className="rounded-lg border border-white/8 bg-black/20 p-3">
+                      <div key={recordId} className="rounded-lg border border-white/8 bg-slate-900 p-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="font-semibold text-slate-200">{String(candidate.title || candidate.record_type || 'case_episode')}</div>
                           <span className={`rounded border px-1.5 py-0.5 text-[9px] ${statusTone(currentStatus)}`}>{statusLabel(currentStatus, zh)}</span>
@@ -950,7 +981,7 @@ export function DoctorReportStudio({
                 </div>
               ) : <div className="text-[11px] text-slate-500">{zh ? '当前病例没有新的记忆候选。' : 'No new memory candidates for this case.'}</div>}
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
               <SectionTitle icon={<ImageIcon size={15} />} title={zh ? '审计摘要' : 'Audit summary'} />
               <div className="space-y-2 text-[11px]">
                 <div className="flex justify-between gap-3"><span className="text-slate-500">session</span><span className="max-w-[65%] truncate font-mono text-slate-300">{analysis.session_id}</span></div>

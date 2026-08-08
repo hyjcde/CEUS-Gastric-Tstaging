@@ -25,8 +25,13 @@ import {
   controlIndices,
   prepareEditableContour,
   softDeform,
-  strokeSmoothClosed,
 } from '@/lib/human-assist/contour-edit';
+import {
+  appendFinalPromptPoint,
+  appendPromptPoint,
+  prepareSubmitPromptStroke,
+  strokeClosedPolyline,
+} from '@/lib/human-assist/prompt-stroke';
 
 type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam';
 type MediaMode = 'image' | 'video';
@@ -446,10 +451,10 @@ function lumenPreferVector(
 }
 
 function geometryRelationText(geometry: LesionLumenGeometry, zh: boolean): string {
-  if (geometry.relation === 'overlap') return zh ? '胃腔轮廓与病灶轮廓重叠' : 'Lumen and lesion contours overlap';
-  if (geometry.relation === 'near_lumen') return zh ? '病灶接近胃腔侧边界' : 'Lesion is near the lumen-side boundary';
-  if (geometry.relation === 'separated') return zh ? '胃腔与病灶存在可见间隙' : 'Visible gap between lumen and lesion';
-  return zh ? '胃腔-病灶关系待评估' : 'Lumen-lesion relation pending';
+  if (geometry.relation === 'overlap') return zh ? '状态: 重叠, 当前帧定位辅助' : 'Status: overlap, current-frame localization cue';
+  if (geometry.relation === 'near_lumen') return zh ? '状态: 邻近胃腔, 当前帧定位辅助' : 'Status: near lumen, current-frame localization cue';
+  if (geometry.relation === 'separated') return zh ? '状态: 分离, 当前帧定位辅助' : 'Status: separated, current-frame localization cue';
+  return zh ? '状态: 未评估' : 'Status: unknown';
 }
 
 function geometryQualityText(geometry: LesionLumenGeometry, zh: boolean): string {
@@ -491,14 +496,14 @@ function computeDisplayTransform(
 }
 
 // Distinct contour colors: lesion cyan, wall orange, lumen fuchsia (not interchangeable).
-const COLOR_LESION_FILL = 'rgba(34, 211, 238, 0.18)';
+const COLOR_LESION_FILL = 'rgba(34, 211, 238, 0.28)';
 const COLOR_LESION_STROKE = 'rgba(34, 211, 238, 0.98)';
 const COLOR_WALL_FILL = 'rgba(251, 146, 60, 0.16)';
 const COLOR_WALL_STROKE = 'rgba(251, 146, 60, 0.95)';
-const COLOR_LUMEN_FILL = 'rgba(217, 70, 239, 0.14)';
+const COLOR_LUMEN_FILL = 'rgba(217, 70, 239, 0.24)';
 const COLOR_LUMEN_STROKE = 'rgba(232, 121, 249, 0.98)';
-const COLOR_LUMEN_BOX_FILL = 'rgba(217, 70, 239, 0.06)';
-const COLOR_LUMEN_BOX_STROKE = 'rgba(232, 121, 249, 0.9)';
+const COLOR_LUMEN_BOX_FILL = 'rgba(217, 70, 239, 0.08)';
+const COLOR_LUMEN_BOX_STROKE = 'rgba(232, 121, 249, 0.95)';
 const COLOR_LUMEN_HANDLE = '#e879f9';
 const COLOR_LESION_HANDLE = '#22d3ee';
 const COLOR_WALL_HANDLE = '#ea580c';
@@ -527,17 +532,6 @@ function bboxFromPath(points: number[][], padding = 0): ViewFocusBox | null {
   const y2 = Math.max(...valid.map((point) => Number(point[1]))) + padding;
   if (x2 <= x1 || y2 <= y1) return null;
   return { x1, y1, x2, y2 };
-}
-
-function samplePromptPath(points: number[][], maxPoints = 12): number[][] {
-  if (points.length <= maxPoints) return points.map((point) => [point[0], point[1]]);
-  const sampled: number[][] = [];
-  const step = (points.length - 1) / (maxPoints - 1);
-  for (let index = 0; index < maxPoints; index += 1) {
-    const point = points[Math.min(points.length - 1, Math.round(index * step))];
-    if (point) sampled.push([point[0], point[1]]);
-  }
-  return sampled;
 }
 
 function pathCentroid(points: number[][]): number[] | null {
@@ -648,7 +642,8 @@ export function buildModelAssistReport(
   const perigastric = /胃周|脂肪间隙|邻近器官/.test(text)
     ? '已从影像文字资料纳入胃周组织评估'
     : '当前帧未能确认胃周组织';
-  const stage = /浆膜.*(中断|破坏|侵犯|不完整)/.test(text)
+  // Text-derived draft labels only. Never unlock structured / definite cT from prose.
+  const stageDraft = /浆膜.*(中断|破坏|侵犯|不完整)/.test(text)
     ? 'T4+'
     : /突破肌层|侵犯肌层|浆膜下/.test(text)
       ? 'T3'
@@ -657,6 +652,7 @@ export function buildModelAssistReport(
         : /黏膜下|肌层结构完整/.test(text)
           ? 'T1'
           : 'cTx';
+  const stage = 'cTx';
   const location = patient.clinical?.location || '胃';
   // Length / thickness are table clinical fields (fixed). tumorSize is stored in cm.
   const clinicalLengthCm = patient.clinical?.tumorSize?.length;
@@ -692,21 +688,22 @@ export function buildModelAssistReport(
     serosa_change: { value: serosa, status: /当前帧/.test(serosa) ? 'uncertain' : 'suggested', source: /当前帧/.test(serosa) ? 'limited_frame' : 'clinical_text', confidence: 0.45, evidence_ref: ['clinical.imaging_text'] },
     perigastric_tissue: { value: perigastric, status: /未能/.test(perigastric) ? 'uncertain' : 'suggested', source: /未能/.test(perigastric) ? 'limited_frame' : 'clinical_text', confidence: 0.4, evidence_ref: ['clinical.imaging_text'] },
   } as unknown as NonNullable<SamReport['signs']>;
-  const prose = `【超声所见】${location}见低回声占位性病变，大小约${lengthText}，最大厚度${thicknessText}。病灶呈${shape}，${boundary}。胃壁层次：${layer}；浆膜：${serosa}；胃周组织：${perigastric}。\n\n【辅助分析】${modelLabel} 当前帧病灶面积占比 ${areaRatio != null ? `${(areaRatio * 100).toFixed(2)}%` : '未返回'}。该结果为模型辅助证据，需医生在关键帧上修正。\n\n【分期倾向】${stage}（仅基于当前模型与影像文字证据，非病理结论）。`;
+  const prose = `【超声所见】${location}见低回声占位性病变，大小约${lengthText}，最大厚度${thicknessText}。病灶呈${shape}，${boundary}。胃壁层次：${layer}；浆膜：${serosa}；胃周组织：${perigastric}。\n\n【辅助分析】${modelLabel} 当前帧病灶面积占比 ${areaRatio != null ? `${(areaRatio * 100).toFixed(2)}%` : '未返回'}。该结果为模型辅助证据，需医生在关键帧上修正。\n\n【分期倾向草稿】文本来源草稿 ${stageDraft}；结构化输出保持 cTx，不能覆盖经确认的壁层/浆膜证据门禁。`;
   return {
     recommended_stage: stage,
-    recommendation_status: stage === 'cTx' ? 'uncertain' : 'suggested',
+    recommendation_status: 'uncertain',
     signs,
-    calibrated_confidence: stage === 'cTx' ? 0.4 : 0.58,
+    calibrated_confidence: 0.4,
     summary: prose,
     template_id: 'gc_us_t_report_template_v1',
     schema_version: 'gc_us_report_signs_v1',
     source_doc: '胃癌T分期自进化智能辅助诊断_报告模板_讨论版.docx',
     template_prose: prose,
     evidence: [
-      { title: '病灶分割', detail: `${modelLabel} · ${polygon.length} contour points`, status: 'suggested', source: modelLabel },
-      { title: '形态与边界', detail: `${shape} · ${boundary}`, status: 'suggested', source: 'mask_geometry' },
-      { title: '层次与浆膜', detail: `${layer} · ${serosa}`, status: 'uncertain', source: 'clinical_text_or_limited_frame' },
+      { title: '病灶分割', detail: `${modelLabel}, ${polygon.length} contour points`, status: 'suggested', source: modelLabel },
+      { title: '形态与边界', detail: `${shape}, ${boundary}`, status: 'suggested', source: 'mask_geometry' },
+      { title: '层次与浆膜', detail: `${layer}, ${serosa}`, status: 'uncertain', source: 'clinical_text_or_limited_frame' },
+      { title: '文本分期草稿', detail: stageDraft, status: 'uncertain', source: 'clinical_text_draft_only' },
     ],
   };
 }
@@ -940,6 +937,8 @@ export function InteractiveSegPanel({
   const samClicksRef = useRef<Array<{ x: number; y: number; label: 'positive' | 'negative' }>>([]);
   const promptStrokesRef = useRef<ActiveSamStroke[]>([]);
   const activePromptStrokeRef = useRef<ActiveSamStroke | null>(null);
+  const pendingPromptPointRef = useRef<number[] | null>(null);
+  const promptStrokeRafRef = useRef<number | null>(null);
   const samBoxDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const nnInteractiveSessionRef = useRef<NnInteractiveSessionState>({
     key: '',
@@ -947,6 +946,7 @@ export function InteractiveSegPanel({
     initialized: false,
   });
   const nnInteractiveRequestRef = useRef(0);
+  const nnInteractiveAbortRef = useRef<AbortController | null>(null);
   const lumenBoxRef = useRef<LumenBBox | null>(null);
   const lumenPolygonRef = useRef<number[][]>([]);
   const lumenBoxDragRef = useRef<{
@@ -1062,6 +1062,8 @@ export function InteractiveSegPanel({
       activePromptStrokeRef.current = null;
       setPromptStrokes([]);
       setActivePromptStroke(null);
+      nnInteractiveAbortRef.current?.abort();
+      nnInteractiveAbortRef.current = null;
       nnInteractiveRequestRef.current += 1;
       setNnInteractiveBusy(false);
       setVideoFrameOverrides([]);
@@ -1081,6 +1083,8 @@ export function InteractiveSegPanel({
     setSimpleEditMode(false);
     setNnInteractiveBusy(false);
     setNnInteractiveClicks([]);
+    nnInteractiveAbortRef.current?.abort();
+    nnInteractiveAbortRef.current = null;
     nnInteractiveRequestRef.current += 1;
     setPromptStrokes([]);
     promptStrokesRef.current = [];
@@ -1764,7 +1768,7 @@ export function InteractiveSegPanel({
 
       if (!opts?.silent) {
         const score = Number(data.result.sam_score);
-        const scoreText = Number.isFinite(score) ? ` · score ${score.toFixed(2)}` : '';
+        const scoreText = Number.isFinite(score) ? `, score ${score.toFixed(2)}` : '';
         setMessage(
           zh
             ? `当前帧 ROI 已更新（${poly.length} 点${scoreText}）`
@@ -2160,14 +2164,16 @@ export function InteractiveSegPanel({
       ? trackedFrame.lumen_bbox
       : lumenBox;
 
-    const drawPoly = (poly: number[][], fill: string, stroke: string) => {
+    const drawPoly = (poly: number[][], fill: string, stroke: string, dashed = false) => {
       if (poly.length < 2) return;
-      strokeSmoothClosed(ctx, poly, map);
+      strokeClosedPolyline(ctx, poly, map);
       ctx.fillStyle = fill;
       ctx.fill();
       ctx.strokeStyle = stroke;
       ctx.lineWidth = 2;
+      ctx.setLineDash(dashed ? [7, 5] : []);
       ctx.stroke();
+      ctx.setLineDash([]);
     };
 
     // Screen-stable handle radius (direction_demo: clamp(7.5/√scale, 3.2…12))
@@ -2309,6 +2315,7 @@ export function InteractiveSegPanel({
     if (displayLumenPoly.length >= 3) {
       drawPoly(displayLumenPoly, COLOR_LUMEN_FILL, COLOR_LUMEN_STROKE);
     }
+    const lumenBoxIsProxy = Boolean(displayLumenBox) && displayLumenPoly.length < 3;
     if (displayLumenBox) {
       const a = map(displayLumenBox.x1, displayLumenBox.y1);
       const b = map(displayLumenBox.x2, displayLumenBox.y2);
@@ -2319,10 +2326,21 @@ export function InteractiveSegPanel({
       ctx.fillStyle = COLOR_LUMEN_BOX_FILL;
       ctx.fillRect(left, top, width, height);
       ctx.strokeStyle = lumenEditMode ? COLOR_LUMEN_STROKE : COLOR_LUMEN_BOX_STROKE;
-      ctx.lineWidth = lumenEditMode ? 2 : 1.5;
-      ctx.setLineDash(lumenEditMode ? [6, 4] : []);
+      ctx.lineWidth = lumenEditMode || lumenBoxIsProxy ? 2 : 1.5;
+      ctx.setLineDash(lumenEditMode || lumenBoxIsProxy ? [6, 4] : []);
       ctx.strokeRect(left, top, width, height);
       ctx.setLineDash([]);
+      if (lumenBoxIsProxy) {
+        const label = zh ? '胃腔框代理' : 'Lumen box proxy';
+        ctx.save();
+        ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        const labelWidth = ctx.measureText(label).width + 10;
+        ctx.fillStyle = 'rgba(88, 28, 135, 0.88)';
+        ctx.fillRect(left, Math.max(4, top - 16), labelWidth, 14);
+        ctx.fillStyle = '#fdf4ff';
+        ctx.fillText(label, left + 5, Math.max(14, top - 6));
+        ctx.restore();
+      }
       if (lumenEditMode) {
         const cornerSize = Math.max(3.5, Math.min(9, 6 / Math.sqrt(Math.max(scale, 0.15))));
         for (const [x, y] of [
@@ -2440,6 +2458,42 @@ export function InteractiveSegPanel({
       ctx.restore();
     }
 
+    if (displayPoints.length >= 3 || displayLumenPoly.length >= 3 || displayLumenBox) {
+      const frameTime = mediaMode === 'video'
+        ? Number((videoRef.current?.currentTime ?? videoTime).toFixed(2))
+        : null;
+      const lumenSource = displayLumenPoly.length >= 3
+        ? (zh ? '胃腔轮廓' : 'Lumen contour')
+        : displayLumenBox
+          ? (zh ? '胃腔框代理' : 'Lumen box proxy')
+          : (zh ? '胃腔未标注' : 'Lumen missing');
+      const contactText = relationGeometry.available
+        ? geometryRelationText(relationGeometry, zh)
+        : (zh ? '状态: 未评估' : 'Status: unknown');
+      const legendLines = [
+        zh ? '青色=病灶, 紫色=胃腔' : 'Cyan=lesion, fuchsia=lumen',
+        `${lumenSource}${frameTime != null ? ` @ ${frameTime.toFixed(2)}s` : ''}`,
+        contactText,
+        relationGeometry.available ? geometryQualityText(relationGeometry, zh) : '',
+        zh ? '定位/复核代理, 不能单独决定 cT' : 'Localization/review proxy; cannot decide cT alone',
+      ].filter(Boolean);
+      ctx.save();
+      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      const legendWidth = Math.max(...legendLines.map((line) => ctx.measureText(line).width)) + 16;
+      const legendHeight = legendLines.length * 13 + 10;
+      const legendX = 10;
+      const legendY = 10;
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.84)';
+      ctx.fillRect(legendX, legendY, legendWidth, legendHeight);
+      ctx.strokeStyle = 'rgba(232, 121, 249, 0.35)';
+      ctx.strokeRect(legendX, legendY, legendWidth, legendHeight);
+      legendLines.forEach((line, index) => {
+        ctx.fillStyle = index === 0 ? '#a5f3fc' : index === legendLines.length - 1 ? '#fde68a' : '#f8fafc';
+        ctx.fillText(line, legendX + 8, legendY + 14 + index * 13);
+      });
+      ctx.restore();
+    }
+
     // Draw the lesion last so lumen fills, boxes, relation guides, and wall
     // annotations cannot hide the generated boundary.
     if (displayPoints.length >= 3 && (
@@ -2450,11 +2504,11 @@ export function InteractiveSegPanel({
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      strokeSmoothClosed(ctx, displayPoints, map);
+      strokeClosedPolyline(ctx, displayPoints, map);
       ctx.strokeStyle = 'rgba(2, 6, 23, 0.9)';
       ctx.lineWidth = 4.5;
       ctx.stroke();
-      strokeSmoothClosed(ctx, displayPoints, map);
+      strokeClosedPolyline(ctx, displayPoints, map);
       ctx.strokeStyle = COLOR_LESION_STROKE;
       ctx.lineWidth = 2.4;
       ctx.stroke();
@@ -2464,7 +2518,7 @@ export function InteractiveSegPanel({
       ctx.restore();
     }
 
-  }, [points, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, layerResult, zh]);
+  }, [points, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, layerResult, videoTime, zh]);
 
   useEffect(() => {
     redrawRef.current = redraw;
@@ -2655,20 +2709,54 @@ export function InteractiveSegPanel({
     return Math.max(18, 14 / Math.max(scale, 1e-6));
   }, [mediaMode]);
 
+  const invalidateNnInteractiveSession = useCallback((options: { abort?: boolean } = {}) => {
+    if (options.abort !== false) {
+      nnInteractiveAbortRef.current?.abort();
+      nnInteractiveAbortRef.current = null;
+    }
+    nnInteractiveRequestRef.current += 1;
+    setNnInteractiveBusy(false);
+    nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
+  }, []);
+
   const clearSamPrompts = useCallback(() => {
     samClicksRef.current = [];
     setSamClicks([]);
     setNnInteractiveClicks([]);
-    nnInteractiveRequestRef.current += 1;
-    setNnInteractiveBusy(false);
-    nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
+    invalidateNnInteractiveSession({ abort: true });
+    if (promptStrokeRafRef.current != null) {
+      cancelAnimationFrame(promptStrokeRafRef.current);
+      promptStrokeRafRef.current = null;
+    }
+    pendingPromptPointRef.current = null;
     promptStrokesRef.current = [];
     activePromptStrokeRef.current = null;
     setPromptStrokes([]);
     setActivePromptStroke(null);
     samBoxDragRef.current = null;
     setSamBoxPreview(null);
+  }, [invalidateNnInteractiveSession]);
+
+  useEffect(() => () => {
+    nnInteractiveAbortRef.current?.abort();
+    nnInteractiveAbortRef.current = null;
+    if (promptStrokeRafRef.current != null) {
+      cancelAnimationFrame(promptStrokeRafRef.current);
+      promptStrokeRafRef.current = null;
+    }
   }, []);
+
+  useEffect(() => {
+    if (!nnInteractiveMode || mediaMode !== 'video') return;
+    const live = Number((videoRef.current?.currentTime ?? videoTime).toFixed(3)).toFixed(3);
+    const sessionKey = nnInteractiveSessionRef.current.key;
+    if (!sessionKey) return;
+    const parts = sessionKey.split(':');
+    // patient:id:target:mode:url:time:lumenKey — time is near the end.
+    if (!parts.includes(live)) {
+      invalidateNnInteractiveSession({ abort: true });
+    }
+  }, [invalidateNnInteractiveSession, mediaMode, nnInteractiveMode, videoTime]);
 
   const stopInteractivePrompt = useCallback(() => {
     setNnInteractiveMode(false);
@@ -2872,16 +2960,17 @@ export function InteractiveSegPanel({
     scribbles: ActiveSamStroke[] = [],
     additionalPoints: Array<{ x: number; y: number; label: 'positive' | 'negative' }> = [],
   ) => {
+    const lumenSeedBox = lumenBoxRef.current;
     const initialPolygon = target === 'lumen'
       ? (
         lumenPolygonRef.current.length >= 3
           ? lumenPolygonRef.current
-          : lumenBox
+          : lumenSeedBox
             ? [
-              [lumenBox.x1, lumenBox.y1],
-              [lumenBox.x2, lumenBox.y1],
-              [lumenBox.x2, lumenBox.y2],
-              [lumenBox.x1, lumenBox.y2],
+              [lumenSeedBox.x1, lumenSeedBox.y1],
+              [lumenSeedBox.x2, lumenSeedBox.y1],
+              [lumenSeedBox.x2, lumenSeedBox.y2],
+              [lumenSeedBox.x1, lumenSeedBox.y2],
             ]
             : []
       )
@@ -2907,23 +2996,36 @@ export function InteractiveSegPanel({
       );
       return;
     }
+    nnInteractiveAbortRef.current?.abort();
+    const abortController = new AbortController();
+    nnInteractiveAbortRef.current = abortController;
     const requestId = nnInteractiveRequestRef.current + 1;
     nnInteractiveRequestRef.current = requestId;
     setNnInteractiveBusy(true);
     freezeCurrentFrame();
     try {
+      const liveVideoTime = mediaMode === 'video'
+        ? Number((videoRef.current?.currentTime ?? videoTime).toFixed(3))
+        : 0;
       const frame = await videoOrImageToSamFrame(
         videoRef.current,
         imgRef.current,
         mediaMode === 'video',
         1024,
       );
+      if (requestId !== nnInteractiveRequestRef.current || abortController.signal.aborted) return;
+      const lumenKey = lumenSeedBox
+        ? [lumenSeedBox.x1, lumenSeedBox.y1, lumenSeedBox.x2, lumenSeedBox.y2]
+          .map((value) => Number(value).toFixed(1))
+          .join(',')
+        : 'nolumen';
       const frameKey = [
         patient.id,
         target,
         mediaMode,
         videoUrl,
-        mediaMode === 'video' ? videoTime.toFixed(3) : 'image',
+        mediaMode === 'video' ? liveVideoTime.toFixed(3) : 'image',
+        lumenKey,
       ].join(':');
       const sessionState = nnInteractiveSessionRef.current;
       if (sessionState.key !== frameKey || !sessionState.id) {
@@ -2965,7 +3067,7 @@ export function InteractiveSegPanel({
         body: JSON.stringify({
           session_id: sessionState.id,
           case_id: patient.patient_id,
-          frame_time: mediaMode === 'video' ? Number(videoTime.toFixed(3)) : 0,
+          frame_time: liveVideoTime,
           frame_png_b64: frame.b64,
           image_width: frame.width,
           image_height: frame.height,
@@ -2981,7 +3083,7 @@ export function InteractiveSegPanel({
           scribbles: scaledScribbles,
           lassos: scaledLassos,
         }),
-        signal: AbortSignal.timeout(180000),
+        signal: abortController.signal,
       });
       const data = await response.json() as {
         ok?: boolean;
@@ -2995,17 +3097,18 @@ export function InteractiveSegPanel({
           error?: string;
         };
       };
-      if (requestId !== nnInteractiveRequestRef.current) return;
+      if (requestId !== nnInteractiveRequestRef.current || abortController.signal.aborted) return;
       if (!response.ok || !data.ok || !data.result?.mask_polygon?.length) {
         throw new Error(data.error || data.result?.error || 'Boundary assistance returned no valid mask');
       }
-      const nextPolygon = data.result.mask_polygon.map((point) => [
+      const rawPolygon = data.result.mask_polygon.map((point) => [
         point[0] / frame.scale,
         point[1] / frame.scale,
       ]);
-      if (nextPolygon.length < 3) {
+      if (rawPolygon.length < 3) {
         throw new Error('Boundary assistance returned an invalid contour');
       }
+      const nextPolygon = prepareEditableContour(rawPolygon, 96);
       sessionState.initialized = true;
       setNnInteractiveAvailable(true);
       if (target === 'lumen') {
@@ -3046,7 +3149,8 @@ export function InteractiveSegPanel({
           : `Boundary assistance refined the ${target === 'lumen' ? 'lumen' : 'lesion'} contour (${nextPolygon.length} points); add positive or negative points to refine further`,
       );
     } catch (error) {
-      if (requestId !== nnInteractiveRequestRef.current) return;
+      if (requestId !== nnInteractiveRequestRef.current || abortController.signal.aborted) return;
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       nnInteractiveSessionRef.current.initialized = false;
       const detail = error instanceof Error ? error.message : '';
       const serviceUnavailable = detail === 'fetch failed'
@@ -3068,13 +3172,15 @@ export function InteractiveSegPanel({
           : (detail || (zh ? '边界辅助失败' : 'Boundary assistance failed')),
       );
     } finally {
+      if (nnInteractiveAbortRef.current === abortController) {
+        nnInteractiveAbortRef.current = null;
+      }
       if (requestId === nnInteractiveRequestRef.current) setNnInteractiveBusy(false);
     }
   }, [
     freezeCurrentFrame,
     getCurrentTrackedPolygon,
     layerResult,
-    lumenBox,
     mediaMode,
     nnInteractiveAvailable,
     nnInteractiveBusy,
@@ -3099,8 +3205,7 @@ export function InteractiveSegPanel({
       );
       return;
     }
-    nnInteractiveRequestRef.current += 1;
-    setNnInteractiveBusy(false);
+    invalidateNnInteractiveSession({ abort: true });
     setMode('sam');
     setSimplePromptMode('point');
     setSimpleEditMode(false);
@@ -3131,6 +3236,7 @@ export function InteractiveSegPanel({
     );
   }, [
     getCurrentTrackedPolygon,
+    invalidateNnInteractiveSession,
     nnInteractiveAvailable,
     refreshNnInteractiveStatus,
     zh,
@@ -3515,8 +3621,7 @@ export function InteractiveSegPanel({
       );
       return;
     }
-    nnInteractiveRequestRef.current += 1;
-    setNnInteractiveBusy(false);
+    invalidateNnInteractiveSession({ abort: true });
     setMode('sam');
     setSimplePromptMode(promptMode);
     setSimpleEditMode(false);
@@ -3545,16 +3650,36 @@ export function InteractiveSegPanel({
           ? `nnInteractive 胃腔${promptModeText(promptMode, true)}已开启，${promptMode === 'point' ? '点击添加提示' : '拖动提交提示'}`
           : `nnInteractive lumen ${promptModeText(promptMode, false)} is ready; ${promptMode === 'point' ? 'click to add prompts' : 'drag to submit a prompt'}`),
     );
-  }, [getCurrentTrackedPolygon, nnInteractiveAvailable, refreshNnInteractiveStatus, zh]);
+  }, [getCurrentTrackedPolygon, invalidateNnInteractiveSession, nnInteractiveAvailable, refreshNnInteractiveStatus, zh]);
 
   const applyActiveSamStroke = useCallback(async (stroke: ActiveSamStroke) => {
-    if (stroke.points.length < 2) {
-      setMessage(zh ? '涂鸦或套索至少需要两个点' : 'A scribble or lasso needs at least two points');
+    const prepared = prepareSubmitPromptStroke(
+      stroke.points,
+      stroke.kind === 'lasso' ? 'lasso' : 'scribble',
+      {
+        maxPoints: stroke.kind === 'lasso' ? 64 : 48,
+        minPoints: 2,
+        minLengthPx: 4,
+        minAreaPx2: 64,
+      },
+    );
+    if (!prepared.ok) {
+      setMessage(
+        prepared.reason === 'lasso_area_too_small'
+          ? (zh ? '套索面积过小，请扩大闭合区域后重试' : 'Lasso area is too small; enlarge the closed region and retry')
+          : prepared.reason === 'too_short'
+            ? (zh ? '笔画过短，请继续拖动画出有效提示' : 'Stroke is too short; keep dragging to form a usable prompt')
+            : (zh ? '涂鸦或套索至少需要两个点' : 'A scribble or lasso needs at least two points'),
+      );
       return;
     }
+    const submitStroke: ActiveSamStroke = {
+      ...stroke,
+      points: prepared.points,
+    };
     const target = stroke.target || (nnInteractiveMode ? nnInteractiveTarget : 'lesion');
-    const sampled = samplePromptPath(stroke.points, stroke.kind === 'lasso' ? 16 : 12);
-    const center = pathCentroid(stroke.points);
+    const sampled = prepared.points;
+    const center = pathCentroid(submitStroke.points);
     const existingPolygon = target === 'lumen'
       ? (
         lumenPolygonRef.current.length >= 3
@@ -3570,20 +3695,20 @@ export function InteractiveSegPanel({
       )
       : getCurrentTrackedPolygon();
     const fallbackBox = stroke.kind === 'lasso'
-      ? bboxFromPath(stroke.points, Math.max(4, stroke.width * 2))
+      ? bboxFromPath(submitStroke.points, Math.max(4, stroke.width * 2))
       : bboxFromPointsOrBox(existingPolygon, target === 'lumen' ? lumenBoxRef.current : null);
     const fallbackClicks = [
       ...(stroke.label === 'negative' && center ? [{ x: center[0], y: center[1], label: 'positive' as const }] : []),
       ...sampled.map((point) => ({ x: point[0], y: point[1], label: stroke.label })),
     ];
 
-    setPromptStrokes((previous) => [...previous, stroke]);
-    promptStrokesRef.current = [...promptStrokesRef.current, stroke];
+    setPromptStrokes((previous) => [...previous, submitStroke]);
+    promptStrokesRef.current = [...promptStrokesRef.current, submitStroke];
     if (nnInteractiveMode) {
       await refineWithNnInteractive(
         target,
         undefined,
-        [stroke],
+        [submitStroke],
       );
     } else {
       const next = [...samClicksRef.current, ...fallbackClicks];
@@ -3604,7 +3729,6 @@ export function InteractiveSegPanel({
   }, [
     getCurrentTrackedPolygon,
     mediaMode,
-    nnInteractiveAvailable,
     nnInteractiveMode,
     nnInteractiveTarget,
     refineWithNnInteractive,
@@ -3992,16 +4116,20 @@ export function InteractiveSegPanel({
       const imgPt = canvasToImage(e);
       if (!imgPt) return;
       e.preventDefault();
-      const last = activeStroke.points[activeStroke.points.length - 1];
-      if (!last || dist2(last, imgPt) >= 4) {
-        const nextStroke = {
-          ...activeStroke,
-          points: [...activeStroke.points, imgPt],
-        };
+      pendingPromptPointRef.current = imgPt;
+      if (promptStrokeRafRef.current != null) return;
+      promptStrokeRafRef.current = window.requestAnimationFrame(() => {
+        promptStrokeRafRef.current = null;
+        const stroke = activePromptStrokeRef.current;
+        const pending = pendingPromptPointRef.current;
+        if (!stroke || !pending) return;
+        const nextPoints = appendPromptPoint(stroke.points, pending, 2);
+        if (nextPoints.length === stroke.points.length) return;
+        const nextStroke = { ...stroke, points: nextPoints };
         activePromptStrokeRef.current = nextStroke;
         setActivePromptStroke(nextStroke);
         redraw();
-      }
+      });
       return;
     }
     const lumenDrag = lumenBoxDragRef.current;
@@ -4076,6 +4204,16 @@ export function InteractiveSegPanel({
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const activeStroke = activePromptStrokeRef.current;
     if (activeStroke) {
+      if (promptStrokeRafRef.current != null) {
+        cancelAnimationFrame(promptStrokeRafRef.current);
+        promptStrokeRafRef.current = null;
+      }
+      const finalPoint = canvasToImage(e) || pendingPromptPointRef.current;
+      pendingPromptPointRef.current = null;
+      const finalizedStroke: ActiveSamStroke = {
+        ...activeStroke,
+        points: appendFinalPromptPoint(activeStroke.points, finalPoint, 0.5),
+      };
       activePromptStrokeRef.current = null;
       setActivePromptStroke(null);
       try {
@@ -4085,7 +4223,7 @@ export function InteractiveSegPanel({
       } catch {
         /* ignore */
       }
-      void applyActiveSamStroke(activeStroke);
+      void applyActiveSamStroke(finalizedStroke);
       return;
     }
     if (lumenBoxDragRef.current) {

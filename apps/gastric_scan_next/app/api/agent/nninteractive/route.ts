@@ -54,13 +54,17 @@ export async function POST(request: NextRequest) {
   if (forwarded) return forwarded;
 
   const base = upstreamBase();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180000);
+  const onAbort = () => controller.abort();
+  request.signal.addEventListener('abort', onAbort);
   try {
     const body = await request.arrayBuffer();
     const response = await fetch(`${base}/api/nninteractive/refine`, {
       method: 'POST',
       headers: { 'Content-Type': request.headers.get('content-type') || 'application/json' },
       body,
-      signal: AbortSignal.timeout(180000),
+      signal: controller.signal,
     });
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
@@ -83,14 +87,21 @@ export async function POST(request: NextRequest) {
       result: payload,
     });
   } catch (error) {
+    const aborted = request.signal.aborted
+      || (error instanceof Error && error.name === 'AbortError');
     return NextResponse.json(
       {
         ok: false,
         available: false,
-        error: error instanceof Error ? error.message : 'nnInteractive proxy failed',
+        error: aborted
+          ? 'nnInteractive request aborted'
+          : (error instanceof Error ? error.message : 'nnInteractive proxy failed'),
         hint: 'Start scripts/serve_nninteractive_agent.py and the official nninteractive-server',
       },
-      { status: 503 },
+      { status: aborted ? 499 : 503 },
     );
+  } finally {
+    clearTimeout(timeout);
+    request.signal.removeEventListener('abort', onAbort);
   }
 }
