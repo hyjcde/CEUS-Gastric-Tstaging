@@ -194,6 +194,8 @@ export interface MaskHistoryEntry {
   saved_at: string;
   action: string;
   override: MaskBoundaryOverride;
+  /** Optional lumen snapshot saved with the same doctor operation. */
+  lumen_override?: LumenOverride;
 }
 
 export interface AgentReport {

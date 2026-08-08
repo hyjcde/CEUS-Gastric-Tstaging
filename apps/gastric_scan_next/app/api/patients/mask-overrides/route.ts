@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-import type { MaskBoundaryOverride, MaskHistoryEntry } from '@/types';
+import type { LumenOverride, MaskBoundaryOverride, MaskHistoryEntry } from '@/types';
 import { bboxFromPolygon, isValidMaskOverride } from '@/lib/mask-override';
 import { legacyAppDataFile, runtimeDataFile } from '@/lib/runtime-data';
 
@@ -56,6 +56,13 @@ function comparableOverride(override: MaskBoundaryOverride): string {
   return JSON.stringify(rest);
 }
 
+function comparableLumenOverride(override: LumenOverride | undefined): string {
+  if (!override) return '';
+  const rest = { ...override };
+  delete rest.updated_at;
+  return JSON.stringify(rest);
+}
+
 function normalizeVideoFrames(frames: MaskBoundaryOverride['video_frames']) {
   if (!frames) return undefined;
   return frames.map((frame) => ({
@@ -105,7 +112,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { override?: MaskBoundaryOverride; action?: string };
+    const body = await request.json() as {
+      override?: MaskBoundaryOverride;
+      lumen_override?: LumenOverride;
+      action?: string;
+    };
     const override = body.override ? normalizeOverride(body.override) : undefined;
     if (!override || !isValidMaskOverride(override)) {
       return NextResponse.json({ error: 'Invalid mask override payload' }, { status: 400 });
@@ -130,14 +141,24 @@ export async function POST(request: NextRequest) {
     const historyStore = readHistory();
     const history = historyStore[key] || [];
     const action = String(body.action || 'manual_save').slice(0, 80);
+    const lumenOverride = body.lumen_override
+      && typeof body.lumen_override === 'object'
+      && body.lumen_override.patientId === next.patientId
+      ? body.lumen_override
+      : undefined;
     const previous = history[0];
     let historyEntry = previous;
-    if (!previous || comparableOverride(previous.override) !== comparableOverride(next)) {
+    if (
+      !previous
+      || comparableOverride(previous.override) !== comparableOverride(next)
+      || comparableLumenOverride(previous.lumen_override) !== comparableLumenOverride(lumenOverride)
+    ) {
       historyEntry = {
         id: `mask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         saved_at: savedAt,
         action,
         override: next,
+        lumen_override: lumenOverride,
       };
       historyStore[key] = [historyEntry, ...history].slice(0, HISTORY_LIMIT);
       writeHistory(historyStore);
@@ -148,6 +169,7 @@ export async function POST(request: NextRequest) {
       patientId: next.patientId,
       key,
       override: next,
+      lumen_override: lumenOverride,
       history_entry: historyEntry,
     });
   } catch (error) {

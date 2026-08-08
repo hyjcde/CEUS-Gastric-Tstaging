@@ -18,6 +18,8 @@ const EVENT_TYPES = new Set([
   'error',
   'boundary_saved',
   'mask_saved',
+  'mask_event',
+  'model_trace',
   'abstain',
 ]);
 

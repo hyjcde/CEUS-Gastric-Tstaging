@@ -24,3 +24,12 @@ This file records material project changes, their validation, and deployment sta
 - Reason: Keep historical versions closed and unloaded at case start while allowing doctors to inspect and restore them on demand.
 - Key changes: Removed the automatic saved-lumen notification, hid history counts while the panel is closed, added viewable snapshot summaries for lesion and lumen masks and boxes, kept the panel open after restore, and refreshed the list after restore.
 - Follow-up: Confirm the view and restore flow with a logged-in browser session.
+
+## 2026-08-09, Non-destructive history previews and audit traces
+
+- Scope: History canvas preview, combined lesion and lumen snapshots, doctor-operation audit events, and model-trace audit events.
+- Reason: Let each doctor start with a clean editable canvas, inspect one selected historical version without replacing current work, and retain enough structured trace data for later analysis.
+- Key changes: Added dashed canvas previews that activate only after selecting a version, kept restore as the only operation that replaces current masks, saved the paired lumen snapshot with mask history, and recorded history actions, saves, model prompts, model outcomes, video propagation summaries, timing, and errors through the reader audit endpoint.
+- Validation: TypeScript check, targeted ESLint, production build, local production-server smoke test for the history and audit routes.
+- Deployment: Not deployed in this change; no remote service or clinical data was modified.
+- Follow-up: Verify preview and restore behavior with a logged-in browser session, then deploy through the existing staged rollback workflow if approved.
