@@ -772,12 +772,12 @@ function ToolRailButton({
         onClick={onClick}
         className={`flex items-center justify-center rounded-lg border shadow-lg shadow-black/30 backdrop-blur transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:scale-100 ${
           showLabel
-            ? 'min-h-12 w-16 flex-col gap-0.5 px-1 py-1'
+            ? 'min-h-10 w-12 flex-col gap-0.5 px-0.5 py-1 sm:min-h-12 sm:w-16 sm:px-1'
             : 'h-9 w-9'
         } ${toneClasses[tone]}`}
       >
         {icon}
-        {showLabel ? <span className="max-w-full truncate whitespace-nowrap text-center text-[9px] leading-3">{label}</span> : null}
+        {showLabel ? <span className="hidden max-w-full truncate whitespace-nowrap text-center text-[9px] leading-3 sm:block">{label}</span> : null}
       </button>
       <span className={`pointer-events-none absolute top-1/2 z-[80] w-40 -translate-y-1/2 rounded-md border border-white/15 bg-slate-950/95 px-2 py-1.5 text-[10px] leading-relaxed text-slate-200 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${tooltipPosition}`}>
         <span className="font-semibold text-white">{label}</span>
@@ -2670,6 +2670,89 @@ export function InteractiveSegPanel({
     setSamBoxPreview(null);
   }, []);
 
+  const stopInteractivePrompt = useCallback(() => {
+    setNnInteractiveMode(false);
+    setNnInteractiveTarget('lesion');
+    setActiveSamPromptLabel('positive');
+    clearSamPrompts();
+  }, [clearSamPrompts]);
+
+  const enterSimpleBoxPrompt = useCallback(() => {
+    stopInteractivePrompt();
+    setMode('sam');
+    setSimplePromptMode('box');
+    setSimpleEditMode(false);
+    setLumenEditMode(false);
+    setSimpleEditLayer('lesion');
+    setActiveLayer('lesion');
+    setSimplePromptBox(null);
+    setTrackOnPlay(false);
+    setMessage(
+      zh
+        ? '框选病灶：在影像中拖出矩形，单击只添加正/负点提示'
+        : 'Box lesion: drag a rectangle on the image; a click adds a positive or negative point',
+    );
+  }, [stopInteractivePrompt, zh]);
+
+  const enterSimpleContourEdit = useCallback((layer: ContourLayer) => {
+    stopInteractivePrompt();
+    setMode('soft');
+    setSimplePromptMode('box');
+    setSimpleEditLayer(layer);
+    setActiveLayer(layer);
+    setSimpleEditMode(true);
+    setLumenEditMode(false);
+    setTrackOnPlay(false);
+    setMessage(
+      zh
+        ? (layer === 'wall'
+          ? '胃壁控制点编辑：点击并拖动控制点，完成后再次点击编辑轮廓'
+          : '病灶控制点编辑：点击并拖动控制点，完成后再次点击编辑轮廓')
+        : (layer === 'wall'
+          ? 'Wall control-point edit: drag a handle, then click Edit contour again to finish'
+          : 'Lesion control-point edit: drag a handle, then click Edit contour again to finish'),
+    );
+  }, [stopInteractivePrompt, zh]);
+
+  const toggleSimpleContourEdit = useCallback(() => {
+    if (simpleEditMode) {
+      setSimpleEditMode(false);
+      setSimplePromptMode('box');
+      setMessage(zh ? '已完成控制点编辑，可继续选择套索或正/负点提示' : 'Control-point edit finished; choose lasso or positive/negative prompts next');
+      return;
+    }
+    enterSimpleContourEdit(points.length >= 3 ? 'lesion' : 'wall');
+  }, [enterSimpleContourEdit, points.length, simpleEditMode, zh]);
+
+  const toggleLumenBoxEdit = useCallback(() => {
+    if (lumenEditMode) {
+      setLumenEditMode(false);
+      setSimplePromptMode('box');
+      setMessage(zh ? '已退出胃腔框编辑' : 'Lumen box edit finished');
+      return;
+    }
+    stopInteractivePrompt();
+    setMode('soft');
+    setSimplePromptMode('box');
+    setSimpleEditMode(false);
+    setLumenEditMode(true);
+    setTrackOnPlay(false);
+    setMessage(
+      zh
+        ? '胃腔框编辑：拖动角点缩放，拖动框内移动；更新框后需重新生成胃腔边界'
+        : 'Lumen box edit: drag corners to resize or drag inside to move; regenerate the lumen boundary after changing the box',
+    );
+  }, [lumenEditMode, stopInteractivePrompt, zh]);
+
+  const prepareLumenDetection = useCallback(() => {
+    stopInteractivePrompt();
+    setMode('soft');
+    setSimplePromptMode('box');
+    setSimpleEditMode(false);
+    setLumenEditMode(false);
+    setTrackOnPlay(false);
+  }, [stopInteractivePrompt]);
+
   const runLesionModel = useCallback(async (
     imgPt: number[] | null,
     box: { x1: number; y1: number; x2: number; y2: number } | null = null,
@@ -2814,6 +2897,9 @@ export function InteractiveSegPanel({
       return;
     }
     if (nnInteractiveAvailable === false) {
+      setNnInteractiveMode(false);
+      setSimplePromptMode('box');
+      setNnInteractiveTarget('lesion');
       setMessage(
         zh
           ? '边界辅助服务未连接，请启动辅助服务后点击状态图标重试'
@@ -3023,6 +3109,9 @@ export function InteractiveSegPanel({
     setNnInteractiveClicks([]);
     setNnInteractiveMode(true);
     if (nnInteractiveAvailable === false) {
+      setNnInteractiveMode(false);
+      setSimplePromptMode('box');
+      setNnInteractiveTarget('lesion');
       setMessage(
         target === 'lesion'
           ? (zh
@@ -3435,7 +3524,9 @@ export function InteractiveSegPanel({
     setNnInteractiveTarget(target);
     setTrackOnPlay(false);
     if (nnInteractiveAvailable === false) {
-      setNnInteractiveMode(true);
+      setNnInteractiveMode(false);
+      setSimplePromptMode('box');
+      setNnInteractiveTarget('lesion');
       setMessage(
         zh
           ? `nnInteractive ${promptModeText(promptMode, true)} 暂不可用，未切换到 SAM3.1；请启动服务后重试`
@@ -3558,7 +3649,8 @@ export function InteractiveSegPanel({
     const imgPt = canvasToImage(e);
     if (!imgPt) return;
 
-    if (lumenEditMode && !samBusy && !segmentationBusy && !lumenBusy && !lumenSamBusy) {
+    if (lumenEditMode) {
+      if (samBusy || segmentationBusy || lumenBusy || lumenSamBusy) return;
       if (lumenBox && !e.altKey) {
         const handle = hitLumenHandle(imgPt, lumenBox, hitThreshold());
         if (handle) {
@@ -3587,13 +3679,14 @@ export function InteractiveSegPanel({
         setLumenResultMeta((prev) => ({ ...prev, source: 'manual', error: undefined }));
         return;
       }
-    }
-
-    if ((nnInteractiveMode || mode === 'sam') && beginActiveSamStroke(imgPt, e)) {
       return;
     }
 
-    if (nnInteractiveMode && !simpleVideoMode) {
+    if (!lumenEditMode && !simpleEditMode && (nnInteractiveMode || mode === 'sam') && beginActiveSamStroke(imgPt, e)) {
+      return;
+    }
+
+    if (!lumenEditMode && !simpleEditMode && nnInteractiveMode && !simpleVideoMode) {
       if (nnInteractiveBusy) return;
       e.preventDefault();
       void refineWithNnInteractive(nnInteractiveTarget, {
@@ -3720,21 +3813,11 @@ export function InteractiveSegPanel({
           }
           lastPolyClickRef.current = null;
           freezeCurrentFrame();
-          setLumenEditMode(false);
-          setSimplePromptMode('box');
-          setSimpleEditLayer(layer);
-          setActiveLayer(layer);
-          setSimpleEditMode(true);
-          setTrackOnPlay(false);
           if (layer === 'lesion' && lesionPoly !== pointsRef.current) {
             pointsRef.current = clonePoly(lesionPoly);
             setPoints(pointsRef.current);
           }
-          setMessage(
-            zh
-              ? (layer === 'wall' ? '已进入胃壁编辑：拖动手柄微调' : '已进入病灶编辑：拖动手柄微调')
-              : (layer === 'wall' ? 'Wall edit mode: drag handles' : 'Lesion edit mode: drag handles'),
-          );
+          enterSimpleContourEdit(layer);
           return;
         }
         lastPolyClickRef.current = { t: now, pt: imgPt };
@@ -4026,7 +4109,11 @@ export function InteractiveSegPanel({
           sam_score: undefined,
           error: undefined,
         }));
-        setMessage(zh ? '胃腔框已更新，可继续分割胃腔' : 'Lumen box updated; segment lumen next');
+        setMessage(
+          zh
+            ? '胃腔框已更新，原胃腔边界已清除，请点击“生成胃腔边界”重新分割'
+            : 'Lumen box updated; the previous lumen contour was cleared. Generate the lumen boundary again',
+        );
       }
       return;
     }
@@ -4758,7 +4845,10 @@ export function InteractiveSegPanel({
               <button
                 type="button"
                 disabled={lumenBusy || !patient}
-                onClick={() => void detectLumen()}
+                onClick={() => {
+                  prepareLumenDetection();
+                  void detectLumen();
+                }}
                 className="flex items-center gap-1.5 rounded-lg border border-fuchsia-400/40 bg-fuchsia-500/10 px-2.5 py-1.5 text-[11px] text-fuchsia-100 disabled:opacity-40"
                 title={zh ? 'YOLO 检测当前帧胃腔框' : 'YOLO lumen box on current frame'}
               >
@@ -4767,9 +4857,7 @@ export function InteractiveSegPanel({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setLumenEditMode((value) => !value);
-                }}
+                onClick={toggleLumenBoxEdit}
                 className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
                   lumenEditMode
                     ? 'border-fuchsia-400/50 bg-fuchsia-500/20 text-fuchsia-100'
@@ -4854,6 +4942,8 @@ export function InteractiveSegPanel({
 
             {mediaMode === 'video' && (
               <>
+              {/* Simple video mode keeps the left and right rails as the single tool surface. */}
+              <div className={simpleVideoMode ? 'hidden' : ''}>
               {simpleVideoMode ? (
                 <>
                   {simpleToolsOpen && (
@@ -4864,16 +4954,7 @@ export function InteractiveSegPanel({
                         </span>
                         <button
                           type="button"
-                          onClick={() => {
-                            setSimplePromptMode('box');
-                            setSimpleEditMode(false);
-                            setLumenEditMode(false);
-                            setNnInteractiveMode(false);
-                            setNnInteractiveTarget('lesion');
-                            setNnInteractiveClicks([]);
-                            nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
-                            clearSamPrompts();
-                          }}
+                          onClick={enterSimpleBoxPrompt}
                           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
                             simplePromptMode === 'box' && !simpleEditMode && !lumenEditMode
                               ? 'border-cyan-300/70 bg-cyan-500/35 text-cyan-50'
@@ -4955,16 +5036,7 @@ export function InteractiveSegPanel({
                         <button
                           type="button"
                           disabled={points.length < 3 && wallPoints.length < 3}
-                          onClick={() => setSimpleEditMode((value) => {
-                            const next = !value;
-                            if (next) {
-                              setLumenEditMode(false);
-                              setSimpleEditLayer(points.length >= 3 ? 'lesion' : 'wall');
-                              setActiveLayer(points.length >= 3 ? 'lesion' : 'wall');
-                            }
-                            setTrackOnPlay(!next);
-                            return next;
-                          })}
+                          onClick={toggleSimpleContourEdit}
                           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] disabled:opacity-40 ${
                             simpleEditMode
                               ? 'border-emerald-300/70 bg-emerald-500/35 text-emerald-50'
@@ -5043,12 +5115,7 @@ export function InteractiveSegPanel({
                           type="button"
                           disabled={lumenBusy || !patient}
                           onClick={() => {
-                            setSimplePromptMode('box');
-                            setSimpleEditMode(false);
-                            setLumenEditMode(false);
-                            setNnInteractiveTarget('lesion');
-                            setNnInteractiveMode(false);
-                            setNnInteractiveClicks([]);
+                            prepareLumenDetection();
                             void detectLumen();
                           }}
                           className="flex items-center gap-1.5 rounded-lg border border-fuchsia-400/40 bg-fuchsia-500/10 px-2.5 py-1.5 text-[11px] text-fuchsia-100 disabled:opacity-40"
@@ -5058,19 +5125,7 @@ export function InteractiveSegPanel({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setLumenEditMode((value) => {
-                              const next = !value;
-                              if (next) {
-                                setSimpleEditMode(false);
-                                setTrackOnPlay(false);
-                                setNnInteractiveMode(false);
-                              } else {
-                                setSimplePromptMode('box');
-                              }
-                              return next;
-                            });
-                          }}
+                          onClick={toggleLumenBoxEdit}
                           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
                             lumenEditMode
                               ? 'border-fuchsia-400/50 bg-fuchsia-500/20 text-fuchsia-100'
@@ -5402,6 +5457,7 @@ export function InteractiveSegPanel({
                 )}
               </div>
               )}
+              </div>
               </>
             )}
 
@@ -5477,23 +5533,14 @@ export function InteractiveSegPanel({
               <div ref={containerRef} className="relative h-full w-full bg-black">
                 {simpleVideoMode && simpleToolsOpen ? (
                   <>
-                    <div className="pointer-events-none absolute inset-y-3 left-2 z-50 flex flex-col items-center gap-1.5">
-                      <div className="pointer-events-auto flex max-h-full flex-col items-center gap-1.5 overflow-y-auto rounded-xl border border-white/15 bg-black/65 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-md">
+                    <div className="pointer-events-none absolute top-2 bottom-2 left-1 z-50 flex flex-col items-center justify-center gap-1.5 sm:top-3 sm:bottom-3 sm:left-3">
+                      <div className="pointer-events-auto flex max-h-full w-14 flex-col items-center gap-1.5 overflow-y-auto rounded-xl border border-white/15 bg-black/65 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-md sm:w-16">
                         <ToolRailButton
                           icon={<ScanLine size={16} />}
                           label={zh ? '框选病灶' : 'Box lesion'}
                           hint={zh ? '拖动框选当前帧病灶，胃腔框内同样可用' : 'Drag a lesion box; the lumen box does not block it'}
                           active={simplePromptMode === 'box' && !simpleEditMode && !lumenEditMode}
-                          onClick={() => {
-                            setSimplePromptMode('box');
-                            setSimpleEditMode(false);
-                            setLumenEditMode(false);
-                            setNnInteractiveMode(false);
-                            setNnInteractiveTarget('lesion');
-                            nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
-                            clearSamPrompts();
-                            setMessage(zh ? '请在影像中拖动框选病灶，胃腔框内同样可用' : 'Drag on the image to box the lesion; the lumen box does not block it');
-                          }}
+                          onClick={enterSimpleBoxPrompt}
                           side="left"
                           tone="cyan"
                         />
@@ -5550,16 +5597,7 @@ export function InteractiveSegPanel({
                           hint={zh ? '拖动控制点微调病灶或胃壁' : 'Drag control points to edit lesion or wall'}
                           disabled={points.length < 3 && wallPoints.length < 3}
                           active={simpleEditMode}
-                          onClick={() => setSimpleEditMode((value) => {
-                            const next = !value;
-                            if (next) {
-                              setLumenEditMode(false);
-                              setSimpleEditLayer(points.length >= 3 ? 'lesion' : 'wall');
-                              setActiveLayer(points.length >= 3 ? 'lesion' : 'wall');
-                            }
-                            setTrackOnPlay(!next);
-                            return next;
-                          })}
+                          onClick={toggleSimpleContourEdit}
                           side="left"
                           tone="emerald"
                         />
@@ -5637,19 +5675,15 @@ export function InteractiveSegPanel({
                       </div>
                     </div>
 
-                    <div className="pointer-events-none absolute inset-y-3 right-2 z-50 flex flex-col items-center gap-1.5">
-                      <div className="pointer-events-auto flex max-h-full flex-col items-center gap-1.5 overflow-y-auto rounded-xl border border-white/15 bg-black/65 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-md">
+                    <div className="pointer-events-none absolute top-2 bottom-2 right-1 z-50 flex flex-col items-center justify-center gap-1.5 sm:top-3 sm:bottom-3 sm:right-3">
+                      <div className="pointer-events-auto flex max-h-full w-14 flex-col items-center gap-1.5 overflow-y-auto rounded-xl border border-white/15 bg-black/65 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-md sm:w-16">
                         <ToolRailButton
                           icon={lumenBusy ? <Loader2 size={16} className="animate-spin" /> : <ScanSearch size={16} />}
                           label={zh ? '检测胃腔' : 'Detect lumen'}
                           hint={zh ? '点击后检测当前帧胃腔，打开病例不会自动运行' : 'Detect only after clicking; opening a case does not auto-run it'}
                           disabled={lumenBusy || !patient}
                           onClick={() => {
-                            setSimplePromptMode('box');
-                            setSimpleEditMode(false);
-                            setLumenEditMode(false);
-                            setNnInteractiveTarget('lesion');
-                            setNnInteractiveMode(false);
+                            prepareLumenDetection();
                             void detectLumen();
                           }}
                           side="right"
@@ -5660,19 +5694,7 @@ export function InteractiveSegPanel({
                           label={zh ? '调整胃腔框' : 'Edit lumen box'}
                           hint={zh ? '拖动胃腔框控制点' : 'Drag the lumen box handles'}
                           active={lumenEditMode}
-                          onClick={() => {
-                            setLumenEditMode((value) => {
-                              const next = !value;
-                              if (next) {
-                                setSimpleEditMode(false);
-                                setTrackOnPlay(false);
-                                setNnInteractiveMode(false);
-                              } else {
-                                setSimplePromptMode('box');
-                              }
-                              return next;
-                            });
-                          }}
+                          onClick={toggleLumenBoxEdit}
                           side="right"
                           tone="fuchsia"
                         />
@@ -5783,7 +5805,7 @@ export function InteractiveSegPanel({
                   </>
                 ) : null}
                 {simpleVideoMode && !simpleToolsOpen ? (
-                  <div className="pointer-events-none absolute inset-y-3 right-2 z-50 flex items-start">
+                  <div className="pointer-events-none absolute top-2 bottom-2 right-1 z-50 flex items-center sm:top-3 sm:bottom-3 sm:right-3">
                     <div className="pointer-events-auto">
                       <ToolRailButton
                         icon={<PanelTop size={16} />}
@@ -5828,6 +5850,9 @@ export function InteractiveSegPanel({
                     );
                     const layer: ContourLayer = preferWall ? 'wall' : 'lesion';
                     freezeCurrentFrame();
+                    stopInteractivePrompt();
+                    setSimplePromptMode('box');
+                    setLumenEditMode(false);
                     setActiveLayer(layer);
                     setMode('soft');
                     setMessage(
@@ -5842,24 +5867,40 @@ export function InteractiveSegPanel({
                     <Loader2 className="animate-spin text-cyan-300" size={28} />
                   </div>
                 )}
-                {(nnInteractiveMode || (mode === 'sam' && simplePromptMode !== 'box')) && (
+                {(simpleEditMode || lumenEditMode || nnInteractiveMode || (mode === 'sam' && simplePromptMode !== 'box')) && (
                   <div className={`pointer-events-none absolute top-3 z-20 rounded-lg border border-emerald-300/30 bg-slate-950/90 px-2.5 py-2 text-[10px] text-slate-200 shadow-lg backdrop-blur ${simpleVideoMode ? 'left-14' : 'left-3'}`}>
-                    <div className="font-semibold text-emerald-100">
-                      {nnInteractiveMode
-                        ? `${nnInteractiveTarget === 'lumen' ? (zh ? '胃腔' : 'Lumen') : (zh ? '病灶' : 'Lesion')} ${promptModeText(simplePromptMode, zh)}`
-                        : `${zh ? '本地点提示' : 'Local prompt'} ${promptModeText(simplePromptMode, zh)}`}
+                    <div className={`font-semibold ${simpleEditMode || lumenEditMode ? 'text-amber-100' : 'text-emerald-100'}`}>
+                      {simpleEditMode
+                        ? `${simpleEditLayer === 'wall' ? (zh ? '胃壁' : 'Wall') : (zh ? '病灶' : 'Lesion')} ${zh ? '控制点编辑' : 'control-point edit'}`
+                        : lumenEditMode
+                          ? (zh ? '胃腔框编辑' : 'Lumen box edit')
+                          : nnInteractiveMode
+                            ? `${nnInteractiveTarget === 'lumen' ? (zh ? '胃腔' : 'Lumen') : (zh ? '病灶' : 'Lesion')} ${promptModeText(simplePromptMode, zh)}`
+                            : `${zh ? '本地点提示' : 'Local prompt'} ${promptModeText(simplePromptMode, zh)}`}
                     </div>
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="text-emerald-300">+ {zh ? '正点' : 'Positive'}</span>
-                      <span className="text-rose-300">⇧ {zh ? '负点' : 'Negative'}</span>
-                      <span className="text-slate-400">
-                        {nnInteractiveMode ? nnInteractiveClicks.length : samClicks.length} {zh ? '点' : 'points'}
-                        {promptStrokes.length ? `, ${promptStrokes.length} ${zh ? '笔' : 'strokes'}` : ''}
-                      </span>
-                    </div>
-                    {nnInteractiveBusy ? (
-                      <div className="mt-1 text-amber-200">{zh ? '边界更新中…' : 'Updating boundary…'}</div>
-                    ) : null}
+                    {simpleEditMode ? (
+                      <div className="mt-1 text-amber-200">
+                        {zh ? '点击并拖动控制点，完成后点击“编辑轮廓”退出' : 'Drag a control point, then click Edit contour to finish'}
+                      </div>
+                    ) : lumenEditMode ? (
+                      <div className="mt-1 text-amber-200">
+                        {zh ? '拖角点缩放，拖框内移动；更新框后重新生成胃腔边界' : 'Drag corners to resize or drag inside to move; regenerate the lumen boundary after changes'}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-emerald-300">+ {zh ? '正点' : 'Positive'}</span>
+                          <span className="text-rose-300">⇧ {zh ? '负点' : 'Negative'}</span>
+                          <span className="text-slate-400">
+                            {nnInteractiveMode ? nnInteractiveClicks.length : samClicks.length} {zh ? '点' : 'points'}
+                            {promptStrokes.length ? `, ${promptStrokes.length} ${zh ? '笔' : 'strokes'}` : ''}
+                          </span>
+                        </div>
+                        {nnInteractiveBusy ? (
+                          <div className="mt-1 text-amber-200">{zh ? '边界更新中…' : 'Updating boundary…'}</div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 )}
                 <div className={`pointer-events-none absolute bottom-3 z-20 rounded-lg border border-white/15 bg-black/70 px-2.5 py-1.5 text-[10px] text-slate-200 shadow-lg backdrop-blur ${simpleVideoMode ? 'left-14' : 'left-3'}`}>
