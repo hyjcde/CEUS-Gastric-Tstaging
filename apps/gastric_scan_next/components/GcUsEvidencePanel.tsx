@@ -75,13 +75,16 @@ const SIGN_OPTIONS: Record<string, Array<{ zh: string; en: string }>> = {
 const LABELS: Record<string, { zh: string; en: string }> = {
   length: { zh: '肿瘤长径', en: 'Tumor length' },
   thickness: { zh: '肿瘤厚度', en: 'Tumor thickness' },
-  layer_structure: { zh: '胃壁层次结构', en: 'Wall layer structure' },
-  morphology: { zh: '肿瘤形态', en: 'Tumor morphology' },
-  boundary: { zh: '肿瘤边界', en: 'Tumor margin' },
-  growth_pattern: { zh: '生长方式', en: 'Growth pattern' },
+  layer_structure: { zh: '胃壁层次（累及最深）', en: 'Deepest wall layer' },
+  morphology: { zh: '肿瘤形态（并入大体分型）', en: 'Morphology (via gross type)' },
+  boundary: { zh: '肿瘤边界（并入层次）', en: 'Margin (via wall layers)' },
+  growth_pattern: { zh: '生长方式（并入大体分型）', en: 'Growth (via gross type)' },
   serosa_change: { zh: '浆膜改变', en: 'Serosal change' },
   perigastric_tissue: { zh: '胃周组织', en: 'Perigastric tissue' },
 };
+
+const PRIMARY_SIGN_FIELDS = ['length', 'thickness', 'layer_structure', 'serosa_change', 'perigastric_tissue'] as const;
+const MERGED_SIGN_FIELDS = ['morphology', 'boundary', 'growth_pattern'] as const;
 
 const SOURCE_LABELS: Record<string, { zh: string; en: string }> = {
   clinical: { zh: '病例表格', en: 'Case table' },
@@ -701,7 +704,7 @@ export function GcUsEvidencePanel({
     setState(derivedBase);
   };
 
-  const fields = ['length', 'thickness', 'layer_structure', 'morphology', 'boundary', 'growth_pattern', 'serosa_change', 'perigastric_tissue'];
+  const fields = [...PRIMARY_SIGN_FIELDS, ...MERGED_SIGN_FIELDS];
   const tumorSize = asClinicalRecord(clinical.tumorSize);
   const biomarkers = asClinicalRecord(clinical.biomarkers);
   const tumorLengthMm = clinicalPositiveNumber(clinical.tumor_size_mm)
@@ -827,11 +830,11 @@ export function GcUsEvidencePanel({
       />
       <div className="mb-1.5 rounded border border-cyan-300/15 bg-cyan-400/[0.04] px-2 py-1.5 text-[9px] leading-relaxed text-slate-300">
         {zh
-          ? 'cT 阶梯：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。本工作台评估 cT，不等于完整 TNM（N=淋巴结，M=远处转移）。无经确认壁层/浆膜/邻近器官证据时保持 cTx。T4+ 仅为模型聚合标签，亚型未定时勿当作确定分期。'
-          : 'cT ladder: T1 mucosa/submucosa; T2 muscularis propria; T3 subserosa; T4a serosa; T4b adjacent organs. This workbench estimates cT, not full TNM (N=nodes, M=metastasis). Keep cTx without confirmed wall/serosa/adjacent-organ evidence. T4+ is only a model aggregate label when subtype is unresolved.'}
+          ? 'cT 阶梯：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。正式报告以大体分型 + 五层勾选为准；形态/边界/生长方式并入上述字段。无经确认壁层/浆膜/邻近器官证据时保持 cTx。'
+          : 'cT ladder: T1 mucosa/submucosa; T2 muscularis propria; T3 subserosa; T4a serosa; T4b adjacent organs. Formal report uses gross type + 5-layer ticks; morphology/margin/growth fold into those. Keep cTx without confirmed wall/serosa/adjacent-organ evidence.'}
       </div>
-      <div className="mb-2.5 grid grid-cols-5 gap-1.5">
-        {(['T1', 'T2', 'T3', 'T4', 'uncertain'] as const).map((stage) => (
+      <div className="mb-2.5 grid grid-cols-6 gap-1.5">
+        {(['T1', 'T2', 'T3', 'T4a', 'T4b', 'uncertain'] as const).map((stage) => (
           <button
             key={stage}
             type="button"
@@ -842,7 +845,7 @@ export function GcUsEvidencePanel({
                 : 'border-white/10 text-gray-400 hover:bg-white/5'
             }`}
           >
-            {stage === 'uncertain' ? 'cTx' : stage === 'T4' ? 'T4+' : stage}
+            {stage === 'uncertain' ? 'cTx' : stage}
           </button>
         ))}
       </div>
@@ -851,14 +854,27 @@ export function GcUsEvidencePanel({
           const field = fieldFor(state.signs, id);
           const options = SIGN_OPTIONS[id] || [];
           const isMeasurement = id === 'length' || id === 'thickness';
+          const isMerged = (MERGED_SIGN_FIELDS as readonly string[]).includes(id);
           const display = field.value == null ? '' : String(field.value);
           return (
-            <div key={id} className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2 rounded border border-white/10 bg-black/20 p-2">
+            <div
+              key={id}
+              className={`grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2 rounded border p-2 ${
+                isMerged
+                  ? 'border-white/5 bg-black/10 opacity-90'
+                  : 'border-white/10 bg-black/20'
+              }`}
+            >
               <div className="text-[11px] text-gray-300">
                 {pickLabel(LABELS[id], Boolean(zh), id)}
                 <span className="mt-0.5 block text-[10px] text-gray-500">
                   {pickLabel(STATUS_LABELS[field.status], Boolean(zh), field.status)}
                 </span>
+                {isMerged ? (
+                  <span className="mt-0.5 block text-[9px] text-amber-200/70">
+                    {zh ? '正式签发以大体分型/五层勾选为准' : 'Formal report uses gross type / 5-layer ticks'}
+                  </span>
+                ) : null}
               </div>
               <div className="min-w-0">
                 {isMeasurement ? (
@@ -898,6 +914,7 @@ export function GcUsEvidencePanel({
                   {field.doctor_override != null ? (
                     <span className="text-orange-300">{zh ? '原始建议已修正' : 'Suggestion overridden'}</span>
                   ) : null}
+                  {field.note ? <span className="text-cyan-200/70">{field.note}</span> : null}
                 </div>
               </div>
             </div>

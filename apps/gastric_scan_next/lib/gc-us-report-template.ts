@@ -22,7 +22,7 @@ export type GcUsEvidenceSource =
   | 'product_score'
   | 'track_window';
 
-export type GcUsStageBand = 'T1' | 'T2' | 'T3' | 'T4' | 'uncertain';
+export type GcUsStageBand = 'T1' | 'T2' | 'T3' | 'T4' | 'T4a' | 'T4b' | 'uncertain';
 
 export type GcUsField<T> = {
   value: T | null;
@@ -190,10 +190,10 @@ export type GcUsReportState = {
 export const GC_US_CORE_SIGN_DEFINITIONS = [
   { id: 'length', label: '肿瘤长径', group: 'size', kind: 'measurement' },
   { id: 'thickness', label: '肿瘤厚度', group: 'size', kind: 'measurement' },
-  { id: 'layer_structure', label: '胃壁层次结构', group: 'wall', kind: 'select' },
-  { id: 'morphology', label: '肿瘤形态', group: 'lesion', kind: 'select' },
-  { id: 'boundary', label: '肿瘤边界', group: 'lesion', kind: 'select' },
-  { id: 'growth_pattern', label: '生长方式', group: 'growth', kind: 'select' },
+  { id: 'layer_structure', label: '胃壁层次结构（累及最深）', group: 'wall', kind: 'select' },
+  { id: 'morphology', label: '肿瘤形态（并入大体分型）', group: 'lesion', kind: 'select' },
+  { id: 'boundary', label: '肿瘤边界（并入层次）', group: 'lesion', kind: 'select' },
+  { id: 'growth_pattern', label: '生长方式（并入大体分型）', group: 'growth', kind: 'select' },
   { id: 'serosa_change', label: '浆膜改变', group: 'serosa', kind: 'select' },
 ] as const;
 
@@ -207,7 +207,191 @@ export const GC_US_STAGE_EXAMPLES: Record<Exclude<GcUsStageBand, 'uncertain'>, s
   T2: '胃窦后壁见低回声占位性病变，大小约35×16 mm，呈局部浸润性生长，边界部分欠清。病灶累及胃壁固有肌层，浆膜连续完整，未见明确胃周脂肪浸润及邻近器官侵犯征象。',
   T3: '胃窦后壁见浸润性低回声占位性病变，大小约58×26 mm，呈溃疡浸润型生长，边界不规则。病灶累及胃壁全层，突破固有肌层并侵犯浆膜下层，浆膜面局部毛糙但连续性尚存，未见明确胃外器官侵犯征象。',
   T4: '胃窦后壁见巨大浸润性低回声占位，大小约82×38 mm，呈溃疡浸润型生长，边界明显不规则。病灶累及胃壁全层，固有肌层结构破坏，浆膜连续性中断，并伴胃周脂肪间隙异常改变。未见明确邻近器官侵犯。',
+  T4a: '胃窦后壁见巨大浸润性低回声占位，大小约82×38 mm，呈溃疡浸润型生长，边界明显不规则。病灶累及胃壁全层，固有肌层结构破坏，浆膜连续性中断，并伴胃周脂肪间隙异常改变。未见明确邻近器官侵犯。',
+  T4b: '胃窦后壁见巨大浸润性低回声占位，大小约82×38 mm，呈溃疡浸润型生长，边界明显不规则。病灶累及胃壁全层并突破浆膜，可见邻近器官受侵征象。',
 };
+
+/**
+ * Common 5-layer gastric US anatomy (inside → outside).
+ * Field IDs keep legacy names for saved-report compatibility; labels are SSOT.
+ */
+export const GC_US_WALL_LAYER_SPECS = [
+  { id: 'layer_1_mucosa' as const, ordinal: 1, anatomyZh: '黏膜浅层', labelZh: '第一层（黏膜浅层）' },
+  { id: 'layer_2_submucosa' as const, ordinal: 2, anatomyZh: '黏膜肌层', labelZh: '第二层（黏膜肌层）' },
+  { id: 'layer_3_muscularis' as const, ordinal: 3, anatomyZh: '黏膜下层', labelZh: '第三层（黏膜下层）' },
+  { id: 'layer_4_subserosa' as const, ordinal: 4, anatomyZh: '固有肌层', labelZh: '第四层（固有肌层）' },
+  { id: 'layer_5_serosa' as const, ordinal: 5, anatomyZh: '浆膜', labelZh: '第五层（浆膜）' },
+];
+
+const DISRUPTED_LAYER_STATUSES = new Set(['模糊/变薄', '消失', '角征']);
+
+export type DeepestWallLayerResult = {
+  layerId: typeof GC_US_WALL_LAYER_SPECS[number]['id'] | null;
+  anatomyZh: string | null;
+  status: string | null;
+  suggestedBand: Exclude<GcUsStageBand, 'uncertain' | 'T4'> | null;
+  layerStructureText: string | null;
+  boundaryText: string | null;
+  serosaText: string | null;
+};
+
+export function deepestInvolvedWallLayer(fields: GcUsTemplateFields): DeepestWallLayerResult {
+  let deepest: typeof GC_US_WALL_LAYER_SPECS[number] | null = null;
+  let status: string | null = null;
+  for (const spec of GC_US_WALL_LAYER_SPECS) {
+    const value = normalizedText(fields[spec.id]?.value);
+    if (!value || !DISRUPTED_LAYER_STATUSES.has(value)) continue;
+    deepest = spec;
+    status = value;
+  }
+  if (!deepest || !status) {
+    return {
+      layerId: null,
+      anatomyZh: null,
+      status: null,
+      suggestedBand: null,
+      layerStructureText: null,
+      boundaryText: null,
+      serosaText: null,
+    };
+  }
+  const perigastric = normalizedText(fields.perigastric_involvement?.value);
+  if (/邻近器官|器官侵犯|胰腺|肝|结肠|横膈/i.test(perigastric)) {
+    return {
+      layerId: deepest.id,
+      anatomyZh: deepest.anatomyZh,
+      status,
+      suggestedBand: 'T4b',
+      layerStructureText: '邻近器官侵犯（T4b）',
+      boundaryText: '外侵样改变，边界消失倾向',
+      serosaText: '浆膜连续性中断',
+    };
+  }
+  if (deepest.ordinal <= 2) {
+    return {
+      layerId: deepest.id,
+      anatomyZh: deepest.anatomyZh,
+      status,
+      suggestedBand: 'T1',
+      layerStructureText: '黏膜/黏膜下层（T1）',
+      boundaryText: status === '消失' ? '边界部分欠清' : '边界清晰、规则',
+      serosaText: '浆膜连续光滑',
+    };
+  }
+  if (deepest.ordinal === 3) {
+    return {
+      layerId: deepest.id,
+      anatomyZh: deepest.anatomyZh,
+      status,
+      suggestedBand: 'T1',
+      layerStructureText: '黏膜/黏膜下层（T1）',
+      boundaryText: '边界部分欠清',
+      serosaText: '浆膜连续光滑',
+    };
+  }
+  if (deepest.ordinal === 4) {
+    return {
+      layerId: deepest.id,
+      anatomyZh: deepest.anatomyZh,
+      status,
+      suggestedBand: 'T2',
+      layerStructureText: '固有肌层（T2）',
+      boundaryText: '边界部分欠清',
+      serosaText: '浆膜连续光滑',
+    };
+  }
+  if (status === '消失' || status === '角征') {
+    return {
+      layerId: deepest.id,
+      anatomyZh: deepest.anatomyZh,
+      status,
+      suggestedBand: 'T4a',
+      layerStructureText: '浆膜连续性中断（T4a）',
+      boundaryText: '外侵样改变，边界消失倾向',
+      serosaText: '浆膜连续性中断',
+    };
+  }
+  return {
+    layerId: deepest.id,
+    anatomyZh: deepest.anatomyZh,
+    status,
+    suggestedBand: 'T3',
+    layerStructureText: '浆膜下层（T3）',
+    boundaryText: '边界不规则',
+    serosaText: '浆膜面欠光整',
+  };
+}
+
+const GROSS_TYPE_SIGN_MAP: Record<string, { morphology: string; growth: string }> = {
+  表浅型: { morphology: '浅表隆起型', growth: '膨胀型' },
+  隆起型: { morphology: '局限隆起型', growth: '膨胀型' },
+  局限溃疡型: { morphology: '局部浸润型', growth: '局部浸润性' },
+  浸润溃疡型: { morphology: '溃疡浸润型', growth: '明显浸润性' },
+  弥漫浸润型: { morphology: '巨大浸润型', growth: '跨壁向外侵犯倾向' },
+};
+
+export function syncSignsFromTemplateFields(
+  signs: GcUsSigns,
+  fields: GcUsTemplateFields,
+): GcUsSigns {
+  const next = { ...signs, size: { ...signs.size } };
+  const gross = normalizedText(fields.gross_type?.value);
+  const mapped = gross ? GROSS_TYPE_SIGN_MAP[gross] : null;
+  if (mapped) {
+    next.morphology = createGcUsField(mapped.morphology, {
+      ...signs.morphology,
+      value: mapped.morphology,
+      status: fields.gross_type.status === 'doctor_edited' ? 'doctor_edited' : signs.morphology.status,
+      source: fields.gross_type.source === 'doctor' ? 'doctor' : signs.morphology.source,
+      note: '由正式模板大体分型同步',
+    });
+    next.growth_pattern = createGcUsField(mapped.growth, {
+      ...signs.growth_pattern,
+      value: mapped.growth,
+      status: fields.gross_type.status === 'doctor_edited' ? 'doctor_edited' : signs.growth_pattern.status,
+      source: fields.gross_type.source === 'doctor' ? 'doctor' : signs.growth_pattern.source,
+      note: '由正式模板大体分型同步',
+    });
+  }
+  const deepest = deepestInvolvedWallLayer(fields);
+  if (deepest.layerStructureText) {
+    next.layer_structure = createGcUsField(deepest.layerStructureText, {
+      ...signs.layer_structure,
+      value: deepest.layerStructureText,
+      status: 'doctor_edited',
+      source: 'doctor',
+      note: `由五层勾选同步：累及最深至${deepest.anatomyZh || '未分层'}（${deepest.status}）`,
+    });
+  }
+  if (deepest.boundaryText) {
+    next.boundary = createGcUsField(deepest.boundaryText, {
+      ...signs.boundary,
+      value: deepest.boundaryText,
+      status: 'doctor_edited',
+      source: 'doctor',
+      note: '由正式模板层次勾选同步（边界并入层次）',
+    });
+  }
+  if (deepest.serosaText) {
+    next.serosa_change = createGcUsField(deepest.serosaText, {
+      ...signs.serosa_change,
+      value: deepest.serosaText,
+      status: 'doctor_edited',
+      source: 'doctor',
+      note: '由第五层/胃周勾选同步',
+    });
+  }
+  const peri = normalizedText(fields.perigastric_involvement?.value);
+  if (peri) {
+    next.perigastric_tissue = createGcUsField(peri, {
+      ...signs.perigastric_tissue,
+      value: peri,
+      status: fields.perigastric_involvement.status === 'doctor_edited' ? 'doctor_edited' : signs.perigastric_tissue.status,
+      source: fields.perigastric_involvement.source === 'doctor' ? 'doctor' : signs.perigastric_tissue.source,
+    });
+  }
+  return next;
+}
 
 function isBlank(value: unknown): boolean {
   return value == null || (typeof value === 'string' && value.trim() === '');
@@ -300,13 +484,13 @@ export const GC_US_TEMPLATE_FIELD_DEFINITIONS: Array<{
   { id: 'lesion_site', label: '病灶部位', kind: 'select', group: 'basic' },
   { id: 'maximum_diameter_cm', label: '最大径', kind: 'number', group: 'basic' },
   { id: 'maximum_thickness_cm', label: '最大厚度', kind: 'number', group: 'basic' },
-  { id: 'gross_type', label: '大体类型', kind: 'select', group: 'basic' },
+  { id: 'gross_type', label: '大体分型', kind: 'select', group: 'basic' },
   { id: 'wall_layer_summary', label: '胃壁层次总评', kind: 'select', group: 'wall' },
-  { id: 'layer_1_mucosa', label: '第一层', kind: 'select', group: 'wall' },
-  { id: 'layer_2_submucosa', label: '第二层', kind: 'select', group: 'wall' },
-  { id: 'layer_3_muscularis', label: '第三层', kind: 'select', group: 'wall' },
-  { id: 'layer_4_subserosa', label: '第四层', kind: 'select', group: 'wall' },
-  { id: 'layer_5_serosa', label: '第五层', kind: 'select', group: 'wall' },
+  { id: 'layer_1_mucosa', label: '第一层（黏膜浅层）', kind: 'select', group: 'wall' },
+  { id: 'layer_2_submucosa', label: '第二层（黏膜肌层）', kind: 'select', group: 'wall' },
+  { id: 'layer_3_muscularis', label: '第三层（黏膜下层）', kind: 'select', group: 'wall' },
+  { id: 'layer_4_subserosa', label: '第四层（固有肌层）', kind: 'select', group: 'wall' },
+  { id: 'layer_5_serosa', label: '第五层（浆膜）', kind: 'select', group: 'wall' },
   { id: 'perigastric_involvement', label: '侵及胃周组织', kind: 'textarea', group: 'spread' },
   { id: 'lymph_nodes', label: '淋巴结', kind: 'textarea', group: 'spread' },
   { id: 'distant_metastasis', label: '远处转移', kind: 'textarea', group: 'spread' },
@@ -356,7 +540,7 @@ export const GC_US_TEMPLATE_SELECT_OPTIONS: Partial<Record<GcUsTemplateFieldId, 
   layer_4_subserosa: ['存在', '模糊/变薄', '消失'],
   layer_5_serosa: ['存在', '模糊/变薄', '消失', '角征'],
   ascites: ['无', '少量', '中量', '大量'],
-  ct_stage: ['uT1', 'uT2', 'uT3', 'uT4', 'uTx'],
+  ct_stage: ['uT1', 'uT2', 'uT3', 'uT4a', 'uT4b', 'uT4', 'uTx'],
   cn_stage: ['N0', 'N1', 'N2', 'N3', 'Nx'],
   cm_stage: ['M0', 'M1', 'Mx'],
 };
@@ -365,17 +549,17 @@ const GC_US_REQUIRED_TEMPLATE_FIELDS: Array<{ id: GcUsTemplateFieldId; label: st
   { id: 'lesion_site', label: '病灶部位' },
   { id: 'maximum_diameter_cm', label: '最大径' },
   { id: 'maximum_thickness_cm', label: '最大厚度' },
-  { id: 'gross_type', label: '大体类型' },
+  { id: 'gross_type', label: '大体分型' },
   { id: 'wall_layer_summary', label: '胃壁层次总评' },
   { id: 'impression', label: '超声印象' },
 ];
 
 const GC_US_REVIEW_TEMPLATE_FIELDS: Array<{ id: GcUsTemplateFieldId; label: string }> = [
-  { id: 'layer_1_mucosa', label: '第一层' },
-  { id: 'layer_2_submucosa', label: '第二层' },
-  { id: 'layer_3_muscularis', label: '第三层' },
-  { id: 'layer_4_subserosa', label: '第四层' },
-  { id: 'layer_5_serosa', label: '第五层' },
+  { id: 'layer_1_mucosa', label: '第一层（黏膜浅层）' },
+  { id: 'layer_2_submucosa', label: '第二层（黏膜肌层）' },
+  { id: 'layer_3_muscularis', label: '第三层（黏膜下层）' },
+  { id: 'layer_4_subserosa', label: '第四层（固有肌层）' },
+  { id: 'layer_5_serosa', label: '第五层（浆膜）' },
   { id: 'perigastric_involvement', label: '侵及胃周组织' },
   { id: 'lymph_nodes', label: '淋巴结' },
   { id: 'distant_metastasis', label: '远处转移' },
@@ -505,14 +689,15 @@ function classifyLayer(value: unknown): string | null {
   const raw = normalizedText(value);
   if (!raw) return null;
   if (/不可辨|unreadable|unclear/i.test(raw)) return '不可辨';
-  if (/中断|破坏|突破|邻近器官|disrupt/i.test(raw)) return '连续性可疑破坏';
+  if (/邻近器官|器官侵犯|T4b/i.test(raw)) return '邻近器官侵犯（T4b）';
+  if (/浆膜.*(中断|破坏)|连续性.*(中断|破坏)|T4a|L5/i.test(raw)) return '浆膜连续性中断（T4a）';
+  if (/中断|破坏|突破|disrupt/i.test(raw)) return '连续性可疑破坏';
   if (/紊乱|destroy/i.test(raw)) return '结构紊乱';
-  if (/固有肌|partial|部分/i.test(raw)) return '局部受累，结构尚可辨';
+  if (/T3|浆膜下|subserosa/i.test(raw)) return '浆膜下层（T3）';
+  if (/T2|固有肌|proper|L4/i.test(raw)) return '固有肌层（T2）';
+  if (/T1|L1|L2|L3|黏膜下|黏膜\/黏膜|mucosa|submuc/i.test(raw)) return '黏膜/黏膜下层（T1）';
+  if (/局部受累|partial|部分/i.test(raw)) return '局部受累，结构尚可辨';
   if (/完整|清晰|intact|clear/i.test(raw)) return '层次结构清晰';
-  if (/T4|L5|浆膜|serosa/i.test(raw)) return '连续性可疑破坏';
-  if (/T3|肌层|muscle/i.test(raw)) return '结构紊乱';
-  if (/T2|proper|L4/i.test(raw)) return '局部受累，结构尚可辨';
-  if (/T1|L1|L2|L3|黏膜|黏膜下|mucosa|submuc/i.test(raw)) return '层次结构清晰';
   return raw;
 }
 
@@ -682,7 +867,13 @@ export function normalizeGcUsStage(value: unknown): {
   const raw = normalizedText(value);
   if (!raw) return { band: 'uncertain', raw: null };
   if (/T4\s*\+/i.test(raw)) return { band: 'uncertain', raw, reason: 'T4+' };
-  const unique = [...new Set([...raw.toUpperCase().matchAll(/T([1-4])/g)].map((match) => `T${match[1]}`))];
+  if (/T4a|uT4a/i.test(raw)) return { band: 'T4a', raw };
+  if (/T4b|uT4b/i.test(raw)) return { band: 'T4b', raw };
+  if (/T4(?![ab])|uT4(?![ab])/i.test(raw) && !/T4\s*\+/i.test(raw)) {
+    // Bare T4 / uT4 remains an aggregate label; subtype unresolved.
+    return { band: 'T4', raw, reason: 'T4_subtype_unresolved' };
+  }
+  const unique = [...new Set([...raw.toUpperCase().matchAll(/T([1-3])/g)].map((match) => `T${match[1]}`))];
   if (unique.length !== 1) return { band: 'uncertain', raw, reason: 'stage_range' };
   return { band: unique[0] as GcUsStageBand, raw };
 }
@@ -782,12 +973,24 @@ export function detectGcUsConflicts(signs: GcUsSigns, stage: GcUsStageBand): GcU
       message: `${boundary}提示外侵倾向，与${stage}参考阶段存在冲突。`,
     });
   }
-  if (stage === 'T4' && hasAny(serosa, [/尚光整/, /完整/, /连续光滑/]) && hasAny(perigastric, [/清晰/, /未见明显/])) {
+  if (
+    (stage === 'T4' || stage === 'T4a' || stage === 'T4b')
+    && hasAny(serosa, [/尚光整/, /完整/, /连续光滑/])
+    && hasAny(perigastric, [/清晰/, /未见明显/])
+  ) {
     conflicts.push({
       code: 't4_without_outer_evidence',
       severity: 'medium',
       fields: ['serosa_change', 'perigastric_tissue'],
       message: '当前浆膜和胃周组织描述未提供明确 T4 外层证据，建议多切面核对。',
+    });
+  }
+  if (stage === 'T4b' && !hasAny(layer, [/邻近器官|器官侵犯|T4b/]) && !hasAny(perigastric, [/邻近器官|器官侵犯|胰腺|肝|结肠|横膈/])) {
+    conflicts.push({
+      code: 't4b_without_adjacent_evidence',
+      severity: 'medium',
+      fields: ['layer_structure', 'perigastric_tissue'],
+      message: '参考分期为 T4b，但层次/胃周描述未见明确邻近器官侵犯证据。',
     });
   }
   if (stage !== 'uncertain' && (signs.layer_structure.status === 'unevaluated' || !layer)) {
@@ -940,7 +1143,7 @@ export function buildGcUsReport(
     '【超声印象】',
     '1. 综合超声影像征象及AI辅助分析，考虑：',
     stageLine,
-    '2. cT 阶梯提示：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。',
+    '2. cT 阶梯提示：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。正式报告勾选五层：L1 黏膜浅层，L2 黏膜肌层，L3 黏膜下层，L4 固有肌层，L5 浆膜。',
     ...(conflicts.length
       ? [`3. 当前存在需要医生复核的征象冲突：${conflicts.map((item) => item.message).join('；')}`]
       : []),
@@ -948,7 +1151,7 @@ export function buildGcUsReport(
     '【建议】',
     `1. ${advice}`,
     '',
-    '备注：几何与规则辅助，非病理金标准；最终判断权在医生。频谱、涂鸦、胃腔框代理均不能独立决定 cT。',
+    '备注：几何与规则辅助，非病理金标准；最终判断权在医生。频谱、涂鸦、胃腔框代理均不能独立决定 cT。形态/生长方式并入大体分型；边界并入层次勾选。',
   ].join('\n');
   const structured: GcUsReportState = {
     ...state,
@@ -991,8 +1194,8 @@ function templateImpressionText(
   stageText: string,
 ): string {
   const fallback = stageText
-    ? `综合超声影像征象，考虑${stageText}。`
-    : '综合超声影像征象，浸润深度尚不确定。';
+    ? `综合超声影像征象，倾向${stageText}，供医生复核签发。`
+    : '综合超声影像征象，浸润深度尚不确定，供医生复核签发。';
   return templateValue(fields, 'impression', fallback);
 }
 
@@ -1026,18 +1229,19 @@ export function buildGcUsTemplateReportText(stateInput: GcUsReportState): string
     `最大径 ${templateNumber(fields, 'maximum_diameter_cm')} cm，最厚径 ${templateNumber(fields, 'maximum_thickness_cm')} cm；`,
     `大体分型（${templateValue(fields, 'gross_type')}）`,
     '胃壁层次结构（由内往外）［',
-    `第一层（${templateValue(fields, 'layer_1_mucosa')}）、第二层（${templateValue(fields, 'layer_2_submucosa')}）、第三层（${templateValue(fields, 'layer_3_muscularis')}）、第四层（${templateValue(fields, 'layer_4_subserosa')}）、第五层（${templateValue(fields, 'layer_5_serosa')}）］；`,
+    `第一层（黏膜浅层）（${templateValue(fields, 'layer_1_mucosa')}）、第二层（黏膜肌层）（${templateValue(fields, 'layer_2_submucosa')}）、第三层（黏膜下层）（${templateValue(fields, 'layer_3_muscularis')}）、第四层（固有肌层）（${templateValue(fields, 'layer_4_subserosa')}）、第五层（浆膜）（${templateValue(fields, 'layer_5_serosa')}）］；`,
     `侵及胃周组织 ${templateValue(fields, 'perigastric_involvement')}；`,
     `淋巴结（${templateValue(fields, 'lymph_nodes', '待补充')}）；`,
     `远处转移（${templateValue(fields, 'distant_metastasis', '待补充')}）；`,
     `腹腔游离液性区（${templateValue(fields, 'ascites')}）。`,
     '',
     '超声提示：',
-    `${site}（部位）胃壁 ${impression}`,
+    `${site === '____' ? '________' : site}胃壁 ${impression === '____' ? '________' : impression}`,
     `考虑胃癌（${uT === '____' ? 'uT ____' : uT} ${n === '____' ? 'N ____' : n} ${m === '____' ? 'M ____' : m}）`,
     '',
     '注：',
     '形态、生长方式并入大体分型；边界并入层次结构，细化并勾选累及最深层次。',
+    '五层解剖（由内往外）：第一层黏膜浅层，第二层黏膜肌层，第三层黏膜下层，第四层固有肌层，第五层浆膜。',
     '',
     `核心影像征象：${buildGcUsFindingSentence(state)}`,
     '',
