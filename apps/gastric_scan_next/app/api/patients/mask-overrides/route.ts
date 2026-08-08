@@ -56,6 +56,23 @@ function comparableOverride(override: MaskBoundaryOverride): string {
   return JSON.stringify(rest);
 }
 
+function normalizeVideoFrames(frames: MaskBoundaryOverride['video_frames']) {
+  if (!frames) return undefined;
+  return frames.map((frame) => ({
+    ...frame,
+    roi_bbox: frame.roi_bbox || bboxFromPolygon(frame.mask_polygon),
+    lumen_bbox: frame.lumen_bbox
+      || (frame.lumen_polygon ? bboxFromPolygon(frame.lumen_polygon) : undefined),
+  }));
+}
+
+function normalizeOverride(override: MaskBoundaryOverride): MaskBoundaryOverride {
+  return {
+    ...override,
+    video_frames: normalizeVideoFrames(override.video_frames),
+  };
+}
+
 function findOverride(store: OverrideStore, patientId: string, frameId?: string | null): MaskBoundaryOverride | null {
   if (frameId) {
     const keyed = store[storeKey(patientId, frameId)];
@@ -73,18 +90,23 @@ export async function GET(request: NextRequest) {
   if (request.nextUrl.searchParams.get('history') === '1') {
     const key = storeKey(patientId, frameId);
     const history = (readHistory()[key] || [])
-      .filter((entry) => entry && isValidMaskOverride(entry.override));
+      .filter((entry) => entry && isValidMaskOverride(entry.override))
+      .map((entry) => ({ ...entry, override: normalizeOverride(entry.override) }));
     return NextResponse.json({ patientId, frameId, history });
   }
   const store = readStore();
   const override = findOverride(store, patientId, frameId);
-  return NextResponse.json({ patientId, frameId, override });
+  return NextResponse.json({
+    patientId,
+    frameId,
+    override: override ? normalizeOverride(override) : null,
+  });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as { override?: MaskBoundaryOverride; action?: string };
-    const override = body.override;
+    const override = body.override ? normalizeOverride(body.override) : undefined;
     if (!override || !isValidMaskOverride(override)) {
       return NextResponse.json({ error: 'Invalid mask override payload' }, { status: 400 });
     }

@@ -55,6 +55,8 @@ export function isValidMaskOverride(value: unknown): value is MaskBoundaryOverri
     if (!Array.isArray(v.video_frames)) return false;
     if (!v.video_frames.every((frame) => (
       frame
+      && (frame.frame_index === undefined
+        || (Number.isInteger(Number(frame.frame_index)) && Number(frame.frame_index) >= 0))
       && Number.isFinite(Number(frame.timestamp_sec))
       && Number(frame.imageWidth) > 0
       && Number(frame.imageHeight) > 0

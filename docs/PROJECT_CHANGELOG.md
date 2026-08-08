@@ -10,3 +10,10 @@ This file records material project changes, their validation, and deployment sta
 - Validation: TypeScript check, ESLint, isolated production build, local history API smoke test, and remote service health check.
 - Deployment: The remote `gastric-next` service was updated atomically. The previous release was retained for rollback, and the public bundle excluded internal data, logs, and public video assets.
 - Follow-up: Continue manual browser verification of freehand, lasso, positive and negative point editing, and history restore with a logged-in reader account.
+
+## 2026-08-09, Complete video-frame snapshots
+
+- Scope: `VideoMaskFrameOverride`, video tracking frame mapping, mask persistence normalization, and frame validation.
+- Reason: Make the saved `video_frames` data explicitly complete for review and restoration.
+- Key changes: Preserve tracker-provided frame indices, retain lesion segmentation with `roi_bbox`, retain lumen segmentation with `lumen_bbox`, and derive missing boxes from saved polygons before validation and response.
+- Validation: TypeScript check, ESLint, production build, and mask history API smoke test.

@@ -351,6 +351,7 @@ function selectTopAreaKeyframes(
 }
 
 type PropagateApiFrame = {
+  frame_index?: number;
   frame_time: number;
   direction?: string;
   mask_polygon?: number[][];
@@ -377,6 +378,9 @@ function mapPropagateFramesToOverrides(
     .map((frame) => {
       const maskPolygon = frame.mask_polygon!.map((point) => [Number(point[0]), Number(point[1])]);
       return {
+        frame_index: Number.isFinite(Number(frame.frame_index))
+          ? Number(frame.frame_index)
+          : undefined,
         timestamp_sec: Number(Number(frame.frame_time).toFixed(3)),
         imageWidth,
         imageHeight,
@@ -4637,6 +4641,7 @@ export function InteractiveSegPanel({
             num_frames?: number;
             propagation_mode?: string;
             frames?: Array<{
+              frame_index?: number;
               frame_time: number;
               direction?: string;
               mask_polygon?: number[][];
@@ -4839,11 +4844,18 @@ export function InteractiveSegPanel({
         : undefined,
       video_url: mediaMode === 'video' ? videoUrl || undefined : undefined,
       video_frames: currentVideoFrames.length
-        ? currentVideoFrames.map((frame) => ({
-          ...frame,
-          mask_polygon: frame.mask_polygon.map((point) => [Number(point[0]), Number(point[1])]),
-          lumen_polygon: frame.lumen_polygon?.map((point) => [Number(point[0]), Number(point[1])]),
-        }))
+        ? currentVideoFrames.map((frame) => {
+          const maskPolygon = frame.mask_polygon.map((point) => [Number(point[0]), Number(point[1])]);
+          const lumenPolygon = frame.lumen_polygon?.map((point) => [Number(point[0]), Number(point[1])]);
+          return {
+            ...frame,
+            mask_polygon: maskPolygon,
+            roi_bbox: frame.roi_bbox || bboxFromPolygon(maskPolygon),
+            lumen_polygon: lumenPolygon,
+            lumen_bbox: frame.lumen_bbox
+              || (lumenPolygon && bboxFromPolygon(lumenPolygon)),
+          };
+        })
         : undefined,
       note: currentVideoFrames.length
         ? 'Video tracking stores complete lesion and lumen contours at sampled timestamps; doctor edits replace the current timestamp.'

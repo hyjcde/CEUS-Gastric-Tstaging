@@ -104,14 +104,17 @@ export interface SegmentationEvidence {
   overlay_transparent_url?: string;
 }
 
-/** One persisted lesion contour generated at a video timestamp. */
+/** One persisted video-frame snapshot with boxes and segmentation content. */
 export interface VideoMaskFrameOverride {
+  /** Source video frame index when the tracker provides it. */
+  frame_index?: number;
   timestamp_sec: number;
   imageWidth: number;
   imageHeight: number;
+  /** Lesion segmentation and its frame-level box. */
   mask_polygon: number[][];
   roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
-  /** Optional lumen contour tracked on the same timestamp. */
+  /** Optional lumen segmentation and its frame-level box. */
   lumen_polygon?: number[][];
   lumen_bbox?: { x1: number; y1: number; x2: number; y2: number };
   source?: 'video_track' | 'video_propagate' | 'sam' | 'manual';
