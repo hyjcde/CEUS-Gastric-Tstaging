@@ -185,6 +185,14 @@ export interface MaskBoundaryOverride {
   reviewer_id?: string;
 }
 
+/** One complete, restorable snapshot of a doctor's mask work. */
+export interface MaskHistoryEntry {
+  id: string;
+  saved_at: string;
+  action: string;
+  override: MaskBoundaryOverride;
+}
+
 export interface AgentReport {
   schema_version: string;
   case_token: string;

@@ -37,7 +37,20 @@ export function isValidMaskOverride(value: unknown): value is MaskBoundaryOverri
       (pt) => Array.isArray(pt) && pt.length >= 2
         && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])),
     );
+  const validBox = (box: unknown) => {
+    if (!box || typeof box !== 'object') return false;
+    const value = box as Record<string, unknown>;
+    const x1 = Number(value.x1);
+    const y1 = Number(value.y1);
+    const x2 = Number(value.x2);
+    const y2 = Number(value.y2);
+    return Number.isFinite(x1) && Number.isFinite(y1)
+      && Number.isFinite(x2) && Number.isFinite(y2)
+      && x2 > x1 && y2 > y1;
+  };
   if (!validPolygon(v.mask_polygon)) return false;
+  if (v.wall_polygon !== undefined && !validPolygon(v.wall_polygon)) return false;
+  if (v.roi_bbox !== undefined && !validBox(v.roi_bbox)) return false;
   if (v.video_frames !== undefined) {
     if (!Array.isArray(v.video_frames)) return false;
     if (!v.video_frames.every((frame) => (
@@ -46,6 +59,9 @@ export function isValidMaskOverride(value: unknown): value is MaskBoundaryOverri
       && Number(frame.imageWidth) > 0
       && Number(frame.imageHeight) > 0
       && validPolygon(frame.mask_polygon)
+      && (frame.roi_bbox === undefined || validBox(frame.roi_bbox))
+      && (frame.lumen_polygon === undefined || validPolygon(frame.lumen_polygon))
+      && (frame.lumen_bbox === undefined || validBox(frame.lumen_bbox))
     ))) return false;
   }
   return true;

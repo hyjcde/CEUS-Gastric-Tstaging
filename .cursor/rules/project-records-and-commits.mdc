@@ -1,0 +1,14 @@
+---
+description: Require project records and focused commits for major changes
+alwaysApply: true
+---
+
+# Project records and major-change commits
+
+- Treat user-visible behavior, API or storage changes, deployment changes, authentication or security changes, model or inference changes, dependency changes, and multi-file refactors as major changes.
+- For every major change, append a concise entry to `docs/PROJECT_CHANGELOG.md` before handoff. Include date, scope, reason, validation, deployment or rollback notes, and follow-up items when relevant.
+- Do not record patient identifiers, credentials, tokens, private URLs, or sensitive clinical data in the changelog.
+- After validation, create a focused Git commit for each major change. Stage only the intended files; never use `git add .` and never commit data, images, weights, build outputs, logs, secrets, or unrelated pre-existing work.
+- Use a concise commit message that explains the purpose. Include the commit hash in the handoff.
+- If a major change cannot be committed because of a user-requested pause, repository policy, or a failed validation, record the reason and report it explicitly.
+- Minor edits may be grouped, but they must still be recorded when they affect project behavior or maintenance.
