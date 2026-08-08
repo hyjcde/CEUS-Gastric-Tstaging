@@ -1,7 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { getDatasetPaths, DatasetType, TreatmentType, parseCohortYear, parseDatasetType, DEFAULT_DATASET } from '@/lib/config';
+import {
+  getDatasetPaths,
+  getBenignDatasetPaths,
+  getExternalDatasetPaths,
+  DatasetType,
+  TreatmentType,
+  parseCohortYear,
+  DEFAULT_DATASET,
+} from '@/lib/config';
+import { isExternalQueue, parseWorkbenchQueueId } from '@/lib/cohort';
+
+function getTargetDirectory(paths: ReturnType<typeof getDatasetPaths>, type: string): string {
+  switch (type) {
+    case 'images':
+      return paths.images;
+    case 'overlays':
+      return paths.overlays;
+    case 'lymph_node_analysis':
+      return paths.overlaysTransparent;
+    case 'annotations':
+      return paths.annotations;
+    case 'roi':
+      return paths.roi;
+    default:
+      return '';
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -14,6 +40,8 @@ export async function GET(
   const treatmentTypeParam = searchParams.get('treatment') || 'surgery';
   const cohortYear = parseCohortYear(cohortYearParam);
   const treatmentType: TreatmentType = (treatmentTypeParam === 'nac') ? 'nac' : 'surgery';
+  const queueParam = searchParams.get('queue');
+  const queueId = queueParam ? parseWorkbenchQueueId(queueParam) : null;
   
   // Expecting: [dataset, type, filename] e.g. /api/images/original/images/file.jpg
   // Or fallback: [type, filename] (default to crop_ui / cropped)
@@ -38,27 +66,23 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
 
-  const paths = getDatasetPaths(dataset, cohortYear, treatmentType);
-  let targetDir = '';
-
-  switch (type) {
-    case 'images':
-      targetDir = paths.images;
-      break;
-    case 'overlays':
-      targetDir = paths.overlays;
-      break;
-    case 'lymph_node_analysis':
-      targetDir = paths.overlaysTransparent;
-      break;
-    case 'annotations':
-      targetDir = paths.annotations;
-      break;
-    case 'roi':
-      targetDir = paths.roi;
-      break;
-    default:
-      return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
+  const externalCenterId = queueId && isExternalQueue(queueId) && queueId.startsWith('external:')
+    ? queueId.slice('external:'.length)
+    : null;
+  const benignCenterId = queueId?.startsWith('benign:')
+    ? queueId.slice('benign:'.length)
+    : null;
+  const paths = benignCenterId
+    ? getBenignDatasetPaths(dataset, benignCenterId)
+    : externalCenterId
+      ? getExternalDatasetPaths(dataset, externalCenterId)
+      : getDatasetPaths(dataset, cohortYear, treatmentType);
+  if (!paths) {
+    return NextResponse.json({ error: 'Unknown data queue' }, { status: 404 });
+  }
+  const targetDir = getTargetDirectory(paths, type);
+  if (!targetDir) {
+    return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
   }
 
   // Security check: prevent directory traversal
@@ -70,26 +94,12 @@ export async function GET(
   // If file not found in primary directory, try the other dataset directory
   if (!fs.existsSync(filePath)) {
       const otherDataset: DatasetType = dataset === 'original' ? 'cropped' : 'original';
-      const pathsOther = getDatasetPaths(otherDataset, cohortYear, treatmentType);
-      let targetDirOther = '';
-      
-      switch (type) {
-        case 'images':
-          targetDirOther = pathsOther.images;
-          break;
-        case 'overlays':
-          targetDirOther = pathsOther.overlays;
-          break;
-        case 'lymph_node_analysis':
-          targetDirOther = pathsOther.overlaysTransparent;
-          break;
-        case 'annotations':
-          targetDirOther = pathsOther.annotations;
-          break;
-        case 'roi':
-          targetDirOther = pathsOther.roi;
-          break;
-      }
+      const pathsOther = benignCenterId
+        ? getBenignDatasetPaths(otherDataset, benignCenterId)
+        : externalCenterId
+          ? getExternalDatasetPaths(otherDataset, externalCenterId)
+          : getDatasetPaths(otherDataset, cohortYear, treatmentType);
+      const targetDirOther = pathsOther ? getTargetDirectory(pathsOther, type) : '';
       
       if (targetDirOther) {
           const altPath = path.join(targetDirOther, safeFilename);
@@ -111,6 +121,8 @@ export async function GET(
     contentType = 'image/jpeg';
   } else if (filename.toLowerCase().endsWith('.png')) {
     contentType = 'image/png';
+  } else if (filename.toLowerCase().endsWith('.webp')) {
+    contentType = 'image/webp';
   } else if (filename.toLowerCase().endsWith('.json')) {
     contentType = 'application/json';
   }

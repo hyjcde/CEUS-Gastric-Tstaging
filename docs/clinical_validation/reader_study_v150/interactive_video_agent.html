@@ -166,6 +166,15 @@
             </div>
             <div class="clinical-report-meta" id="clinicalReportMeta"></div>
           </div>
+          <div class="interactive-card interactive-card-compact" id="readerClinicalCard">
+            <div class="interactive-card-title">病例临床辅助字段</div>
+            <div id="readerClinicalFields">
+              <div class="interactive-empty">选择病例后显示已匹配的超声字段</div>
+            </div>
+            <div id="readerClinicalNote" class="reader-clinical-note">
+              超声伴随临床字段，仅供辅助判断，不含病理金标准。
+            </div>
+          </div>
           <div class="interactive-card interactive-card-compact">
             <div class="interactive-card-title">分析摘要</div>
             <div id="agentConclusion">
@@ -203,10 +212,11 @@
   <div id="agentToast" class="agent-toast hidden" role="status" aria-live="polite"></div>
 
   <script src="cases.bundle.js"></script>
+  <script src="demo_assets/reader_v150_clinical.js?v=20260808-clinical-sidecar"></script>
   <script src="demo_assets/contact_geometry.js"></script>
   <script src="interactive_layer_bridge.js"></script>
   <script src="interactive_boundary_workbench.js"></script>
-  <script src="interactive_video_agent.js?v=20260728-guest-video"></script>
+  <script src="interactive_video_agent.js?v=20260808-report-state-reset"></script>
   <script src="demo_assets/ai_assist_nav.js"></script>
 </body>
 </html>

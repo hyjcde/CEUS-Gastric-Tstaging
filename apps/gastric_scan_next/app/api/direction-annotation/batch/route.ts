@@ -3,22 +3,25 @@ import fs from "fs";
 import path from "path";
 import { getBatchFilePath, getSaveDir, resolveConfiguredPaths } from "@/lib/direction-annotation/dataRoot";
 import { enrichBatchItemWithMask } from "@/lib/direction-annotation/enrich-batch-item";
+import type { DirectionBatch, DirectionBatchItem } from "@/lib/direction-annotation/directionAnnotationTypes";
 
 export const dynamic = "force-dynamic";
 
-let cachedBatch: any = null;
+let cachedBatch: DirectionBatch | null = null;
 let cachedPath: string = "";
 let cachedMtime: number = 0;
 
-function loadBatch() {
+function loadBatch(): DirectionBatch {
   const batchFile = getBatchFilePath();
   const stat = fs.statSync(batchFile);
-  if (cachedBatch && cachedPath === batchFile && stat.mtimeMs === cachedMtime) return cachedBatch;
+  const currentBatch = cachedBatch;
+  if (currentBatch && cachedPath === batchFile && stat.mtimeMs === cachedMtime) return currentBatch;
   const raw = fs.readFileSync(batchFile, "utf-8");
-  cachedBatch = JSON.parse(raw);
+  const parsedBatch = JSON.parse(raw) as DirectionBatch;
+  cachedBatch = parsedBatch;
   cachedPath = batchFile;
   cachedMtime = stat.mtimeMs;
-  return cachedBatch;
+  return parsedBatch;
 }
 
 export async function GET(request: NextRequest) {
@@ -52,31 +55,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let items = batch.items.map((item: any) => ({
+    let items: DirectionBatchItem[] = batch.items.map((item) => ({
       ...item,
       is_annotated: savedSet.has(item.image_path),
     }));
 
     if (filter !== "all") {
-      items = items.filter((it: any) => it.T_stage === filter);
+      items = items.filter((it) => it.T_stage === filter);
     }
     if (search) {
-      items = items.filter((it: any) =>
+      items = items.filter((it) =>
         it.patient_id?.toLowerCase().includes(search) ||
         it.image_path?.toLowerCase().includes(search)
       );
     }
     if (annotatedFilter === "yes") {
-      items = items.filter((it: any) => it.is_annotated);
+      items = items.filter((it) => it.is_annotated);
     } else if (annotatedFilter === "no") {
-      items = items.filter((it: any) => !it.is_annotated);
+      items = items.filter((it) => !it.is_annotated);
     }
 
     const totalFiltered = items.length;
     const totalPages = Math.ceil(totalFiltered / pageSize);
     const start = (page - 1) * pageSize;
     const { projectRoot } = resolveConfiguredPaths();
-    const pageItems = items.slice(start, start + pageSize).map((item: any) =>
+    const pageItems = items.slice(start, start + pageSize).map((item) =>
       enrichBatchItemWithMask(projectRoot, item),
     );
 

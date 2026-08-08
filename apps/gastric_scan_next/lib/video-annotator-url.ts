@@ -1,4 +1,4 @@
-const DEFAULT_VIDEO_ANNOTATOR_URL = 'http://localhost:3100';
+const DEFAULT_VIDEO_ANNOTATOR_URL = 'http://127.0.0.1:3100';
 
 /** 视频/多模态标注平台（MedDINO gastric-annotator）默认 Web 端口 */
 export function getVideoAnnotatorUrl(): string {

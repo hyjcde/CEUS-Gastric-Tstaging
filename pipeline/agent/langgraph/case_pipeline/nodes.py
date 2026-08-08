@@ -96,6 +96,7 @@ def make_step_node(step: BasePipelineStep, ctx: PipelineContext) -> Callable[[Di
                     "status": record.status,
                     "observation": record.observation,
                     "llm_calls": step_llm_calls,
+                    "record": record.to_dict(),
                 },
             )
 

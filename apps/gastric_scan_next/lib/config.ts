@@ -5,14 +5,15 @@ import {
   GastricCohortYear,
   DatasetType,
   TreatmentType,
-  DEFAULT_DATASET,
-  parseDatasetType,
+  getBenignCenterById,
+  getExternalCenterById,
 } from '@/lib/cohort';
 
-export type { CohortYear, GastricCohortYear, DatasetType, TreatmentType } from '@/lib/cohort';
+export type { CohortYear, GastricCohortYear, ReaderStudyQueue, DatasetType, TreatmentType } from '@/lib/cohort';
 export {
   ALL_COHORT_YEARS,
   GASTRIC_COHORT_YEARS,
+  READER_STUDY_QUEUES,
   DEFAULT_DATASET,
   getCohortDisplayLabel,
   parseCohortYear,
@@ -112,6 +113,7 @@ function getCurrentCohortRoot(cohortYear: GastricCohortYear): string {
 }
 
 export function getDatasetPaths(dataset: DatasetType, cohortYear: CohortYear = '2025', treatmentType: TreatmentType = 'surgery') {
+  if (cohortYear === 'reader_v150') return getDatasetPaths(dataset, '2025', treatmentType);
   if (cohortYear !== 'gist') {
     const cohortRoot = getCurrentCohortRoot(cohortYear);
     const originalRoot = path.join(cohortRoot, 'original');
@@ -123,8 +125,8 @@ export function getDatasetPaths(dataset: DatasetType, cohortYear: CohortYear = '
       // cropped 模式展示 crop_ui（去界面边框）；crop_roi 仅作紧框 ROI 预览
       images: dataset === 'cropped' ? path.join(cropUiRoot, 'images') : path.join(originalRoot, 'images'),
       cropUi: path.join(cropUiRoot, 'images'),
-      overlays: path.join(originalRoot, 'overlays'),
-      overlaysTransparent: path.join(originalRoot, 'overlays'),
+      overlays: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'overlays'),
+      overlaysTransparent: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'overlays'),
       annotations: path.join(originalRoot, 'annotations'),
       roi: path.join(cropRoiRoot, 'images'),
     };
@@ -143,7 +145,46 @@ export function getDatasetPaths(dataset: DatasetType, cohortYear: CohortYear = '
   };
 }
 
+export function getExternalDatasetPaths(dataset: DatasetType, centerId: string) {
+  const center = getExternalCenterById(centerId);
+  if (!center) return null;
+
+  const centerRoot = path.join(CURRENT_DATASET_ROOT, 'external', center.folderName);
+  const originalRoot = path.join(centerRoot, 'original');
+  const cropUiRoot = path.join(centerRoot, 'crop_ui');
+  const cropRoiRoot = path.join(centerRoot, 'crop_roi');
+
+  return {
+    root: dataset === 'cropped' ? cropUiRoot : originalRoot,
+    images: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'images'),
+    overlays: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'overlays'),
+    overlaysTransparent: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'overlays'),
+    annotations: path.join(originalRoot, 'annotations'),
+    roi: path.join(cropRoiRoot, 'images'),
+  };
+}
+
+export function getBenignDatasetPaths(dataset: DatasetType, centerId: string) {
+  const center = getBenignCenterById(centerId);
+  if (!center) return null;
+
+  const centerRoot = path.join(CURRENT_DATASET_ROOT, 'gastritis_external', 'processed_images', center.folderName);
+  const originalRoot = path.join(centerRoot, 'original');
+  const cropUiRoot = path.join(centerRoot, 'crop_ui');
+  const cropRoiRoot = path.join(centerRoot, 'crop_roi');
+
+  return {
+    root: dataset === 'cropped' ? cropUiRoot : originalRoot,
+    images: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'images'),
+    overlays: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'overlays'),
+    overlaysTransparent: path.join(dataset === 'cropped' ? cropUiRoot : originalRoot, 'overlays'),
+    annotations: path.join(originalRoot, 'annotations'),
+    roi: path.join(cropRoiRoot, 'images'),
+  };
+}
+
 export function getClinicalDataPath(cohortYear: CohortYear = '2025', treatmentType: TreatmentType = 'surgery'): string {
+  if (cohortYear === 'reader_v150') return getClinicalDataPath('2025', treatmentType);
   if (cohortYear === 'gist') {
     return path.join(APP_ROOT, 'data', 'clinical_data_gist.json');
   }

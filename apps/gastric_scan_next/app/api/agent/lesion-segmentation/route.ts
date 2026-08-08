@@ -11,7 +11,7 @@ export const maxDuration = 180;
 
 type SegmentationRequest = {
   frame_png_b64?: string;
-  model?: 'dinov3' | 'convnext';
+  model?: 'dinov3' | 'convnext' | 'sam31';
   threshold?: number;
   image_width?: number;
   image_height?: number;
@@ -229,6 +229,36 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as SegmentationRequest;
     if (!body.frame_png_b64) {
       return NextResponse.json({ ok: false, error: 'frame_png_b64 is required' }, { status: 400 });
+    }
+    if (body.model === 'sam31') {
+      const upstream = String(process.env.SAM31_UPSTREAM || 'http://127.0.0.1:8768').replace(/\/+$/, '');
+      try {
+        const response = await fetch(`${upstream}/api/sam31/static-segment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          signal: AbortSignal.timeout(180_000),
+        });
+        const text = await response.text();
+        let payload: unknown;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = { ok: false, error: text.slice(0, 500) };
+        }
+        return NextResponse.json(payload, { status: response.ok ? 200 : 502 });
+      } catch (error) {
+        return NextResponse.json(
+          {
+            ok: false,
+            available: false,
+            error: error instanceof Error ? error.message : 'SAM3.1 static backend unavailable',
+            hint: 'Start with: bash apps/gastric_scan_next/scripts/dev_all.sh',
+          },
+          { status: 503 },
+        );
+      }
     }
     const result = await runPython(body);
     if (result.code !== 0) {

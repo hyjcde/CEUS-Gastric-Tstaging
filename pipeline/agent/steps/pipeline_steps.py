@@ -467,8 +467,46 @@ class LumenDetectAgent(BasePipelineStep):
             )
         path = state.case_input.primary_image_path
         obs = registry.execute("detect_lumen", image_path=path)
-        if obs.get("lumen_detected") and obs.get("lumen_bbox"):
-            state.lumen_bbox = dict(obs["lumen_bbox"])
+        yolo_bbox = dict(obs["lumen_bbox"]) if obs.get("lumen_detected") and obs.get("lumen_bbox") else None
+        if yolo_bbox:
+            state.lumen_bbox = yolo_bbox
+            obs = dict(obs)
+            obs["yolo_lumen_bbox"] = yolo_bbox
+            obs["lumen_source"] = "yolo"
+
+        override_bbox = getattr(options, "override_lumen_bbox", None)
+        if getattr(options, "use_lumen_override", False) and isinstance(override_bbox, dict):
+            doctor_bbox = {
+                "x1": int(round(float(override_bbox["x1"]))),
+                "y1": int(round(float(override_bbox["y1"]))),
+                "x2": int(round(float(override_bbox["x2"]))),
+                "y2": int(round(float(override_bbox["y2"]))),
+            }
+            state.lumen_bbox = doctor_bbox
+            meta = getattr(options, "lumen_override_meta", None) or {}
+            obs = dict(obs) if isinstance(obs, dict) else {}
+            obs.update({
+                "available": True,
+                "lumen_detected": True,
+                "lumen_bbox": doctor_bbox,
+                "lumen_source": "doctor_override",
+                "override_source": getattr(options, "lumen_override_source", "manual"),
+                "yolo_lumen_bbox": yolo_bbox,
+                "lumen_polygon": getattr(options, "lumen_override_polygon", None),
+                "lumen_confidence": meta.get("lumen_confidence", obs.get("lumen_confidence")),
+                "lumen_mask_type": meta.get("lumen_mask_type") or (
+                    "sam31_polygon" if getattr(options, "lumen_override_polygon", None) else "bbox_proxy"
+                ),
+                "detector_backend_id": meta.get("detector_backend_id") or obs.get("backend_id"),
+                "sam_backend_id": meta.get("sam_backend_id"),
+                "sam_score": meta.get("sam_score"),
+            })
+            expl = (
+                f"医生确认胃腔框覆盖 YOLO："
+                f"source={obs.get('override_source')} bbox={doctor_bbox}。"
+            )
+            return StepResult(observation=obs, explanation=expl, inputs={"image_path": path})
+
         expl = (
             f"YOLO 胃腔检测：detected={obs.get('lumen_detected')} "
             f"conf={obs.get('lumen_confidence', 0)}。"
@@ -657,7 +695,8 @@ class MorphologyAgent(BasePipelineStep):
         obs = registry.execute("morphology", **kwargs)
         expl = (
             f"形态学：irregularity={obs.get('boundary_irregularity', '?')} "
-            f"convexity={obs.get('convexity', '?')}。"
+            f"convexity={obs.get('convexity', '?')} "
+            f"smoothness={obs.get('smoothness_index', '?')}。"
         )
         return StepResult(observation=obs, explanation=expl)
 
@@ -797,8 +836,119 @@ class WallEvidenceAgent(BasePipelineStep):
         return [str(saved)] if saved else []
 
 
-class DINOv3Agent(BasePipelineStep):
+class GcUsSignAgent(BasePipelineStep):
+    """Score each structured GC-US sign from clinical and geometry evidence."""
+
     step_number = 10
+    step_id = "gc_us_signs"
+    agent_name = "GcUsSignAgent"
+    tool_name = "gc_us_signs"
+
+    def run(self, state, registry, options):
+        if _should_skip_vision(state):
+            return StepResult(status="skipped", observation={"skipped": True}, explanation="跳过 GC-US 征象评分。")
+
+        clinical = state.case_input.clinical or {}
+        size = clinical.get("tumorSize") or clinical.get("tumor_size") or {}
+        if not isinstance(size, dict):
+            size = {}
+        biomarkers = clinical.get("biomarkers") or {}
+        if not isinstance(biomarkers, dict):
+            biomarkers = {}
+        length_cm = (
+            clinical.get("length_cm")
+            or clinical.get("tumor_length_cm")
+            or size.get("length")
+        )
+        thickness_cm = (
+            clinical.get("thickness_cm")
+            or clinical.get("tumor_thickness_cm")
+            or size.get("thickness")
+        )
+        if length_cm is None and clinical.get("tumor_size_mm") is not None:
+            length_cm = float(clinical["tumor_size_mm"]) / 10.0
+        if thickness_cm is None and clinical.get("tumor_thickness_mm") is not None:
+            thickness_cm = float(clinical["tumor_thickness_mm"]) / 10.0
+
+        cea_value = clinical.get("cea_value") or clinical.get("CEA_value") or biomarkers.get("cea") or clinical.get("cea")
+        cea_positive = biomarkers.get("cea_positive")
+        if cea_positive is None:
+            cea_positive = clinical.get("cea_positive")
+        if isinstance(cea_positive, str):
+            cea_positive = cea_positive.strip().lower() in {"1", "true", "yes", "阳性", "positive", "+"}
+
+        layer_label = (
+            clinical.get("layer_label")
+            or clinical.get("wall_layer")
+            or clinical.get("layer_structure")
+        )
+        serosa_text = (
+            clinical.get("serosa_text")
+            or clinical.get("serosa_status")
+            or clinical.get("serosa_change")
+        )
+        structural_stage = clinical.get("structural_stage")
+        wall_polygon = options.wall_polygon if isinstance(options.wall_polygon, list) and len(options.wall_polygon) >= 3 else None
+        wall_obs = _step_obs(state, "wall_evidence")
+        wall_features = wall_obs.get("wall_features") if wall_obs.get("available") else None
+        contact_ratio = (wall_features or {}).get("contact_arc_ratio")
+        in_contact = None if contact_ratio is None else float(contact_ratio) >= 0.02
+        structural_evidence = (
+            "explicit"
+            if wall_polygon is not None or layer_label or serosa_text
+            else "proxy"
+            if wall_obs.get("available")
+            else "missing"
+        )
+
+        obs = registry.execute(
+            "gc_us_signs",
+            image_path=state.case_input.primary_image_path,
+            lesion_mask=state.lesion_mask,
+            lumen_bbox=state.lumen_bbox,
+            length_cm=length_cm,
+            thickness_cm=thickness_cm,
+            cea_positive=cea_positive,
+            cea_value=cea_value,
+            location=clinical.get("location") or clinical.get("tumor_location"),
+            layer_label=layer_label,
+            serosa_text=serosa_text,
+            structural_evidence=structural_evidence,
+            structural_stage=structural_stage,
+            in_contact=in_contact,
+            wall_polygon=wall_polygon,
+            wall_proxy_features=wall_features,
+            patient_id=state.case_input.patient_id,
+            sample_id=state.case_input.case_id,
+            frame_id=state.case_input.primary_frame.frame_id or "",
+        )
+        obs["input_provenance"] = {
+            "lesion_mask": "state.lesion_mask",
+            "lumen_bbox": "state.lumen_bbox",
+            "wall_evidence": "wall_evidence.wall_features" if wall_features else "unavailable",
+            "structural_evidence": structural_evidence,
+        }
+        items = obs.get("items") or []
+        explanation = (
+            f"GC-US 征象评分：items={len(items)} total={obs.get('total', '?')}/"
+            f"{obs.get('max_total', '?')} status={obs.get('status', '?')}，"
+            "墙壁代理不直接解锁确定 cT。"
+        )
+        status = "completed" if obs.get("available") else "partial"
+        return StepResult(status=status, observation=obs, explanation=explanation)
+
+    def render(self, state, result, options):
+        from ..visualization.artifacts import save_gc_us_sign_panel
+
+        if result.status == "skipped":
+            return []
+        out = state.figures_dir / f"step-{self.step_number:02d}-gc-us-signs.png"
+        saved = save_gc_us_sign_panel(result.observation, out)
+        return [str(saved)] if saved else []
+
+
+class DINOv3Agent(BasePipelineStep):
+    step_number = 11
     step_id = "dinov3_seg"
     agent_name = "DINOv3Agent"
     tool_name = "segment_dinov3_candidate"
@@ -828,7 +978,7 @@ class DINOv3Agent(BasePipelineStep):
 class DinoSignFusionAgent(BasePipelineStep):
     """Join DINO evidence and structured signs without replacing the T model."""
 
-    step_number = 11
+    step_number = 12
     step_id = "dino_sign_fusion"
     agent_name = "DINOAndSignFusionAgent"
     tool_name = "dino_sign_fusion"
@@ -837,6 +987,7 @@ class DinoSignFusionAgent(BasePipelineStep):
         dino = _step_obs(state, "dinov3_seg")
         morphology = _step_obs(state, "morphology")
         wall = _step_obs(state, "wall_evidence")
+        gc_signs = _step_obs(state, "gc_us_signs")
         classification = _step_obs(state, "t_staging")
         dino_available = bool(
             dino.get("available") or dino.get("mask_available")
@@ -846,6 +997,7 @@ class DinoSignFusionAgent(BasePipelineStep):
             "morphology": "available" if morphology.get("valid") else "partial",
             "wall": "available" if wall.get("available") else "partial",
             "lumen": "available" if state.lumen_bbox else "missing",
+            "gc_us_signs": "available" if gc_signs.get("available") else "partial",
         }
         supporting = []
         uncertainty = []
@@ -856,7 +1008,8 @@ class DinoSignFusionAgent(BasePipelineStep):
         if morphology.get("valid"):
             supporting.append(
                 "Structured morphology signs are available "
-                f"(irregularity={morphology.get('boundary_irregularity', 'n/a')})."
+                f"(irregularity={morphology.get('boundary_irregularity', 'n/a')}, "
+                f"smoothness={morphology.get('smoothness_index', 'n/a')})."
             )
         else:
             uncertainty.append("Morphology signs are incomplete.")
@@ -869,9 +1022,22 @@ class DinoSignFusionAgent(BasePipelineStep):
             uncertainty.append("Wall evidence is proxy-only or unavailable.")
         if not state.lumen_bbox:
             uncertainty.append("Lumen geometry is unavailable for sign alignment.")
+        if gc_signs.get("available"):
+            supporting.append(
+                "GC-US sign scorer is available "
+                f"(status={gc_signs.get('status', 'unknown')}, "
+                f"normalized_i={gc_signs.get('normalized_i', 'unknown')})."
+            )
+        else:
+            uncertainty.append("GC-US sign scorer is unavailable or not assessable.")
 
         obs = {
-            "available": bool(dino_available or morphology.get("valid") or wall.get("available")),
+            "available": bool(
+                dino_available
+                or morphology.get("valid")
+                or wall.get("available")
+                or gc_signs.get("available")
+            ),
             "fusion_mode": "evidence_only_probe",
             "model_fusion_available": False,
             "final_t_stage_ownership": "t_staging_step",
@@ -881,8 +1047,17 @@ class DinoSignFusionAgent(BasePipelineStep):
                 "source": dino.get("source") or dino.get("model"),
             },
             "structured_signs": sign_status,
+            "gc_us_signs": {
+                "available": bool(gc_signs.get("available")),
+                "status": gc_signs.get("status"),
+                "normalized_i": gc_signs.get("normalized_i"),
+                "ct_stage": gc_signs.get("ct_stage"),
+                "confidence": gc_signs.get("confidence"),
+            },
             "sign_values": {
                 "boundary_irregularity": morphology.get("boundary_irregularity"),
+                "smoothness_index": morphology.get("smoothness_index"),
+                "roughness_index": morphology.get("roughness_index"),
                 "lesion_area_ratio": morphology.get("lesion_area_ratio"),
                 "penetration_risk": wall.get("penetration_risk"),
                 "fraction_outside_lumen": wall_features.get("fraction_outside_lumen"),
@@ -913,7 +1088,7 @@ class DinoSignFusionAgent(BasePipelineStep):
 
 
 class CaseRAGAgent(BasePipelineStep):
-    step_number = 12
+    step_number = 13
     step_id = "case_rag"
     agent_name = "CaseRAGAgent"
     tool_name = "retrieve_similar"
@@ -950,7 +1125,7 @@ class CaseRAGAgent(BasePipelineStep):
 
 
 class ReportSynthAgent(BasePipelineStep):
-    step_number = 13
+    step_number = 14
     step_id = "report_synth"
     agent_name = "ReportSynthAgent"
     tool_name = None
@@ -962,6 +1137,7 @@ class ReportSynthAgent(BasePipelineStep):
         seg_obs = _step_obs(state, "lesion_seg")
         lumen_obs = _step_obs(state, "lumen_detect")
         wall_obs = _step_obs(state, "wall_evidence")
+        gc_sign_obs = _step_obs(state, "gc_us_signs")
         dino_sign_obs = _step_obs(state, "dino_sign_fusion")
         morph_obs = _step_obs(state, "morphology")
         cls_obs = state.primary_classification or _step_obs(state, "t_staging").get("primary") or {}
@@ -1042,6 +1218,7 @@ class ReportSynthAgent(BasePipelineStep):
                 knowledge=guideline_knowledge,
                 lumen_detection=lumen_obs,
                 wall_evidence=wall_obs,
+                gc_us_signs=gc_sign_obs,
                 memory_context=state.memory_context,
                 memory_fusion_mode=options.memory_fusion_mode,
             )
@@ -1055,6 +1232,8 @@ class ReportSynthAgent(BasePipelineStep):
 
         if dino_sign_obs:
             fusion["dino_sign_fusion"] = dino_sign_obs
+        if gc_sign_obs:
+            fusion["gc_us_signs"] = gc_sign_obs
         state.final_report = fusion
         obs = {
             "fusion": fusion,
@@ -1076,7 +1255,7 @@ class ReportSynthAgent(BasePipelineStep):
 class ClinicalDecisionAgent(BasePipelineStep):
     """Cross-modal decision support after evidence and report synthesis."""
 
-    step_number = 14
+    step_number = 15
     step_id = "clinical_decision"
     agent_name = "ClinicalDecisionAgent"
     tool_name = "clinical_decision"
@@ -1215,6 +1394,7 @@ def get_pipeline_steps() -> List[BasePipelineStep]:
         MorphologyAgent(),
         TStagingAgent(),
         WallEvidenceAgent(),
+        GcUsSignAgent(),
         DINOv3Agent(),
         DinoSignFusionAgent(),
         CaseRAGAgent(),

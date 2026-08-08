@@ -22,6 +22,19 @@ function decodeFilenameFromUrl(urlValue: string | undefined): string | null {
   }
 }
 
+function resolvePatientCohortYear(patient: Patient, fallback: CohortYear): CohortYear {
+  const queueId = patient.queue_id || '';
+  const queueYear = queueId.startsWith('internal:')
+    ? queueId.slice('internal:'.length)
+    : '';
+  const phase = String(patient.phase || '').trim();
+  const candidate = queueYear && queueYear !== 'all' ? queueYear : phase;
+  if (['2018', '2019', '2020_2023', '2024', '2025', 'gist', 'reader_v150'].includes(candidate)) {
+    return candidate as CohortYear;
+  }
+  return fallback;
+}
+
 function resolveExistingFile(dir: string, filename: string | null): string | null {
   if (!filename) return null;
   const resolved = path.join(dir, filename);
@@ -41,7 +54,7 @@ export function getPatientDatasetPaths(
   if (queueId.startsWith('external:')) {
     return getExternalDatasetPaths(dataset, queueId.slice('external:'.length)) || getDatasetPaths(dataset, cohortYear, treatmentType);
   }
-  return getDatasetPaths(dataset, cohortYear, treatmentType);
+  return getDatasetPaths(dataset, resolvePatientCohortYear(patient, cohortYear), treatmentType);
 }
 
 export function mapClinicalToAgentInput(patient: Patient) {

@@ -8,6 +8,7 @@ Research-grade workstation for gastric cancer T-staging using Multimodal Ultraso
 - **Real-time Data Integration**: Reads directly from the current repository `dataset/` tree, with optional legacy dataset fallbacks.
 - **Concept Reasoning**: Interactive sliders to perform counterfactual analysis on pathological features (Serosa, Stiffness, etc.).
 - **Interactive segmentation / boundary edit**: Case viewer launcher **边界编辑** — polygon vertex edit, optional SAM click (proxied to `:8767`), **video follow** (scrub + SAM track-on-play), persist overrides under `data/mask_overrides.json`, and feed them into Agent analyze as mask/ROI overrides.
+- **nnInteractive refinement**: Optional official nnInteractive v1 remote inference can use the doctor-confirmed SAM mask as an initial mask, then refine the lesion with positive or negative clicks, freehand scribbles, or lassos.
 - **VLM Reporting**: Simulated multimodal AI report generation.
 - **Multimodal Viewer**: Support for switching between Original B-Mode, Segmentation Overlay, and XAI Heatmap.
 
@@ -47,6 +48,102 @@ bash scripts/test_lan_full_stack.sh   # automated acceptance
 - Requirements checklist: `docs/mainline/PRODUCT_REQUIREMENTS_CHECKLIST.md`（U1–U3）
 
 In **边界编辑**, switch to **视频跟随** to scrub video, enable **播放时 SAM 跟随**, then save overrides (stores `video_time_sec`).
+
+### Optional nnInteractive refinement
+
+The workbench keeps the official nnInteractive model outside the Next.js
+process. The original prompt API is preserved: positive and negative points,
+freehand scribbles, and closed lasso prompts are sent to nnInteractive. If the
+server is unavailable, the workbench reports that state and does not silently
+switch these prompts to SAM3.1.
+
+1. On the GPU host, download the official source and install its dependencies.
+   The repository checkout used by this workbench is `external/nnInteractive`:
+
+   ```bash
+   cd /data/research/gastric/GastricTstaging
+   test -d external/nnInteractive || \
+     git clone https://github.com/MIC-DKFZ/nnInteractive.git external/nnInteractive
+   python3 -m venv --system-site-packages /tmp/gastric-nninteractive-venv
+   /tmp/gastric-nninteractive-venv/bin/pip install --no-deps nnunetv2==2.7.0
+   /tmp/gastric-nninteractive-venv/bin/pip install --no-deps -e external/nnInteractive
+   /tmp/gastric-nninteractive-venv/bin/pip install --no-deps -e external/nnInteractive/client
+   ```
+
+2. Start the official server through the repository wrapper. The wrapper keeps
+   the original nnInteractive server and interaction methods, while using a
+   smaller startup patch for a 24 GiB workstation GPU:
+
+   ```bash
+   NNINTERACTIVE_PATCH_SIZE=128 \
+     /tmp/gastric-nninteractive-venv/bin/python scripts/serve_nninteractive_server.py \
+     --model nnInteractive_v1.0 --host 127.0.0.1 --port 1527 \
+     --device cuda:0 --no-torch-compile
+   ```
+
+3. On the workstation running this app, install the lightweight remote client
+   and start the bridge:
+
+   ```bash
+   export NN_INTERACTIVE_SERVER_URL=http://127.0.0.1:1527
+   export NN_INTERACTIVE_API_KEY=<server-api-key>
+   /tmp/gastric-nninteractive-venv/bin/python scripts/serve_nninteractive_agent.py \
+     --host 127.0.0.1 --port 8770
+   ```
+
+4. Set `NNINTERACTIVE_UPSTREAM=http://127.0.0.1:8770` in the Next.js
+   environment and restart Next.js.
+
+In the video boundary editor, first generate a lesion mask, then choose
+**nnInteractive**. The toolbar exposes positive point, negative point,
+freehand scribble, and lasso prompts. The refined contour continues through
+the existing save and Agent analysis paths. This integration is single-frame
+refinement; video propagation remains on the existing SAM workflow.
+
+#### Self-hosted GPU deployment
+
+Yes. No official hosted service is required. The GPU inference server can run
+on the same workstation or on a private GPU host, and the bridge can point to
+that private address. The browser still needs an inference server process:
+`nninteractive-client` is only a remote client and does not run the model by
+itself.
+
+Because the full package currently excludes some PyTorch versions used by the
+SAM services, install it in a separate environment on the GPU host:
+
+```bash
+python3 -m venv --system-site-packages /tmp/gastric-nninteractive-venv
+/tmp/gastric-nninteractive-venv/bin/pip install --no-deps nnunetv2==2.7.0
+/tmp/gastric-nninteractive-venv/bin/pip install --no-deps -e external/nnInteractive
+export NN_INTERACTIVE_API_KEY="$(openssl rand -hex 32)"
+/tmp/gastric-nninteractive-venv/bin/python scripts/serve_nninteractive_server.py \
+  --model nnInteractive_v1.0 --host 0.0.0.0 --port 1527 \
+  --api-key "$NN_INTERACTIVE_API_KEY"
+```
+
+Or use the official GPU container without installing the Python stack:
+
+```bash
+docker run --gpus all --rm -p 1527:1527 \
+  -e NN_INTERACTIVE_API_KEY="$(openssl rand -hex 32)" \
+  ghcr.io/mic-dkfz/nninteractive-server:latest
+```
+
+Then point the local bridge at that private server:
+
+```bash
+export NN_INTERACTIVE_SERVER_URL=http://<PRIVATE_GPU_HOST>:1527
+export NN_INTERACTIVE_API_KEY=<optional-server-api-key>
+python3 scripts/serve_nninteractive_agent.py --host 127.0.0.1 --port 8770
+```
+
+Keep port `1527` restricted to the private network or an authenticated tunnel.
+The model checkpoint is licensed CC BY-NC-SA 4.0, so confirm that the license
+fits the intended research or clinical deployment.
+
+The official model checkpoint is licensed CC BY-NC-SA 4.0. Confirm that its
+non-commercial research terms fit the intended deployment before exposing the
+feature beyond the research workstation.
 
 ### Scientific Agent workbench
 

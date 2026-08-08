@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     if (!m) {
       return new NextResponse(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
     }
-    let start = m[1] ? Number(m[1]) : 0;
+    const start = m[1] ? Number(m[1]) : 0;
     let end = m[2] ? Number(m[2]) : size - 1;
     if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) {
       return new NextResponse(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });

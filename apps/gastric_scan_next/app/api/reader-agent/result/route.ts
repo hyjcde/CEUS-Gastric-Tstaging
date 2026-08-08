@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
+import { legacyAppDataFile, runtimeDataFile } from '@/lib/runtime-data';
 
 export const runtime = 'nodejs';
 
-const DATA_FILE = path.join(process.cwd(), 'data', 'reader_agent_results.json');
+const DATA_FILE = runtimeDataFile('reader_agent_results.json');
+const LEGACY_DATA_FILE = legacyAppDataFile('reader_agent_results.json');
 
 type Store = Record<string, unknown>;
 
@@ -17,12 +19,19 @@ function corsHeaders() {
 }
 
 async function readStore(): Promise<Store> {
-  try {
-    const raw = await fs.readFile(DATA_FILE, 'utf8');
-    return JSON.parse(raw) as Store;
-  } catch {
-    return {};
-  }
+  const stores = await Promise.all(
+    [LEGACY_DATA_FILE, DATA_FILE]
+      .filter((file, index, files) => files.indexOf(file) === index)
+      .map(async (file) => {
+        try {
+          const raw = await fs.readFile(file, 'utf8');
+          return JSON.parse(raw) as Store;
+        } catch {
+          return {};
+        }
+      }),
+  );
+  return stores.reduce<Store>((merged, store) => ({ ...merged, ...store }), {});
 }
 
 async function writeStore(store: Store) {
@@ -34,7 +43,7 @@ function resultKey(body: Record<string, unknown>): string {
   const frameId = String(body.frame_id || body.frameId || '').trim();
   const patientId = String(body.patient_id || body.patientId || '').trim();
   const caseId = String(body.case_id || body.caseId || '').trim();
-  return frameId || patientId || caseId || `anon-${Date.now()}`;
+  return frameId || patientId || caseId;
 }
 
 export async function OPTIONS() {
@@ -72,6 +81,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, message: 'Invalid JSON' }, { status: 400, headers: corsHeaders() });
   }
   const key = resultKey(body);
+  if (!key) {
+    return NextResponse.json(
+      { ok: false, message: 'frame_id, patient_id, or case_id is required' },
+      { status: 400, headers: corsHeaders() },
+    );
+  }
   const store = await readStore();
   const prev = (store[key] as Record<string, unknown>) || {};
   const next = {

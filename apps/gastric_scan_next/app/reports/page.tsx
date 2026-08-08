@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useMemo, useRef, useState } from 'react';
 import { Header } from '@/components/Header';
 import { FileText, Download, Search, Filter } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -14,18 +13,20 @@ import {
   getStatusLabel,
   StatusFilter
 } from '@/app/reports/report-data';
+import { downloadReportPdf } from '@/lib/report-download';
+import { navigateTo } from '@/lib/navigation';
 
 export default function ReportsPage() {
   const { t, language } = useSettings();
-  const router = useRouter();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<StatusFilter>('All');
 
   const summaryCards = useMemo(() => ([
-    { key: 'total', label: language === 'zh' ? '总报告数' : 'Total Reports', value: statusCounts.All, gradient: 'from-blue-900/30 to-blue-800/10' },
-    { key: 'Finalized', label: language === 'zh' ? '已完成' : 'Finalized', value: statusCounts.Finalized, gradient: 'from-emerald-900/30 to-emerald-800/10' },
-    { key: 'Reviewed', label: language === 'zh' ? '待审核' : 'Reviewed', value: statusCounts.Reviewed, gradient: 'from-amber-900/30 to-amber-800/10' },
-    { key: 'Draft', label: language === 'zh' ? '草稿' : 'Draft', value: statusCounts.Draft, gradient: 'from-gray-900/30 to-gray-800/10' }
+    { key: 'total', label: language !== 'en' ? '总报告数' : 'Total Reports', value: statusCounts.All, gradient: 'from-blue-900/30 to-blue-800/10' },
+    { key: 'Finalized', label: language !== 'en' ? '已完成' : 'Finalized', value: statusCounts.Finalized, gradient: 'from-emerald-900/30 to-emerald-800/10' },
+    { key: 'Reviewed', label: language !== 'en' ? '待审核' : 'Reviewed', value: statusCounts.Reviewed, gradient: 'from-amber-900/30 to-amber-800/10' },
+    { key: 'Draft', label: language !== 'en' ? '草稿' : 'Draft', value: statusCounts.Draft, gradient: 'from-gray-900/30 to-gray-800/10' }
   ]), [language]);
 
   const filteredReports = useMemo(() => {
@@ -40,7 +41,7 @@ export default function ReportsPage() {
   }, [searchTerm, activeStatusFilter]);
 
   const handleRowNavigation = (reportId: string) => {
-    router.push(`/reports/${reportId}`);
+    navigateTo(`/reports/${reportId}`);
   };
 
   return (
@@ -65,15 +66,20 @@ export default function ReportsPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                   <input
+                    ref={searchInputRef}
                     type="text"
-                    placeholder={language === 'zh' ? '搜索报告...' : 'Search reports...'}
+                    placeholder={language !== 'en' ? '搜索报告...' : 'Search reports...'}
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                     className="bg-neutral-900/50 border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-blue-500/50 focus:bg-neutral-900 transition-all w-64"
                   />
                 </div>
-                <button className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900/50 border border-white/10 rounded-lg hover:bg-white/5 text-sm transition-colors">
-                  <Filter size={16} /> {language === 'zh' ? '筛选' : 'Filter'}
+                <button
+                  type="button"
+                  onClick={() => searchInputRef.current?.focus()}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900/50 border border-white/10 rounded-lg hover:bg-white/5 text-sm transition-colors"
+                >
+                  <Filter size={16} /> {language !== 'en' ? '筛选' : 'Filter'}
                 </button>
               </div>
             </div>
@@ -92,7 +98,7 @@ export default function ReportsPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="text-[10px] uppercase tracking-wider text-gray-500">{language === 'zh' ? '筛选' : 'Filter'}</span>
+              <span className="text-[10px] uppercase tracking-wider text-gray-500">{language !== 'en' ? '筛选' : 'Filter'}</span>
               {statusFilters.map(filter => (
                 <button
                   key={filter}
@@ -116,18 +122,18 @@ export default function ReportsPage() {
             <div className="px-6 py-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-400">
               <div className="flex flex-wrap items-center gap-2">
                 <span>
-                  {language === 'zh'
+                  {language !== 'en'
                     ? `显示 ${filteredReports.length}/${reportData.length} 条报告`
                     : `Showing ${filteredReports.length}/${reportData.length} reports`
                   }
                 </span>
                 <span className="text-gray-500">•</span>
                 <span>
-                  {language === 'zh' ? '当前筛选' : 'Active filter'}: {getStatusLabel(activeStatusFilter, language)}
+                  {language !== 'en' ? '当前筛选' : 'Active filter'}: {getStatusLabel(activeStatusFilter, language)}
                 </span>
                 {searchTerm && (
                   <span className="text-gray-500">
-                    {language === 'zh' ? '搜索关键词' : 'Search'}: "{searchTerm}"
+                    {language !== 'en' ? '搜索关键词' : 'Search'}: &quot;{searchTerm}&quot;
                   </span>
                 )}
               </div>
@@ -138,7 +144,7 @@ export default function ReportsPage() {
                 }}
                 className="px-3 py-1 rounded-full border border-white/20 text-[10px] uppercase tracking-widest hover:border-white/50 transition-colors"
               >
-                {language === 'zh' ? '重置筛选' : 'Reset filters'}
+                {language !== 'en' ? '重置筛选' : 'Reset filters'}
               </button>
             </div>
 
@@ -146,19 +152,19 @@ export default function ReportsPage() {
               <table className="w-full text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-gradient-to-r from-neutral-900 to-neutral-800 border-b border-white/10 text-gray-400 uppercase text-xs tracking-wider">
                   <tr>
-                    <th className="px-6 py-4 font-medium">{language === 'zh' ? '报告ID' : 'Report ID'}</th>
-                    <th className="px-6 py-4 font-medium">{language === 'zh' ? '病人ID' : 'Patient ID'}</th>
-                    <th className="px-6 py-4 font-medium">{language === 'zh' ? '日期' : 'Date'}</th>
-                    <th className="px-6 py-4 font-medium">{language === 'zh' ? '分期预测' : 'Stage Prediction'}</th>
-                    <th className="px-6 py-4 font-medium">{language === 'zh' ? '状态' : 'Status'}</th>
-                    <th className="px-6 py-4 font-medium text-right">{language === 'zh' ? '操作' : 'Action'}</th>
+                    <th className="px-6 py-4 font-medium">{language !== 'en' ? '报告ID' : 'Report ID'}</th>
+                    <th className="px-6 py-4 font-medium">{language !== 'en' ? '病人ID' : 'Patient ID'}</th>
+                    <th className="px-6 py-4 font-medium">{language !== 'en' ? '日期' : 'Date'}</th>
+                    <th className="px-6 py-4 font-medium">{language !== 'en' ? '分期预测' : 'Stage Prediction'}</th>
+                    <th className="px-6 py-4 font-medium">{language !== 'en' ? '状态' : 'Status'}</th>
+                    <th className="px-6 py-4 font-medium text-right">{language !== 'en' ? '操作' : 'Action'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredReports.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
-                        {language === 'zh'
+                        {language !== 'en'
                           ? '没有匹配当前筛选条件的报告。'
                           : 'No reports match the current filters.'}
                       </td>
@@ -193,9 +199,12 @@ export default function ReportsPage() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <button
+                            type="button"
+                            aria-label={`Download ${report.id} PDF`}
                             className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all group-hover:bg-white/5"
                             onClick={event => {
                               event.stopPropagation();
+                              downloadReportPdf(report);
                             }}
                           >
                             <Download size={18} />

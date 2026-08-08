@@ -4,13 +4,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { Activity, AlertTriangle, ArrowRight, Brain, CheckCircle2, ChevronRight, Clipboard, Database, FileSearch, FileText, Layers3, Loader2, Microscope, Network, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Workflow, X } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
-import { AgentAnalysisResponse, AgentReportCue, AgentStep, AgentToolResult, MaskBoundaryOverride, Patient, RuntimeVerification } from '@/types';
+import { AgentAnalysisResponse, AgentReportCue, AgentStep, AgentToolResult, LumenOverride, MaskBoundaryOverride, Patient, RuntimeVerification } from '@/types';
 import { maskOverrideToAnalyzePayload } from '@/lib/mask-override';
+import { lumenOverrideToAnalyzePayload } from '@/lib/lumen-override';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import type { Language } from '@/lib/i18n';
+import { GcUsSignModelMap } from '@/components/GcUsSignModelMap';
 
 interface AgentWorkbenchPanelProps {
   patient: Patient | null;
   maskOverride?: MaskBoundaryOverride | null;
+  lumenOverride?: LumenOverride | null;
   gcUsReport?: GcUsReportState | null;
   onAnalysisComplete?: (result: AgentAnalysisResponse) => void;
 }
@@ -95,6 +99,7 @@ function getStepIcon(stepId: string) {
   if (stepId.includes('segmentation') || stepId.includes('localization')) return Layers3;
   if (stepId.includes('wall')) return Activity;
   if (stepId.includes('runtime') || stepId.includes('llm_report')) return ShieldCheck;
+  if (stepId.includes('gc_us_sign')) return Network;
   if (stepId.includes('morphology')) return Activity;
   if (stepId.includes('classification')) return Microscope;
   if (stepId.includes('dino')) return Sparkles;
@@ -110,6 +115,10 @@ function getStepIcon(stepId: string) {
 function getStepOutputSummary(step: AgentStep): string {
   const stepId = step.step_id || '';
   const outputs = step.outputs || {};
+  if (stepId.includes('gc_us_sign')) {
+    const items = Array.isArray(outputs.items) ? outputs.items : [];
+    return `GC-US signs=${items.length} status=${formatUnknown(outputs.status)} score=${formatUnknown(outputs.normalized_i)}`;
+  }
   if (stepId.includes('dino_sign_fusion')) {
     const signs = outputs.structured_signs as Record<string, unknown> | undefined;
     return [
@@ -190,7 +199,7 @@ function ImageLightboxModal({
 }: {
   payload: ImageZoomPayload;
   onClose: () => void;
-  language: 'zh' | 'en';
+  language: Language;
 }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -211,7 +220,7 @@ function ImageLightboxModal({
         type="button"
         onClick={onClose}
         className="fixed top-[72px] right-4 z-[300001] flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-neutral-900/95 text-gray-100 shadow-2xl hover:border-red-400/60 hover:bg-red-500/20"
-        aria-label={language === 'zh' ? '关闭' : 'Close'}
+        aria-label={language !== 'en' ? '关闭' : 'Close'}
       >
         <X size={22} />
       </button>
@@ -289,6 +298,7 @@ function VisualFrame({
 export function AgentWorkbenchPanel({
   patient,
   maskOverride = null,
+  lumenOverride = null,
   gcUsReport = null,
   onAnalysisComplete,
 }: AgentWorkbenchPanelProps) {
@@ -316,6 +326,7 @@ export function AgentWorkbenchPanel({
   useEffect(() => {
     setError(null);
     setResult(null);
+    setSessionId(undefined);
     setModalOpen(false);
     setWorkbenchOpen(false);
     setActiveStep(0);
@@ -333,7 +344,13 @@ export function AgentWorkbenchPanel({
   }, [liveSteps.length, loading]);
 
   const copyDraft = async () => {
-    const draftText = gcUsReport?.report.prose || result?.report.dynamic_report_draft?.full_text;
+    const doctorEdited = Boolean(
+      gcUsReport
+      && (gcUsReport.report.doctor_edited || gcUsReport.reference_stage.source === 'doctor'),
+    );
+    const draftText = doctorEdited
+      ? gcUsReport?.report.prose
+      : result?.report.dynamic_report_draft?.full_text || gcUsReport?.report.prose;
     if (!draftText) return;
     setCopyError(null);
     try {
@@ -341,7 +358,7 @@ export function AgentWorkbenchPanel({
       setCopiedDraft(true);
       window.setTimeout(() => setCopiedDraft(false), 1600);
     } catch {
-      setCopyError(language === 'zh' ? '浏览器暂未授权剪贴板，请先点击页面后重试。' : 'Clipboard permission is not available. Focus the page and retry.');
+      setCopyError(language !== 'en' ? '浏览器暂未授权剪贴板，请先点击页面后重试。' : 'Clipboard permission is not available. Focus the page and retry.');
     }
   };
 
@@ -358,7 +375,8 @@ export function AgentWorkbenchPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patient_id: patient.patient_id,
-          sessionId,
+          case_id: patient.id,
+          session_id: sessionId,
           record_id: recordId,
           action,
           memory_store: result?.memory_store_ref?.path,
@@ -369,7 +387,7 @@ export function AgentWorkbenchPanel({
         throw new Error(payload?.error || 'Memory feedback failed');
       }
       setMemoryActionMessage(
-        language === 'zh'
+        language !== 'en'
           ? `Memory 候选已${action === 'accept' ? '接受' : action === 'reject' ? '拒绝' : '暂缓'}`
           : `Memory candidate ${action} recorded`,
       );
@@ -380,7 +398,7 @@ export function AgentWorkbenchPanel({
             ...result.report,
             memory_update_candidates: result.report.memory_update_candidates.map((candidate) => (
               candidate.record_id === recordId
-                ? { ...candidate, status: action === 'accept' ? 'active' : action === 'reject' ? 'rejected' : 'candidate' }
+                ? { ...candidate, status: action === 'reject' ? 'rejected' : 'candidate' }
                 : candidate
             )),
           },
@@ -394,7 +412,7 @@ export function AgentWorkbenchPanel({
   };
 
   const runAnalysis = async () => {
-    if (!patient) return;
+    if (!patient || loading) return;
     setModalOpen(false);
     setWorkbenchOpen(true);
     setLoading(true);
@@ -417,6 +435,7 @@ export function AgentWorkbenchPanel({
           memory_enabled: true,
           gc_us_report: gcUsReport || undefined,
           ...maskOverrideToAnalyzePayload(maskOverride),
+          ...lumenOverrideToAnalyzePayload(lumenOverride),
         }),
       });
       if (!response.ok) {
@@ -527,70 +546,77 @@ export function AgentWorkbenchPanel({
     return [
       {
         key: 'segmentation',
-        title: language === 'zh' ? '分割 / ROI 定位' : 'Segmentation / ROI',
+        title: language !== 'en' ? '分割 / ROI 定位' : 'Segmentation / ROI',
         icon: Layers3,
         tool: result.tool_evidence.segmentation,
         metrics: getToolMetricRows(result.tool_evidence.segmentation, ['roi_source', 'lesion_area_ratio', 'mask_available', 'image_height', 'image_width']),
       },
       {
         key: 'lumen',
-        title: language === 'zh' ? '胃腔检测 (YOLO)' : 'Lumen detection',
+        title: language !== 'en' ? '胃腔检测' : 'Lumen detection',
         icon: ScanSearch,
         tool: result.tool_evidence.lumen_detection ?? { available: false },
         metrics: getToolMetricRows(result.tool_evidence.lumen_detection, ['lumen_detected', 'lumen_confidence', 'lumen_area_ratio']),
       },
       {
         key: 'wall',
-        title: language === 'zh' ? '壁层证据 (SDF)' : 'Wall evidence',
+        title: language !== 'en' ? '壁层证据 (SDF)' : 'Wall evidence',
         icon: Activity,
         tool: result.tool_evidence.wall_evidence ?? { available: false },
         metrics: getToolMetricRows(result.tool_evidence.wall_evidence, ['penetration_risk', 'evidence_source', 'available']),
       },
       {
         key: 'classification',
-        title: language === 'zh' ? 'T 分期分类' : 'T-stage classifier',
+        title: language !== 'en' ? 'T 分期分类' : 'T-stage classifier',
         icon: Microscope,
         tool: result.tool_evidence.classification,
         metrics: getToolMetricRows(result.tool_evidence.classification, ['top1_stage', 'top1_prob', 'top2_stage', 'top2_prob', 'uncertainty']),
       },
       {
         key: 'morphology',
-        title: language === 'zh' ? '形态学证据' : 'Morphology',
+        title: language !== 'en' ? '形态学证据' : 'Morphology',
         icon: Activity,
         tool: result.tool_evidence.morphology,
         metrics: getToolMetricRows(result.tool_evidence.morphology, ['boundary_irregularity', 'lesion_area_ratio', 'convexity', 'solidity', 'compactness']),
       },
       {
+        key: 'gc_us_signs',
+        title: language !== 'en' ? '核心征象算法链' : 'Core sign model chain',
+        icon: Network,
+        tool: result.tool_evidence.gc_us_signs ?? { available: false },
+        metrics: getToolMetricRows(result.tool_evidence.gc_us_signs, ['status', 'normalized_i', 'confidence', 'ct_stage', 'evidence_role']),
+      },
+      {
         key: 'dino',
-        title: language === 'zh' ? 'DINO 影子证据' : 'DINO shadow evidence',
+        title: language !== 'en' ? '区域特征证据' : 'Region-feature evidence',
         icon: Sparkles,
         tool: result.tool_evidence.dino,
         metrics: getToolMetricRows(result.tool_evidence.dino, ['available', 'mask_available', 'fusion_mode', 'uncertainty_flags']),
       },
       {
         key: 'clinical',
-        title: language === 'zh' ? '临床风险' : 'Clinical risk',
+        title: language !== 'en' ? '临床风险' : 'Clinical risk',
         icon: ShieldCheck,
         tool: result.tool_evidence.clinical,
         metrics: getToolMetricRows(result.tool_evidence.clinical, ['clinical_risk_score', 'factors_available', 'risk_factors', 'protective_factors']),
       },
       {
         key: 'report',
-        title: language === 'zh' ? '报告文本线索' : 'Report cues',
+        title: language !== 'en' ? '报告文本线索' : 'Report cues',
         icon: FileSearch,
         tool: result.tool_evidence.report,
         metrics: getToolMetricRows(result.tool_evidence.report, ['sections_available', 'text_length', 'report_source']),
       },
       {
         key: 'clinical_decision',
-        title: language === 'zh' ? '跨模态临床决策' : 'Cross-modal clinical decision',
+        title: language !== 'en' ? '跨模态临床决策' : 'Cross-modal clinical decision',
         icon: Network,
         tool: result.tool_evidence.clinical_decision,
         metrics: getToolMetricRows(result.tool_evidence.clinical_decision, ['status', 'requires_mdt', 'provisional_stage', 'missing_modalities']),
       },
       {
         key: 'memory',
-        title: language === 'zh' ? '相似病例 memory' : 'Similar-case memory',
+        title: language !== 'en' ? '相似病例 memory' : 'Similar-case memory',
         icon: Database,
         tool: {
           available: result.similar_cases.length > 0,
@@ -663,27 +689,27 @@ export function AgentWorkbenchPanel({
     if (!result) return [];
     return [
       {
-        label: language === 'zh' ? '分类模型' : 'Classifier',
+        label: language !== 'en' ? '分类模型' : 'Classifier',
         value: formatUnknown(result.tool_evidence.classification?.top1_stage),
         weight: numericPercent(result.tool_evidence.classification?.top1_prob, 0),
       },
       {
-        label: language === 'zh' ? '相似病例多数票' : 'Similar-case majority',
+        label: language !== 'en' ? '相似病例多数票' : 'Similar-case majority',
         value: formatUnknown(result.report.similar_case_summary?.majority_stage),
         weight: Math.min(result.similar_cases.length * 20, 100),
       },
       {
-        label: language === 'zh' ? '临床风险' : 'Clinical risk',
+        label: language !== 'en' ? '临床风险' : 'Clinical risk',
         value: formatUnknown(result.tool_evidence.clinical?.clinical_risk_score),
         weight: numericPercent(result.tool_evidence.clinical?.clinical_risk_score, 0),
       },
       {
-        label: language === 'zh' ? '分割质量' : 'Segmentation quality',
+        label: language !== 'en' ? '分割质量' : 'Segmentation quality',
         value: formatUnknown(result.tool_evidence.segmentation?.roi_source),
         weight: result.tool_evidence.segmentation?.mask_available ? 90 : 45,
       },
       {
-        label: language === 'zh' ? '报告线索' : 'Report cues',
+        label: language !== 'en' ? '报告线索' : 'Report cues',
         value: `${getReportCues(result.tool_evidence.report).length} cues`,
         weight: Math.min(getReportCues(result.tool_evidence.report).length * 25, 100),
       },
@@ -707,6 +733,49 @@ export function AgentWorkbenchPanel({
       ? outputs.similar_cases as Array<Record<string, unknown>>
       : result?.similar_cases ?? [];
 
+    if (stepId.includes('gc_us_sign')) {
+      const signAnalysis = result?.tool_evidence.gc_us_signs || outputs as AgentToolResult;
+      const gate = signAnalysis.structural_gate && typeof signAnalysis.structural_gate === 'object'
+        ? signAnalysis.structural_gate as Record<string, unknown>
+        : {};
+      const items = Array.isArray(signAnalysis.items) ? signAnalysis.items : [];
+      return (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+          <GcUsSignModelMap
+            signAnalysis={signAnalysis}
+            zh={language !== 'en'}
+            showGeometry
+          />
+          <div className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
+            <div className="text-sm font-black text-amber-100">
+              {language !== 'en' ? '软评分与结构闸门' : 'Soft score and structural gate'}
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
+              {language !== 'en'
+                ? '评分用于整理证据，墙壁几何代理不会单独解锁确定 cT。'
+                : 'The score organizes evidence; wall geometry proxies do not unlock definite cT alone.'}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              {[
+                [language !== 'en' ? '已评分项' : 'Scored items', items.length],
+                [language !== 'en' ? '总分' : 'Total', `${formatUnknown(signAnalysis.total)}/${formatUnknown(signAnalysis.max_total)}`],
+                [language !== 'en' ? 'cT 输出' : 'cT output', signAnalysis.ct_stage],
+                [language !== 'en' ? '确定闸门' : 'Definite gate', gate.unlock_definite_ct],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                  <div className="text-slate-500">{String(label)}</div>
+                  <div className="mt-1 font-mono text-amber-100">{formatUnknown(value)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 rounded-lg border border-amber-300/20 bg-black/20 p-3 text-[10px] leading-relaxed text-amber-100/80">
+              {formatUnknown(signAnalysis.mapping_note || signAnalysis.risk_semantics)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (stepId.includes('dino_sign_fusion')) {
       const signs = (outputs.structured_signs || {}) as Record<string, unknown>;
       const dino = (outputs.dino || {}) as Record<string, unknown>;
@@ -721,10 +790,10 @@ export function AgentWorkbenchPanel({
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
           <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
             <div className="text-sm font-black text-cyan-100">
-              {language === 'zh' ? 'DINO + 结构化征象' : 'DINO + structured signs'}
+              {language !== 'en' ? 'DINO + 结构化征象' : 'DINO + structured signs'}
             </div>
             <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
-              {language === 'zh'
+              {language !== 'en'
                 ? '此步骤提供可追溯证据，不覆盖 T 分期主模型。'
                 : 'Evidence-only fusion; it does not replace the T-stage model.'}
             </div>
@@ -743,12 +812,12 @@ export function AgentWorkbenchPanel({
               ))}
             </div>
             <div className="mt-3 text-[10px] text-slate-500">
-              {language === 'zh' ? '探针来源' : 'Probe source'}：{formatUnknown(provenance.probe)}
+              {language !== 'en' ? '探针来源' : 'Probe source'}：{formatUnknown(provenance.probe)}
             </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="text-sm font-black text-white">
-              {language === 'zh' ? '支持与限制' : 'Support and limits'}
+              {language !== 'en' ? '支持与限制' : 'Support and limits'}
             </div>
             <div className="mt-3 space-y-2 text-xs">
               {supporting.slice(0, 4).map((item, index) => (
@@ -770,9 +839,9 @@ export function AgentWorkbenchPanel({
     if (!currentBackendStep || stepId.includes('intake')) {
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <VisualFrame title={language === 'zh' ? '当前病例原始超声' : 'Current case ultrasound'} subtitle={patient.id_short} src={patient.image_url} />
+          <VisualFrame title={language !== 'en' ? '当前病例原始超声' : 'Current case ultrasound'} subtitle={patient.id_short} src={patient.image_url} />
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-sm font-black text-white">{language === 'zh' ? '病例资料盘点' : 'Case evidence inventory'}</div>
+            <div className="text-sm font-black text-white">{language !== 'en' ? '病例资料盘点' : 'Case evidence inventory'}</div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
               {[
                 ['image', patient.image_url ? 'available' : 'missing'],
@@ -800,13 +869,13 @@ export function AgentWorkbenchPanel({
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <VisualFrame
-            title={language === 'zh' ? '胃腔 YOLO 检测框' : 'Lumen YOLO detection box'}
+            title={language !== 'en' ? '胃腔 YOLO 检测框' : 'Lumen YOLO detection box'}
             subtitle={
               outputs.lumen_detected
-                ? (language === 'zh'
+                ? (language !== 'en'
                   ? `置信度 ${formatUnknown(outputs.lumen_confidence)} · 面积比 ${formatUnknown(outputs.lumen_area_ratio)}`
                   : `conf ${formatUnknown(outputs.lumen_confidence)} · area ${formatUnknown(outputs.lumen_area_ratio)}`)
-                : (language === 'zh' ? '未检测到胃腔，仍显示当前帧' : 'no lumen box; showing current frame')
+                : (language !== 'en' ? '未检测到胃腔，仍显示当前帧' : 'no lumen box; showing current frame')
             }
             src={
               typeof refs.lumen_detection_overlay_url === 'string'
@@ -815,7 +884,7 @@ export function AgentWorkbenchPanel({
             }
           />
           <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
-            <div className="text-sm font-black text-cyan-100">{language === 'zh' ? '检测输出' : 'Detection outputs'}</div>
+            <div className="text-sm font-black text-cyan-100">{language !== 'en' ? '检测输出' : 'Detection outputs'}</div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
               {[
                 ['lumen_detected', outputs.lumen_detected],
@@ -842,9 +911,9 @@ export function AgentWorkbenchPanel({
     if (stepId.includes('segmentation') || stepId.includes('localization')) {
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-          <VisualFrame title={language === 'zh' ? '预测分割叠加图' : 'Predicted segmentation overlay'} subtitle="model-generated overlay" src={typeof refs.predicted_overlay_url === 'string' ? refs.predicted_overlay_url : patient.overlay_url || patient.image_url} />
-          <VisualFrame title={language === 'zh' ? '预测 mask' : 'Predicted mask'} subtitle="binary model mask" src={typeof refs.predicted_mask_url === 'string' ? refs.predicted_mask_url : undefined} />
-          <VisualFrame title={language === 'zh' ? '预测 ROI 裁剪' : 'Predicted ROI crop'} subtitle={formatUnknown(outputs.roi_source)} src={typeof refs.predicted_roi_url === 'string' ? refs.predicted_roi_url : patient.roi_url || patient.image_url}>
+          <VisualFrame title={language !== 'en' ? '预测分割叠加图' : 'Predicted segmentation overlay'} subtitle="model-generated overlay" src={typeof refs.predicted_overlay_url === 'string' ? refs.predicted_overlay_url : patient.overlay_url || patient.image_url} />
+          <VisualFrame title={language !== 'en' ? '预测 mask' : 'Predicted mask'} subtitle="binary model mask" src={typeof refs.predicted_mask_url === 'string' ? refs.predicted_mask_url : undefined} />
+          <VisualFrame title={language !== 'en' ? '预测 ROI 裁剪' : 'Predicted ROI crop'} subtitle={formatUnknown(outputs.roi_source)} src={typeof refs.predicted_roi_url === 'string' ? refs.predicted_roi_url : patient.roi_url || patient.image_url}>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               {['roi_source', 'mask_available', 'lesion_area_ratio', 'image_height', 'image_width'].map((key) => (
                 <div key={key} className="rounded bg-black/25 px-2 py-1">
@@ -854,20 +923,20 @@ export function AgentWorkbenchPanel({
               ))}
             </div>
           </VisualFrame>
-          <VisualFrame title={language === 'zh' ? '胃壁穿透风险热力图' : 'Wall penetration risk heatmap'} subtitle={language === 'zh' ? '由预测 mask / ROI 生成的胃壁风险代理图' : 'wall-risk proxy from predicted mask / ROI'} src={typeof refs.wall_penetration_heatmap_url === 'string' ? refs.wall_penetration_heatmap_url : undefined} />
+          <VisualFrame title={language !== 'en' ? '胃壁穿透风险热力图' : 'Wall penetration risk heatmap'} subtitle={language !== 'en' ? '由预测 mask / ROI 生成的胃壁风险代理图' : 'wall-risk proxy from predicted mask / ROI'} src={typeof refs.wall_penetration_heatmap_url === 'string' ? refs.wall_penetration_heatmap_url : undefined} />
         </div>
       );
     }
 
     if (stepId.includes('wall_evidence') || stepId.includes('wall_analysis')) {
       const panelMode = formatUnknown(outputs.wall_panel_mode);
-      const liveSubtitle = language === 'zh'
+      const liveSubtitle = language !== 'en'
         ? `当前选中帧实时生成 · ${panelMode}`
         : `live on selected frame · ${panelMode}`;
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <VisualFrame
-            title={language === 'zh' ? '真实胃壁分析面板' : 'Real wall analysis panel'}
+            title={language !== 'en' ? '真实胃壁分析面板' : 'Real wall analysis panel'}
             subtitle={liveSubtitle}
             src={
               visualRefPick(refs, [
@@ -878,12 +947,12 @@ export function AgentWorkbenchPanel({
             }
           />
           <VisualFrame
-            title={language === 'zh' ? '胃壁穿透风险热力图' : 'Wall penetration risk heatmap'}
-            subtitle={language === 'zh' ? '预测 mask 驱动的风险代理' : 'mask-driven risk proxy'}
+            title={language !== 'en' ? '胃壁穿透风险热力图' : 'Wall penetration risk heatmap'}
+            subtitle={language !== 'en' ? '预测 mask 驱动的风险代理' : 'mask-driven risk proxy'}
             src={typeof refs.wall_penetration_heatmap_url === 'string' ? refs.wall_penetration_heatmap_url : undefined}
           />
           <VisualFrame
-            title={language === 'zh' ? '胃壁层剖面' : 'Wall layer profile'}
+            title={language !== 'en' ? '胃壁层剖面' : 'Wall layer profile'}
             subtitle={formatUnknown(outputs.wall_layer_profile_source)}
             src={typeof refs.wall_layer_profile_url === 'string' ? refs.wall_layer_profile_url : undefined}
           />
@@ -896,9 +965,9 @@ export function AgentWorkbenchPanel({
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_0.9fr_1.2fr]">
           <VisualFrame
-            title={language === 'zh' ? '真实胃壁分析面板' : 'Real wall analysis panel'}
+            title={language !== 'en' ? '真实胃壁分析面板' : 'Real wall analysis panel'}
             subtitle={
-              language === 'zh'
+              language !== 'en'
                 ? '基于当前选中图 + 预测 mask 实时生成'
                 : 'live from selected image + predicted mask'
             }
@@ -910,9 +979,9 @@ export function AgentWorkbenchPanel({
               ])
             }
           />
-          <VisualFrame title={language === 'zh' ? '胃壁层厚度剖面' : 'Gastric wall layer profile'} subtitle={language === 'zh' ? '沿 ROI 横向的相对壁层信号' : 'relative wall signal along ROI'} src={typeof refs.wall_layer_profile_url === 'string' ? refs.wall_layer_profile_url : undefined} />
+          <VisualFrame title={language !== 'en' ? '胃壁层厚度剖面' : 'Gastric wall layer profile'} subtitle={language !== 'en' ? '沿 ROI 横向的相对壁层信号' : 'relative wall signal along ROI'} src={typeof refs.wall_layer_profile_url === 'string' ? refs.wall_layer_profile_url : undefined} />
           <div className="rounded-xl border border-lime-300/20 bg-lime-300/5 p-4">
-            <div className="text-sm font-black text-lime-100">{language === 'zh' ? '形态学指标' : 'Morphology metrics'}</div>
+            <div className="text-sm font-black text-lime-100">{language !== 'en' ? '形态学指标' : 'Morphology metrics'}</div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               {metrics.map((key) => (
                 <div key={key} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
@@ -931,9 +1000,9 @@ export function AgentWorkbenchPanel({
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-4">
             <VisualFrame
-              title={language === 'zh' ? '真实 DINO 多模态证据面板' : 'Real DINO multimodal evidence panel'}
+              title={language !== 'en' ? '真实 DINO 多模态证据面板' : 'Real DINO multimodal evidence panel'}
               subtitle={
-                language === 'zh'
+                language !== 'en'
                   ? '优先磁盘缓存；若无则 analyze_case 按需调用 generate_clean_agent_case_visual_panels 布局实时生成（较慢）'
                   : 'prefer cached PNG; else on-demand generation via analyze_case (slower)'
               }
@@ -942,13 +1011,13 @@ export function AgentWorkbenchPanel({
                 'current_image_dino_feature_panel_url',
               ])}
             />
-            <VisualFrame title={language === 'zh' ? '分类概率图' : 'Classification probability plot'} subtitle="model-generated probability plot" src={typeof refs.classification_probabilities_url === 'string' ? refs.classification_probabilities_url : undefined} />
+            <VisualFrame title={language !== 'en' ? '分类概率图' : 'Classification probability plot'} subtitle="model-generated probability plot" src={typeof refs.classification_probabilities_url === 'string' ? refs.classification_probabilities_url : undefined} />
           </div>
           <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/5 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-black text-emerald-100">{language === 'zh' ? 'T 分期概率输出' : 'T-stage probability output'}</div>
-                <div className="mt-1 text-xs text-slate-500">{language === 'zh' ? '显示 top-1、top-2 和相邻分期不确定性。' : 'Shows top-1, top-2, and adjacent-stage uncertainty.'}</div>
+                <div className="text-sm font-black text-emerald-100">{language !== 'en' ? 'T 分期概率输出' : 'T-stage probability output'}</div>
+                <div className="mt-1 text-xs text-slate-500">{language !== 'en' ? '显示 top-1、top-2 和相邻分期不确定性。' : 'Shows top-1, top-2, and adjacent-stage uncertainty.'}</div>
               </div>
               <div className="rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-4 py-2 text-right">
                 <div className="text-2xl font-black text-emerald-100">{formatUnknown(outputs.top1_stage)}</div>
@@ -979,9 +1048,9 @@ export function AgentWorkbenchPanel({
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <VisualFrame
-            title={language === 'zh' ? '当前图像真实 DINO 特征面板' : 'Current-image real DINO feature panel'}
+            title={language !== 'en' ? '当前图像真实 DINO 特征面板' : 'Current-image real DINO feature panel'}
             subtitle={
-              language === 'zh'
+              language !== 'en'
                 ? `真 DINOv3 · 全图 resize ${formatUnknown(outputs.dino_input_size ?? 512)} · token ${dinoGrid}`
                 : `real DINOv3 · full-frame resize ${formatUnknown(outputs.dino_input_size ?? 512)} · token ${dinoGrid}`
             }
@@ -989,16 +1058,16 @@ export function AgentWorkbenchPanel({
           />
           <div className="space-y-4">
             <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
-              <div className="text-sm font-black text-cyan-100">{language === 'zh' ? 'DINO 推理说明' : 'DINO inference notes'}</div>
+              <div className="text-sm font-black text-cyan-100">{language !== 'en' ? 'DINO 推理说明' : 'DINO inference notes'}</div>
               <div className="mt-3 space-y-2 text-xs leading-relaxed text-slate-300">
-                <p>{language === 'zh' ? '✓ 真实特征：本地 DINOv3 checkpoint 前向，不是梯度 proxy。' : '✓ Real features: local DINOv3 forward, not gradient proxy.'}</p>
-                <p>{language === 'zh' ? '✓ 全图模式：整帧 resize 512×512 一次前向，不是 ROI patch 裁剪。' : '✓ Full frame: resize 512×512 single forward, not ROI patch crop.'}</p>
-                <p>{language === 'zh' ? '✓ 区域池化：预测 mask 下采样到 token 网格算 affinity。' : '✓ Pooling: predicted mask on token grid for affinity maps.'}</p>
-                <p className="text-amber-200/90">{language === 'zh' ? '⚠ 相似病例 saliency 图仍是 Sobel proxy。' : '⚠ Similar-case saliency is still Sobel proxy.'}</p>
+                <p>{language !== 'en' ? '✓ 真实特征：本地 DINOv3 checkpoint 前向，不是梯度 proxy。' : '✓ Real features: local DINOv3 forward, not gradient proxy.'}</p>
+                <p>{language !== 'en' ? '✓ 全图模式：整帧 resize 512×512 一次前向，不是 ROI patch 裁剪。' : '✓ Full frame: resize 512×512 single forward, not ROI patch crop.'}</p>
+                <p>{language !== 'en' ? '✓ 区域池化：预测 mask 下采样到 token 网格算 affinity。' : '✓ Pooling: predicted mask on token grid for affinity maps.'}</p>
+                <p className="text-amber-200/90">{language !== 'en' ? '⚠ 相似病例 saliency 图仍是 Sobel proxy。' : '⚠ Similar-case saliency is still Sobel proxy.'}</p>
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="text-sm font-black text-white">{language === 'zh' ? 'DINO 调用信息' : 'DINO call details'}</div>
+              <div className="text-sm font-black text-white">{language !== 'en' ? 'DINO 调用信息' : 'DINO call details'}</div>
               <div className="mt-4 space-y-3 text-xs">
                 {['current_image_dino_model', 'dino_inference_mode', 'dino_input_size', 'dino_token_grid', 'dino_region_pooling', 'current_image_dino_error'].map((key) => (
                   <div key={key} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
@@ -1011,8 +1080,8 @@ export function AgentWorkbenchPanel({
             </div>
             {typeof refs.real_dino_multimodal_panel_url === 'string' && (
               <VisualFrame
-                title={language === 'zh' ? 'DINO 多模态合成面板' : 'DINO multimodal composite'}
-                subtitle={language === 'zh' ? '同一次 DINO 推理 + 分类概率' : 'same DINO forward + classification probs'}
+                title={language !== 'en' ? 'DINO 多模态合成面板' : 'DINO multimodal composite'}
+                subtitle={language !== 'en' ? '同一次 DINO 推理 + 分类概率' : 'same DINO forward + classification probs'}
                 src={refs.real_dino_multimodal_panel_url}
               />
             )}
@@ -1026,7 +1095,7 @@ export function AgentWorkbenchPanel({
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
-            <div className="text-sm font-black text-amber-100">{language === 'zh' ? '临床风险/校准' : 'Clinical risk calibration'}</div>
+            <div className="text-sm font-black text-amber-100">{language !== 'en' ? '临床风险/校准' : 'Clinical risk calibration'}</div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
               {['clinical_risk_score', 'risk_factors', 'protective_factors', 'factors_available', 'sections_available', 'text_length'].map((key) => (
                 <div key={key} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
@@ -1037,7 +1106,7 @@ export function AgentWorkbenchPanel({
             </div>
           </div>
           <div className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-4">
-            <div className="text-sm font-black text-sky-100">{language === 'zh' ? '报告文本线索' : 'Report text cues'}</div>
+            <div className="text-sm font-black text-sky-100">{language !== 'en' ? '报告文本线索' : 'Report text cues'}</div>
             <div className="mt-4 space-y-2">
               {cueList.length ? cueList.map((cue, idx) => (
                 <div key={`cue-${idx}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs">
@@ -1045,7 +1114,7 @@ export function AgentWorkbenchPanel({
                   <div className="mt-1 text-slate-500">{formatUnknown('matched_terms' in cue ? cue.matched_terms : '')}</div>
                 </div>
               )) : (
-                <div className="rounded-lg border border-dashed border-white/10 p-4 text-xs text-slate-500">{language === 'zh' ? '当前未抽取到明确文本线索。' : 'No explicit report cues extracted.'}</div>
+                <div className="rounded-lg border border-dashed border-white/10 p-4 text-xs text-slate-500">{language !== 'en' ? '当前未抽取到明确文本线索。' : 'No explicit report cues extracted.'}</div>
               )}
             </div>
           </div>
@@ -1061,7 +1130,7 @@ export function AgentWorkbenchPanel({
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_0.8fr]">
           <div className="rounded-xl border border-violet-300/20 bg-violet-300/5 p-4">
-            <div className="text-sm font-black text-violet-100">{language === 'zh' ? '指南/知识检索' : 'Guideline knowledge retrieval'}</div>
+            <div className="text-sm font-black text-violet-100">{language !== 'en' ? '指南/知识检索' : 'Guideline knowledge retrieval'}</div>
             <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto custom-scrollbar">
               {snippets.length ? snippets.map((item, idx) => (
                 <div key={`knowledge-${idx}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs">
@@ -1071,18 +1140,18 @@ export function AgentWorkbenchPanel({
                 </div>
               )) : (
                 <div className="rounded-lg border border-dashed border-white/10 p-4 text-xs text-slate-500">
-                  {language === 'zh' ? '当前未检索到指南片段。' : 'No guideline snippets retrieved.'}
+                  {language !== 'en' ? '当前未检索到指南片段。' : 'No guideline snippets retrieved.'}
                 </div>
               )}
             </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-sm font-black text-white">{language === 'zh' ? '知识要点摘要' : 'Knowledge highlights'}</div>
+            <div className="text-sm font-black text-white">{language !== 'en' ? '知识要点摘要' : 'Knowledge highlights'}</div>
             <div className="mt-4 space-y-2">
               {highlights.length ? highlights.map((item, idx) => (
                 <div key={`highlight-${idx}`} className="rounded-lg border border-violet-300/20 bg-violet-300/5 px-3 py-2 text-xs text-violet-100">{item}</div>
               )) : (
-                <div className="text-xs text-slate-500">{language === 'zh' ? '暂无高亮摘要。' : 'No highlights available.'}</div>
+                <div className="text-xs text-slate-500">{language !== 'en' ? '暂无高亮摘要。' : 'No highlights available.'}</div>
               )}
             </div>
           </div>
@@ -1103,9 +1172,9 @@ export function AgentWorkbenchPanel({
           <div className="space-y-4">
             <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm font-black text-cyan-100">{language === 'zh' ? '相似病例 T 分期投票' : 'Similar-case T-stage vote'}</div>
+                <div className="text-sm font-black text-cyan-100">{language !== 'en' ? '相似病例 T 分期投票' : 'Similar-case T-stage vote'}</div>
                 <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs font-mono text-cyan-100">
-                  {language === 'zh' ? '多数票' : 'majority'}: {majorityStage}
+                  {language !== 'en' ? '多数票' : 'majority'}: {majorityStage}
                 </span>
               </div>
               <div className="mt-4 space-y-3">
@@ -1119,7 +1188,7 @@ export function AgentWorkbenchPanel({
                       <div className="mb-1 flex items-center justify-between text-xs">
                         <span className="font-mono text-slate-200">{stage}</span>
                         <span className="font-mono text-cyan-100">
-                          {countRaw} {language === 'zh' ? '票' : 'votes'} · {countPercent}%
+                          {countRaw} {language !== 'en' ? '票' : 'votes'} · {countPercent}%
                           {weightPercent > 0 ? ` · sim ${weightPercent}%` : ''}
                         </span>
                       </div>
@@ -1135,23 +1204,23 @@ export function AgentWorkbenchPanel({
               </div>
             </div>
             <VisualFrame
-              title={language === 'zh' ? '当前帧区域显著性（非 DINO）' : 'Current-frame saliency (not DINO)'}
-              subtitle={language === 'zh' ? 'Sobel 梯度 + mask 加权 proxy，仅作检索辅助' : 'Sobel + mask weighted proxy for retrieval cue only'}
+              title={language !== 'en' ? '当前帧区域显著性（非 DINO）' : 'Current-frame saliency (not DINO)'}
+              subtitle={language !== 'en' ? 'Sobel 梯度 + mask 加权 proxy，仅作检索辅助' : 'Sobel + mask weighted proxy for retrieval cue only'}
               src={typeof refs.dino_similarity_heatmap_url === 'string' ? refs.dino_similarity_heatmap_url : undefined}
             />
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-black text-white">{language === 'zh' ? '检索到的历史相似病例' : 'Retrieved similar cases'}</div>
+              <div className="text-sm font-black text-white">{language !== 'en' ? '检索到的历史相似病例' : 'Retrieved similar cases'}</div>
               <span className="text-[11px] font-mono text-slate-400">
                 {formatUnknown(outputs.similar_cases_with_preview_count ?? 0)} / {similarCases.length} preview
               </span>
             </div>
             <div className="mt-4">
               <VisualFrame
-                title={language === 'zh' ? '相似病例 contact sheet' : 'Similar-case contact sheet'}
+                title={language !== 'en' ? '相似病例 contact sheet' : 'Similar-case contact sheet'}
                 subtitle={
-                  language === 'zh'
+                  language !== 'en'
                     ? `Top-${similarCases.length} 预览 · 按相似度排序`
                     : `Top-${similarCases.length} previews · ranked by similarity`
                 }
@@ -1176,7 +1245,7 @@ export function AgentWorkbenchPanel({
                         className="relative block h-32 w-full cursor-zoom-in bg-black"
                         onClick={() => openImageLightbox({
                           src: previewUrl,
-                          title: `${language === 'zh' ? '相似病例' : 'Similar case'} #${formatUnknown('rank' in item ? item.rank : idx + 1)}`,
+                          title: `${language !== 'en' ? '相似病例' : 'Similar case'} #${formatUnknown('rank' in item ? item.rank : idx + 1)}`,
                           subtitle: `${formatUnknown(item.patient_id)} · ${stage} · sim ${sim}%`,
                         })}
                       >
@@ -1185,7 +1254,7 @@ export function AgentWorkbenchPanel({
                       </button>
                     ) : (
                       <div className="flex h-32 items-center justify-center bg-black text-[10px] text-slate-600">
-                        {language === 'zh' ? '无预览图' : 'no preview'}
+                        {language !== 'en' ? '无预览图' : 'no preview'}
                       </div>
                     )}
                     <div className="px-3 py-2 text-xs">
@@ -1216,24 +1285,24 @@ export function AgentWorkbenchPanel({
         <div className="space-y-4">
           <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
             <div className="text-sm font-black text-cyan-100">
-              {language === 'zh' ? 'API / 模型调用核验' : 'API / model invocation audit'}
+              {language !== 'en' ? 'API / 模型调用核验' : 'API / model invocation audit'}
             </div>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
               <span className={`rounded-full px-2 py-0.5 ${verification?.all_core_models_called ? 'bg-emerald-300/15 text-emerald-100' : 'bg-amber-300/15 text-amber-100'}`}>
-                {language === 'zh' ? '核心模型' : 'core models'}: {verification?.all_core_models_called ? 'OK' : 'CHECK'}
+                {language !== 'en' ? '核心模型' : 'core models'}: {verification?.all_core_models_called ? 'OK' : 'CHECK'}
               </span>
               <span className={`rounded-full px-2 py-0.5 ${verification?.llm_api_called ? 'bg-emerald-300/15 text-emerald-100' : 'bg-slate-700/50 text-slate-300'}`}>
-                LLM API: {verification?.llm_api_called ? (language === 'zh' ? '已调用' : 'called') : (language === 'zh' ? '未调用/跳过' : 'skipped')}
+                LLM API: {verification?.llm_api_called ? (language !== 'en' ? '已调用' : 'called') : (language !== 'en' ? '未调用/跳过' : 'skipped')}
               </span>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-[11px]">
                 <thead>
                   <tr className="text-slate-500">
-                    <th className="pb-2 pr-3">{language === 'zh' ? '组件' : 'component'}</th>
-                    <th className="pb-2 pr-3">{language === 'zh' ? '类型' : 'kind'}</th>
-                    <th className="pb-2 pr-3">{language === 'zh' ? '已调用' : 'called'}</th>
-                    <th className="pb-2">{language === 'zh' ? '状态' : 'status'}</th>
+                    <th className="pb-2 pr-3">{language !== 'en' ? '组件' : 'component'}</th>
+                    <th className="pb-2 pr-3">{language !== 'en' ? '类型' : 'kind'}</th>
+                    <th className="pb-2 pr-3">{language !== 'en' ? '已调用' : 'called'}</th>
+                    <th className="pb-2">{language !== 'en' ? '状态' : 'status'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1267,15 +1336,15 @@ export function AgentWorkbenchPanel({
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.8fr_1.2fr]">
           <div className="space-y-4">
             <div className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-5">
-              <div className="text-xs uppercase tracking-[0.18em] text-emerald-100/70">{language === 'zh' ? '综合推荐' : 'Integrated recommendation'}</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-emerald-100/70">{language !== 'en' ? '综合推荐' : 'Integrated recommendation'}</div>
               <div className="mt-3 text-6xl font-black text-emerald-100">{formatUnknown(outputs.recommended_t_stage ?? result?.report.recommended_t_stage)}</div>
               <div className="mt-2 text-sm text-emerald-100/80">{formatUnknown(outputs.confidence ?? result?.report.confidence)}</div>
             </div>
-            <VisualFrame title={language === 'zh' ? '胃壁穿透风险图' : 'Wall penetration risk'} subtitle={language === 'zh' ? '综合推理使用的胃壁局部风险代理证据' : 'wall proxy evidence used during synthesis'} src={typeof refs.wall_penetration_heatmap_url === 'string' ? refs.wall_penetration_heatmap_url : undefined} />
+            <VisualFrame title={language !== 'en' ? '胃壁穿透风险图' : 'Wall penetration risk'} subtitle={language !== 'en' ? '综合推理使用的胃壁局部风险代理证据' : 'wall proxy evidence used during synthesis'} src={typeof refs.wall_penetration_heatmap_url === 'string' ? refs.wall_penetration_heatmap_url : undefined} />
             <VisualFrame
-              title={language === 'zh' ? '真实胃壁分析图' : 'Real wall analysis figure'}
+              title={language !== 'en' ? '真实胃壁分析图' : 'Real wall analysis figure'}
               subtitle={
-                language === 'zh'
+                language !== 'en'
                   ? '优先脚本输出 PNG，其后为服务端合成面板'
                   : 'script PNG first, then composite panel'
               }
@@ -1287,10 +1356,10 @@ export function AgentWorkbenchPanel({
                 ])
               }
             />
-            <VisualFrame title={language === 'zh' ? '真实 DINO 多模态图' : 'Real DINO multimodal figure'} subtitle={language === 'zh' ? '来自 DINO 可视化脚本（按需生成）' : 'from DINO visualization script (on-demand)'} src={visualRefPick(refs, ['real_dino_multimodal_panel_url', 'current_image_dino_feature_panel_url', 'dino_similarity_heatmap_url'])} />
+            <VisualFrame title={language !== 'en' ? '真实 DINO 多模态图' : 'Real DINO multimodal figure'} subtitle={language !== 'en' ? '来自 DINO 可视化脚本（按需生成）' : 'from DINO visualization script (on-demand)'} src={visualRefPick(refs, ['real_dino_multimodal_panel_url', 'current_image_dino_feature_panel_url', 'dino_similarity_heatmap_url'])} />
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-sm font-black text-white">{language === 'zh' ? '证据权重与冲突提示' : 'Evidence weights and conflict flags'}</div>
+            <div className="text-sm font-black text-white">{language !== 'en' ? '证据权重与冲突提示' : 'Evidence weights and conflict flags'}</div>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               {evidenceStreams.map((stream) => (
                 <div key={`synth-stream-${stream.label}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs">
@@ -1312,7 +1381,7 @@ export function AgentWorkbenchPanel({
       return (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/5 p-4">
-            <div className="text-sm font-black text-emerald-100">{language === 'zh' ? '动态报告草稿章节' : 'Dynamic report draft sections'}</div>
+            <div className="text-sm font-black text-emerald-100">{language !== 'en' ? '动态报告草稿章节' : 'Dynamic report draft sections'}</div>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               {result?.report.dynamic_report_draft?.sections.slice(0, 4).map((section) => (
                 <div key={`draft-step-${section.heading}`} className="rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
@@ -1344,7 +1413,7 @@ export function AgentWorkbenchPanel({
 
     return (
       <VisualFrame
-        title={language === 'zh' ? '当前步骤输出图' : 'Current step output'}
+        title={language !== 'en' ? '当前步骤输出图' : 'Current step output'}
         subtitle={currentBackendStep.step_id}
         src={getStepVisualRef(currentBackendStep, ['lumen_detection_overlay_url', 'classification_probabilities_url', 'predicted_overlay_url', 'predicted_roi_url', 'predicted_mask_url']) || patient.image_url}
       />
@@ -1367,21 +1436,21 @@ export function AgentWorkbenchPanel({
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
                 <Brain size={12} />
-                Agent Clinical Console
+                {language !== 'en' ? '辅助诊断工作台' : 'Assisted diagnosis'}
               </div>
               <div className="mt-3 text-lg font-black leading-tight text-white">
-                {language === 'zh' ? '对当前病例进行智能分析' : 'Run intelligent case analysis'}
+                {language !== 'en' ? '生成可编辑的辅助诊断意见' : 'Generate editable assisted diagnosis'}
               </div>
               <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                {language === 'zh'
-                  ? '自动串联胃腔检测、分割、壁层证据、T 分期分类、临床/报告线索、相似病例、知识检索与 memory，生成可复核的动态报告。'
-                  : 'Run lumen detection, segmentation, wall evidence, staging, clinical/report cues, similar cases, knowledge retrieval, and memory in one reviewable workflow.'}
+                {language !== 'en'
+                  ? '汇总胃腔、病灶、胃壁、分期与临床线索，生成医生可快速复核与编辑的意见。'
+                  : 'Combine lumen, lesion, wall, staging, and clinical cues into a physician-editable opinion.'}
               </div>
             </div>
             <div className="flex shrink-0 items-start gap-3">
               {result && (
                 <div className={`rounded-xl border px-3 py-2 text-right ${confidenceTone(result.report.confidence)}`}>
-                  <div className="text-[10px] uppercase tracking-wider opacity-70">{language === 'zh' ? '推荐' : 'Stage'}</div>
+                  <div className="text-[10px] uppercase tracking-wider opacity-70">{language !== 'en' ? '推荐' : 'Stage'}</div>
                   <div className="text-2xl font-black">{result.report.recommended_t_stage}</div>
                   <div className="text-[10px] opacity-80">{result.report.confidence}</div>
                 </div>
@@ -1390,7 +1459,7 @@ export function AgentWorkbenchPanel({
                 type="button"
                 onClick={() => setWorkbenchOpen(false)}
                 className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
-                aria-label={language === 'zh' ? '关闭 Agent 工作台' : 'Close Agent workbench'}
+                aria-label={language !== 'en' ? '关闭 Agent 工作台' : 'Close Agent workbench'}
               >
                 <X size={18} />
               </button>
@@ -1399,15 +1468,15 @@ export function AgentWorkbenchPanel({
 
           <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 md:grid-cols-4">
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-              <div className="text-slate-500">{language === 'zh' ? '病例' : 'Case'}</div>
+              <div className="text-slate-500">{language !== 'en' ? '病例' : 'Case'}</div>
               <div className="mt-1 truncate font-mono text-slate-100">{patient.patient_id}</div>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-              <div className="text-slate-500">{language === 'zh' ? '输入模态' : 'Inputs'}</div>
+              <div className="text-slate-500">{language !== 'en' ? '输入模态' : 'Inputs'}</div>
               <div className="mt-1 font-mono text-slate-100">{patient.roi_url ? 'Image + ROI' : 'Image only'}</div>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-              <div className="text-slate-500">{language === 'zh' ? '帧聚合' : 'Frames'}</div>
+              <div className="text-slate-500">{language !== 'en' ? '帧聚合' : 'Frames'}</div>
               <div className="mt-1 font-mono text-slate-100">
                 {result?.frame_evidence
                   ? `${result.frame_evidence.aggregated_frame_count ?? result.frame_evidence.frame_count} (${result.frame_evidence.aggregation ?? 'single'})`
@@ -1415,7 +1484,7 @@ export function AgentWorkbenchPanel({
               </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-              <div className="text-slate-500">{language === 'zh' ? '工具链' : 'Tools'}</div>
+              <div className="text-slate-500">{language !== 'en' ? '工具链' : 'Tools'}</div>
               <div className="mt-1 font-mono text-slate-100">{result ? `${result.traces?.length ?? 0} traces` : '8+ tools'}</div>
             </div>
           </div>
@@ -1424,7 +1493,7 @@ export function AgentWorkbenchPanel({
             <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-black text-cyan-100">
-                  {language === 'zh' ? '统一证据总览' : 'Unified evidence'}
+                  {language !== 'en' ? '统一证据总览' : 'Unified evidence'}
                 </div>
                 <div className="font-mono text-[10px] text-cyan-200/80">
                   {result.evidence.length} items · {result.provenance?.schema_version || 'provenance'}
@@ -1455,7 +1524,7 @@ export function AgentWorkbenchPanel({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs font-black text-cyan-100">
                     <Brain size={13} />
-                    {language === 'zh' ? '病例信念状态' : 'Case belief state'}
+                    {language !== 'en' ? '病例信念状态' : 'Case belief state'}
                   </div>
                   <span className="font-mono text-[9px] text-cyan-200/60">{result.belief_state.schema_version}</span>
                 </div>
@@ -1483,14 +1552,14 @@ export function AgentWorkbenchPanel({
                 </div>
                 {result.belief_state.missing_evidence.length ? (
                   <div className="mt-2 rounded-lg border border-amber-300/20 bg-amber-300/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-100/80">
-                    {language === 'zh' ? '缺失证据：' : 'Missing evidence: '}
+                    {language !== 'en' ? '缺失证据：' : 'Missing evidence: '}
                     {result.belief_state.missing_evidence.join(', ')}
                   </div>
                 ) : null}
               </div>
               <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.04] p-3">
                 <div className="text-xs font-black text-amber-100">
-                  {language === 'zh' ? '下一步主动取证' : 'Next active evidence action'}
+                  {language !== 'en' ? '下一步主动取证' : 'Next active evidence action'}
                 </div>
                 {result.belief_state.next_actions.slice(0, 3).map((action) => (
                   <div key={action.action_id} className={`mt-2 rounded-lg border px-2.5 py-2 ${action.status === 'selected' ? 'border-cyan-300/35 bg-cyan-300/10' : 'border-white/10 bg-black/20'}`}>
@@ -1518,7 +1587,7 @@ export function AgentWorkbenchPanel({
 
           {!loading && !result && liveSteps.length === 0 && (
             <div className="rounded-2xl border border-dashed border-cyan-400/25 bg-cyan-400/5 px-4 py-3 text-xs leading-relaxed text-cyan-100/75">
-              {language === 'zh'
+              {language !== 'en'
                 ? 'Agent 入口已固定在主界面右下角。点击浮窗按钮后，本区域会按真实工具调用逐步展开结果。'
                 : 'The Agent launcher is pinned to the lower-right of the main interface. Start it there to stream each real tool result into this panel.'}
             </div>
@@ -1530,10 +1599,10 @@ export function AgentWorkbenchPanel({
                 <div>
                   <div className="flex items-center gap-2 text-sm font-black text-white">
                     <Network size={16} className="text-cyan-300" />
-                    {language === 'zh' ? '当前病例 Agent 分析窗口' : 'Current Case Agent Window'}
+                    {language !== 'en' ? '当前病例 Agent 分析窗口' : 'Current Case Agent Window'}
                   </div>
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                    {language === 'zh'
+                    {language !== 'en'
                       ? '按后端真实事件逐步追加：工具没跑完就等待，跑完一个显示一个，不再用进度条模拟。'
                       : 'Steps are appended from real backend events: each tool appears only after it finishes.'}
                   </div>
@@ -1541,7 +1610,7 @@ export function AgentWorkbenchPanel({
                 <div className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
                   loading ? 'border-amber-300/30 bg-amber-300/10 text-amber-100' : 'border-cyan-300/30 bg-cyan-300/10 text-cyan-100'
                 }`}>
-                  {loading ? (language === 'zh' ? '等待工具输出' : 'waiting for tools') : (language === 'zh' ? '分析完成' : 'completed')}
+                  {loading ? (language !== 'en' ? '等待工具输出' : 'waiting for tools') : (language !== 'en' ? '分析完成' : 'completed')}
                 </div>
               </div>
 
@@ -1550,11 +1619,11 @@ export function AgentWorkbenchPanel({
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                        {language === 'zh' ? '实时调用队列' : 'Live Tool Queue'}
+                        {language !== 'en' ? '实时调用队列' : 'Live Tool Queue'}
                       </div>
                       {liveSteps.length > 0 && (
                         <div className="mt-1 text-[10px] text-slate-500">
-                          {language === 'zh'
+                          {language !== 'en'
                             ? `已返回 ${liveSteps.length} 条真实步骤 · 当前查看第 ${activeStep + 1} 条`
                             : `${liveSteps.length} real steps returned · viewing step ${activeStep + 1}`}
                         </div>
@@ -1572,10 +1641,10 @@ export function AgentWorkbenchPanel({
                         const isPending = !isDone && !isRunning;
                         const showConnector = (idx + 1) % 4 !== 0 && idx < adaptiveSteps.length - 1;
                         const statusLabel = isRunning
-                          ? (language === 'zh' ? '运行中' : 'running')
+                          ? (language !== 'en' ? '运行中' : 'running')
                           : isDone
-                            ? (step.backendStep?.status || (language === 'zh' ? '完成' : 'done'))
-                            : (language === 'zh' ? '等待' : 'pending');
+                            ? (step.backendStep?.status || (language !== 'en' ? '完成' : 'done'))
+                            : (language !== 'en' ? '等待' : 'pending');
                         return (
                           <button
                             key={`inline-step-${step.key}-${idx}`}
@@ -1625,7 +1694,7 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-3 text-xs leading-relaxed text-slate-500">
                       {loading
                         ? '等待后端返回第一条真实工具事件，不预填步骤，不模拟进度。'
-                        : (language === 'zh' ? '点击启动后，Agent 会先盘点病例资料，然后第一条真实步骤会出现在这里。' : 'Start the agent to see the first real backend step here.')}
+                        : (language !== 'en' ? '点击启动后，Agent 会先盘点病例资料，然后第一条真实步骤会出现在这里。' : 'Start the agent to see the first real backend step here.')}
                     </div>
                   )}
 
@@ -1637,8 +1706,8 @@ export function AgentWorkbenchPanel({
 
                   {liveSteps.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-white/5 pt-2 text-[9px] text-slate-500">
-                      <span>{language === 'zh' ? '每条卡片均来自后端已完成事件' : 'Each card is a completed backend event'}</span>
-                      <span>{language === 'zh' ? '点击卡片查看该步详情' : 'Click a card for step details'}</span>
+                      <span>{language !== 'en' ? '每条卡片均来自后端已完成事件' : 'Each card is a completed backend event'}</span>
+                      <span>{language !== 'en' ? '点击卡片查看该步详情' : 'Click a card for step details'}</span>
                     </div>
                   )}
                 </div>
@@ -1682,7 +1751,7 @@ export function AgentWorkbenchPanel({
                         </div>
                       ) : (
                         <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-center text-xs leading-relaxed text-slate-500">
-                          {language === 'zh' ? '等待 Agent 返回第一步工具调用结果。模型加载或预测较慢时，这里会保持等待状态。' : 'Waiting for the first real tool-call result from the agent.'}
+                          {language !== 'en' ? '等待 Agent 返回第一步工具调用结果。模型加载或预测较慢时，这里会保持等待状态。' : 'Waiting for the first real tool-call result from the agent.'}
                         </div>
                       )}
                     </div>
@@ -1702,18 +1771,18 @@ export function AgentWorkbenchPanel({
                   {(runtimeVerification ?? result?.runtime_verification) && (
                     <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-3">
                       <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200/80">
-                        {language === 'zh' ? 'API 调用核验摘要' : 'API invocation summary'}
+                        {language !== 'en' ? 'API 调用核验摘要' : 'API invocation summary'}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                         <span className={`rounded-full px-2 py-0.5 ${(runtimeVerification ?? result?.runtime_verification)?.all_core_models_called ? 'bg-emerald-300/15 text-emerald-100' : 'bg-amber-300/15 text-amber-100'}`}>
-                          {language === 'zh' ? '核心模型' : 'core models'}: {(runtimeVerification ?? result?.runtime_verification)?.all_core_models_called ? 'OK' : 'CHECK'}
+                          {language !== 'en' ? '核心模型' : 'core models'}: {(runtimeVerification ?? result?.runtime_verification)?.all_core_models_called ? 'OK' : 'CHECK'}
                         </span>
                         <span className={`rounded-full px-2 py-0.5 ${(runtimeVerification ?? result?.runtime_verification)?.llm_api_called ? 'bg-emerald-300/15 text-emerald-100' : 'bg-slate-700/50 text-slate-300'}`}>
-                          LLM: {(runtimeVerification ?? result?.runtime_verification)?.llm_api_called ? (language === 'zh' ? '已调用' : 'called') : (language === 'zh' ? '未调用' : 'skipped')}
+                          LLM: {(runtimeVerification ?? result?.runtime_verification)?.llm_api_called ? (language !== 'en' ? '已调用' : 'called') : (language !== 'en' ? '未调用' : 'skipped')}
                         </span>
                       </div>
                       <div className="mt-2 text-[10px] text-slate-500">
-                        {language === 'zh'
+                        {language !== 'en'
                           ? '完整表格见步骤「运行时 API / 模型调用核验」。'
                           : 'See the runtime API verification step for the full table.'}
                       </div>
@@ -1725,7 +1794,7 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <div className="text-sm font-black text-emerald-50">{language === 'zh' ? '综合推荐结果' : 'Integrated recommendation'}</div>
+                            <div className="text-sm font-black text-emerald-50">{language !== 'en' ? '综合推荐结果' : 'Integrated recommendation'}</div>
                             <div className="mt-1 text-xs leading-relaxed text-emerald-100/75">{result.report.reasoning}</div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1737,8 +1806,8 @@ export function AgentWorkbenchPanel({
                               >
                                 <Clipboard size={12} />
                                 {copiedDraft
-                                  ? (language === 'zh' ? '已复制' : 'Copied')
-                                  : (language === 'zh' ? '复制报告草稿' : 'Copy draft')}
+                                  ? (language !== 'en' ? '已复制' : 'Copied')
+                                  : (language !== 'en' ? '复制报告草稿' : 'Copy draft')}
                               </button>
                             )}
                             <div className={`rounded-xl border px-4 py-2 text-right ${confidenceTone(result.report.confidence)}`}>
@@ -1752,7 +1821,7 @@ export function AgentWorkbenchPanel({
 
                       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="text-sm font-black text-white">{language === 'zh' ? '多模态证据面板' : 'Multimodal evidence panel'}</div>
+                          <div className="text-sm font-black text-white">{language !== 'en' ? '多模态证据面板' : 'Multimodal evidence panel'}</div>
                           {result.report.rag_gate && (
                             <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] text-amber-100">
                               RAG {Math.round((result.report.rag_gate.rag_weight ?? 0) * 100)}% · {result.report.rag_gate.rag_gate_reason}
@@ -1790,7 +1859,7 @@ export function AgentWorkbenchPanel({
                         </div>
                         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                           <div>
-                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{language === 'zh' ? '支持证据' : 'Supporting'}</div>
+                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{language !== 'en' ? '支持证据' : 'Supporting'}</div>
                             <div className="space-y-1">
                               {(result.report.supporting_evidence ?? []).slice(0, 3).map((item, idx) => (
                                 <div key={`wb-support-${idx}`} className="rounded bg-emerald-300/10 px-2 py-1 text-[10px] text-emerald-100">{item}</div>
@@ -1798,18 +1867,18 @@ export function AgentWorkbenchPanel({
                             </div>
                           </div>
                           <div>
-                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400">{language === 'zh' ? '冲突证据' : 'Conflicting'}</div>
+                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400">{language !== 'en' ? '冲突证据' : 'Conflicting'}</div>
                             <div className="space-y-1">
                               {(result.report.conflicting_evidence ?? []).slice(0, 3).map((item, idx) => (
                                 <div key={`wb-conflict-${idx}`} className="rounded bg-red-300/10 px-2 py-1 text-[10px] text-red-100">{item}</div>
                               ))}
                               {!result.report.conflicting_evidence?.length && (
-                                <div className="text-[10px] text-slate-600">{language === 'zh' ? '无显著冲突' : 'No major conflicts'}</div>
+                                <div className="text-[10px] text-slate-600">{language !== 'en' ? '无显著冲突' : 'No major conflicts'}</div>
                               )}
                             </div>
                           </div>
                           <div>
-                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">{language === 'zh' ? '不确定性' : 'Uncertainty'}</div>
+                            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">{language !== 'en' ? '不确定性' : 'Uncertainty'}</div>
                             <div className="space-y-1">
                               {(result.report.uncertainty_flags ?? []).slice(0, 3).map((item, idx) => (
                                 <div key={`wb-uncertain-${idx}`} className="rounded bg-amber-300/10 px-2 py-1 text-[10px] text-amber-100">{item}</div>
@@ -1820,7 +1889,7 @@ export function AgentWorkbenchPanel({
                         {(result.report.memory_update_candidates?.length ?? 0) > 0 && (
                           <div className="mt-3 rounded-lg border border-violet-300/20 bg-violet-300/5 p-3">
                             <div className="text-[10px] font-bold uppercase tracking-wider text-violet-300">
-                              {language === 'zh' ? 'Memory 候选' : 'Memory candidates'} ({result.report.memory_update_candidates?.length})
+                              {language !== 'en' ? 'Memory 候选' : 'Memory candidates'} ({result.report.memory_update_candidates?.length})
                             </div>
                             <div className="mt-2 space-y-2">
                               {result.report.memory_update_candidates?.slice(0, 4).map((candidate, idx) => {
@@ -1859,7 +1928,7 @@ export function AgentWorkbenchPanel({
                           <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/5 p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
-                                {language === 'zh' ? '临床指南 RAG' : 'Clinical guideline RAG'}
+                                {language !== 'en' ? '临床指南 RAG' : 'Clinical guideline RAG'}
                               </div>
                               <span className="rounded border border-amber-300/25 px-1.5 py-0.5 text-[8px] text-amber-100">AJCC TNM + NCCN 3.2026</span>
                             </div>
@@ -1875,7 +1944,7 @@ export function AgentWorkbenchPanel({
                             {(result.report.management_advice ?? []).length > 0 && (
                               <div className="mt-2 rounded border border-emerald-300/20 bg-emerald-300/5 p-2">
                                 <div className="mb-1 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
-                                  {language === 'zh' ? '对应处理意见（需 MDT 复核）' : 'Care pathway context (MDT review required)'}
+                                  {language !== 'en' ? '对应处理意见（需 MDT 复核）' : 'Care pathway context (MDT review required)'}
                                 </div>
                                 <div className="space-y-1">
                                   {(result.report.management_advice ?? []).slice(0, 4).map((item, idx) => (
@@ -1885,7 +1954,7 @@ export function AgentWorkbenchPanel({
                               </div>
                             )}
                             <div className="mt-2 text-[8px] leading-relaxed text-slate-500">
-                              {language === 'zh'
+                              {language !== 'en'
                                 ? 'AJCC 用于 TNM 定义；管理路径参考 NCCN。当前 Agent 不输出药物剂量或替代医生决定。'
                                 : 'AJCC defines TNM; management context follows NCCN. The Agent does not issue drug doses or replace clinician decisions.'}
                             </div>
@@ -1894,7 +1963,7 @@ export function AgentWorkbenchPanel({
 
                         {result.knowledge_context?.length > 0 && (
                           <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-3">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">{language === 'zh' ? '知识检索' : 'Knowledge context'}</div>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">{language !== 'en' ? '知识检索' : 'Knowledge context'}</div>
                             <div className="mt-2 space-y-1">
                               {result.knowledge_context.slice(0, 2).map((item, idx) => (
                                 <div key={`kb-${idx}`} className="text-[10px] text-cyan-100">
@@ -1916,13 +1985,15 @@ export function AgentWorkbenchPanel({
       </div>
       )}
 
+      {/* Hidden from main canvas: analysis opens from full-report entry only */}
+      {false && (
       <div className="pointer-events-auto absolute bottom-[5.75rem] left-1/2 z-30 w-[min(380px,calc(100%-2rem))] -translate-x-1/2">
         <button
           type="button"
           onClick={handleLauncherClick}
           disabled={loading}
           className="group relative w-full overflow-hidden rounded-[1.4rem] border border-cyan-200/60 bg-[linear-gradient(135deg,#38bdf8,#22d3ee_45%,#94a3b8)] p-1 text-left text-slate-950 shadow-[0_24px_70px_rgba(2,8,23,0.65)] transition hover:-translate-y-1 hover:shadow-[0_28px_90px_rgba(14,165,233,0.38)] disabled:translate-y-0 disabled:cursor-wait disabled:opacity-85"
-          aria-label={language === 'zh' ? '启动当前病例 Agent 分析' : 'Start current case agent analysis'}
+          aria-label={language !== 'en' ? '启动当前病例辅助分析' : 'Start assisted analysis for this case'}
         >
           <span className="pointer-events-none absolute -left-10 top-1/2 h-24 w-24 -translate-y-1/2 rounded-full bg-white/45 blur-2xl transition group-hover:scale-150" />
           <span className="pointer-events-none absolute right-7 top-5 h-2.5 w-2.5 rounded-full bg-slate-950/50">
@@ -1935,25 +2006,26 @@ export function AgentWorkbenchPanel({
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-black tracking-tight">
                 {loading
-                  ? (language === 'zh' ? 'Agent 正在等待工具输出' : 'Agent is waiting for tools')
+                  ? (language !== 'en' ? 'Agent 正在等待工具输出' : 'Agent is waiting for tools')
                   : (result || liveSteps.length > 0 || error) && !workbenchOpen
-                    ? (language === 'zh' ? '打开 Agent 工作台' : 'Open agent workbench')
+                    ? (language !== 'en' ? '打开 Agent 工作台' : 'Open agent workbench')
                     : result
-                      ? (language === 'zh' ? '重新运行当前病例 Agent' : 'Rerun agent for this case')
-                    : (language === 'zh' ? '启动当前病例 Agent' : 'Start case agent')}
+                      ? (language !== 'en' ? '重新运行当前病例 Agent' : 'Rerun agent for this case')
+                    : (language !== 'en' ? '启动当前病例 Agent' : 'Start case agent')}
               </span>
               <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-800/80">
                 {loading
-                  ? `${liveSteps.length} ${language === 'zh' ? '步已返回' : 'steps returned'}`
+                  ? `${liveSteps.length} ${language !== 'en' ? '步已返回' : 'steps returned'}`
                   : maskOverride
-                    ? (language === 'zh' ? '将使用已编辑边界覆盖分割' : 'Using edited boundary override')
-                    : (language === 'zh' ? '分割、腔检测、壁层、分类、相似病例逐步显示' : 'Lumen, wall, staging, memory stream in')}
+                    ? (language !== 'en' ? '将使用已编辑边界覆盖分割' : 'Using edited boundary override')
+                    : (language !== 'en' ? '分割、腔检测、壁层、分类、相似病例逐步显示' : 'Lumen, wall, staging, memory stream in')}
               </span>
             </span>
             <ArrowRight size={20} className="shrink-0 transition group-hover:translate-x-1" />
           </span>
         </button>
       </div>
+      )}
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
@@ -1967,10 +2039,10 @@ export function AgentWorkbenchPanel({
                     <span className="font-mono text-[11px] text-slate-500">{patient.patient_id}</span>
                   </div>
                   <h2 className="mt-2 text-2xl font-black text-white">
-                    {language === 'zh' ? '当前病例智能分析' : 'Current Case Intelligence'}
+                    {language !== 'en' ? '当前病例智能分析' : 'Current Case Intelligence'}
                   </h2>
                   <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
-                    {language === 'zh'
+                    {language !== 'en'
                       ? '按照临床主线逐步展示：病例接入、病灶定位、T 分期分类、临床与报告交叉验证、相似病例检索、综合判断、动态报告和 memory 候选。'
                       : 'A step-by-step clinical workflow: intake, lesion localization, T staging, clinical/report cross-checks, similar cases, final synthesis, report draft, and memory candidates.'}
                   </p>
@@ -1991,9 +2063,9 @@ export function AgentWorkbenchPanel({
                   <div className="flex items-center gap-3 text-emerald-100">
                     <Loader2 size={20} className="animate-spin" />
                     <div>
-                      <div className="text-sm font-bold">{language === 'zh' ? 'Agent 正在根据当前病例动态选择工具' : 'Agent is dynamically selecting tools for this case'}</div>
+                      <div className="text-sm font-bold">{language !== 'en' ? 'Agent 正在根据当前病例动态选择工具' : 'Agent is dynamically selecting tools for this case'}</div>
                       <div className="mt-1 text-xs text-emerald-100/70">
-                        {language === 'zh' ? '不是只走固定模板，而是先盘点病例资料，再决定定位、分割、分类、临床/报告校验和相似病例投票的权重。' : 'This is not a rigid template: the agent inspects case evidence and weights localization, segmentation, classification, clinical/report checks, and similar-case voting.'}
+                        {language !== 'en' ? '不是只走固定模板，而是先盘点病例资料，再决定定位、分割、分类、临床/报告校验和相似病例投票的权重。' : 'This is not a rigid template: the agent inspects case evidence and weights localization, segmentation, classification, clinical/report checks, and similar-case voting.'}
                       </div>
                     </div>
                   </div>
@@ -2031,7 +2103,7 @@ export function AgentWorkbenchPanel({
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <div>
                           <div className="text-sm font-bold text-emerald-100">
-                            {language === 'zh' ? '当前工具调用可视化' : 'Current tool-call visualization'}
+                            {language !== 'en' ? '当前工具调用可视化' : 'Current tool-call visualization'}
                           </div>
                           <div className="mt-0.5 text-[10px] text-emerald-100/60">{adaptiveSteps[activeStep]?.title}</div>
                         </div>
@@ -2041,12 +2113,12 @@ export function AgentWorkbenchPanel({
                       </div>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <VisualFrame
-                          title={language === 'zh' ? '原始超声输入' : 'Original ultrasound'}
+                          title={language !== 'en' ? '原始超声输入' : 'Original ultrasound'}
                           subtitle={patient.id_short}
                           src={patient.image_url}
                         />
                         <VisualFrame
-                          title={activeStep <= 1 ? (language === 'zh' ? '等待定位输出' : 'Waiting for localization') : (language === 'zh' ? 'ROI / 分割叠加预览' : 'ROI / overlay preview')}
+                          title={activeStep <= 1 ? (language !== 'en' ? '等待定位输出' : 'Waiting for localization') : (language !== 'en' ? 'ROI / 分割叠加预览' : 'ROI / overlay preview')}
                           subtitle={activeStep <= 1 ? 'pending model output' : 'case asset preview'}
                           src={activeStep <= 1 ? patient.image_url : (patient.overlay_url || patient.roi_url || patient.image_url)}
                         />
@@ -2072,10 +2144,10 @@ export function AgentWorkbenchPanel({
                       <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-white">
                           <Workflow size={16} className="text-emerald-300" />
-                          {language === 'zh' ? '逐步检查 Agent 每一次工具调用' : 'Inspect each agent tool call step by step'}
+                          {language !== 'en' ? '逐步检查 Agent 每一次工具调用' : 'Inspect each agent tool call step by step'}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {language === 'zh' ? '点击任意步骤，查看该步骤的输入、模型输出、图像证据和推理解释。' : 'Click any step to inspect its inputs, model outputs, visual evidence, and reasoning.'}
+                          {language !== 'en' ? '点击任意步骤，查看该步骤的输入、模型输出、图像证据和推理解释。' : 'Click any step to inspect its inputs, model outputs, visual evidence, and reasoning.'}
                         </div>
                       </div>
                       <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-emerald-100">
@@ -2109,7 +2181,7 @@ export function AgentWorkbenchPanel({
 
                     <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
                       <div className="rounded-xl border border-white/10 bg-black/25 p-4">
-                        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{language === 'zh' ? '当前步骤' : 'Current step'}</div>
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{language !== 'en' ? '当前步骤' : 'Current step'}</div>
                         <div className="mt-2 text-lg font-black text-white">{activeStep + 1}. {adaptiveSteps[activeStep]?.title}</div>
                         <div className="mt-2 text-sm leading-relaxed text-slate-300">{adaptiveSteps[activeStep]?.detail}</div>
                         <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 font-mono text-xs text-cyan-100">
@@ -2148,7 +2220,7 @@ export function AgentWorkbenchPanel({
                           <div className="space-y-4">
                             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                               <VisualFrame
-                                title={language === 'zh' ? '本次模型新生成的预测图' : 'New prediction artifact from this run'}
+                                title={language !== 'en' ? '本次模型新生成的预测图' : 'New prediction artifact from this run'}
                                 subtitle={currentBackendStep.step_id}
                                 src={
                                   getStepVisualRef(currentBackendStep, [
@@ -2160,7 +2232,7 @@ export function AgentWorkbenchPanel({
                                 }
                               />
                               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                                <div className="text-sm font-bold text-emerald-100">{language === 'zh' ? '真实 Agent 决策记录' : 'Real agent decision trace'}</div>
+                                <div className="text-sm font-bold text-emerald-100">{language !== 'en' ? '真实 Agent 决策记录' : 'Real agent decision trace'}</div>
                                 <div className="mt-2 text-xs leading-relaxed text-slate-300">{currentBackendStep.intent}</div>
                                 <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
                                   {Object.entries(currentBackendStep.outputs || {}).slice(0, 8).map(([key, value]) => (
@@ -2191,9 +2263,9 @@ export function AgentWorkbenchPanel({
 
                         {!currentBackendStep && activeStep === 0 && (
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            <VisualFrame title={language === 'zh' ? '原始超声输入' : 'Original ultrasound input'} subtitle={patient.id_short} src={patient.image_url} />
+                            <VisualFrame title={language !== 'en' ? '原始超声输入' : 'Original ultrasound input'} subtitle={patient.id_short} src={patient.image_url} />
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                              <div className="text-sm font-bold text-slate-100">{language === 'zh' ? '病例资料盘点' : 'Case evidence inventory'}</div>
+                              <div className="text-sm font-bold text-slate-100">{language !== 'en' ? '病例资料盘点' : 'Case evidence inventory'}</div>
                               <div className="mt-3 space-y-2 text-xs">
                                 <div className="flex justify-between rounded bg-black/25 px-2 py-1"><span className="text-slate-500">ROI</span><span className="text-slate-200">{patient.roi_url ? 'available' : 'missing'}</span></div>
                                 <div className="flex justify-between rounded bg-black/25 px-2 py-1"><span className="text-slate-500">overlay</span><span className="text-slate-200">{patient.overlay_url ? 'available' : 'missing'}</span></div>
@@ -2206,8 +2278,8 @@ export function AgentWorkbenchPanel({
 
                         {!currentBackendStep && activeStep === 1 && (
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            <VisualFrame title={language === 'zh' ? 'ROI 裁剪输入' : 'ROI crop input'} subtitle={patient.roi_url ? 'frontend ROI asset' : 'fallback'} src={patient.roi_url || patient.image_url} />
-                            <VisualFrame title={language === 'zh' ? '定位输出/叠加预览' : 'Localization output / overlay'} subtitle={formatUnknown(result.tool_evidence.segmentation?.roi_source)} src={patient.overlay_url || patient.roi_url || patient.image_url}>
+                            <VisualFrame title={language !== 'en' ? 'ROI 裁剪输入' : 'ROI crop input'} subtitle={patient.roi_url ? 'frontend ROI asset' : 'fallback'} src={patient.roi_url || patient.image_url} />
+                            <VisualFrame title={language !== 'en' ? '定位输出/叠加预览' : 'Localization output / overlay'} subtitle={formatUnknown(result.tool_evidence.segmentation?.roi_source)} src={patient.overlay_url || patient.roi_url || patient.image_url}>
                               <div className="grid grid-cols-2 gap-2 text-[11px]">
                                 {getToolMetricRows(result.tool_evidence.segmentation, ['roi_source', 'mask_available', 'lesion_area_ratio', 'image_height', 'image_width']).map((row) => (
                                   <div key={`step1-${row.key}`} className="rounded bg-black/25 px-2 py-1">
@@ -2222,9 +2294,9 @@ export function AgentWorkbenchPanel({
 
                         {!currentBackendStep && activeStep === 2 && (
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            <VisualFrame title={language === 'zh' ? '分割叠加证据' : 'Segmentation overlay evidence'} subtitle={patient.overlay_url ? 'overlay asset' : 'fallback preview'} src={patient.overlay_url || patient.roi_url || patient.image_url} />
+                            <VisualFrame title={language !== 'en' ? '分割叠加证据' : 'Segmentation overlay evidence'} subtitle={patient.overlay_url ? 'overlay asset' : 'fallback preview'} src={patient.overlay_url || patient.roi_url || patient.image_url} />
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                              <div className="text-sm font-bold text-lime-100">{language === 'zh' ? '形态学输出' : 'Morphology outputs'}</div>
+                              <div className="text-sm font-bold text-lime-100">{language !== 'en' ? '形态学输出' : 'Morphology outputs'}</div>
                               <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
                                 {getToolMetricRows(result.tool_evidence.morphology, ['boundary_irregularity', 'lesion_area_ratio', 'convexity', 'solidity', 'compactness', 'aspect_ratio']).map((row) => (
                                   <div key={`step2-${row.key}`} className="rounded bg-black/25 px-2 py-1">
@@ -2239,7 +2311,7 @@ export function AgentWorkbenchPanel({
 
                         {!currentBackendStep && activeStep === 3 && (
                           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                            <div className="text-sm font-bold text-emerald-100">{language === 'zh' ? '分类概率输出' : 'Classifier probability output'}</div>
+                            <div className="text-sm font-bold text-emerald-100">{language !== 'en' ? '分类概率输出' : 'Classifier probability output'}</div>
                             <div className="mt-4 space-y-3">
                               {classificationProbs.map((item) => (
                                 <div key={`step3-${item.stage}`}>
@@ -2259,7 +2331,7 @@ export function AgentWorkbenchPanel({
                         {!currentBackendStep && activeStep === 4 && (
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                              <div className="text-sm font-bold text-amber-100">{language === 'zh' ? '临床风险工具输出' : 'Clinical risk output'}</div>
+                              <div className="text-sm font-bold text-amber-100">{language !== 'en' ? '临床风险工具输出' : 'Clinical risk output'}</div>
                               <div className="mt-3 space-y-2 text-[11px]">
                                 {getToolMetricRows(result.tool_evidence.clinical, ['clinical_risk_score', 'risk_factors', 'protective_factors', 'factors_available']).map((row) => (
                                   <div key={`step4-clinical-${row.key}`} className="rounded bg-black/25 px-2 py-1">
@@ -2270,7 +2342,7 @@ export function AgentWorkbenchPanel({
                               </div>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                              <div className="text-sm font-bold text-sky-100">{language === 'zh' ? '报告线索抽取' : 'Report cue extraction'}</div>
+                              <div className="text-sm font-bold text-sky-100">{language !== 'en' ? '报告线索抽取' : 'Report cue extraction'}</div>
                               <div className="mt-3 space-y-2">
                                 {getReportCues(result.tool_evidence.report).length ? getReportCues(result.tool_evidence.report).map((cue, idx) => (
                                   <div key={`step4-cue-${idx}`} className="rounded bg-black/25 px-2 py-1 text-[11px]">
@@ -2278,7 +2350,7 @@ export function AgentWorkbenchPanel({
                                     <div className="mt-1 text-slate-500">{formatUnknown(cue.matched_terms)}</div>
                                   </div>
                                 )) : (
-                                  <div className="text-xs text-slate-500">{language === 'zh' ? '没有可结构化文本线索，因此文本证据降权。' : 'No structured text cues; report evidence is down-weighted.'}</div>
+                                  <div className="text-xs text-slate-500">{language !== 'en' ? '没有可结构化文本线索，因此文本证据降权。' : 'No structured text cues; report evidence is down-weighted.'}</div>
                                 )}
                               </div>
                             </div>
@@ -2288,7 +2360,7 @@ export function AgentWorkbenchPanel({
                         {!currentBackendStep && activeStep === 5 && (
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                              <div className="text-sm font-bold text-cyan-100">{language === 'zh' ? '相似病例投票' : 'Similar-case voting'}</div>
+                              <div className="text-sm font-bold text-cyan-100">{language !== 'en' ? '相似病例投票' : 'Similar-case voting'}</div>
                               <div className="mt-3 space-y-3">
                                 {stageVoting.map((item) => (
                                   <div key={`step5-vote-${item.stage}`}>
@@ -2327,7 +2399,7 @@ export function AgentWorkbenchPanel({
                         {!currentBackendStep && activeStep === 7 && (
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                              <div className="text-sm font-bold text-emerald-100">{language === 'zh' ? '报告草稿章节' : 'Report draft sections'}</div>
+                              <div className="text-sm font-bold text-emerald-100">{language !== 'en' ? '报告草稿章节' : 'Report draft sections'}</div>
                               <div className="mt-3 space-y-2">
                                 {result.report.dynamic_report_draft?.sections.slice(0, 4).map((section) => (
                                   <div key={`step7-${section.heading}`} className="rounded bg-black/25 px-2 py-2 text-xs">
@@ -2356,10 +2428,10 @@ export function AgentWorkbenchPanel({
                       <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-white">
                           <Layers3 size={16} className="text-cyan-300" />
-                          {language === 'zh' ? '逐步工具调用与图像输出' : 'Step-by-step tool calls and visual outputs'}
+                          {language !== 'en' ? '逐步工具调用与图像输出' : 'Step-by-step tool calls and visual outputs'}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {language === 'zh'
+                          {language !== 'en'
                             ? '每一步都显示该工具看到的输入、产生的图像证据或结构化输出，避免只看最后一个总进度条。'
                             : 'Each step shows the input seen by the tool and the visual or structured output it produced.'}
                         </div>
@@ -2373,10 +2445,10 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-100">
                           <Brain size={15} className="text-emerald-300" />
-                          1. {language === 'zh' ? '病例接入：原始影像输入' : 'Case intake: raw imaging input'}
+                          1. {language !== 'en' ? '病例接入：原始影像输入' : 'Case intake: raw imaging input'}
                         </div>
                         <VisualFrame
-                          title={language === 'zh' ? '原始超声图像' : 'Original ultrasound'}
+                          title={language !== 'en' ? '原始超声图像' : 'Original ultrasound'}
                           subtitle={patient.id_short}
                           src={patient.image_url}
                         >
@@ -2396,16 +2468,16 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-100">
                           <Layers3 size={15} className="text-cyan-300" />
-                          2. {language === 'zh' ? '定位模型：ROI / 候选病灶区' : 'Localization: ROI / candidate lesion region'}
+                          2. {language !== 'en' ? '定位模型：ROI / 候选病灶区' : 'Localization: ROI / candidate lesion region'}
                         </div>
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <VisualFrame
-                            title={language === 'zh' ? 'ROI 裁剪' : 'ROI crop'}
+                            title={language !== 'en' ? 'ROI 裁剪' : 'ROI crop'}
                             subtitle={patient.roi_url ? 'frontend ROI asset' : 'fallback pending'}
                             src={patient.roi_url || patient.image_url}
                           />
                           <VisualFrame
-                            title={language === 'zh' ? '定位/叠加预览' : 'Localization overlay'}
+                            title={language !== 'en' ? '定位/叠加预览' : 'Localization overlay'}
                             subtitle={formatUnknown(result.tool_evidence.segmentation?.roi_source)}
                             src={patient.overlay_url || patient.roi_url || patient.image_url}
                           />
@@ -2423,10 +2495,10 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-100">
                           <Activity size={15} className="text-lime-300" />
-                          3. {language === 'zh' ? '分割/形态：病灶边界推理' : 'Segmentation/morphology: boundary reasoning'}
+                          3. {language !== 'en' ? '分割/形态：病灶边界推理' : 'Segmentation/morphology: boundary reasoning'}
                         </div>
                         <VisualFrame
-                          title={language === 'zh' ? '分割叠加图像证据' : 'Segmentation overlay evidence'}
+                          title={language !== 'en' ? '分割叠加图像证据' : 'Segmentation overlay evidence'}
                           subtitle={patient.overlay_url ? 'manual/predicted overlay asset' : 'overlay unavailable'}
                           src={patient.overlay_url || patient.roi_url || patient.image_url}
                         >
@@ -2444,7 +2516,7 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-100">
                           <Microscope size={15} className="text-emerald-300" />
-                          4. {language === 'zh' ? '分类模型：T 分期概率输出' : 'Classifier: T-stage probability output'}
+                          4. {language !== 'en' ? '分类模型：T 分期概率输出' : 'Classifier: T-stage probability output'}
                         </div>
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                           <div className="space-y-3">
@@ -2459,7 +2531,7 @@ export function AgentWorkbenchPanel({
                                 </div>
                               </div>
                             )) : (
-                              <div className="text-xs text-slate-500">{language === 'zh' ? '分类概率暂不可用' : 'Classifier probabilities unavailable'}</div>
+                              <div className="text-xs text-slate-500">{language !== 'en' ? '分类概率暂不可用' : 'Classifier probabilities unavailable'}</div>
                             )}
                           </div>
                           <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
@@ -2476,7 +2548,7 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-100">
                           <Database size={15} className="text-cyan-300" />
-                          5. {language === 'zh' ? '相似病例：检索与投票' : 'Similar cases: retrieval and voting'}
+                          5. {language !== 'en' ? '相似病例：检索与投票' : 'Similar cases: retrieval and voting'}
                         </div>
                         <div className="space-y-3 rounded-xl border border-white/10 bg-black/30 p-3">
                           {stageVoting.map((item) => (
@@ -2507,15 +2579,15 @@ export function AgentWorkbenchPanel({
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-100">
                           <FileText size={15} className="text-amber-300" />
-                          6. {language === 'zh' ? '综合推理：报告草稿与人工复核点' : 'Synthesis: draft and review points'}
+                          6. {language !== 'en' ? '综合推理：报告草稿与人工复核点' : 'Synthesis: draft and review points'}
                         </div>
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                           <div className="text-4xl font-black text-emerald-200">{result.report.recommended_t_stage}</div>
-                          <div className="mt-1 text-xs text-slate-500">{language === 'zh' ? '最终综合推荐，不等同于单模型 top-1' : 'Final integrated recommendation, not a single-model top-1'}</div>
+                          <div className="mt-1 text-xs text-slate-500">{language !== 'en' ? '最终综合推荐，不等同于单模型 top-1' : 'Final integrated recommendation, not a single-model top-1'}</div>
                           <div className="mt-3 space-y-2">
                             {result.report.rag_gate && (
                               <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100/85">
-                                {language === 'zh' ? 'RAG 门控' : 'RAG gate'}: weight={result.report.rag_gate.rag_weight} ({result.report.rag_gate.rag_gate_reason})
+                                {language !== 'en' ? 'RAG 门控' : 'RAG gate'}: weight={result.report.rag_gate.rag_weight} ({result.report.rag_gate.rag_gate_reason})
                               </div>
                             )}
                             {result.report.conflicting_evidence?.slice(0, 3).map((item, idx) => (
@@ -2530,7 +2602,7 @@ export function AgentWorkbenchPanel({
                             ))}
                             {!result.report.uncertainty_flags?.length && !result.report.conflicting_evidence?.length && (
                               <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100/85">
-                                {language === 'zh' ? '暂无明显风险提示，但仍需医生结合原始图像复核。' : 'No major risk flags, but clinician review is still required.'}
+                                {language !== 'en' ? '暂无明显风险提示，但仍需医生结合原始图像复核。' : 'No major risk flags, but clinician review is still required.'}
                               </div>
                             )}
                           </div>
@@ -2544,10 +2616,10 @@ export function AgentWorkbenchPanel({
                       <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-white">
                           <Network size={16} className="text-emerald-300" />
-                          {language === 'zh' ? 'Agent 自适应推理编排' : 'Adaptive agent orchestration'}
+                          {language !== 'en' ? 'Agent 自适应推理编排' : 'Adaptive agent orchestration'}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {language === 'zh'
+                          {language !== 'en'
                             ? '每个节点代表一次信息判断或模型调用；权重来自当前病例可用资料，而不是写死的单一路径。'
                             : 'Each node is an evidence decision or model call; weighting follows available case evidence, not one hard-coded path.'}
                         </div>
@@ -2587,24 +2659,24 @@ export function AgentWorkbenchPanel({
 
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{language === 'zh' ? '综合结论' : 'Synthesis'}</div>
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{language !== 'en' ? '综合结论' : 'Synthesis'}</div>
                       <div className="mt-3 flex flex-wrap items-end gap-4">
                         <div>
                           <div className="text-5xl font-black text-emerald-200">{result.report.recommended_t_stage}</div>
-                          <div className="mt-1 text-xs text-slate-500">{language === 'zh' ? '推荐 T 分期' : 'Recommended T stage'}</div>
+                          <div className="mt-1 text-xs text-slate-500">{language !== 'en' ? '推荐 T 分期' : 'Recommended T stage'}</div>
                         </div>
                         <div className={`rounded-xl border px-3 py-2 text-sm ${confidenceTone(result.report.confidence)}`}>
-                          {language === 'zh' ? '置信度' : 'Confidence'}: {result.report.confidence}
+                          {language !== 'en' ? '置信度' : 'Confidence'}: {result.report.confidence}
                         </div>
                         <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-300">
-                          {language === 'zh' ? '会话累计' : 'Session'}: {result.session_memory.analysis_count}
+                          {language !== 'en' ? '会话累计' : 'Session'}: {result.session_memory.analysis_count}
                         </div>
                       </div>
                       <p className="mt-4 text-sm leading-relaxed text-slate-300">{result.report.reasoning}</p>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{language === 'zh' ? '分类概率可视化' : 'Classifier probabilities'}</div>
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{language !== 'en' ? '分类概率可视化' : 'Classifier probabilities'}</div>
                       <div className="mt-4 space-y-3">
                         {classificationProbs.length ? classificationProbs.map((item) => (
                           <div key={item.stage}>
@@ -2617,7 +2689,7 @@ export function AgentWorkbenchPanel({
                             </div>
                           </div>
                         )) : (
-                          <div className="text-xs text-slate-500">{language === 'zh' ? '分类概率暂不可用' : 'Classifier probabilities unavailable'}</div>
+                          <div className="text-xs text-slate-500">{language !== 'en' ? '分类概率暂不可用' : 'Classifier probabilities unavailable'}</div>
                         )}
                       </div>
                     </div>
@@ -2629,10 +2701,10 @@ export function AgentWorkbenchPanel({
                         <div>
                           <div className="flex items-center gap-2 text-sm font-bold text-cyan-100">
                             <Database size={16} />
-                            {language === 'zh' ? '相似病例与多证据投票' : 'Similar-case and evidence voting'}
+                            {language !== 'en' ? '相似病例与多证据投票' : 'Similar-case and evidence voting'}
                           </div>
                           <div className="mt-1 text-xs text-cyan-100/55">
-                            {language === 'zh' ? '分类概率是一个投票源，相似病例、临床风险、分割质量和报告线索也是投票源。' : 'Classifier probabilities are one vote source; similar cases, clinical risk, segmentation quality, and report cues also vote.'}
+                            {language !== 'en' ? '分类概率是一个投票源，相似病例、临床风险、分割质量和报告线索也是投票源。' : 'Classifier probabilities are one vote source; similar cases, clinical risk, segmentation quality, and report cues also vote.'}
                           </div>
                         </div>
                         <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-[10px] text-cyan-100">
@@ -2657,7 +2729,7 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                         <ShieldCheck size={16} className="text-lime-300" />
-                        {language === 'zh' ? '综合证据权重面板' : 'Integrated evidence weights'}
+                        {language !== 'en' ? '综合证据权重面板' : 'Integrated evidence weights'}
                       </div>
                       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                         {evidenceStreams.map((stream) => (
@@ -2674,7 +2746,7 @@ export function AgentWorkbenchPanel({
                         ))}
                       </div>
                       <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
-                        {language === 'zh'
+                        {language !== 'en'
                           ? '如果某一路证据缺失或冲突，Agent 会降低它的权重，并把不确定性写入人工复核提示。'
                           : 'When one evidence stream is missing or conflicting, the agent lowers its weight and records uncertainty for clinician review.'}
                       </div>
@@ -2684,7 +2756,7 @@ export function AgentWorkbenchPanel({
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                     <div className="mb-4 flex items-center gap-2 text-sm font-bold text-white">
                       <Workflow size={16} className="text-emerald-300" />
-                      {language === 'zh' ? '按主线展开的模型调用结果' : 'Model calls along the clinical workflow'}
+                      {language !== 'en' ? '按主线展开的模型调用结果' : 'Model calls along the clinical workflow'}
                     </div>
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                       {toolCards.map((card, idx) => {
@@ -2711,7 +2783,7 @@ export function AgentWorkbenchPanel({
                                   <span className="max-w-[55%] truncate text-right font-mono text-slate-200">{formatUnknown(row.value)}</span>
                                 </div>
                               )) : (
-                                <div className="rounded bg-black/25 px-2 py-1 text-[11px] text-slate-500">{language === 'zh' ? '暂无结构化指标' : 'No structured metrics'}</div>
+                                <div className="rounded bg-black/25 px-2 py-1 text-[11px] text-slate-500">{language !== 'en' ? '暂无结构化指标' : 'No structured metrics'}</div>
                               )}
                             </div>
                             {card.tool?.error && (
@@ -2732,13 +2804,13 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-emerald-100">
                         <CheckCircle2 size={16} />
-                        {language === 'zh' ? '支持证据' : 'Supporting evidence'}
+                        {language !== 'en' ? '支持证据' : 'Supporting evidence'}
                       </div>
                       <div className="space-y-2">
                         {result.report.supporting_evidence?.length ? result.report.supporting_evidence.map((item, idx) => (
                           <div key={idx} className="rounded-lg border border-emerald-400/15 bg-black/20 px-3 py-2 text-xs leading-relaxed text-emerald-50/80">{item}</div>
                         )) : (
-                          <div className="text-xs text-slate-500">{language === 'zh' ? '暂无支持证据' : 'No supporting evidence'}</div>
+                          <div className="text-xs text-slate-500">{language !== 'en' ? '暂无支持证据' : 'No supporting evidence'}</div>
                         )}
                       </div>
                     </div>
@@ -2746,13 +2818,13 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-100">
                         <AlertTriangle size={16} />
-                        {language === 'zh' ? '不确定性与人工复核' : 'Uncertainty and review gates'}
+                        {language !== 'en' ? '不确定性与人工复核' : 'Uncertainty and review gates'}
                       </div>
                       <div className="space-y-2">
                         {result.report.uncertainty_flags?.length ? result.report.uncertainty_flags.map((item, idx) => (
                           <div key={idx} className="rounded-lg border border-amber-400/15 bg-black/20 px-3 py-2 text-xs leading-relaxed text-amber-50/80">{item}</div>
                         )) : (
-                          <div className="text-xs text-slate-500">{language === 'zh' ? '暂无风险提示' : 'No risk flags'}</div>
+                          <div className="text-xs text-slate-500">{language !== 'en' ? '暂无风险提示' : 'No risk flags'}</div>
                         )}
                       </div>
                     </div>
@@ -2762,7 +2834,7 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                         <Database size={16} className="text-cyan-300" />
-                        {language === 'zh' ? '相似病例分布' : 'Similar cases'}
+                        {language !== 'en' ? '相似病例分布' : 'Similar cases'}
                       </div>
                       <div className="space-y-2">
                         {result.similar_cases.length ? result.similar_cases.slice(0, 5).map((item, idx) => (
@@ -2777,7 +2849,7 @@ export function AgentWorkbenchPanel({
                             </div>
                           </div>
                         )) : (
-                          <div className="text-xs text-slate-500">{language === 'zh' ? '暂无相似病例' : 'No similar cases'}</div>
+                          <div className="text-xs text-slate-500">{language !== 'en' ? '暂无相似病例' : 'No similar cases'}</div>
                         )}
                       </div>
                     </div>
@@ -2785,7 +2857,7 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                         <FileSearch size={16} className="text-sky-300" />
-                        {language === 'zh' ? '报告文本线索' : 'Report text cues'}
+                        {language !== 'en' ? '报告文本线索' : 'Report text cues'}
                       </div>
                       <div className="space-y-2">
                         {getReportCues(result.tool_evidence.report).length ? getReportCues(result.tool_evidence.report).map((cue, idx) => (
@@ -2794,7 +2866,7 @@ export function AgentWorkbenchPanel({
                             <div className="mt-1 text-[10px] text-slate-500">{formatUnknown(cue.matched_terms)}</div>
                           </div>
                         )) : (
-                          <div className="text-xs text-slate-500">{language === 'zh' ? '暂无文本线索' : 'No report cues'}</div>
+                          <div className="text-xs text-slate-500">{language !== 'en' ? '暂无文本线索' : 'No report cues'}</div>
                         )}
                       </div>
                     </div>
@@ -2802,11 +2874,11 @@ export function AgentWorkbenchPanel({
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                         <RefreshCw size={16} className="text-violet-300" />
-                        {language === 'zh' ? 'Memory / 轨迹' : 'Memory / trace'}
+                        {language !== 'en' ? 'Memory / 轨迹' : 'Memory / trace'}
                       </div>
                       <div className="space-y-2 text-xs">
                         <div className="rounded-lg bg-black/25 px-3 py-2">
-                          <div className="text-slate-500">{language === 'zh' ? '候选记忆' : 'Memory candidates'}</div>
+                          <div className="text-slate-500">{language !== 'en' ? '候选记忆' : 'Memory candidates'}</div>
                           <div className="mt-1 font-mono text-slate-100">{result.report.memory_update_candidates?.length ?? 0}</div>
                         </div>
                         {(result.report.memory_update_candidates ?? []).slice(0, 3).map((candidate, idx) => {
@@ -2835,12 +2907,12 @@ export function AgentWorkbenchPanel({
                           );
                         })}
                         <div className="rounded-lg bg-black/25 px-3 py-2">
-                          <div className="text-slate-500">{language === 'zh' ? '工具调用轨迹' : 'Tool traces'}</div>
+                          <div className="text-slate-500">{language !== 'en' ? '工具调用轨迹' : 'Tool traces'}</div>
                           <div className="mt-1 font-mono text-slate-100">{result.traces?.length ?? 0}</div>
                         </div>
                         {result.trajectory_ref?.path && (
                           <div className="rounded-lg bg-black/25 px-3 py-2">
-                            <div className="text-slate-500">{language === 'zh' ? '轨迹文件' : 'Trace file'}</div>
+                            <div className="text-slate-500">{language !== 'en' ? '轨迹文件' : 'Trace file'}</div>
                             <div className="mt-1 break-all font-mono text-[10px] text-violet-100/80">{result.trajectory_ref.path}</div>
                           </div>
                         )}
@@ -2854,7 +2926,7 @@ export function AgentWorkbenchPanel({
                         <div>
                           <div className="flex items-center gap-2 text-sm font-bold text-emerald-100">
                             <FileText size={16} />
-                            {language === 'zh' ? '可复制动态报告草稿' : 'Copy-ready dynamic report draft'}
+                            {language !== 'en' ? '可复制动态报告草稿' : 'Copy-ready dynamic report draft'}
                           </div>
                           <div className="mt-1 text-xs text-emerald-100/60">{result.report.dynamic_report_draft.title}</div>
                         </div>
@@ -2863,7 +2935,7 @@ export function AgentWorkbenchPanel({
                           className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100 transition hover:bg-emerald-400/20"
                         >
                           {copiedDraft ? <CheckCircle2 size={13} /> : <Clipboard size={13} />}
-                          {copiedDraft ? (language === 'zh' ? '已复制' : 'Copied') : (language === 'zh' ? '复制报告' : 'Copy report')}
+                          {copiedDraft ? (language !== 'en' ? '已复制' : 'Copied') : (language !== 'en' ? '复制报告' : 'Copy report')}
                         </button>
                       </div>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -2888,13 +2960,13 @@ export function AgentWorkbenchPanel({
                 !loading && (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
                     <Brain size={28} className="mx-auto text-emerald-300" />
-                    <div className="mt-3 text-sm font-bold text-white">{language === 'zh' ? '准备对当前病例进行智能分析' : 'Ready to analyze this case'}</div>
+                    <div className="mt-3 text-sm font-bold text-white">{language !== 'en' ? '准备对当前病例进行智能分析' : 'Ready to analyze this case'}</div>
                     <button
                       onClick={runAnalysis}
                       className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-300 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-200"
                     >
                       <Sparkles size={15} />
-                      {language === 'zh' ? '开始分析' : 'Start analysis'}
+                      {language !== 'en' ? '开始分析' : 'Start analysis'}
                     </button>
                   </div>
                 )

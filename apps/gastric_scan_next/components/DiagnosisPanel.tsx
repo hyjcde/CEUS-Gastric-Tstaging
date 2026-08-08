@@ -8,26 +8,59 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { exportReportToPDF, exportSinglePatientToCSV } from '@/lib/export-utils';
 import toast from 'react-hot-toast';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import type { SamReport } from '@/lib/reader/types';
+import type { DinoFeatureResult, DinoLayerResult } from '@/components/InteractiveSegPanel';
+import { DoctorReportStudio } from '@/components/DoctorReportStudio';
 
 interface DiagnosisPanelProps {
   state: ConceptState;
   patient: Patient | null;
   agentAnalysis?: AgentAnalysisResponse | null;
+  systemReport?: SamReport | null;
+  dinoFeature?: DinoFeatureResult | null;
+  gcUsReport?: GcUsReportState | null;
   onExpandedChange?: (expanded: boolean) => void;
   /** GC-US imaging paragraph from SAM + wall features */
   imagingNarrative?: string | null;
 };
 
-export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state, patient, agentAnalysis = null, onExpandedChange, imagingNarrative = null }) => {
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
+  state,
+  patient,
+  agentAnalysis = null,
+  systemReport = null,
+  dinoFeature = null,
+  gcUsReport = null,
+  onExpandedChange,
+  imagingNarrative = null,
+}) => {
   const { t, language } = useSettings();
   const [reportText, setReportText] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'diagnosis' | 'clinical'>('diagnosis');
   const [portalReady, setPortalReady] = useState(false);
+  const [activeDinoLayer, setActiveDinoLayer] = useState<number | null>(null);
 
   useEffect(() => {
     setPortalReady(true);
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      setIsExpanded(true);
+      onExpandedChange?.(true);
+      window.dispatchEvent(new CustomEvent('gastric:focus-agent'));
+    };
+    window.addEventListener('gastric:open-full-report', handler);
+    return () => window.removeEventListener('gastric:open-full-report', handler);
+  }, [onExpandedChange]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -45,12 +78,89 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
     const newExpanded = !isExpanded;
     setIsExpanded(newExpanded);
     onExpandedChange?.(newExpanded);
+    if (newExpanded) {
+      window.dispatchEvent(new CustomEvent('gastric:focus-agent'));
+    }
   };
 
   const diagnosis = useMemo(() => calculateDiagnosis(state, patient), [state, patient]);
   const { tStage, nStage, probabilities, confidence, scores, flags, reasoning, preoperativeAdvice } = diagnosis;
+
+  const displayPreoperativeAdvice = useMemo(() => {
+    if (!agentAnalysis) return preoperativeAdvice;
+
+    const decision = asRecord(agentAnalysis.tool_evidence.clinical_decision);
+    const recommendation = typeof decision?.recommendation === 'string'
+      ? decision.recommendation
+      : '';
+    const missingModalities = Array.isArray(decision?.missing_modalities)
+      ? decision.missing_modalities.filter((item): item is string => typeof item === 'string')
+      : [];
+    const requiresMdt = decision?.requires_mdt === true;
+    const agentStage = agentAnalysis.report.recommended_t_stage;
+    if (!recommendation && !agentStage) return preoperativeAdvice;
+
+    const modalityWorkup = missingModalities.map((modality) => {
+      if (language === 'en') {
+        if (modality === 'ct_report') return 'Obtain contrast-enhanced CT for local invasion and distant disease assessment.';
+        if (modality === 'endoscopy_report') return 'Complete endoscopy/EUS review for primary lesion extent and T staging.';
+        return `Complete missing modality: ${modality}.`;
+      }
+      if (modality === 'ct_report') return '补充增强 CT，评估局部侵犯范围及远处转移。';
+      if (modality === 'endoscopy_report') return '补充胃镜/EUS，确认原发灶范围和 T 分期。';
+      return `补充缺失检查：${modality}。`;
+    });
+    const reviewNote = language === 'en'
+      ? 'Agent output is decision support only; confirm with imaging, endoscopy, pathology, and physician review.'
+      : 'Agent 输出仅供辅助决策，须结合影像、胃镜、病理及医生复核。';
+
+    return {
+      ...preoperativeAdvice,
+      overallAssessment: recommendation || (
+        language === 'en'
+          ? `Agent provisional stage: ${agentStage}.`
+          : `Agent 暂定分期：${agentStage}。`
+      ),
+      urgency: requiresMdt ? 'urgent' : preoperativeAdvice.urgency,
+      recommendedWorkup: modalityWorkup.length ? modalityWorkup : preoperativeAdvice.recommendedWorkup,
+      treatmentConsiderations: [reviewNote],
+      mdtRequired: requiresMdt || preoperativeAdvice.mdtRequired,
+      uncertaintyNotes: Array.from(new Set([...preoperativeAdvice.uncertaintyNotes, reviewNote])),
+    };
+  }, [agentAnalysis, language, preoperativeAdvice]);
   
-  const descriptions = useMemo(() => getFeatureDescriptions(state, language as 'zh' | 'en'), [state, language]);
+  const diagnosisLanguage = language === 'en' ? 'en' : 'zh';
+  const descriptions = useMemo(() => getFeatureDescriptions(state, diagnosisLanguage), [state, diagnosisLanguage]);
+
+  const dinoLayers = useMemo<DinoLayerResult[]>(() => {
+    if (!dinoFeature?.available) return [];
+    const layers = dinoFeature.layers?.length ? dinoFeature.layers : [dinoFeature];
+    return layers.filter((layer): layer is DinoLayerResult => (
+      Boolean(layer) && Number.isFinite(Number(layer.layer_index))
+    ));
+  }, [dinoFeature]);
+
+  useEffect(() => {
+    if (!dinoLayers.length) {
+      setActiveDinoLayer(null);
+      return;
+    }
+    if (!dinoLayers.some((layer) => layer.layer_index === activeDinoLayer)) {
+      setActiveDinoLayer(dinoLayers[dinoLayers.length - 1].layer_index ?? null);
+    }
+  }, [activeDinoLayer, dinoLayers]);
+
+  const selectedDinoLayer = useMemo(
+    () => dinoLayers.find((layer) => layer.layer_index === activeDinoLayer) || dinoLayers[dinoLayers.length - 1] || null,
+    [activeDinoLayer, dinoLayers],
+  );
+
+  const formatDinoValue = (value: unknown, digits = 3) => (
+    typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
+  );
+  const formatDinoPercent = (value: unknown) => (
+    typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—'
+  );
 
   const conceptFeatures = useMemo(() => {
     if (patient?.clinical?.concept_features) {
@@ -59,21 +169,21 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
     return null;
   }, [patient?.clinical]);
 
-  const formatConceptValue = (value?: string) => value ?? (language === 'zh' ? '未记录' : 'N/A');
+  const formatConceptValue = (value?: string) => value ?? (language !== 'en' ? '未记录' : 'N/A');
   const actualFeatureRows = useMemo(() => {
     if (!conceptFeatures) return [];
     return [
-      { label: language === 'zh' ? 'Ki-67（实际）' : 'Ki-67 (actual)', value: formatConceptValue(conceptFeatures.ki67) },
-      { label: language === 'zh' ? 'CPS（实际）' : 'CPS (actual)', value: formatConceptValue(conceptFeatures.cps) },
-      { label: language === 'zh' ? 'PD-1（实际）' : 'PD-1 (actual)', value: formatConceptValue(conceptFeatures.pd1) },
-      { label: language === 'zh' ? 'FoxP3（实际）' : 'FoxP3 (actual)', value: formatConceptValue(conceptFeatures.foxp3) },
-      { label: language === 'zh' ? 'CD3（实际）' : 'CD3 (actual)', value: formatConceptValue(conceptFeatures.cd3) },
-      { label: language === 'zh' ? 'CD4（实际）' : 'CD4 (actual)', value: formatConceptValue(conceptFeatures.cd4) },
-      { label: language === 'zh' ? 'CD8（实际）' : 'CD8 (actual)', value: formatConceptValue(conceptFeatures.cd8) },
-      { label: language === 'zh' ? '脉管/血管' : 'Vascular/lymphatic', value: formatConceptValue(conceptFeatures.vascular) },
-      { label: language === 'zh' ? '神经侵犯' : 'Neural invasion', value: formatConceptValue(conceptFeatures.neural) },
-      { label: language === 'zh' ? '分化程度' : 'Differentiation', value: formatConceptValue(conceptFeatures.differentiation) },
-      { label: language === 'zh' ? 'Lauren 分型' : 'Lauren class', value: formatConceptValue(conceptFeatures.lauren) }
+      { label: language !== 'en' ? 'Ki-67（实际）' : 'Ki-67 (actual)', value: formatConceptValue(conceptFeatures.ki67) },
+      { label: language !== 'en' ? 'CPS（实际）' : 'CPS (actual)', value: formatConceptValue(conceptFeatures.cps) },
+      { label: language !== 'en' ? 'PD-1（实际）' : 'PD-1 (actual)', value: formatConceptValue(conceptFeatures.pd1) },
+      { label: language !== 'en' ? 'FoxP3（实际）' : 'FoxP3 (actual)', value: formatConceptValue(conceptFeatures.foxp3) },
+      { label: language !== 'en' ? 'CD3（实际）' : 'CD3 (actual)', value: formatConceptValue(conceptFeatures.cd3) },
+      { label: language !== 'en' ? 'CD4（实际）' : 'CD4 (actual)', value: formatConceptValue(conceptFeatures.cd4) },
+      { label: language !== 'en' ? 'CD8（实际）' : 'CD8 (actual)', value: formatConceptValue(conceptFeatures.cd8) },
+      { label: language !== 'en' ? '脉管/血管' : 'Vascular/lymphatic', value: formatConceptValue(conceptFeatures.vascular) },
+      { label: language !== 'en' ? '神经侵犯' : 'Neural invasion', value: formatConceptValue(conceptFeatures.neural) },
+      { label: language !== 'en' ? '分化程度' : 'Differentiation', value: formatConceptValue(conceptFeatures.differentiation) },
+      { label: language !== 'en' ? 'Lauren 分型' : 'Lauren class', value: formatConceptValue(conceptFeatures.lauren) }
     ];
   }, [conceptFeatures, language]);
 
@@ -83,8 +193,8 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
       descriptions.cps,
       descriptions.pd1,
       descriptions.foxp3,
-      state.vascularInvasion ? (language === 'zh' ? '伴脉管侵犯。' : 'Vascular invasion present.') : '',
-      state.neuralInvasion ? (language === 'zh' ? '伴神经侵犯。' : 'Neural invasion present.') : ''
+      state.vascularInvasion ? (language !== 'en' ? '伴脉管侵犯。' : 'Vascular invasion present.') : '',
+      state.neuralInvasion ? (language !== 'en' ? '伴神经侵犯。' : 'Neural invasion present.') : ''
     ].filter(Boolean).join(' ');
 
     const tumorSizeData = patient?.clinical?.tumorSize;
@@ -95,27 +205,27 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
               ? ` (${(tumorSizeData.length * tumorSizeData.thickness).toFixed(1)} cm²)`
               : ''
           }`
-        : language === 'zh'
+        : language !== 'en'
           ? '待补充'
           : 'Pending measurement';
 
     const lymphStatusText = flags.hasMetastasis
-      ? language === 'zh'
+      ? language !== 'en'
         ? `提示区域淋巴结转移（${nStage}），参考 FoxP3/Lauren/CPS 综合风险。`
         : `Regional nodal spread suspected (${nStage}), supported by FoxP3/Lauren/CPS risk.`
-      : language === 'zh'
+      : language !== 'en'
         ? '未见明确淋巴结转移高危信号（N0）。'
         : 'No definitive high-risk nodal signals (N0).';
 
-    const stageText = language === 'zh'
+    const stageText = language !== 'en'
       ? `CBM模型推断 ${tStage}${nStage}（置信度 ${confidence.overall}%）。`
       : `CBM Model infers ${tStage}${nStage} with ${confidence.overall}% confidence.`;
 
     const recommendationText = flags.highRisk
-      ? language === 'zh'
+      ? language !== 'en'
         ? '建议结合分割证据、分类结果和临床信息做多学科复核。'
         : 'Recommend multidisciplinary review with segmentation evidence, classifier output, and clinical context.'
-      : language === 'zh'
+      : language !== 'en'
         ? '当前更适合作为辅助结论，建议继续结合医生阅片与后续检查。'
         : 'Current output is suitable as assistive evidence and should be reviewed together with the physician assessment.';
 
@@ -123,33 +233,33 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
       ...(imagingNarrative
         ? [{
             key: 'us_findings',
-            label: language === 'zh' ? '超声所见（影像描述）' : 'Ultrasound findings',
+            label: language !== 'en' ? '超声所见（影像描述）' : 'Ultrasound findings',
             value: imagingNarrative,
           }]
         : []),
       {
         key: 'findings',
-        label: language === 'zh' ? '病理特征' : 'Pathological Features',
+        label: language !== 'en' ? '病理特征' : 'Pathological Features',
         value: imagingFindings
       },
       {
         key: 'size',
-        label: language === 'zh' ? '病灶尺寸' : 'Lesion size',
+        label: language !== 'en' ? '病灶尺寸' : 'Lesion size',
         value: lesionSizeValue
       },
       {
         key: 'nodes',
-        label: language === 'zh' ? '淋巴结评估' : 'Lymph node assessment',
+        label: language !== 'en' ? '淋巴结评估' : 'Lymph node assessment',
         value: lymphStatusText
       },
       {
         key: 'stage',
-        label: language === 'zh' ? '分期推断' : 'Stage inference',
+        label: language !== 'en' ? '分期推断' : 'Stage inference',
         value: stageText
       },
       {
         key: 'recommendation',
-        label: language === 'zh' ? '建议后续' : 'Recommended action',
+        label: language !== 'en' ? '建议后续' : 'Recommended action',
         value: recommendationText
       }
     ];
@@ -168,17 +278,17 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
   ]);
 
   const smartSummaryPoints = useMemo(() => 
-    generateSummaryPoints(state, diagnosis, patient, language as 'zh' | 'en'),
-    [state, diagnosis, patient, language]
+    generateSummaryPoints(state, diagnosis, patient, diagnosisLanguage),
+    [state, diagnosis, patient, diagnosisLanguage]
   );
 
   const caseSummaryRows = useMemo(() => {
     if (!patient) return [];
     return [
-      { label: language === 'zh' ? '病例标识' : 'Case token', value: patient.agent_report.case_token },
-      { label: language === 'zh' ? '数据来源' : 'Data source', value: patient.source_label || patient.agent_report.data_source },
-      { label: language === 'zh' ? '帧数' : 'Frames', value: String(patient.frame_count) },
-      { label: language === 'zh' ? '模式' : 'View mode', value: patient.roi_url ? 'Image + ROI' : 'Image only' },
+      { label: language !== 'en' ? '病例标识' : 'Case token', value: patient.agent_report.case_token },
+      { label: language !== 'en' ? '数据来源' : 'Data source', value: patient.source_label || patient.agent_report.data_source },
+      { label: language !== 'en' ? '帧数' : 'Frames', value: String(patient.frame_count) },
+      { label: language !== 'en' ? '模式' : 'View mode', value: patient.roi_url ? 'Image + ROI' : 'Image only' },
     ];
   }, [language, patient]);
 
@@ -188,22 +298,22 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
       { label: 'Annotation', value: patient.segmentation.has_annotation ? 'Yes' : 'No' },
       { label: 'Overlay', value: patient.segmentation.has_overlay ? 'Yes' : 'No' },
       { label: 'ROI', value: patient.segmentation.has_roi ? 'Yes' : 'No' },
-      { label: language === 'zh' ? '标注总数' : 'Annotation count', value: String(patient.segmentation.annotation_count) },
+      { label: language !== 'en' ? '标注总数' : 'Annotation count', value: String(patient.segmentation.annotation_count) },
     ];
   }, [language, patient]);
 
   const agentRows = useMemo(() => {
     if (!patient) return [];
     return [
-      { label: language === 'zh' ? '图像质量' : 'Image quality', value: patient.agent_report.image_quality.summary },
-      { label: language === 'zh' ? '分割状态' : 'Segmentation', value: patient.agent_report.segmentation.summary },
-      { label: language === 'zh' ? '分类状态' : 'Classification', value: patient.agent_report.classification.summary },
-      { label: language === 'zh' ? '相似病例' : 'Similar cases', value: patient.agent_report.similar_case_support.summary },
+      { label: language !== 'en' ? '图像质量' : 'Image quality', value: patient.agent_report.image_quality.summary },
+      { label: language !== 'en' ? '分割状态' : 'Segmentation', value: patient.agent_report.segmentation.summary },
+      { label: language !== 'en' ? '分类状态' : 'Classification', value: patient.agent_report.classification.summary },
+      { label: language !== 'en' ? '相似病例' : 'Similar cases', value: patient.agent_report.similar_case_support.summary },
       {
-        label: language === 'zh' ? '人工复核' : 'Manual review',
+        label: language !== 'en' ? '人工复核' : 'Manual review',
         value: patient.agent_report.manual_review_recommended
-          ? (language === 'zh' ? '建议复核' : 'Recommended')
-          : (language === 'zh' ? '可直接浏览' : 'Optional'),
+          ? (language !== 'en' ? '建议复核' : 'Recommended')
+          : (language !== 'en' ? '可直接浏览' : 'Optional'),
       },
     ];
   }, [language, patient]);
@@ -212,23 +322,23 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
     if (!patient?.report) return [];
     const rows = [
       {
-        label: language === 'zh' ? '超声报告' : 'Ultrasound report',
+        label: language !== 'en' ? '超声报告' : 'Ultrasound report',
         value: patient.report.ultrasound_report,
       },
       {
-        label: language === 'zh' ? '超声所见' : 'Ultrasound findings',
+        label: language !== 'en' ? '超声所见' : 'Ultrasound findings',
         value: patient.report.ultrasound_findings,
       },
       {
-        label: language === 'zh' ? '超声提示' : 'Ultrasound impression',
+        label: language !== 'en' ? '超声提示' : 'Ultrasound impression',
         value: patient.report.ultrasound_impression,
       },
       {
-        label: language === 'zh' ? '内镜报告' : 'Endoscopy report',
+        label: language !== 'en' ? '内镜报告' : 'Endoscopy report',
         value: patient.report.endoscopy_report,
       },
       {
-        label: language === 'zh' ? '病理报告' : 'Pathology report',
+        label: language !== 'en' ? '病理报告' : 'Pathology report',
         value: patient.report.pathology_report,
       },
     ];
@@ -241,7 +351,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
       return;
     }
 
-    const lines = generateNarrativeReport(state, diagnosis, patient, language as 'zh' | 'en');
+    const lines = generateNarrativeReport(state, diagnosis, patient, diagnosisLanguage);
     const fullText = lines.join("\n");
     let i = 0;
     setReportText('');
@@ -257,7 +367,6 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
     return () => clearInterval(timer);
   }, [patient?.id, state, language, diagnosis, t.diagnosis.waiting]);
 
-  const agentDraft = agentAnalysis?.report.dynamic_report_draft;
   const agentClassificationProbs = useMemo(() => {
     const probs = agentAnalysis?.tool_evidence.classification?.probabilities;
     if (!probs || typeof probs !== 'object' || Array.isArray(probs)) return null;
@@ -269,14 +378,53 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
   }, [agentAnalysis]);
   const formatAgentConfidence = (value?: string) => {
     if (!value) return `${confidence.overall}%`;
-    if (language === 'zh') {
+    if (language !== 'en') {
       return { high: '高', medium: '中等', low: '低' }[value] ?? value;
     }
     return value;
   };
-  const expandedReportText = agentDraft?.full_text || reportText;
-  const expandedStage = agentAnalysis?.report.recommended_t_stage
+  const doctorEditedGcUsReport = Boolean(
+    gcUsReport
+    && (gcUsReport.report.doctor_edited || gcUsReport.reference_stage.source === 'doctor'),
+  );
+  const agentDraft = doctorEditedGcUsReport ? null : agentAnalysis?.report.dynamic_report_draft;
+  const agentFallbackReportText = useMemo(() => {
+    if (!agentAnalysis || doctorEditedGcUsReport) return null;
+    const decision = asRecord(agentAnalysis.tool_evidence.clinical_decision);
+    const recommendation = typeof decision?.recommendation === 'string' ? decision.recommendation : '';
+    const lines = [
+      language !== 'en' ? '【Agent 辅助分析】' : 'Agent assisted analysis',
+      `${language !== 'en' ? '推荐分期' : 'Provisional stage'}: ${agentAnalysis.report.recommended_t_stage}`,
+      `${language !== 'en' ? '置信度' : 'Confidence'}: ${agentAnalysis.report.confidence}`,
+      agentAnalysis.report.reasoning
+        ? `${language !== 'en' ? '综合依据' : 'Reasoning'}: ${agentAnalysis.report.reasoning}`
+        : '',
+      recommendation
+        ? `${language !== 'en' ? '临床建议' : 'Clinical recommendation'}: ${recommendation}`
+        : '',
+      agentAnalysis.report.conflicting_evidence?.length
+        ? `${language !== 'en' ? '冲突证据' : 'Conflicting evidence'}: ${agentAnalysis.report.conflicting_evidence.join('；')}`
+        : '',
+      agentAnalysis.report.uncertainty_flags?.length
+        ? `${language !== 'en' ? '不确定性' : 'Uncertainty'}: ${agentAnalysis.report.uncertainty_flags.join('；')}`
+        : '',
+      language !== 'en'
+        ? '备注：该结果为辅助证据，不替代医生、胃镜、CT 或病理结论。'
+        : 'Note: this is decision support and does not replace physician, endoscopy, CT, or pathology conclusions.',
+    ];
+    return lines.filter(Boolean).join('\n');
+  }, [agentAnalysis, doctorEditedGcUsReport, language]);
+  const expandedReportText = doctorEditedGcUsReport
+    ? gcUsReport?.report.prose || reportText
+    : agentDraft?.full_text || agentFallbackReportText || gcUsReport?.report.prose || reportText;
+  const expandedStage = doctorEditedGcUsReport
+    && gcUsReport?.reference_stage.band
+    && gcUsReport.reference_stage.band !== 'uncertain'
+    ? `c${gcUsReport.reference_stage.band}${nStage}`
+    : agentAnalysis?.report.recommended_t_stage
     ? `${agentAnalysis.report.recommended_t_stage}${nStage}`
+    : gcUsReport?.reference_stage.band && gcUsReport.reference_stage.band !== 'uncertain'
+    ? `c${gcUsReport.reference_stage.band}${nStage}`
     : `${tStage}${nStage}`;
   const expandedConfidence = formatAgentConfidence(agentAnalysis?.report.confidence);
 
@@ -330,15 +478,15 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
           style={{ top: '64px' }}
           role="dialog"
           aria-modal="true"
-          aria-label={language === 'zh' ? '详细报告' : 'Detailed report'}
+          aria-label={language !== 'en' ? '详细报告' : 'Detailed report'}
         >
           {/* 固定右上角关闭 — 始终可见 */}
           <button
             type="button"
             onClick={toggleExpanded}
             className="fixed top-[72px] right-4 z-[200001] flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-neutral-900/95 text-gray-100 shadow-2xl transition hover:border-red-400/60 hover:bg-red-500/20 hover:text-white"
-            title={language === 'zh' ? '关闭报告 (Esc)' : 'Close report (Esc)'}
-            aria-label={language === 'zh' ? '关闭报告' : 'Close report'}
+            title={language !== 'en' ? '关闭报告 (Esc)' : 'Close report (Esc)'}
+            aria-label={language !== 'en' ? '关闭报告' : 'Close report'}
           >
             <X size={22} />
           </button>
@@ -352,10 +500,10 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                         </div>
                         <div>
                             <div className="text-sm font-bold text-gray-200 uppercase tracking-widest">
-                                {t.diagnosis.report_header || "Detailed Medical Report"}
+                                {language !== 'en' ? '辅助诊断完整报告' : 'Assisted diagnosis full report'}
                             </div>
                             <div className="text-xs text-gray-500 mt-0.5">
-                                {patient?.id_short || 'N/A'} • {new Date().toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}
+                                {patient?.id_short || 'N/A'} • {new Date().toLocaleString(language !== 'en' ? 'zh-CN' : 'en-US')}
                             </div>
                         </div>
                     </div>
@@ -363,50 +511,50 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                         <button
                             onClick={async () => {
                                 if (!patient) {
-                                    toast.error(language === 'zh' ? '请先选择患者' : 'Please select a patient first');
+                                    toast.error(language !== 'en' ? '请先选择患者' : 'Please select a patient first');
                                     return;
                                 }
                                 try {
-                                    toast.loading(language === 'zh' ? '正在导出 PDF...' : 'Exporting PDF...', { id: 'export-pdf' });
+                                    toast.loading(language !== 'en' ? '正在导出 PDF...' : 'Exporting PDF...', { id: 'export-pdf' });
                                     await exportReportToPDF(
                                         'diagnosis-report-content',
                                         `report_${patient.id_short}_${Date.now()}.pdf`
                                     );
-                                    toast.success(language === 'zh' ? 'PDF 导出成功' : 'PDF exported successfully', { id: 'export-pdf' });
+                                    toast.success(language !== 'en' ? 'PDF 导出成功' : 'PDF exported successfully', { id: 'export-pdf' });
                                 } catch (error) {
                                     console.error('Export failed:', error);
-                                    toast.error(language === 'zh' ? 'PDF 导出失败' : 'Failed to export PDF', { id: 'export-pdf' });
+                                    toast.error(language !== 'en' ? 'PDF 导出失败' : 'Failed to export PDF', { id: 'export-pdf' });
                                 }
                             }}
                             className="p-2.5 hover:bg-blue-500/20 rounded-lg transition-colors text-blue-400 hover:text-blue-300 border border-blue-500/30 hover:border-blue-500/50"
-                            title={language === 'zh' ? '导出 PDF' : 'Export PDF'}
+                            title={language !== 'en' ? '导出 PDF' : 'Export PDF'}
                         >
                             <FileDown size={18} />
                         </button>
                         <button
                             onClick={() => {
                                 if (!patient) {
-                                    toast.error(language === 'zh' ? '请先选择患者' : 'Please select a patient first');
+                                    toast.error(language !== 'en' ? '请先选择患者' : 'Please select a patient first');
                                     return;
                                 }
                                 try {
                                     exportSinglePatientToCSV(patient, state, diagnosis, `patient_${patient.id_short}_${Date.now()}.csv`);
-                                    toast.success(language === 'zh' ? 'CSV 导出成功' : 'CSV exported successfully');
+                                    toast.success(language !== 'en' ? 'CSV 导出成功' : 'CSV exported successfully');
                                 } catch (error) {
                                     console.error('Export failed:', error);
-                                    toast.error(language === 'zh' ? 'CSV 导出失败' : 'Failed to export CSV');
+                                    toast.error(language !== 'en' ? 'CSV 导出失败' : 'Failed to export CSV');
                                 }
                             }}
                             className="p-2.5 hover:bg-emerald-500/20 rounded-lg transition-colors text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 hover:border-emerald-500/50"
-                            title={language === 'zh' ? '导出 CSV' : 'Export CSV'}
+                            title={language !== 'en' ? '导出 CSV' : 'Export CSV'}
                         >
                             <Download size={18} />
                         </button>
                         <button 
                             onClick={toggleExpanded}
                             className="p-2.5 hover:bg-red-500/20 rounded-lg transition-colors text-gray-200 hover:text-white border border-white/20 hover:border-red-400/50 bg-white/5"
-                            title={language === 'zh' ? '关闭 (Esc)' : 'Close (Esc)'}
-                            aria-label={language === 'zh' ? '关闭报告' : 'Close report'}
+                            title={language !== 'en' ? '关闭 (Esc)' : 'Close (Esc)'}
+                            aria-label={language !== 'en' ? '关闭报告' : 'Close report'}
                         >
                             <X size={20} />
                         </button>
@@ -415,21 +563,32 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                 
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
                     <div id="diagnosis-report-content" className="p-5 space-y-4">
+                        <DoctorReportStudio
+                          patient={patient}
+                          analysis={agentAnalysis}
+                          gcUsReport={gcUsReport}
+                          systemReport={systemReport}
+                        />
+                        <details className="rounded-xl border border-white/10 bg-black/20">
+                          <summary className="cursor-pointer px-4 py-3 text-[11px] font-semibold text-slate-400 hover:text-slate-200">
+                            {language !== 'en' ? '兼容旧版紧凑报告视图' : 'Legacy compact report view'}
+                          </summary>
+                          <div className="space-y-4 border-t border-white/10 p-4">
                         <div className={`rounded-xl border ${flags.isT4 || flags.hasMetastasis ? 'border-red-500/40 bg-red-950/20' : 'border-emerald-500/40 bg-emerald-950/20'} px-4 py-3 flex items-center justify-between gap-4`}>
                             <div className="min-w-0">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language === 'zh' ? 'AI 自动生成报告草稿' : 'AI Generated Draft Report'}</div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language !== 'en' ? '可编辑诊断意见草稿' : 'Editable diagnosis draft'}</div>
                                 <div className="text-base text-gray-100 font-mono truncate mt-1">{patient?.id_short || 'N/A'}</div>
                                 <div className="text-[11px] text-gray-500 mt-0.5">
-                                    {patient?.id_short || 'N/A'} • {new Date().toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}
+                                    {patient?.id_short || 'N/A'} • {new Date().toLocaleString(language !== 'en' ? 'zh-CN' : 'en-US')}
                                 </div>
                             </div>
                             <div className="flex items-center gap-5 shrink-0">
                                 <div className="text-right">
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language === 'zh' ? '综合分期' : 'Stage'}</div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language !== 'en' ? '综合分期' : 'Stage'}</div>
                                     <div className={`text-4xl font-black tracking-tighter ${flags.isT4 || flags.hasMetastasis ? 'text-red-400' : 'text-emerald-400'}`}>{expandedStage}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language === 'zh' ? '置信度' : 'Confidence'}</div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language !== 'en' ? '置信度' : 'Confidence'}</div>
                                     <div className="text-2xl font-black text-gray-100">{expandedConfidence}</div>
                                 </div>
                                 <div className="hidden lg:block">
@@ -446,19 +605,19 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                                             <Terminal size={16} className="text-emerald-400" />
                                             <div className="text-sm font-bold text-gray-200">
                                                 {agentDraft
-                                                    ? (language === 'zh' ? 'AI 动态报告正文' : 'AI Dynamic Report Draft')
-                                                    : (language === 'zh' ? '本地报告草稿' : 'Local Draft Report')}
+                                                    ? (language !== 'en' ? 'AI 动态报告正文' : 'AI Dynamic Report Draft')
+                                                    : (language !== 'en' ? '本地报告草稿' : 'Local Draft Report')}
                                             </div>
                                         </div>
                                         <div className="text-[10px] text-gray-500">
                                             {agentDraft
-                                                ? (language === 'zh' ? '来自 Agent 多工具证据链' : 'From Agent evidence workflow')
-                                                : (language === 'zh' ? '运行 Agent 后自动升级为动态报告' : 'Run Agent to upgrade this draft')}
+                                                ? (language !== 'en' ? '来自 Agent 多工具证据链' : 'From Agent evidence workflow')
+                                                : (language !== 'en' ? '运行 Agent 后自动升级为动态报告' : 'Run Agent to upgrade this draft')}
                                         </div>
                                     </div>
                                     {!agentDraft && (
                                         <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                                            {language === 'zh'
+                                            {language !== 'en'
                                                 ? '当前展示的是 CBM 本地兜底报告。点击影像区顶部「启动当前病例 Agent」，会自动生成包含分割、壁层证据、报告线索、相似病例和复核建议的动态报告稿。'
                                                 : 'This is the local CBM fallback draft. Start the case agent from the image viewer to generate a dynamic report with tool evidence, report cues, similar cases, and review advice.'}
                                         </div>
@@ -481,7 +640,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                         {smartSummaryPoints.map((point, idx) => (
                                             <div key={idx} className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-gray-300 leading-relaxed">
-                                                <div className="text-[10px] text-emerald-300 mb-1">{language === 'zh' ? `要点 ${idx + 1}` : `Point ${idx + 1}`}</div>
+                                                <div className="text-[10px] text-emerald-300 mb-1">{language !== 'en' ? `要点 ${idx + 1}` : `Point ${idx + 1}`}</div>
                                                 {point}
                                             </div>
                                         ))}
@@ -500,16 +659,16 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                                 </div>
 
                                 <div className="bg-linear-to-br from-neutral-900/80 to-neutral-800/40 p-4 rounded-xl border border-neutral-700/50">
-                                    <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">{language === 'zh' ? '分期概率' : 'Stage Probability'}</div>
+                                    <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">{language !== 'en' ? '分期概率' : 'Stage Probability'}</div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <div className="text-[10px] text-gray-500 mb-2">T-{language === 'zh' ? '分期' : 'Stage'}</div>
+                                            <div className="text-[10px] text-gray-500 mb-2">T-{language !== 'en' ? '分期' : 'Stage'}</div>
                                             {renderBar('T4', probabilities.t4, 'bg-red-500')}
                                             {renderBar('T3', probabilities.t3, 'bg-amber-500')}
                                             {renderBar('T1-2', probabilities.t2, 'bg-emerald-500')}
                                         </div>
                                         <div>
-                                            <div className="text-[10px] text-gray-500 mb-2">N-{language === 'zh' ? '分期' : 'Stage'}</div>
+                                            <div className="text-[10px] text-gray-500 mb-2">N-{language !== 'en' ? '分期' : 'Stage'}</div>
                                             {renderBar('N0', probabilities.n0, 'bg-emerald-500')}
                                             {renderBar('N1', probabilities.n1, 'bg-yellow-500')}
                                             {renderBar('N2', probabilities.n2, 'bg-orange-500')}
@@ -521,7 +680,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                                 <div className="bg-linear-to-br from-neutral-900/90 to-neutral-800/50 p-4 rounded-xl border border-neutral-700/50">
                                     <div className="flex items-center gap-2 mb-3">
                                         <BarChart2 size={15} className="text-blue-400" />
-                                        <div className="text-xs font-bold text-gray-300 uppercase tracking-wider">{language === 'zh' ? '结构化证据' : 'Structured Evidence'}</div>
+                                        <div className="text-xs font-bold text-gray-300 uppercase tracking-wider">{language !== 'en' ? '结构化证据' : 'Structured Evidence'}</div>
                                     </div>
                                     <div className="space-y-2">
                                         {structuredReportSections.map((section) => (
@@ -553,6 +712,8 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                                 </div>
                             </div>
                         </div>
+                        </div>
+                        </details>
                     </div>
                 </div>
           </div>
@@ -594,19 +755,19 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
             <button
                 onClick={() => {
                     if (!patient) {
-                        toast.error(language === 'zh' ? '请先选择患者' : 'Please select a patient first');
+                        toast.error(language !== 'en' ? '请先选择患者' : 'Please select a patient first');
                         return;
                     }
                     try {
                         exportSinglePatientToCSV(patient, state, diagnosis, `patient_${patient.id_short}_${Date.now()}.csv`);
-                        toast.success(language === 'zh' ? 'CSV 导出成功' : 'CSV exported successfully');
+                        toast.success(language !== 'en' ? 'CSV 导出成功' : 'CSV exported successfully');
                     } catch (error) {
                         console.error('Export failed:', error);
-                        toast.error(language === 'zh' ? 'CSV 导出失败' : 'Failed to export CSV');
+                        toast.error(language !== 'en' ? 'CSV 导出失败' : 'Failed to export CSV');
                     }
                 }}
                 className="p-1 hover:bg-emerald-500/20 rounded transition-colors text-gray-500 hover:text-emerald-400"
-                title={language === 'zh' ? '导出 CSV' : 'Export CSV'}
+                title={language !== 'en' ? '导出 CSV' : 'Export CSV'}
             >
                 <Download size={12} />
             </button>
@@ -656,22 +817,19 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                         <div className="flex items-center justify-between w-full px-2">
                             {/* Left: Text Prediction */}
                             <div className="flex flex-col items-center">
-                                <div className="text-[9px] font-mono uppercase text-gray-500 mb-1">
-                                  {agentAnalysis ? (language === 'zh' ? 'Agent 推荐' : 'Agent stage') : t.diagnosis.predicted}
+                                <div className="text-[11px] font-mono uppercase text-gray-400 mb-1">
+                                  {agentAnalysis
+                                    ? (language !== 'en' ? '辅助分期建议' : 'Assisted stage')
+                                    : t.diagnosis.predicted}
                                 </div>
-                                <div className={`text-3xl font-black tracking-tighter mb-1 ${flags.isT4 || flags.hasMetastasis ? 'text-red-500' : 'text-emerald-400'}`}>
+                                <div className={`text-4xl font-black tracking-tighter mb-1 ${flags.isT4 || flags.hasMetastasis ? 'text-red-500' : 'text-emerald-400'}`}>
                                     {agentAnalysis?.report.recommended_t_stage
                                       ? `${agentAnalysis.report.recommended_t_stage}${nStage}`
                                       : `${tStage}${nStage}`}
                                 </div>
-                                <div className="text-[8px] font-mono text-gray-500">
-                                  CONF: {agentAnalysis ? formatAgentConfidence(agentAnalysis.report.confidence) : `${confidence.overall}%`}
+                                <div className="text-[10px] font-mono text-gray-400">
+                                  {language !== 'en' ? '置信度' : 'Confidence'}: {agentAnalysis ? formatAgentConfidence(agentAnalysis.report.confidence) : `${confidence.overall}%`}
                                 </div>
-                                {agentAnalysis && (
-                                  <div className="mt-1 text-[8px] font-mono text-purple-400/80">
-                                    CBM: {tStage}{nStage}
-                                  </div>
-                                )}
                             </div>
 
                             {/* Right: Gauge */}
@@ -679,22 +837,22 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                         </div>
                 </div>
 
-                {preoperativeAdvice && (
+                {displayPreoperativeAdvice && (
                   <div className="shrink-0 border-b border-neutral-800 bg-neutral-900/30">
                     <details className="group" open>
-                      <summary className="px-3 py-2.5 cursor-pointer flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider hover:bg-white/5">
+                      <summary className="px-3 py-2.5 cursor-pointer flex items-center justify-between text-sm font-bold text-gray-300 uppercase tracking-wider hover:bg-white/5">
                         <span className="flex items-center gap-2">
-                          <FileText size={14} className="text-blue-400" />
-                          {language === 'zh' ? '术前决策建议' : 'Preop Advice'}
+                          <FileText size={15} className="text-blue-400" />
+                          {language !== 'en' ? '术前决策建议' : 'Preop advice'}
                         </span>
-                        <ChevronDown size={14} className="group-open:rotate-180 transition-transform" />
+                        <ChevronDown size={15} className="group-open:rotate-180 transition-transform" />
                       </summary>
                       <div className="px-3 pb-3 space-y-2">
-                        <div className="text-xs p-2.5 bg-blue-500/10 border border-blue-500/20 rounded text-blue-300 leading-relaxed">
-                          {preoperativeAdvice.overallAssessment}
+                        <div className="text-sm p-2.5 bg-blue-500/10 border border-blue-500/20 rounded text-blue-200 leading-relaxed">
+                          {displayPreoperativeAdvice.overallAssessment}
                         </div>
-                        <div className="text-[10px] text-gray-400 space-y-1">
-                          {preoperativeAdvice.recommendedWorkup.map((item, i) => (
+                        <div className="text-[12px] text-gray-400 space-y-1">
+                          {displayPreoperativeAdvice.recommendedWorkup.map((item, i) => (
                             <div key={i}>• {item}</div>
                           ))}
                         </div>
@@ -703,68 +861,200 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                   </div>
                 )}
 
-                {reasoning && (
-                  <div className="shrink-0 border-b border-neutral-800 bg-neutral-900/30">
-                    <details className="group">
-                      <summary className="px-3 py-2.5 cursor-pointer flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider hover:bg-white/5">
-                        <span className="flex items-center gap-2">
-                          <Activity size={14} />
-                          {language === 'zh' ? '分期推理依据' : 'Staging Rationale'}
-                        </span>
-                        <ChevronDown size={14} className="group-open:rotate-180 transition-transform" />
-                      </summary>
-                      <div className="px-3 pb-3 space-y-2 text-[10px]">
-                        {reasoning.tStageFactors.slice(0, 3).map((f, i) => (
-                          <div key={`t-${i}`} className={f.impact === 'negative' ? 'text-red-400' : 'text-gray-400'}>{f.factor}</div>
-                        ))}
-                        {reasoning.nStageFactors.slice(0, 2).map((f, i) => (
-                          <div key={`n-${i}`} className={f.impact === 'negative' ? 'text-red-400' : 'text-gray-400'}>{f.factor}</div>
-                        ))}
-                      </div>
-                    </details>
-                  </div>
-                )}
-
-                {agentAnalysis && (
-                  <div className="shrink-0 px-3 py-2 border-b border-purple-500/20 bg-purple-500/5">
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-purple-300">
-                        {language === 'zh' ? 'Agent 工具证据' : 'Agent tool evidence'}
+                {systemReport && (
+                  <div className="shrink-0 border-b border-cyan-500/20 bg-cyan-500/5 px-3 py-2.5">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-200">
+                        {language !== 'en' ? '当前帧辅助意见' : 'Current-frame assist'}
                       </span>
-                      {agentAnalysis.report.rag_gate && (
-                        <span className="text-[8px] font-mono text-amber-300/80">
-                          RAG {Math.round((agentAnalysis.report.rag_gate.rag_weight ?? 0) * 100)}%
-                        </span>
-                      )}
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {Object.entries(agentAnalysis.report.tool_status || {}).slice(0, 6).map(([tool, status]) => (
-                        <span key={tool} className="rounded border border-white/10 bg-black/30 px-1.5 py-0.5 text-[8px] font-mono text-gray-400">
-                          {tool}: {status}
-                        </span>
-                      ))}
+                    <div className="flex flex-wrap gap-2 text-[12px] text-slate-300">
+                      {systemReport.recommended_stage ? (
+                        <span>{language !== 'en' ? '建议' : 'Suggest'} {systemReport.recommended_stage}</span>
+                      ) : null}
+                      {systemReport.calibrated_confidence != null ? (
+                        <span>{language !== 'en' ? '置信度' : 'Confidence'} {Math.round(systemReport.calibrated_confidence * 100)}%</span>
+                      ) : null}
+                      <span>{systemReport.evidence?.length || 0} {language !== 'en' ? '条证据' : 'evidence items'}</span>
                     </div>
-                    {agentClassificationProbs && (
-                      <div className="mt-2 space-y-1">
-                        {agentClassificationProbs.slice(0, 3).map(({ stage, prob }) => (
-                          renderBar(stage, prob, stage.includes('4') ? 'bg-red-500' : stage.includes('3') ? 'bg-amber-500' : 'bg-emerald-500')
-                        ))}
+                    {systemReport.summary ? (
+                      <div className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-slate-400">
+                        {systemReport.summary}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
 
-                {/* Terminal */}
-                <div className="flex-1 bg-black p-3 font-mono text-[10px] leading-relaxed text-gray-400 overflow-y-auto min-h-0 relative group custom-scrollbar" onClick={toggleExpanded}>
-                <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-50 transition-opacity cursor-pointer">
-                    <Maximize2 size={12} />
+                {selectedDinoLayer && dinoLayers.length > 0 && (
+                  <section className="shrink-0 border-b border-amber-400/20 bg-amber-400/[0.04] px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-amber-100">
+                          {language !== 'en' ? '区域特征, DINOv3 多层分析' : 'Region features, DINOv3 multi-layer analysis'}
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          {dinoFeature?.model || 'DINOv3'}
+                          {dinoFeature?.frame_time != null ? `, ${language !== 'en' ? '当前帧' : 'frame'} ${Number(dinoFeature.frame_time).toFixed(2)}s` : ''}
+                          {selectedDinoLayer.token_grid ? `, ${selectedDinoLayer.token_grid.join(' x ')} tokens` : ''}
+                        </div>
+                      </div>
+                      <span className="rounded border border-amber-300/25 bg-amber-300/10 px-1.5 py-0.5 text-[9px] text-amber-100">
+                        {dinoLayers.length} {language !== 'en' ? '层' : 'layers'}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {dinoLayers.map((layer) => {
+                        const layerIndex = Number(layer.layer_index);
+                        const isSelected = layerIndex === selectedDinoLayer.layer_index;
+                        const scalars = layer.scalars || {};
+                        return (
+                          <button
+                            key={`dino-layer-${layerIndex}`}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => setActiveDinoLayer(layerIndex)}
+                            className={`rounded-lg border p-2 text-left transition ${
+                              isSelected
+                                ? 'border-amber-300/70 bg-amber-300/10'
+                                : 'border-white/10 bg-black/20 hover:border-amber-300/35 hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-semibold text-slate-100">
+                                Layer {layerIndex + 1}
+                              </span>
+                              <span className="font-mono text-[9px] text-slate-500">
+                                {layer.feature_dim || 0}D
+                              </span>
+                            </div>
+                            <div className="mt-1 grid grid-cols-2 gap-1 text-[9px] text-slate-400">
+                              <span>
+                                {language !== 'en' ? '壁/病灶' : 'Wall/lesion'} {formatDinoValue(scalars.cos_wall_lesion)}
+                              </span>
+                              <span>
+                                {language !== 'en' ? '边界/病灶' : 'Boundary/lesion'} {formatDinoValue(scalars.cos_boundary_lesion)}
+                              </span>
+                            </div>
+                            {layer.feature_overlay_png || layer.wall_evidence_overlay_png ? (
+                              <div className="mt-1.5 grid grid-cols-2 gap-1 overflow-hidden rounded">
+                                {layer.feature_overlay_png ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={layer.feature_overlay_png}
+                                    alt={`${language !== 'en' ? '病灶亲和图' : 'Lesion affinity map'} layer ${layerIndex + 1}`}
+                                    loading="lazy"
+                                    className="h-14 w-full object-cover"
+                                  />
+                                ) : <div className="h-14 rounded bg-black/30" />}
+                                {layer.wall_evidence_overlay_png ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={layer.wall_evidence_overlay_png}
+                                    alt={`${language !== 'en' ? '胃壁证据图' : 'Wall evidence map'} layer ${layerIndex + 1}`}
+                                    loading="lazy"
+                                    className="h-14 w-full object-cover"
+                                  />
+                                ) : <div className="h-14 rounded bg-black/30" />}
+                              </div>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-2 rounded-lg border border-white/10 bg-black/25 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] font-semibold text-amber-100">
+                          {language !== 'en' ? `Layer ${Number(selectedDinoLayer.layer_index) + 1} 详细读数` : `Layer ${Number(selectedDinoLayer.layer_index) + 1} detail`}
+                        </div>
+                        <div className="font-mono text-[9px] text-slate-500">
+                          μ {formatDinoValue(selectedDinoLayer.vector_stats?.mean)}
+                          {' '}σ {formatDinoValue(selectedDinoLayer.vector_stats?.std)}
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-1.5">
+                        {[
+                          ['壁/病灶', 'cos_wall_lesion', 'Wall/lesion'],
+                          ['边界/病灶', 'cos_boundary_lesion', 'Boundary/lesion'],
+                          ['病灶 token', 'lesion_token_fraction', 'Lesion tokens'],
+                          ['胃壁 token', 'wall_token_fraction', 'Wall tokens'],
+                          ['边界 token', 'boundary_token_fraction', 'Boundary tokens'],
+                        ].map(([zhLabel, key, enLabel]) => (
+                          <div key={key} className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
+                            <div className="text-[8px] text-slate-500">{language !== 'en' ? zhLabel : enLabel}</div>
+                            <div className="mt-0.5 font-mono text-[10px] text-slate-200">
+                              {key.includes('fraction')
+                                ? formatDinoPercent(selectedDinoLayer.scalars?.[key])
+                                : formatDinoValue(selectedDinoLayer.scalars?.[key])}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {selectedDinoLayer.feature_overlay_png ? (
+                          <figure>
+                            <figcaption className="mb-1 text-[9px] text-slate-500">
+                              {language !== 'en' ? '病灶亲和图' : 'Lesion affinity'}
+                            </figcaption>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={selectedDinoLayer.feature_overlay_png}
+                              alt={language !== 'en' ? '当前层病灶亲和叠加图' : 'Selected-layer lesion affinity overlay'}
+                              className="h-28 w-full rounded border border-white/10 object-cover"
+                            />
+                          </figure>
+                        ) : null}
+                        {selectedDinoLayer.wall_evidence_overlay_png ? (
+                          <figure>
+                            <figcaption className="mb-1 text-[9px] text-slate-500">
+                              {language !== 'en' ? '胃壁差异证据图' : 'Wall evidence difference'}
+                            </figcaption>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={selectedDinoLayer.wall_evidence_overlay_png}
+                              alt={language !== 'en' ? '当前层胃壁证据叠加图' : 'Selected-layer wall evidence overlay'}
+                              className="h-28 w-full rounded border border-white/10 object-cover"
+                            />
+                          </figure>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-1.5 text-[9px] leading-relaxed text-slate-500">
+                      {language !== 'en'
+                        ? '这些是当前帧区域表征和相似度辅助，不是独立的病理或分期结论。'
+                        : 'These are current-frame region representations and similarity cues, not independent pathology or staging conclusions.'}
+                    </div>
+                  </section>
+                )}
+
+                <div className="shrink-0 border-b border-white/10 px-3 py-2.5">
+                  <button
+                    type="button"
+                    onClick={toggleExpanded}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2.5 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/25"
+                  >
+                    <Maximize2 size={16} />
+                    {language !== 'en' ? '展开完整报告' : 'Open full report'}
+                  </button>
+                  <div className="mt-1.5 text-center text-[11px] text-slate-500">
+                    {language !== 'en'
+                      ? '完整报告中可查看详细意见并启动辅助分析'
+                      : 'Full report includes detailed opinion and assisted analysis'}
+                  </div>
+                </div>
+
+                {/* Editable draft preview */}
+                <div className="flex-1 bg-black p-3.5 text-[13px] leading-relaxed text-gray-300 overflow-y-auto min-h-0 relative group custom-scrollbar" onClick={toggleExpanded}>
+                <div className="absolute top-2 right-2 opacity-30 group-hover:opacity-70 transition-opacity cursor-pointer">
+                    <Maximize2 size={14} />
                 </div>
                 {agentDraft && (
-                  <div className="mb-2 rounded border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 text-[9px] text-emerald-300">
-                    {language === 'zh' ? 'Agent 动态报告已就绪，点击展开查看全文' : 'Agent dynamic report ready — expand for full text'}
+                  <div className="mb-2 rounded border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1.5 text-[12px] text-emerald-200">
+                    {language !== 'en' ? '辅助诊断意见已就绪，点击展开完整报告' : 'Assisted opinion ready — open full report'}
                   </div>
                 )}
-                <pre className="whitespace-pre-wrap typing-cursor cursor-pointer">{agentDraft?.full_text?.slice(0, 600) || reportText}{agentDraft && agentDraft.full_text.length > 600 ? '…' : ''}</pre>
+                <pre className="whitespace-pre-wrap cursor-pointer font-sans">{agentDraft?.full_text?.slice(0, 600) || reportText}{agentDraft && agentDraft.full_text.length > 600 ? '…' : ''}</pre>
                 </div>
             </>
         ) : patient ? (
@@ -773,7 +1063,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                  <div className="bg-linear-to-br from-neutral-900/50 to-neutral-800/30 p-3 rounded-lg border border-white/5 hover:border-blue-500/30 transition-colors">
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1"><User size={10}/> {t.diagnosis.demographics}</div>
                     <div className="text-sm text-gray-200 font-mono">
-                        {patient.clinical ? `${patient.clinical.sex}, ${patient.clinical.age ?? 'N/A'}y` : (language === 'zh' ? '当前病例未挂接临床摘要' : 'No safe clinical summary attached')}
+                        {patient.clinical ? `${patient.clinical.sex}, ${patient.clinical.age ?? 'N/A'}y` : (language !== 'en' ? '当前病例未挂接临床摘要' : 'No safe clinical summary attached')}
                     </div>
                     {patient.clinical?.location && (
                         <div className="text-[10px] text-gray-500 mt-1">{patient.clinical.location}</div>
@@ -834,7 +1124,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({ state
                     <div className="bg-linear-to-br from-cyan-900/20 to-slate-800/20 p-3 rounded-lg border border-cyan-500/30">
                       <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <FileText size={10} className="text-cyan-400"/>
-                        {language === 'zh' ? '报告文本证据' : 'Report Text Evidence'}
+                        {language !== 'en' ? '报告文本证据' : 'Report Text Evidence'}
                       </div>
                       <div className="space-y-2 text-xs text-gray-200">
                         {patientReportRows.map((row) => (

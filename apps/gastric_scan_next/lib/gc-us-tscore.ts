@@ -9,6 +9,8 @@
 export type GcUsCtStage = 'cT1' | 'cT2' | 'cT3' | 'cT4a' | 'cT4b' | 'cTx';
 export type GcUsTscoreStatus = 'supported' | 'uncertain' | 'not_assessable' | 'conflicting';
 
+export type GcUsEvidenceKind = 'explicit' | 'proxy' | 'missing' | 'not_assessable';
+
 export type GcUsTscoreInput = {
   lengthCm?: number | null;
   thicknessCm?: number | null;
@@ -27,6 +29,17 @@ export type GcUsTscoreInput = {
   /** Explicit doctor/video structural evidence; proxy geometry is not enough. */
   structuralEvidence?: 'explicit' | 'proxy' | 'missing' | null;
   structuralStage?: GcUsCtStage | null;
+  /** Direction-normalized growth grade 0–3 (proxy only unless doctor-confirmed). */
+  growthGrade?: number | null;
+  growthLabel?: string | null;
+  growthEvidence?: GcUsEvidenceKind | null;
+  /** Spatial / multi-frame sign continuity (not true tumor growth rate). */
+  continuityGrade?: number | null;
+  continuityLabel?: string | null;
+  continuityEvidence?: GcUsEvidenceKind | null;
+  directionSource?: string | null;
+  usedDirectionFallback?: boolean | null;
+  location?: string | null;
 };
 
 export type GcUsScoreItem = {
@@ -35,18 +48,41 @@ export type GcUsScoreItem = {
   points: number;
   max: number;
   detail: string;
-  group: 'size' | 'morph' | 'clinical' | 'wall';
+  group: 'size' | 'morph' | 'clinical' | 'wall' | 'growth' | 'continuity' | 'wall_proxy';
+  status?: GcUsEvidenceKind;
+  source?: string;
+};
+
+export type GcUsExplanationCard = {
+  directionSource: string | null;
+  usedFallback: boolean;
+  growth: { grade: number | null; label: string | null; status: GcUsEvidenceKind };
+  continuity: {
+    grade: number | null;
+    label: string | null;
+    status: GcUsEvidenceKind;
+    semantic: string;
+  };
+  wallGate: {
+    structuralEvidence: string;
+    unlockDefiniteCt: boolean;
+    note: string;
+  };
+  notes: string[];
 };
 
 export type GcUsTscoreResult = {
   scheme: 'gc_us_v1';
+  rubricId: 'ccus_t_rubric_v1.4_us';
   total: number;
   maxTotal: number;
+  normalizedI: number | null;
   items: GcUsScoreItem[];
   ctStage: GcUsCtStage;
   status: GcUsTscoreStatus;
   uncertaintyReasons: string[];
   mappingNote: string;
+  explanation: GcUsExplanationCard;
 };
 
 function binLength(cm: number): { points: number; detail: string } {
@@ -142,14 +178,69 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
       max: 1,
       detail: input.ceaPositive ? 'CEA 阳性' : 'CEA 阴性/未测',
       group: 'clinical',
+      status: 'explicit',
+      source: 'clinical',
     });
   }
 
+  const growthEvidence = input.growthEvidence || (input.growthGrade != null ? 'proxy' : 'missing');
+  if (
+    input.growthGrade != null
+    && Number.isFinite(input.growthGrade)
+    && growthEvidence !== 'missing'
+    && growthEvidence !== 'not_assessable'
+  ) {
+    const g = Math.max(0, Math.min(3, Math.round(Number(input.growthGrade))));
+    items.push({
+      id: 'growth_pattern',
+      label: '生长方式',
+      points: g,
+      max: 3,
+      detail: input.growthLabel || `生长档 ${g}（几何代理）`,
+      group: 'growth',
+      status: growthEvidence,
+      source: input.directionSource || 'direction_normalized_geometry',
+    });
+  }
+
+  const continuityEvidence =
+    input.continuityEvidence || (input.continuityGrade != null ? 'proxy' : 'missing');
+  // Continuity is auditable on the card but excluded from soft total denominator.
+  const continuityItem: GcUsScoreItem | null =
+    input.continuityGrade != null
+    && Number.isFinite(input.continuityGrade)
+    && continuityEvidence !== 'missing'
+    && continuityEvidence !== 'not_assessable'
+      ? {
+          id: 'sign_continuity',
+          label: '征象连续性',
+          points: Math.max(0, Math.min(3, Math.round(Number(input.continuityGrade)))),
+          max: 3,
+          detail:
+            (input.continuityLabel || `连续档 ${input.continuityGrade}`)
+            + '（空间/多帧一致性，非肿瘤生长速度）',
+          group: 'continuity',
+          status: continuityEvidence,
+          source: input.directionSource || 'direction_normalized_geometry',
+        }
+      : null;
+
   const layerSignal = `${input.layerLabel || ''} ${input.tHint || ''}`;
   const hasLayerSignal = /L[1-5]|粘膜|黏膜|肌层|浆膜|SEROSA|MUCOSA|MUSCLE|PROPER|SUBMUC/i.test(layerSignal);
+  const structuralEvidence = input.structuralEvidence || 'missing';
   if (hasLayerSignal) {
     const lay = layerPoints(input.layerLabel, input.tHint);
-    items.push({ id: 'layer', label: '超声达层', points: lay.points, max: 4, detail: lay.detail, group: 'wall' });
+    // Proxy layer points stay on the card as wall_proxy and do not unlock cT.
+    items.push({
+      id: 'layer',
+      label: '超声达层',
+      points: lay.points,
+      max: 4,
+      detail: lay.detail + (structuralEvidence === 'explicit' ? '' : '（代理/待确认）'),
+      group: structuralEvidence === 'explicit' ? 'wall' : 'wall_proxy',
+      status: structuralEvidence === 'explicit' ? 'explicit' : 'proxy',
+      source: structuralEvidence === 'explicit' ? 'doctor_or_trusted_wall' : 'layer_proxy',
+    });
   }
 
   if (input.inContact === false) {
@@ -159,7 +250,8 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
       points: 0,
       max: 1,
       detail: '无可靠接触，达层证据降权',
-      group: 'wall',
+      group: structuralEvidence === 'explicit' ? 'wall' : 'wall_proxy',
+      status: structuralEvidence === 'explicit' ? 'explicit' : 'proxy',
     });
   } else if (input.inContact === true) {
     items.push({
@@ -168,7 +260,8 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
       points: 1,
       max: 1,
       detail: '病灶与胃壁接触成立',
-      group: 'wall',
+      group: structuralEvidence === 'explicit' ? 'wall' : 'wall_proxy',
+      status: structuralEvidence === 'explicit' ? 'explicit' : 'proxy',
     });
   }
 
@@ -180,8 +273,9 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
       label: '占壁厚',
       points: pts,
       max: 2,
-      detail: `占壁厚 ${(occ * 100).toFixed(0)}%`,
-      group: 'wall',
+      detail: `占壁厚 ${(occ * 100).toFixed(0)}%` + (structuralEvidence === 'explicit' ? '' : '（代理）'),
+      group: structuralEvidence === 'explicit' ? 'wall' : 'wall_proxy',
+      status: structuralEvidence === 'explicit' ? 'explicit' : 'proxy',
     });
   }
 
@@ -191,14 +285,25 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
       label: '浆膜面',
       points: 2,
       max: 2,
-      detail: '浆膜面欠光整/中断倾向',
-      group: 'wall',
+      detail: structuralEvidence === 'explicit'
+        ? '浆膜面欠光整/中断倾向'
+        : '浆膜面欠光整/中断倾向（代理，不入确定 cT）',
+      group: structuralEvidence === 'explicit' ? 'wall' : 'wall_proxy',
+      status: structuralEvidence === 'explicit' ? 'explicit' : 'proxy',
     });
   }
 
-  const total = items.reduce((s, it) => s + it.points, 0);
-  const maxTotal = items.reduce((s, it) => s + it.max, 0) || 20;
-  const structuralEvidence = input.structuralEvidence || 'missing';
+  if (continuityItem) items.push(continuityItem);
+
+  // Soft total excludes continuity (audit-only) but keeps wall_proxy on the card total.
+  const scoredItems = items.filter((it) => it.group !== 'continuity');
+  const total = scoredItems.reduce((s, it) => s + it.points, 0);
+  const maxTotal = scoredItems.reduce((s, it) => s + it.max, 0) || 20;
+  const leanItems = scoredItems.filter((it) => it.group !== 'wall_proxy');
+  const leanTotal = leanItems.reduce((s, it) => s + it.points, 0);
+  const leanMax = leanItems.reduce((s, it) => s + it.max, 0);
+  const normalizedI = leanMax > 0 ? leanTotal / leanMax : null;
+
   const hasExplicitStructuralEvidence =
     structuralEvidence === 'explicit' &&
     input.inContact !== false &&
@@ -206,13 +311,15 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
     input.structuralStage != null &&
     input.structuralStage !== 'cTx';
   const uncertaintyReasons: string[] = [];
-  if (!items.length) uncertaintyReasons.push('no_scoring_evidence');
+  if (!scoredItems.length) uncertaintyReasons.push('no_scoring_evidence');
   if (structuralEvidence !== 'explicit') uncertaintyReasons.push('wall_layer_not_explicitly_confirmed');
   if (input.inContact === false) uncertaintyReasons.push('lesion_wall_contact_not_reliable');
   if (!hasLayerSignal && input.serosaDisrupted !== true) uncertaintyReasons.push('layer_or_serosa_not_assessable');
+  if (input.usedDirectionFallback) uncertaintyReasons.push('direction_fallback_used');
+  if (growthEvidence === 'not_assessable') uncertaintyReasons.push('growth_pattern_not_assessable');
   const status: GcUsTscoreStatus = hasExplicitStructuralEvidence
     ? 'supported'
-    : items.length
+    : scoredItems.length
       ? 'uncertain'
       : 'not_assessable';
   const { ctStage, mappingNote } = hasExplicitStructuralEvidence
@@ -225,15 +332,44 @@ export function computeGcUsTscore(input: GcUsTscoreInput): GcUsTscoreResult {
         mappingNote: '缺少经确认的胃壁层次/浆膜证据，仅展示软评分，不输出确定 cT 分期',
       };
 
+  const explanation: GcUsExplanationCard = {
+    directionSource: input.directionSource || null,
+    usedFallback: Boolean(input.usedDirectionFallback),
+    growth: {
+      grade: input.growthGrade ?? null,
+      label: input.growthLabel || null,
+      status: growthEvidence,
+    },
+    continuity: {
+      grade: input.continuityGrade ?? null,
+      label: input.continuityLabel || null,
+      status: continuityEvidence,
+      semantic: 'spatial_or_multiframe_consistency_not_tumor_growth_rate',
+    },
+    wallGate: {
+      structuralEvidence,
+      unlockDefiniteCt: hasExplicitStructuralEvidence,
+      note: mappingNote,
+    },
+    notes: [
+      ...(input.location ? [`location=${input.location}`] : []),
+      ...(structuralEvidence !== 'explicit' ? ['wall_proxy_excluded_from_definite_ct'] : []),
+      ...(input.usedDirectionFallback ? ['direction_fallback_used'] : []),
+    ],
+  };
+
   return {
     scheme: 'gc_us_v1',
+    rubricId: 'ccus_t_rubric_v1.4_us',
     total,
     maxTotal,
+    normalizedI,
     items,
     ctStage,
     status,
     uncertaintyReasons,
     mappingNote,
+    explanation,
   };
 }
 

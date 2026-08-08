@@ -123,7 +123,9 @@ export const WORKBENCH_QUEUE_GROUPS: WorkbenchQueueGroup[] = [
 export const DEFAULT_DATASET: DatasetType = 'cropped';
 export const DEFAULT_WORKBENCH_QUEUE: WorkbenchQueueId = 'reader:reader_v150';
 
-type QueueLanguage = 'zh' | 'en';
+import type { Language } from '@/lib/i18n';
+
+type QueueLanguage = Language;
 
 const ENGLISH_CENTER_LABELS: Record<string, string> = {
   putian_college: 'Putian University Affiliated Hospital',
@@ -229,7 +231,7 @@ export function getQueueOptionDisplayLabel(
   queueId: WorkbenchQueueId,
   language: QueueLanguage = 'zh',
 ): string {
-  if (language === 'zh') {
+  if (language !== 'en') {
     if (queueId === 'all') return '全部 T 分期数据';
     if (queueId === 'internal:all') return '全部内部数据';
     if (queueId.startsWith('internal:')) return getCohortDisplayLabel(queueId.slice('internal:'.length) as GastricCohortYear);

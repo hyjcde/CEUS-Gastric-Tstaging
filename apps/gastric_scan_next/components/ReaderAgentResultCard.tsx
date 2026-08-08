@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Compass, ExternalLink } from 'lucide-react';
 import type { Patient } from '@/types';
 import { buildHumanAssistUrl, buildReaderAppUrl } from '@/lib/reading-agent-url';
-import { useRouter } from 'next/navigation';
+import { navigateTo } from '@/lib/navigation';
 
 type ReaderAgentResult = {
   key?: string;
@@ -47,11 +47,9 @@ export function ReaderAgentResultCard({
   onImportWallPolygon,
 }: ReaderAgentResultCardProps) {
   const [result, setResult] = useState<ReaderAgentResult | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     if (!patient?.id && !patient?.patient_id) {
-      setResult(null);
       return;
     }
     let cancelled = false;
@@ -83,7 +81,7 @@ export function ReaderAgentResultCard({
   if (!patient) return null;
 
   const openAgent = () => {
-    router.push(buildReaderAppUrl(patient));
+    navigateTo(buildReaderAppUrl(patient));
   };
 
   const openHumanAssist = () => {
@@ -92,7 +90,10 @@ export function ReaderAgentResultCard({
 
   if (!result) {
     return (
-      <div className="absolute top-3 right-3 z-30 max-w-xs rounded-lg border border-white/10 bg-black/70 px-3 py-2 text-[11px] text-gray-300 shadow-lg backdrop-blur">
+      <div
+        className="absolute right-3 z-30 max-w-xs rounded-lg border border-white/10 bg-black/70 px-3 py-2 text-[11px] text-gray-300 shadow-lg backdrop-blur"
+        style={{ top: '7rem' }}
+      >
         <div className="flex items-center justify-between gap-2">
           <span className="text-gray-400">阅片 / 分层回写</span>
           <button
@@ -135,7 +136,10 @@ export function ReaderAgentResultCard({
     : null;
 
   return (
-    <div className="absolute top-3 right-3 z-30 max-w-xs rounded-lg border border-emerald-500/30 bg-black/80 px-3 py-2 text-[11px] text-emerald-100 shadow-lg backdrop-blur">
+    <div
+      className="absolute right-3 z-30 max-w-xs rounded-lg border border-emerald-500/30 bg-black/80 px-3 py-2 text-[11px] text-emerald-100 shadow-lg backdrop-blur"
+      style={{ top: '7rem' }}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="font-semibold text-emerald-300">辅助回写</div>
         <button

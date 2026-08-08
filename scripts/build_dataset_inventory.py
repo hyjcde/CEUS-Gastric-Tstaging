@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,8 @@ DATASET = PROJECT_ROOT / "dataset"
 OUT_DIR = DATASET / "inventory"
 OUT_JSON = OUT_DIR / "dataset_inventory.json"
 OUT_HTML = OUT_DIR / "index.html"
+OUT_OVERVIEW = DATASET / "index.html"
+FIGURES = DATASET / "figures"
 
 
 def count_files(directory: Path, extensions: tuple[str, ...]) -> int:
@@ -41,6 +44,65 @@ def counter_from_rows(rows: list[dict[str, str]], column: str) -> dict[str, int]
     for row in rows:
         counter[row.get(column, "") or "(empty)"] += 1
     return dict(counter.most_common())
+
+
+def patient_from_sample(sample_id: str) -> str:
+    stem = Path(sample_id).stem if "/" in sample_id else sample_id
+    if stem.endswith("_overlay"):
+        stem = stem[: -len("_overlay")]
+    match = re.match(r"^(.*)-(\d+)$", stem)
+    if match:
+        stem = match.group(1)
+    match = re.match(r"^(.*)_\((\d+)\)$", stem)
+    if match:
+        stem = match.group(1)
+    return stem
+
+
+def count_manifest_patients(manifest_path: Path) -> tuple[int, int]:
+    patients: set[str] = set()
+    rows = read_csv_rows(manifest_path)
+    for row in rows:
+        sample_id = row.get("sample_id", "")
+        if sample_id:
+            patients.add(patient_from_sample(sample_id))
+    return len(patients), len(rows)
+
+
+def compute_patient_stats(data: dict) -> dict:
+    internal_patients, internal_frames = count_manifest_patients(DATASET / "internal" / "manifest.csv")
+    external_patients, external_frames = count_manifest_patients(DATASET / "external" / "manifest.csv")
+
+    master_rows = read_csv_rows(DATASET / "tables" / "patient_clinical_master.csv")
+    clinical_by_cohort: Counter[str] = Counter()
+    for row in master_rows:
+        clinical_by_cohort[row.get("cohort", "?")] += 1
+
+    modeling = data.get("modeling_splits", {})
+    modeling_patients: set[str] = set()
+    modeling_rows = 0
+    regions = PROJECT_ROOT / "pipeline/data/tstaging_4class_region_contrastive_full/regions"
+    for path in sorted(regions.glob("*_clinical.csv")):
+        for row in read_csv_rows(path):
+            modeling_rows += 1
+            pid = row.get("patient_id", "").strip()
+            if pid:
+                modeling_patients.add(pid)
+
+    return {
+        "manifest_internal_patients": internal_patients,
+        "manifest_external_patients": external_patients,
+        "manifest_total_patients": internal_patients + external_patients,
+        "manifest_total_frames": internal_frames + external_frames,
+        "clinical_master_total": len(master_rows),
+        "clinical_master_internal": clinical_by_cohort.get("internal", 0),
+        "clinical_master_external": clinical_by_cohort.get("external", 0),
+        "modeling_unique_patients": len(modeling_patients),
+        "modeling_total_rows": modeling_rows,
+        "modeling_split_patients": {
+            name: info.get("patients", 0) for name, info in modeling.items()
+        },
+    }
 
 
 def view_stats(base: Path) -> dict[str, int]:
@@ -206,7 +268,7 @@ def build_inventory() -> dict:
         g["views"].get("original", {}).get("images", 0) for g in internal["groups"]
     )
 
-    return {
+    inventory = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "project_root": str(PROJECT_ROOT),
         "dataset_root": str(DATASET),
@@ -254,6 +316,8 @@ def build_inventory() -> dict:
             {"title": "tables/README.md", "path": "dataset/tables/README.md"},
         ],
     }
+    inventory["patient_stats"] = compute_patient_stats(inventory)
+    return inventory
 
 
 def _fmt_num(value: int | float | None) -> str:
@@ -482,6 +546,8 @@ def _render_body(data: dict) -> str:
 </section>
 """
 
+    internal_fig, external_fig = _montage_figures(prefix="../figures")
+
     return f"""
 {kpi_html}
 <section id="overview"><h2>1. 总览</h2>
@@ -516,6 +582,8 @@ def _render_body(data: dict) -> str:
 <p>未匹配：{_fmt_num(internal.get("unmatched_rows", 0))} · 预处理错误：{_fmt_num(internal.get("error_rows", 0))}</p>
 <h3>4.2 按年份 × 视图（物理文件数，original/images）</h3>
 {_render_table(["池", "年份", "original", "crop_ui", "crop_roi", "建议"], int_year_rows)}
+<h3>4.3 crop_ui overlay 可视化</h3>
+{internal_fig}
 </section>
 
 <section id="external"><h2>5. 外部数据 (external/)</h2>
@@ -524,6 +592,8 @@ def _render_body(data: dict) -> str:
 <h3>5.2 各中心物理规模 (original/images)</h3>
 {_render_table(["目录名", "original 图像", "规模"], ext_phys_rows)}
 <p>未匹配：{_fmt_num(external.get("unmatched_rows", 0))} · 错误：{_fmt_num(external.get("error_rows", 0))}</p>
+<h3>5.3 crop_ui overlay 可视化</h3>
+{external_fig}
 </section>
 
 <section id="newzip"><h2>6. 新增外部 zip (new_external_zip_manifest)</h2>
@@ -554,6 +624,7 @@ def _render_body(data: dict) -> str:
 <ul>
 {doc_items}
 <li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>
+<li><a href="../index.html">dataset/index.html</a> — 图文并茂完整说明（含 crop_ui 组图）</li>
 </ul>
 </section>
 {quality_html}
@@ -632,7 +703,7 @@ def render_html(data: dict) -> str:
       margin-bottom: 2px;
     }}
     nav.side a:hover {{ color: var(--accent); background: var(--surface2); }}
-    main {{ padding: 2rem 2.5rem 4rem; max-width: 1200px; }}
+    main {{ padding: 2rem 2.5rem 4rem; max-width: min(96vw, 1600px); }}
     header.hero {{
       margin-bottom: 2rem;
       padding-bottom: 1.5rem;
@@ -723,6 +794,22 @@ def render_html(data: dict) -> str:
       height: 100%;
       background: var(--accent);
     }}
+    .figure {{
+      margin: 1rem 0 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--surface);
+    }}
+    .figure img {{ width: 100%; height: auto; display: block; }}
+    .figure figcaption {{
+      padding: 0.65rem 0.85rem;
+      font-size: 0.84rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }}
+    .figure-wide .figure-scroll {{ overflow-x: auto; }}
+    .figure-wide img {{ width: 100%; min-width: 960px; height: auto; display: block; }}
   </style>
 </head>
 <body>
@@ -759,14 +846,425 @@ def render_html(data: dict) -> str:
 """
 
 
+def _figure_block(src: str, caption: str, alt: str, *, prefix: str = "figures") -> str:
+    if not (FIGURES / src).exists():
+        return (
+            f'<p class="note">组图 <code>{_esc(src)}</code> 尚未生成，请运行 '
+            f'<code>python scripts/generate_crop_ui_overlay_montage.py</code>。</p>'
+        )
+    return f"""
+<figure class="figure figure-wide">
+  <div class="figure-scroll">
+    <img src="{prefix}/{_esc(src)}" alt="{_esc(alt)}" loading="lazy" />
+  </div>
+  <figcaption>{caption}</figcaption>
+</figure>"""
+
+
+def _montage_figures(*, prefix: str = "figures") -> tuple[str, str]:
+    internal = _figure_block(
+        "internal_crop_ui_overlay_montage.png",
+        "Internal years — <code>crop_ui/overlays</code>, one representative case per T stage (T1–T4+) when labeled.",
+        "Internal crop_ui overlay montage",
+        prefix=prefix,
+    )
+    external = _figure_block(
+        "external_crop_ui_overlay_montage.png",
+        "External centers — <code>crop_ui/overlays</code>, one representative case per T stage (T1–T4+) when labeled.",
+        "External crop_ui overlay montage",
+        prefix=prefix,
+    )
+    return internal, external
+
+
+def render_overview_html(data: dict) -> str:
+    s = data["summary"]
+    internal = data["internal"]
+    external = data["external"]
+    tables = data["tables"]
+    patients = data.get("patient_stats", {})
+
+    kpis = [
+        ("图像帧（manifest）", s["total_manifest"] - external.get("newzip_manifest_rows", 0)),
+        ("病人（manifest 去重）", patients.get("manifest_total_patients", 0)),
+        ("内部帧 / 病人", f'{s["internal_manifest"]:,} / {patients.get("manifest_internal_patients", 0):,}'),
+        ("外部帧 / 病人", f'{s["external_manifest"]:,} / {patients.get("manifest_external_patients", 0):,}'),
+        ("临床主表病人", patients.get("clinical_master_total", 0)),
+        ("T 分期建模病人", patients.get("modeling_unique_patients", 0)),
+    ]
+    kpi_html = '<div class="kpi-grid">' + "".join(
+        f'<div class="kpi"><div class="val">{v if isinstance(v, str) else _fmt_num(v)}</div>'
+        f'<div class="lbl">{_esc(l)}</div></div>'
+        for l, v in kpis
+    ) + "</div>"
+
+    patient_caliber_rows = [
+        [
+            "manifest 物理口径",
+            "按 <code>sample_id</code> 去帧号",
+            _fmt_num(patients.get("manifest_total_patients", 0)),
+            _fmt_num(patients.get("manifest_total_frames", 0)),
+            "全部已标注图像；overlay 组图对应此口径",
+        ],
+        [
+            "临床主表",
+            "<code>patient_clinical_master.csv</code>",
+            _fmt_num(patients.get("clinical_master_total", 0)),
+            "—",
+            f'内部 {patients.get("clinical_master_internal", 0):,} + 外部 {patients.get("clinical_master_external", 0):,}',
+        ],
+        [
+            "T 分期建模 CSV",
+            "去重 <code>patient_id</code>",
+            _fmt_num(patients.get("modeling_unique_patients", 0)),
+            _fmt_num(patients.get("modeling_total_rows", 0)),
+            "有 pT 标签、可用于 4 类 T 分期训练/评估",
+        ],
+    ]
+
+    int_max = max([1, *internal.get("manifest_by_pool", {}).values()])
+    int_year_rows = []
+    int_patients_by_year: dict[str, int] = {}
+    for group in internal.get("groups", []):
+        views = group.get("views", {})
+        year = group["year"]
+        overlay_dir = (
+            DATASET / "internal" / group["pool"] / year / "crop_ui" / "overlays"
+        )
+        year_patients = len(
+            {patient_from_sample(p.stem.replace("_overlay", "")) for p in overlay_dir.glob("*_overlay.jpg")}
+        ) if overlay_dir.is_dir() else 0
+        int_patients_by_year[year] = year_patients
+        pool_label = "训练主池" if "training" in group["pool"] else "前瞻池"
+        int_year_rows.append(
+            [
+                year.replace("_", "-"),
+                pool_label,
+                _fmt_num(views.get("original", {}).get("images", 0)),
+                _fmt_num(year_patients),
+                _pct(views.get("original", {}).get("images", 0), internal["manifest_rows"]),
+            ]
+        )
+
+    ext_max = max([*external.get("manifest_by_center", {}).values(), 1])
+    ext_center_rows = []
+    for center_name, frame_count in external.get("manifest_by_center", {}).items():
+        overlay_dir = DATASET / "external" / center_name / "crop_ui" / "overlays"
+        center_patients = len(
+            {patient_from_sample(p.stem.replace("_overlay", "")) for p in overlay_dir.glob("*_overlay.jpg")}
+        ) if overlay_dir.is_dir() else 0
+        ext_center_rows.append(
+            [
+                _esc(center_name),
+                _fmt_num(frame_count),
+                _fmt_num(center_patients),
+                _pct(frame_count, external["manifest_rows"]),
+                _render_bar(frame_count, ext_max),
+            ]
+        )
+
+    label_names = {"0": "T1", "1": "T2", "2": "T3", "3": "T4+"}
+    label_colors = {"0": "#22c55e", "1": "#eab308", "2": "#f97316", "3": "#ef4444"}
+    model_rows = []
+    label_totals: Counter[str] = Counter()
+    for name, info in data.get("modeling_splits", {}).items():
+        for label, count in info.get("labels", {}).items():
+            label_totals[label] += count
+        labels = ", ".join(
+            f'{label_names.get(l, f"L{l}")}:{n}' for l, n in info.get("labels", {}).items()
+        )
+        model_rows.append(
+            [
+                f"<code>{_esc(name.replace('_clinical', ''))}</code>",
+                _fmt_num(info.get("rows", 0)),
+                _fmt_num(info.get("patients", 0)),
+                labels,
+            ]
+        )
+
+    label_bar_html = '<div class="label-bars">'
+    total_labels = sum(label_totals.values()) or 1
+    for label in ("0", "1", "2", "3"):
+        count = label_totals.get(label, 0)
+        pct = (count / total_labels) * 100
+        label_bar_html += (
+            f'<div class="label-row">'
+            f'<span class="label-name">{label_names[label]}</span>'
+            f'<div class="label-track"><span style="width:{pct:.1f}%;background:{label_colors[label]}"></span></div>'
+            f'<span class="label-count">{count:,} ({pct:.1f}%)</span></div>'
+        )
+    label_bar_html += "</div>"
+
+    caliber_rows = [
+        [c["name"], f'<code>{_esc(c["scope"])}</code>', _fmt_num(c["frames"]), c["use"]]
+        for c in data["calibers"]
+    ]
+
+    center_cols = [
+        "standard_hospital_name",
+        "folder_name",
+        "tstaging_manifest",
+        "tstaging_split",
+        "manifest_frames",
+        "clinical_patients",
+    ]
+    center_rows = [
+        [_esc(c.get(col, "—")) for col in center_cols]
+        for c in tables.get("centers", [])
+        if c.get("manifest_frames") not in ("0", "", None) or c.get("folder_name") == "internal"
+    ]
+
+    internal_fig, external_fig = _montage_figures(prefix="figures")
+
+    meta = (
+        f"生成时间：{_esc(data['generated_at'])} · "
+        f"重新生成：<code>python scripts/build_dataset_inventory.py</code>"
+    )
+
+    body = f"""
+{kpi_html}
+
+<section id="intro"><h2>数据集说明</h2>
+<p>
+  本目录保存<strong>胃充盈超声 T 分期</strong>相关的正式预处理数据集，服务于分割、ROI 定位与 4 类 T 分期建模。
+  数据来自福建医科大学附属协和医院（内部）及 9 家外部多中心（直接手术队列），
+  经 <code>scripts/preprocess_direct_surgery_datasets.py</code> 统一预处理。
+</p>
+<p class="note">
+  <strong>口径提醒：</strong>做分割/ROI 以 <code>manifest.csv</code> 为准；做 T 分期 AUC 以
+  <code>pipeline/data/.../regions/*_clinical.csv</code> 为准。病人数因口径不同而不同，汇报实验时必须说明。
+</p>
+</section>
+
+<section id="patients"><h2>病人数统计</h2>
+<p>当前 <code>dataset/</code> 尚无旧版患者级注册目录，以下为三种常用口径：</p>
+{_render_table(["口径", "去重方式", "病人数", "图像/行数", "说明"], patient_caliber_rows)}
+<h3>建模 split 病人分布</h3>
+{_render_table(["split", "CSV 行", "patient_id", "T 标签分布"], model_rows)}
+<h3>建模 CSV 总体 T 标签（行级）</h3>
+{label_bar_html}
+</section>
+
+<section id="calibers"><h2>统计口径对照</h2>
+{_render_table(["口径", "范围", "帧/行数", "用途"], caliber_rows)}
+</section>
+
+<section id="views"><h2>三套视图说明</h2>
+<div class="view-grid">
+  <div class="view-card"><h4>original/</h4><p>原始视野导出，保留完整超声界面与测量标尺，适合 QC 与对照。</p></div>
+  <div class="view-card highlight"><h4>crop_ui/</h4><p>去除 UI 边框后的成像区域。<strong>推荐 Stage 1 分割/定位训练输入。</strong></p></div>
+  <div class="view-card"><h4>crop_roi/</h4><p>按真值 mask 紧框裁切。含标注信息，<strong>不宜直接用于分割训练</strong>（泄漏风险），适合 T 分期特征与 QC。</p></div>
+</div>
+<p>每套视图均含 <code>images/</code>、<code>annotations/</code>、<code>roi_masks/</code>、<code>overlays/</code> 四类资产。</p>
+<pre class="tree">dataset/
+├── index.html              ← 本说明页
+├── DATASET_GUIDE.md        ← 详细文字文档
+├── README.md
+├── figures/                ← overlay 组图
+├── internal/
+│   ├── manifest.csv
+│   ├── training_2018_2024/{{2018,2019,2020_2023,2024}}/
+│   └── prospective_2025/2025/
+├── external/
+│   ├── manifest.csv
+│   └── {{各中心}}/{{original,crop_ui,crop_roi}}/
+├── inventory/              ← 机器可读盘点 JSON
+├── lumen_detection/
+└── tables/                 ← 临床表整理层</pre>
+</section>
+
+<section id="internal"><h2>内部数据（协和）</h2>
+<h3>按年份分布</h3>
+{_render_table(["年份", "池", "图像帧", "病人（crop_ui）", "占比"], int_year_rows)}
+<p>未匹配：{_fmt_num(internal.get("unmatched_rows", 0))} · 预处理错误：{_fmt_num(internal.get("error_rows", 0))}</p>
+<h3>crop_ui overlay 可视化</h3>
+{internal_fig}
+<p><code>2025</code> 前瞻池建议保留为独立测试集，不混入训练。</p>
+</section>
+
+<section id="external"><h2>外部数据（多中心）</h2>
+<h3>按中心分布</h3>
+{_render_table(["中心", "manifest 帧", "病人", "占比", ""], ext_center_rows)}
+<p>未匹配：{_fmt_num(external.get("unmatched_rows", 0))} · 错误：{_fmt_num(external.get("error_rows", 0))}</p>
+<h3>crop_ui overlay 可视化</h3>
+{external_fig}
+<p class="note">外部结果易被莆田学院附属医院（约 60% 帧）主导，汇报时需同时给出总体与分中心指标。</p>
+</section>
+
+<section id="training"><h2>训练使用建议</h2>
+<table><thead><tr><th>任务</th><th>推荐输入</th><th>测试集</th></tr></thead><tbody>
+<tr><td>Stage 1 分割/定位</td><td><code>internal/training_2018_2024/*/crop_ui/</code></td><td><code>external/*/crop_ui/</code></td></tr>
+<tr><td>4 类 T 分期</td><td><code>pipeline/data/.../train_clinical.csv</code></td><td><code>test_external_clinical.csv</code> 等</td></tr>
+<tr><td>前瞻评估</td><td>—</td><td><code>test_prospective_clinical.csv</code>（2025 池）</td></tr>
+<tr><td>新增外部 zip</td><td>—</td><td><code>test_external_newzip_clinical.csv</code></td></tr>
+</tbody></table>
+</section>
+
+<section id="centers"><h2>多中心标准命名</h2>
+{_render_table(center_cols, center_rows) if center_rows else ""}
+<p>完整映射见 <code>tables/center_name_registry.csv</code>。</p>
+</section>
+
+<section id="clinical"><h2>临床表资产</h2>
+<p>患者临床主表：<strong>{_fmt_num(tables.get("patient_clinical_master_rows", 0))}</strong> 行（整理层，非最终实验注册表）。</p>
+<p>主要文件：<code>patient_clinical_master.csv</code>、<code>clinical_table_registry.csv</code>、<code>center_name_registry.csv</code></p>
+</section>
+
+<section id="quality"><h2>数据质量</h2>
+<ul>
+<li>预处理成功率整体较高；少量空 mask、命名不一致样本见 <code>unmatched_files.csv</code> / <code>errors.csv</code></li>
+<li>外省整理.zip「湖北窦」已重分类为<strong>中核五〇四医院</strong>（2026-05-20，帧头 OCR 审计）</li>
+<li>详细盘点数据：<a href="inventory/dataset_inventory.json">inventory/dataset_inventory.json</a> ·
+  <a href="inventory/index.html">inventory/index.html</a></li>
+</ul>
+</section>
+
+<section id="docs"><h2>相关文档</h2>
+<ul>
+<li><a href="DATASET_GUIDE.md">DATASET_GUIDE.md</a> — 完整文字说明与建模 CSV 细分统计</li>
+<li><a href="README.md">README.md</a> — 目录结构与使用建议</li>
+<li><a href="tables/README.md">tables/README.md</a> — 临床表说明</li>
+<li><a href="../docs/ARCHITECTURE.md">docs/ARCHITECTURE.md</a> — 项目架构</li>
+</ul>
+</section>
+"""
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GastricTstaging — 数据集完整说明</title>
+  <style>
+    :root {{
+      --bg: #fafbfc;
+      --surface: #ffffff;
+      --surface2: #f1f5f9;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #0e7490;
+      --accent-soft: #ecfeff;
+      --warn: #b45309;
+      --ok: #16a34a;
+      --font: "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "Cascadia Code", monospace;
+    }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    html {{ scroll-behavior: smooth; }}
+    body {{ font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; font-size: 15px; }}
+    .layout {{ display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }}
+    @media (max-width: 960px) {{ .layout {{ grid-template-columns: 1fr; }} nav.side {{ position: relative; height: auto; }} }}
+    nav.side {{
+      position: sticky; top: 0; height: 100vh; overflow-y: auto;
+      background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem 1rem;
+    }}
+    nav.side .brand {{ font-weight: 700; font-size: 0.95rem; margin-bottom: 0.25rem; color: var(--accent); }}
+    nav.side h2 {{ font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 1rem 0 0.5rem; }}
+    nav.side a {{ display: block; color: var(--muted); text-decoration: none; padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.88rem; }}
+    nav.side a:hover {{ color: var(--accent); background: var(--surface2); }}
+    main {{ padding: 2rem 2.5rem 4rem; max-width: min(96vw, 1600px); }}
+    header.hero {{
+      background: linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 60%);
+      border: 1px solid var(--border); border-radius: 16px; padding: 2rem; margin-bottom: 2rem;
+    }}
+    header.hero h1 {{ font-size: 1.85rem; margin-bottom: 0.5rem; }}
+    header.hero .subtitle {{ color: var(--muted); max-width: 42em; }}
+    .meta {{ margin-top: 0.75rem; font-size: 0.85rem; color: var(--muted); }}
+    .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }}
+    .kpi {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }}
+    .kpi .val {{ font-size: 1.45rem; font-weight: 700; color: var(--accent); line-height: 1.2; }}
+    .kpi .lbl {{ font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; }}
+    section {{ margin-bottom: 2.75rem; scroll-margin-top: 1rem; }}
+    section h2 {{ font-size: 1.25rem; color: var(--accent); margin-bottom: 1rem; padding-bottom: 0.4rem; border-bottom: 2px solid var(--accent-soft); }}
+    section h3 {{ font-size: 1rem; margin: 1.25rem 0 0.6rem; }}
+    p {{ margin-bottom: 0.75rem; }}
+    p.note {{ background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.85rem 1rem; font-size: 0.9rem; color: #92400e; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-bottom: 1rem; background: var(--surface); }}
+    th, td {{ border: 1px solid var(--border); padding: 0.5rem 0.65rem; text-align: left; }}
+    th {{ background: var(--surface2); font-weight: 600; }}
+    td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    code {{ font-family: var(--mono); font-size: 0.84em; background: var(--surface2); padding: 0.1em 0.35em; border-radius: 4px; }}
+    .tree {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; font-family: var(--mono); font-size: 0.8rem; white-space: pre; overflow-x: auto; }}
+    a {{ color: var(--accent); }}
+    .bar-cell {{ min-width: 100px; }}
+    .bar {{ height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-top: 4px; }}
+    .bar > span {{ display: block; height: 100%; background: var(--accent); }}
+    .figure {{ margin: 1.25rem 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }}
+    .figure-wide .figure-scroll {{ overflow-x: auto; }}
+    .figure-wide img {{ width: 100%; min-width: 960px; height: auto; display: block; }}
+    .figure figcaption {{ padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--border); }}
+    .view-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin: 1rem 0; }}
+    @media (max-width: 700px) {{ .view-grid {{ grid-template-columns: 1fr; }} }}
+    .view-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }}
+    .view-card.highlight {{ border-color: var(--accent); background: var(--accent-soft); }}
+    .view-card h4 {{ font-size: 0.95rem; margin-bottom: 0.4rem; color: var(--accent); }}
+    .view-card p {{ font-size: 0.85rem; margin: 0; color: var(--muted); }}
+    .label-bars {{ max-width: 520px; }}
+    .label-row {{ display: grid; grid-template-columns: 36px 1fr 100px; gap: 0.5rem; align-items: center; margin-bottom: 0.45rem; font-size: 0.88rem; }}
+    .label-track {{ height: 10px; background: var(--surface2); border-radius: 5px; overflow: hidden; }}
+    .label-track span {{ display: block; height: 100%; border-radius: 5px; }}
+    .label-count {{ text-align: right; color: var(--muted); font-size: 0.82rem; }}
+    ul {{ padding-left: 1.25rem; margin-bottom: 0.75rem; }}
+    li {{ margin-bottom: 0.35rem; }}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="side">
+      <div class="brand">GastricTstaging</div>
+      <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">数据集说明</div>
+      <h2>导航</h2>
+      <a href="#intro">数据集说明</a>
+      <a href="#patients">病人数统计</a>
+      <a href="#calibers">统计口径</a>
+      <a href="#views">三套视图</a>
+      <a href="#internal">内部数据</a>
+      <a href="#external">外部数据</a>
+      <a href="#training">训练建议</a>
+      <a href="#centers">多中心命名</a>
+      <a href="#clinical">临床表</a>
+      <a href="#quality">数据质量</a>
+      <a href="#docs">相关文档</a>
+    </nav>
+    <main>
+      <header class="hero">
+        <h1>胃癌 T 分期数据集 — 完整说明</h1>
+        <p class="subtitle">
+          协和内部 + 9 家外部多中心的胃充盈超声直接手术数据。
+          含 manifest 物理统计、病人数口径、crop_ui overlay 组图与 T 分期建模 split 概览。
+        </p>
+        <p class="meta">{meta}</p>
+      </header>
+      {body}
+    </main>
+  </div>
+</body>
+</html>"""
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURES.mkdir(parents=True, exist_ok=True)
+
+    import sys
+
+    scripts_dir = str(PROJECT_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from generate_crop_ui_overlay_montage import main as generate_montages
+
+    generate_montages()
+
     data = build_inventory()
     OUT_JSON.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     OUT_HTML.write_text(render_html(data), encoding="utf-8")
+    OUT_OVERVIEW.write_text(render_overview_html(data), encoding="utf-8")
     print(f"Wrote {OUT_JSON}")
     print(f"Wrote {OUT_HTML}")
+    print(f"Wrote {OUT_OVERVIEW}")
     print(f"Summary: {data['summary']}")
+    print(f"Patients: {data.get('patient_stats', {})}")
 
 
 if __name__ == "__main__":

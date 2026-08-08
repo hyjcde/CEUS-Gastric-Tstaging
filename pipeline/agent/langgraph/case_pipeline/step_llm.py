@@ -32,6 +32,7 @@ STEP_DOCS: Dict[str, str] = {
     "t_staging": "L1 T 分期：Dual ConvNeXt + Grad-CAM。",
     "wall_evidence": "壁层 SDF 穿透风险。",
     "dinov3_seg": "DINOv3 FM 分割对照。",
+    "dino_sign_fusion": "DINOv3 表征与结构化 GC-US/胃壁征象证据融合。",
     "case_rag": "Case-RAG FAISS 相似病例。",
     "report_synth": "规则融合 + structure_report → 最终 T 推荐。",
 }
@@ -147,18 +148,41 @@ class StepNarrativeLLM:
         agent = str(payload.get("agent_name", step_id))
         if phase == "plan":
             return (
-                f"【{agent} · 计划】{STEP_DOCS.get(step_id, '执行本步工具链。')}\n"
+                f"【{agent} / 计划】{STEP_DOCS.get(step_id, '执行本步工具链。')}\n"
                 f"输入摘要：{json.dumps(payload.get('inputs_summary', {}), ensure_ascii=False)[:400]}"
             )
         obs = payload.get("observation_summary") or {}
         return (
-            f"【{agent} · 解读】status={payload.get('status', '?')} · "
+            f"【{agent} / 解读】status={payload.get('status', '?')} / "
             f"{json.dumps(obs, ensure_ascii=False)[:600]}"
         )
 
 
 def resolve_pipeline_llm() -> tuple[ChatLLM, str, str]:
-    """MiniMax > OpenAI-compatible > step narrative heuristic."""
+    """Default remains heuristic / API. Local Qwen is opt-in only."""
+    mode = os.getenv("AGENT_LLM_MODE", "").strip().lower()
+    if mode in {"heuristic", "offline", "none"}:
+        return StepNarrativeLLM(), "step_narrative_heuristic", StepNarrativeLLM.model
+
+    if mode in {"local_qwen", "qwen_local", "local_mllm"}:
+        from ...local_llm.qwen_tool_agent import build_local_tool_agent
+
+        agent = build_local_tool_agent(smoke=os.getenv("LOCAL_QWEN_SMOKE", "0") in {"1", "true", "True"})
+        return agent, agent.provider, agent.model
+
+    if mode == "deepseek":
+        from ...core.llm_client import AgentLLMClient
+
+        client = AgentLLMClient(
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url=os.getenv("DEEPSEEK_BASE_URL") or None,
+            model=os.getenv("DEEPSEEK_MODEL") or "deepseek-chat",
+            max_tokens=800,
+            temperature=0.15,
+            retries=2,
+        )
+        return client, "deepseek", client.model
+
     if os.getenv("MINIMAX_API_KEY") or os.getenv("MINIMAX_CN_API_KEY"):
         from ...core.minimax_llm_client import MiniMaxLLMClient
 

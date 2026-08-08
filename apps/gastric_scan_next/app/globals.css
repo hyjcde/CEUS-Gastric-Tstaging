@@ -123,9 +123,9 @@ input[type="range"] {
   @apply border-emerald-500/40 bg-emerald-600/20 text-emerald-200 hover:border-emerald-400/50 hover:bg-emerald-600/30;
 }
 
-body:has([class*="z-\[9999\]"]) button[title*="Collapse Patient List"],
-body:has([class*="z-\[9999\]"]) button[title*="Expand Patient List"],
-body:has([class*="z-\[9999\]"]) button[title*="Patient List"] {
-  display: none !important;
-  pointer-events: none !important;
+/* Shared workbench chrome widths (keep toggle offsets in sync). */
+:root {
+  --workbench-header-h: 4rem;
+  --workbench-sidebar-w: 18rem; /* w-72 */
+  --workbench-evidence-w: 20rem; /* w-80 */
 }

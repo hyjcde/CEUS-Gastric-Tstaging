@@ -30,6 +30,8 @@ type Props = {
   reportBusy: boolean;
   llmReady: boolean;
   hasPrompt: boolean;
+  nnInteractiveAvailable: boolean | null;
+  nnInteractiveBusy: boolean;
   onGenerateReport: () => void;
   onClearPrompt: () => void;
   onUndoPoint: () => void;
@@ -37,8 +39,12 @@ type Props = {
 };
 
 const MODES: { id: InteractionMode; label: string; hint: string }[] = [
-  { id: 'box', label: 'SAM 框选', hint: '1' },
+  { id: 'box', label: '框选病灶', hint: '1' },
   { id: 'inspect', label: '检视轮廓', hint: '2' },
+  { id: 'positive', label: '正点', hint: '3' },
+  { id: 'negative', label: '负点', hint: '4' },
+  { id: 'scribble', label: '自由涂鸦', hint: '5' },
+  { id: 'lasso', label: '套索', hint: '6' },
 ];
 
 export function ReaderToolbar({
@@ -65,6 +71,8 @@ export function ReaderToolbar({
   reportBusy,
   llmReady,
   hasPrompt,
+  nnInteractiveAvailable,
+  nnInteractiveBusy,
   onGenerateReport,
   onClearPrompt,
   onUndoPoint,
@@ -79,6 +87,24 @@ export function ReaderToolbar({
         </div>
         <span className="rounded border border-white/10 bg-black/40 px-2 py-0.5 text-[10px] text-gray-400">
           {promptSummary || '未标注'}
+        </span>
+        <span
+          className={`rounded border px-2 py-0.5 text-[10px] ${
+            nnInteractiveAvailable
+              ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+              : nnInteractiveAvailable === false
+                ? 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+                : 'border-white/10 bg-black/40 text-gray-500'
+          }`}
+          title={nnInteractiveAvailable === false ? '请启动官方 nnInteractive 服务' : undefined}
+        >
+          {nnInteractiveBusy
+            ? 'nnInteractive 推理中'
+            : nnInteractiveAvailable
+              ? 'nnInteractive 已连接'
+              : nnInteractiveAvailable === false
+                ? 'nnInteractive 未连接'
+                : 'nnInteractive 检查中'}
         </span>
       </div>
 
@@ -105,17 +131,17 @@ export function ReaderToolbar({
           onClick={onToggleTrack}
           className={`reader-btn ${trackOnPlay ? 'reader-btn-primary' : ''}`}
         >
-          自动单帧跟踪 · {trackOnPlay ? '开' : '关'}
+          自动单帧跟踪 / {trackOnPlay ? '开' : '关'}
         </button>
         <button
           type="button"
           onClick={onPropagateVideo}
           className="reader-btn"
           disabled={videoTrackBusy || !hasPrompt}
-          title={!hasPrompt ? '请先用 SAM 框选病灶' : '使用 SAM2.1 视频 memory 对整个视频传播'}
+          title={!hasPrompt ? '请先框选病灶' : '跟踪扩散到整个视频'}
         >
           {videoTrackBusy ? <Loader2 size={12} className="animate-spin" /> : <Route size={12} />}
-          {videoTrackBusy ? '全视频传播中' : '全视频传播'}
+          {videoTrackBusy ? '跟踪扩散中' : '跟踪扩散'}
         </button>
         {videoTrackStatus ? <span className="text-[10px] text-gray-500">{videoTrackStatus}</span> : null}
         <button type="button" onClick={onAnalyzeKeyframe} className="reader-btn" disabled={samBusy}>
@@ -127,7 +153,7 @@ export function ReaderToolbar({
           onClick={onGenerateReport}
           className="reader-btn reader-btn-primary"
           disabled={reportBusy || !llmReady || !hasPrompt}
-          title={!llmReady ? '未配置 DeepSeek / MiniMax' : !hasPrompt ? '请先用 SAM 框选病灶' : ''}
+          title={!llmReady ? '未配置 DeepSeek / MiniMax' : !hasPrompt ? '请先框选病灶' : ''}
         >
           {reportBusy ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
           生成文字报告

@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, FileText, Pencil, RotateCcw } from 'lucide-react';
 import {
   GC_US_REPORT_SCHEMA_VERSION,
-  GC_US_REPORT_TEMPLATE_ID,
   applyGcUsDoctorOverride,
   buildGcUsReport,
   createGcUsReportState,
@@ -18,59 +17,118 @@ import {
   type GcUsStageBand,
 } from '@/lib/gc-us-report-template';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
+import { computeLesionLumenGeometry } from '@/lib/lesion-lumen-geometry';
+import type { AgentToolResult } from '@/types';
+import { GcUsSignModelMap } from '@/components/GcUsSignModelMap';
 
-const SIGN_OPTIONS: Record<string, string[]> = {
+const SIGN_OPTIONS: Record<string, Array<{ zh: string; en: string }>> = {
   layer_structure: [
-    '层次结构清晰',
-    '黏膜/黏膜下层（T1）',
-    '固有肌层（T2）',
-    '浆膜下层（T3）',
-    '浆膜连续性中断（T4a）',
-    '邻近器官侵犯（T4b）',
-    '局部受累，结构尚可辨',
-    '结构紊乱',
-    '连续性可疑破坏',
-    '不可辨',
+    { zh: '层次结构清晰', en: 'Layer structure clear' },
+    { zh: '黏膜/黏膜下层（T1）', en: 'Mucosa / submucosa (T1)' },
+    { zh: '固有肌层（T2）', en: 'Muscularis propria (T2)' },
+    { zh: '浆膜下层（T3）', en: 'Subserosa (T3)' },
+    { zh: '浆膜连续性中断（T4a）', en: 'Serosal discontinuity (T4a)' },
+    { zh: '邻近器官侵犯（T4b）', en: 'Adjacent organ invasion (T4b)' },
+    { zh: '局部受累，结构尚可辨', en: 'Focal involvement, layers still readable' },
+    { zh: '结构紊乱', en: 'Disorganized wall structure' },
+    { zh: '连续性可疑破坏', en: 'Suspected continuity break' },
+    { zh: '不可辨', en: 'Not assessable' },
   ],
-  morphology: ['浅表隆起型', '局限隆起型', '局部浸润型', '溃疡浸润型', '巨大浸润型', '未评估'],
-  boundary: ['边界清晰、规则', '边界部分欠清', '边界不规则', '外侵样改变，边界消失倾向', '未评估'],
-  growth_pattern: ['膨胀型', '局部浸润性', '明显浸润性', '跨壁向外侵犯倾向', '未评估'],
-  serosa_change: ['浆膜连续光滑', '浆膜面欠光整', '浆膜连续性可疑破坏', '浆膜连续性中断', '未评估'],
-  perigastric_tissue: ['胃周组织未见明显异常改变', '胃周脂肪间隙清晰', '胃周脂肪间隙欠清', '胃周脂肪间隙异常改变', '未评估'],
+  morphology: [
+    { zh: '浅表隆起型', en: 'Superficial elevated' },
+    { zh: '局限隆起型', en: 'Localized elevated' },
+    { zh: '局部浸润型', en: 'Locally infiltrative' },
+    { zh: '溃疡浸润型', en: 'Ulcerative infiltrative' },
+    { zh: '巨大浸润型', en: 'Bulky infiltrative' },
+    { zh: '未评估', en: 'Not assessed' },
+  ],
+  boundary: [
+    { zh: '边界清晰、规则', en: 'Clear, regular margin' },
+    { zh: '边界部分欠清', en: 'Partially ill-defined margin' },
+    { zh: '边界不规则', en: 'Irregular margin' },
+    { zh: '外侵样改变，边界消失倾向', en: 'Invasive appearance, margin fading' },
+    { zh: '未评估', en: 'Not assessed' },
+  ],
+  growth_pattern: [
+    { zh: '膨胀型', en: 'Expansile' },
+    { zh: '局部浸润性', en: 'Locally infiltrative' },
+    { zh: '明显浸润性', en: 'Frankly infiltrative' },
+    { zh: '跨壁向外侵犯倾向', en: 'Transmural outward invasion tendency' },
+    { zh: '未评估', en: 'Not assessed' },
+  ],
+  serosa_change: [
+    { zh: '浆膜连续光滑', en: 'Serosa continuous and smooth' },
+    { zh: '浆膜面欠光整', en: 'Serosal surface irregular' },
+    { zh: '浆膜连续性可疑破坏', en: 'Suspected serosal discontinuity' },
+    { zh: '浆膜连续性中断', en: 'Serosal discontinuity' },
+    { zh: '未评估', en: 'Not assessed' },
+  ],
+  perigastric_tissue: [
+    { zh: '胃周组织未见明显异常改变', en: 'No clear perigastric abnormality' },
+    { zh: '胃周脂肪间隙清晰', en: 'Perigastric fat plane clear' },
+    { zh: '胃周脂肪间隙欠清', en: 'Perigastric fat plane ill-defined' },
+    { zh: '胃周脂肪间隙异常改变', en: 'Abnormal perigastric fat change' },
+    { zh: '未评估', en: 'Not assessed' },
+  ],
 };
 
-const LABELS: Record<string, string> = {
-  length: '肿瘤长径',
-  thickness: '肿瘤厚度',
-  layer_structure: '胃壁层次结构',
-  morphology: '肿瘤形态',
-  boundary: '肿瘤边界',
-  growth_pattern: '生长方式',
-  serosa_change: '浆膜改变',
-  perigastric_tissue: '胃周组织',
+const LABELS: Record<string, { zh: string; en: string }> = {
+  length: { zh: '肿瘤长径', en: 'Tumor length' },
+  thickness: { zh: '肿瘤厚度', en: 'Tumor thickness' },
+  layer_structure: { zh: '胃壁层次结构', en: 'Wall layer structure' },
+  morphology: { zh: '肿瘤形态', en: 'Tumor morphology' },
+  boundary: { zh: '肿瘤边界', en: 'Tumor margin' },
+  growth_pattern: { zh: '生长方式', en: 'Growth pattern' },
+  serosa_change: { zh: '浆膜改变', en: 'Serosal change' },
+  perigastric_tissue: { zh: '胃周组织', en: 'Perigastric tissue' },
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  clinical: '临床字段',
-  live_contour: '本帧轮廓',
-  pixel: '像素辅助',
-  model: '模型/几何',
-  doctor: '医生',
-  product_score: '产品评分',
-  track_window: '短窗跟踪',
-  template_reference: '模板参考',
-  not_available: '暂无来源',
+const SOURCE_LABELS: Record<string, { zh: string; en: string }> = {
+  clinical: { zh: '病例表格', en: 'Case table' },
+  live_contour: { zh: '本帧轮廓', en: 'Current-frame contour' },
+  pixel: { zh: '像素辅助', en: 'Pixel assist' },
+  model: { zh: '系统建议', en: 'System suggestion' },
+  doctor: { zh: '医生', en: 'Physician' },
+  product_score: { zh: '产品评分', en: 'Product score' },
+  track_window: { zh: '短窗跟踪', en: 'Short-window track' },
+  template_reference: { zh: '模板参考', en: 'Template reference' },
+  not_available: { zh: '暂无来源', en: 'No source yet' },
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  suggested: 'AI/规则建议',
-  confirmed: '已确认',
-  doctor_edited: '已人工修正',
-  unevaluated: '未评估',
-  conflict: '证据冲突',
-  pending: '待补充',
-  reference_only: '仅供参考',
+function asClinicalRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function clinicalPositiveNumber(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function clinicalFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+function clinicalLabDisplay(value: unknown, positive: unknown): string {
+  const number = clinicalPositiveNumber(value);
+  if (number != null) return String(number);
+  if (clinicalFlag(positive)) return 'Positive';
+  return 'Not provided';
+}
+
+const STATUS_LABELS: Record<string, { zh: string; en: string }> = {
+  suggested: { zh: '系统建议', en: 'System suggestion' },
+  confirmed: { zh: '已确认', en: 'Confirmed' },
+  doctor_edited: { zh: '已人工修正', en: 'Physician edited' },
+  unevaluated: { zh: '未评估', en: 'Not assessed' },
+  conflict: { zh: '证据冲突', en: 'Evidence conflict' },
+  pending: { zh: '待补充', en: 'Pending' },
+  reference_only: { zh: '仅供参考', en: 'Reference only' },
 };
+
+function pickLabel(entry: { zh: string; en: string } | undefined, zh: boolean, fallback = ''): string {
+  if (!entry) return fallback;
+  return zh ? entry.zh : entry.en;
+}
 
 type Props = {
   caseId?: string | null;
@@ -79,9 +137,14 @@ type Props = {
   clinical?: Record<string, unknown>;
   lesionPolygon?: number[][];
   wallPolygon?: number[][];
+  lumenPolygon?: number[][];
+  lumenBBox?: { x1: number; y1: number; x2: number; y2: number } | null;
   frameSize?: { width: number; height: number } | null;
   layerResult?: LayerAnalyzeResult | null;
   productStage?: string | null;
+  assistantStage?: string | null;
+  assistantConfidence?: number | null;
+  signAnalysis?: AgentToolResult | null;
   initialState?: GcUsReportState | null;
   zh?: boolean;
   compact?: boolean;
@@ -141,17 +204,27 @@ function setField(state: GcUsReportState, id: string, field: GcUsField<unknown>)
 function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportState): GcUsReportState {
   if (!previous || previous.case_id !== fresh.case_id) return fresh;
   let signs = fresh.signs;
+  let changed = false;
   for (const id of ['length', 'thickness', 'layer_structure', 'morphology', 'boundary', 'growth_pattern', 'serosa_change', 'perigastric_tissue']) {
     const old = fieldFor(previous.signs, id);
     if (old.status !== 'doctor_edited' && old.doctor_override == null) continue;
+    changed = true;
     if (id === 'length') signs = { ...signs, size: { ...signs.size, length: old as GcUsField<number> } };
     else if (id === 'thickness') signs = { ...signs, size: { ...signs.size, thickness: old as GcUsField<number> } };
     else signs = { ...signs, [id]: old } as GcUsSigns;
   }
+  if (!changed
+    && previous.reference_stage.source !== 'doctor'
+    && !(previous.report.doctor_edited || previous.report.source === 'doctor')
+    && !(previous.doctor_actions || []).length) {
+    return fresh;
+  }
   return {
     ...fresh,
     signs,
-    report: previous.report,
+    report: previous.report.doctor_edited || previous.report.source === 'doctor'
+      ? previous.report
+      : fresh.report,
     reference_stage: previous.reference_stage.source === 'doctor'
       ? previous.reference_stage
       : fresh.reference_stage,
@@ -162,17 +235,6 @@ function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUsReportS
       ).values(),
     ),
   };
-}
-
-function polygonExtent(points: number[][]): { lengthPx: number | null; thicknessPx: number | null } {
-  if (points.length < 3) return { lengthPx: null, thicknessPx: null };
-  const xs = points.map((point) => Number(point[0])).filter(Number.isFinite);
-  const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
-  if (!xs.length || !ys.length) return { lengthPx: null, thicknessPx: null };
-  const width = Math.max(...xs) - Math.min(...xs);
-  const height = Math.max(...ys) - Math.min(...ys);
-  if (width <= 1 || height <= 1) return { lengthPx: null, thicknessPx: null };
-  return { lengthPx: Math.max(width, height), thicknessPx: Math.min(width, height) };
 }
 
 function polygonIrregularity(points: number[][]): number | null {
@@ -191,6 +253,21 @@ function polygonIrregularity(points: number[][]): number | null {
     : null;
 }
 
+function displayStageLabel(value: unknown): string | null {
+  const raw = String(value || '').trim();
+  const match = raw.toUpperCase().match(/\bT([1-4])(\+)?\b/);
+  if (match) return `T${match[1]}${match[2] || ''}`;
+  if (/^(benign|良性)$/i.test(raw)) return 'benign';
+  if (/^(malignant|恶性)$/i.test(raw)) return 'malignant';
+  return null;
+}
+
+function displayStageText(value: string | null, zh: boolean): string {
+  if (value === 'benign') return zh ? '良性' : 'Benign';
+  if (value === 'malignant') return zh ? '恶性' : 'Malignant';
+  return value || (zh ? '待生成' : 'Pending');
+}
+
 export function GcUsEvidencePanel({
   caseId,
   frameId,
@@ -198,9 +275,14 @@ export function GcUsEvidencePanel({
   clinical = {},
   lesionPolygon = [],
   wallPolygon = [],
+  lumenPolygon = [],
+  lumenBBox = null,
   frameSize,
   layerResult,
   productStage,
+  assistantStage = null,
+  assistantConfidence = null,
+  signAnalysis = null,
   initialState = null,
   zh = true,
   compact = false,
@@ -209,10 +291,12 @@ export function GcUsEvidencePanel({
   ruleVersion = GC_US_REPORT_SCHEMA_VERSION,
   onStateChange,
 }: Props) {
-  const derived = useMemo(() => {
+  const contourGeometry = useMemo(
+    () => computeLesionLumenGeometry(lesionPolygon, lumenPolygon, lumenBBox),
+    [lesionPolygon, lumenBBox, lumenPolygon],
+  );
+  const derivedBase = useMemo(() => {
     const layer = layerResult?.layer;
-    const penetration = layerResult?.pen;
-    const extent = polygonExtent(lesionPolygon);
     const irregularity = polygonIrregularity(lesionPolygon);
     const label = layer?.label || null;
     const tHint = layer?.tHint || null;
@@ -231,10 +315,12 @@ export function GcUsEvidencePanel({
         frameTime,
         clinical,
         lesion: {
+          // Length / thickness come from the case clinical table only (fixed mm).
+          // Do not seed from live contour pixels — those are not calibrated.
           lengthMm: clinical.tumor_size_mm as number | undefined,
           thicknessMm: clinical.tumor_thickness_mm as number | undefined,
-          lengthPx: extent.lengthPx,
-          thicknessPx: penetration?.thick ?? extent.thicknessPx,
+          lengthPx: undefined,
+          thicknessPx: undefined,
           echo: sourceEcho,
           morphology: clinical.morphology as string | undefined,
           boundary: clinical.boundary as string | undefined,
@@ -288,62 +374,135 @@ export function GcUsEvidencePanel({
         derivedState.signs.perigastric_tissue = proxyField('当前帧胃周组织需多切面核对', 'perigastric.multiplanar_review');
       }
     }
-    if (!initialState) return derivedState;
-    const seeded = createGcUsReportState(initialState);
-    const chooseField = <T,>(fresh: GcUsField<T>, seed: GcUsField<T>) => (
-      seed.value != null || seed.status === 'doctor_edited' ? seed : fresh
-    );
-    return {
-      ...derivedState,
-      ...seeded,
-      clinical: { ...derivedState.clinical, ...seeded.clinical },
-      signs: {
-        ...derivedState.signs,
-        ...seeded.signs,
-        size: {
-          ...derivedState.signs.size,
-          ...seeded.signs.size,
-          length: chooseField(derivedState.signs.size.length, seeded.signs.size.length),
-          thickness: chooseField(derivedState.signs.size.thickness, seeded.signs.size.thickness),
-        },
-      },
-      reference_stage: seeded.reference_stage.source === 'doctor'
-        ? seeded.reference_stage
-        : derivedState.reference_stage,
-      report: seeded.report.doctor_edited || seeded.report.source === 'doctor'
-        ? seeded.report
-        : derivedState.report,
-      conflicts: seeded.reference_stage.source === 'doctor'
-        ? seeded.conflicts
-        : derivedState.conflicts,
-      doctor_actions: seeded.doctor_actions || [],
-    };
-  }, [caseId, clinical, frameId, frameSize, frameTime, initialState, layerResult, lesionPolygon, productStage, wallPolygon]);
+    return derivedState;
+    // Do NOT depend on initialState/gcUsReport here — parent echoes onStateChange and
+    // would create a Maximum update depth loop.
+  }, [caseId, clinical, frameId, frameSize, frameTime, layerResult, lesionPolygon, productStage, wallPolygon]);
 
-  const [state, setState] = useState<GcUsReportState>(derived);
+  const [state, setState] = useState<GcUsReportState>(derivedBase);
   const storageKey = caseId ? `next-gc-us-report:${caseId}` : null;
+  const lastEmittedRef = useRef<string>('');
+  const seededCaseRef = useRef<string | null>(null);
+
+  const initialStateRef = useRef(initialState);
+  useEffect(() => {
+    initialStateRef.current = initialState;
+  }, [initialState]);
 
   useEffect(() => {
-    let next = derived;
-    if (storageKey && typeof window !== 'undefined') {
-      try {
-        const saved = window.localStorage.getItem(storageKey);
-        if (saved) next = mergeFreshEvidence(createGcUsReportState(JSON.parse(saved)), next);
-      } catch {
-        // Ignore stale browser state.
+    let next = derivedBase;
+    const caseChanged = caseId !== seededCaseRef.current;
+    if (caseChanged) {
+      seededCaseRef.current = caseId || null;
+      lastEmittedRef.current = '';
+      const seed = initialStateRef.current;
+      if (seed && seed.case_id === caseId) {
+        const seeded = createGcUsReportState(seed);
+        const chooseField = <T,>(fresh: GcUsField<T>, seedField: GcUsField<T>) => (
+          seedField.value != null || seedField.status === 'doctor_edited' ? seedField : fresh
+        );
+        const chooseSizeField = <T,>(fresh: GcUsField<T>, seedField: GcUsField<T>) => (
+          seedField.status === 'doctor_edited' || seedField.doctor_override != null
+            ? seedField
+            : (fresh.value != null ? fresh : seedField)
+        );
+        next = {
+          ...derivedBase,
+          ...seeded,
+          clinical: { ...derivedBase.clinical, ...seeded.clinical },
+          signs: {
+            ...derivedBase.signs,
+            ...seeded.signs,
+            size: {
+              ...derivedBase.signs.size,
+              ...seeded.signs.size,
+              length: chooseSizeField(derivedBase.signs.size.length, seeded.signs.size.length),
+              thickness: chooseSizeField(derivedBase.signs.size.thickness, seeded.signs.size.thickness),
+            },
+            layer_structure: chooseField(derivedBase.signs.layer_structure, seeded.signs.layer_structure),
+            morphology: chooseField(derivedBase.signs.morphology, seeded.signs.morphology),
+            boundary: chooseField(derivedBase.signs.boundary, seeded.signs.boundary),
+            growth_pattern: chooseField(derivedBase.signs.growth_pattern, seeded.signs.growth_pattern),
+            serosa_change: chooseField(derivedBase.signs.serosa_change, seeded.signs.serosa_change),
+            perigastric_tissue: chooseField(derivedBase.signs.perigastric_tissue, seeded.signs.perigastric_tissue),
+            lesion_echo: chooseField(derivedBase.signs.lesion_echo, seeded.signs.lesion_echo),
+          },
+          reference_stage: seeded.reference_stage.source === 'doctor'
+            ? seeded.reference_stage
+            : derivedBase.reference_stage,
+          report: seeded.report.doctor_edited || seeded.report.source === 'doctor'
+            ? seeded.report
+            : derivedBase.report,
+          conflicts: seeded.reference_stage.source === 'doctor'
+            ? seeded.conflicts
+            : derivedBase.conflicts,
+          doctor_actions: seeded.doctor_actions || [],
+        };
       }
+      if (storageKey && typeof window !== 'undefined') {
+        try {
+          const saved = window.localStorage.getItem(storageKey);
+          if (saved) next = mergeFreshEvidence(createGcUsReportState(JSON.parse(saved)), next);
+        } catch {
+          // Ignore stale browser state.
+        }
+      }
+      const timer = window.setTimeout(() => setState(next), 0);
+      return () => window.clearTimeout(timer);
     }
-    const timer = window.setTimeout(() => setState((previous) => mergeFreshEvidence(previous, next)), 0);
+    // Same case: merge live contour/clinical suggestions but keep doctor edits.
+    const timer = window.setTimeout(() => {
+      setState((previous) => {
+        const merged = mergeFreshEvidence(previous, derivedBase);
+        return merged === previous ? previous : merged;
+      });
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [derived, storageKey]);
+  }, [caseId, derivedBase, storageKey]);
 
   const report = useMemo(
     () => buildGcUsReport(state, state.reference_stage.requested_band || state.reference_stage.band),
     [state],
   );
+  const doctorStage = state.reference_stage.source === 'doctor'
+    ? displayStageLabel(state.reference_stage.requested_band || state.reference_stage.band)
+    : null;
+  const referenceStageLabel = doctorStage
+    || displayStageLabel(assistantStage)
+    || displayStageLabel(report.stage)
+    || displayStageLabel(state.reference_stage.requested_band);
+  const confidenceScore = typeof assistantConfidence === 'number' && Number.isFinite(assistantConfidence)
+    ? Math.max(0, Math.min(1, assistantConfidence))
+    : null;
+  const stageProse = referenceStageLabel && report.stage === 'uncertain'
+    ? referenceStageLabel === 'benign' || referenceStageLabel === 'malignant'
+      ? (zh
+        ? `当前二分类辅助判断倾向${displayStageText(referenceStageLabel, true)}，置信度${confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : '待生成'}；T分期不适用，仍需医生复核。`
+        : `The malignancy gate favors ${displayStageText(referenceStageLabel, false).toLowerCase()}, with ${confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : 'pending'} confidence; T staging is not applicable and physician review remains required.`)
+      : report.prose.replace(
+        '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。',
+        `胃癌可能，超声评估c${referenceStageLabel}期，当前置信度${
+          confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : '待生成'
+        }，存在征象冲突，需医生复核。`,
+      )
+    : report.prose;
+  const geometryProse = contourGeometry.available
+    ? (zh
+      ? `当前帧胃腔-病灶几何辅助：两者${contourGeometry.relation === 'overlap' ? '存在重叠' : contourGeometry.relation === 'near_lumen' ? '邻近' : '分离'}，间隙${contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)}像素` : '待测'}；轮廓平滑度${contourGeometry.smoothnessIndex != null ? `${Math.round(contourGeometry.smoothnessIndex * 100)}%` : '待测'}，向外扩张几何代理${contourGeometry.outwardExpansionRatio != null ? `${contourGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(contourGeometry.outwardExpansionRatio * 100)}%` : '待测'}。该信息仅用于当前帧形态参考，不等同于病理浸润或真实生长速度。`
+      : `Current-frame lumen-lesion geometry: the lesion is ${contourGeometry.relation === 'overlap' ? 'overlapping' : contourGeometry.relation === 'near_lumen' ? 'near the lumen' : 'separate from the lumen'}, with a ${contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)} px` : 'pending'} gap. Contour smoothness is ${contourGeometry.smoothnessIndex != null ? `${Math.round(contourGeometry.smoothnessIndex * 100)}%` : 'pending'}, and the outward-expansion geometry proxy is ${contourGeometry.outwardExpansionRatio != null ? `${contourGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(contourGeometry.outwardExpansionRatio * 100)}%` : 'pending'}. This is a current-frame morphology cue, not pathological invasion or true growth rate.`)
+    : '';
+  const visibleProse = [stageProse, geometryProse].filter(Boolean).join('\n');
 
   useEffect(() => {
     const next = report.structured;
+    let serialized = '';
+    try {
+      serialized = JSON.stringify(next);
+    } catch {
+      serialized = '';
+    }
+    if (serialized && serialized === lastEmittedRef.current) return;
+    lastEmittedRef.current = serialized;
     if (storageKey && typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(storageKey, JSON.stringify(next));
@@ -445,31 +604,137 @@ export function GcUsEvidencePanel({
 
   const resetDoctorEdits = () => {
     if (storageKey && typeof window !== 'undefined') window.localStorage.removeItem(storageKey);
-    setState(derived);
+    lastEmittedRef.current = '';
+    setState(derivedBase);
   };
 
   const fields = ['length', 'thickness', 'layer_structure', 'morphology', 'boundary', 'growth_pattern', 'serosa_change', 'perigastric_tissue'];
+  const tumorSize = asClinicalRecord(clinical.tumorSize);
+  const biomarkers = asClinicalRecord(clinical.biomarkers);
+  const tumorLengthMm = clinicalPositiveNumber(clinical.tumor_size_mm)
+    ?? ((clinicalPositiveNumber(tumorSize?.length) ?? 0) * 10 || null);
+  const tumorThicknessMm = clinicalPositiveNumber(clinical.tumor_thickness_mm)
+    ?? ((clinicalPositiveNumber(tumorSize?.thickness) ?? 0) * 10 || null);
+  const clinicalLocation = typeof clinical.location === 'string' && clinical.location.trim()
+    ? clinical.location.trim()
+    : 'No source yet';
 
   return (
-    <section className={`rounded-xl border border-white/10 bg-black/30 text-[10px] text-gray-200 ${compact ? 'p-2' : 'p-3'}`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 font-semibold text-gray-100">
-          <FileText size={13} />
-          {zh ? '七项核心征象 / 胃周组织' : 'Seven core signs / perigastric tissue'}
+    <section className={`rounded-xl border border-white/10 bg-black/30 text-[11px] text-gray-200 ${compact ? 'p-2.5' : 'p-3.5'}`}>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-100">
+          <FileText size={14} />
+          {zh ? '核心影像征象（可快速编辑）' : 'Core imaging signs (quick edit)'}
         </div>
-        <span className="font-mono text-[9px] text-gray-500">{GC_US_REPORT_SCHEMA_VERSION}</span>
       </div>
-      <div className="mb-2 rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[9px] text-gray-400">
-        模板：{GC_US_REPORT_TEMPLATE_ID}；来源：{state.source_doc}；当前阶段：
-        <strong className={report.stage === 'uncertain' ? 'text-amber-300' : 'text-emerald-300'}>{report.stage}</strong>
+      <div className="mb-2.5 rounded border border-white/10 bg-black/30 px-2.5 py-2 text-[11px] text-gray-400">
+        <div className="flex items-center justify-between gap-2">
+          <span>{zh ? '当前参考分期' : 'Current reference stage'}</span>
+          <strong className={report.conflicts.length ? 'text-amber-300' : 'text-emerald-300'}>
+            {displayStageText(referenceStageLabel, zh)}
+          </strong>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
+          <span>
+            {confidenceScore != null
+              ? `${zh ? '置信度' : 'Confidence'} ${Math.round(confidenceScore * 100)}%`
+              : (zh ? '置信度待生成' : 'Confidence pending')}
+          </span>
+          {report.conflicts.length ? (
+            <span className="text-amber-300">{zh ? '存在冲突，需复核' : 'Conflicts require review'}</span>
+          ) : null}
+        </div>
       </div>
-      <div className="mb-2 grid grid-cols-4 gap-1">
+      <section className="mb-2.5 rounded border border-cyan-400/20 bg-cyan-400/[0.04] px-2.5 py-2 text-[10px]">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-semibold text-cyan-100">{zh ? '临床辅助资料' : 'Clinical auxiliary data'}</span>
+          <span className="text-[9px] text-cyan-200/70">
+            {zh ? '仅供医生参考，不参与自动分期' : 'Reference only; not used for automatic staging'}
+          </span>
+        </div>
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+            <div className="text-[8px] text-slate-500">{zh ? '病灶部位' : 'Location'}</div>
+            <div className="mt-0.5 truncate text-gray-200">{clinicalLocation}</div>
+          </div>
+          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+            <div className="text-[8px] text-slate-500">{zh ? '肿瘤长径' : 'Tumor length'}</div>
+            <div className="mt-0.5 font-mono text-gray-200">
+              {tumorLengthMm != null ? `${tumorLengthMm} mm` : (zh ? '未评估' : 'Not assessed')}
+            </div>
+          </div>
+          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+            <div className="text-[8px] text-slate-500">{zh ? '肿瘤厚度' : 'Tumor thickness'}</div>
+            <div className="mt-0.5 font-mono text-gray-200">
+              {tumorThicknessMm != null ? `${tumorThicknessMm} mm` : (zh ? '未评估' : 'Not assessed')}
+            </div>
+          </div>
+          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+            <div className="text-[8px] text-slate-500">CEA</div>
+            <div className="mt-0.5 font-mono text-gray-200">
+              {clinicalLabDisplay(clinical.cea, biomarkers?.cea_positive)}
+            </div>
+          </div>
+          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+            <div className="text-[8px] text-slate-500">CA19-9</div>
+            <div className="mt-0.5 font-mono text-gray-200">
+              {clinicalLabDisplay(clinical.ca199, biomarkers?.ca199_positive)}
+            </div>
+          </div>
+        </div>
+      </section>
+      {contourGeometry.available ? (
+        <div className="mb-2.5 rounded border border-fuchsia-300/20 bg-fuchsia-400/[0.04] px-2.5 py-2 text-[10px]">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-fuchsia-100">
+              {zh ? '胃腔-病灶轮廓辅助' : 'Lumen-lesion contour assist'}
+            </span>
+            <span className="text-[9px] uppercase text-slate-500">{contourGeometry.quality}</span>
+          </div>
+          <div className="mt-1 grid grid-cols-3 gap-1.5">
+            <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+              <div className="text-[8px] text-slate-500">{zh ? '间距' : 'Gap'}</div>
+              <div className="font-mono text-fuchsia-100">
+                {contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)} px` : '—'}
+              </div>
+            </div>
+            <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+              <div className="text-[8px] text-slate-500">{zh ? '平滑度' : 'Smooth'}</div>
+              <div className="font-mono text-lime-100">
+                {contourGeometry.smoothnessIndex != null
+                  ? `${Math.round(contourGeometry.smoothnessIndex * 100)}%`
+                  : '—'}
+              </div>
+            </div>
+            <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+              <div className="text-[8px] text-slate-500">{zh ? '向外扩张' : 'Outward'}</div>
+              <div className="font-mono text-lime-100">
+                {contourGeometry.outwardExpansionRatio != null
+                  ? `${contourGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(contourGeometry.outwardExpansionRatio * 100)}%`
+                  : '—'}
+              </div>
+            </div>
+          </div>
+          <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
+            {zh
+              ? '当前帧几何代理，仅用于显示胃腔侧关系和轮廓形态，不替代病理或多切面判断。'
+              : 'Current-frame geometry proxy for lumen-side relation and contour shape; not pathology or multiplanar proof.'}
+          </div>
+        </div>
+      ) : null}
+      <GcUsSignModelMap
+        signs={state.signs}
+        signAnalysis={signAnalysis}
+        zh={zh}
+        compact={compact}
+      />
+      <div className="mb-2.5 grid grid-cols-4 gap-1.5">
         {(['T1', 'T2', 'T3', 'T4'] as const).map((stage) => (
           <button
             key={stage}
             type="button"
             onClick={() => chooseStage(stage)}
-            className={`rounded border px-2 py-1 font-mono text-[10px] ${
+            className={`rounded border px-2 py-1.5 font-mono text-[11px] ${
               state.reference_stage.requested_band === stage
                 ? 'border-orange-400/60 bg-orange-500/15 text-orange-100'
                 : 'border-white/10 text-gray-400 hover:bg-white/5'
@@ -479,17 +744,19 @@ export function GcUsEvidencePanel({
           </button>
         ))}
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {fields.map((id) => {
           const field = fieldFor(state.signs, id);
           const options = SIGN_OPTIONS[id] || [];
           const isMeasurement = id === 'length' || id === 'thickness';
           const display = field.value == null ? '' : String(field.value);
           return (
-            <div key={id} className="grid grid-cols-[86px_minmax(0,1fr)] gap-2 rounded border border-white/10 bg-black/20 p-1.5">
-              <div className="text-gray-400">
-                {LABELS[id]}
-                <span className="mt-0.5 block font-mono text-[8px] text-gray-600">{STATUS_LABELS[field.status] || field.status}</span>
+            <div key={id} className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2 rounded border border-white/10 bg-black/20 p-2">
+              <div className="text-[11px] text-gray-300">
+                {pickLabel(LABELS[id], Boolean(zh), id)}
+                <span className="mt-0.5 block text-[10px] text-gray-500">
+                  {pickLabel(STATUS_LABELS[field.status], Boolean(zh), field.status)}
+                </span>
               </div>
               <div className="min-w-0">
                 {isMeasurement ? (
@@ -499,27 +766,36 @@ export function GcUsEvidencePanel({
                       type="number"
                       step="any"
                       onChange={(event) => doctorEdit(id, event.target.value)}
-                      className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-1.5 py-1 text-gray-100 outline-none focus:border-orange-400/60"
-                      placeholder="未评估"
+                      className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] text-gray-100 outline-none focus:border-orange-400/60"
+                      placeholder={zh ? '未评估' : 'Not assessed'}
                     />
-                    <span className="rounded border border-white/10 px-1.5 py-1 font-mono text-gray-500">{field.unit || 'mm'}</span>
+                    <span className="rounded border border-white/10 px-2 py-1.5 font-mono text-[11px] text-gray-500">{field.unit || 'mm'}</span>
                   </div>
                 ) : (
                   <select
                     value={display}
                     onChange={(event) => doctorEdit(id, event.target.value)}
-                    className="w-full rounded border border-white/10 bg-black/40 px-1.5 py-1 text-gray-100 outline-none focus:border-orange-400/60"
+                    className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] text-gray-100 outline-none focus:border-orange-400/60"
                   >
-                    <option value="">未评估</option>
-                    {(options.includes(display) ? options : display ? [display, ...options] : options).map((option) => (
-                      <option key={option} value={option}>{option}</option>
+                    <option value="">{zh ? '未评估' : 'Not assessed'}</option>
+                    {(
+                      options.some((item) => item.zh === display)
+                        ? options
+                        : display
+                          ? [{ zh: display, en: display }, ...options]
+                          : options
+                    ).map((option) => (
+                      <option key={option.zh} value={option.zh}>
+                        {zh ? option.zh : option.en}
+                      </option>
                     ))}
                   </select>
                 )}
-                <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[8px] text-gray-600">
-                  <span>{SOURCE_LABELS[field.source] || field.source}</span>
-                  {field.doctor_override != null ? <span className="text-orange-300">原始建议；医生修正</span> : null}
-                  {field.provenance?.length ? <span className="text-emerald-300/80">evidence:{field.provenance.length}</span> : null}
+                <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-gray-500">
+                  <span>{pickLabel(SOURCE_LABELS[field.source], Boolean(zh), field.source)}</span>
+                  {field.doctor_override != null ? (
+                    <span className="text-orange-300">{zh ? '原始建议已修正' : 'Suggestion overridden'}</span>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -527,23 +803,26 @@ export function GcUsEvidencePanel({
         })}
       </div>
       {report.conflicts.length ? (
-        <div className="mt-2 rounded border border-rose-400/30 bg-rose-950/20 px-2 py-1.5 text-[9px] leading-relaxed text-rose-100">
-          <div className="mb-0.5 flex items-center gap-1 font-semibold"><AlertTriangle size={11} />需要医生复核</div>
+        <div className="mt-2.5 rounded border border-rose-400/30 bg-rose-950/20 px-2.5 py-2 text-[11px] leading-relaxed text-rose-100">
+          <div className="mb-1 flex items-center gap-1 font-semibold"><AlertTriangle size={12} />{zh ? '需要医生复核' : 'Physician review needed'}</div>
           {report.conflicts.map((item) => <div key={item.code}>- {item.message}</div>)}
         </div>
       ) : (
-        <div className="mt-2 flex items-center gap-1 text-[9px] text-emerald-300/80"><Check size={11} />当前无结构化征象冲突</div>
+        <div className="mt-2.5 flex items-center gap-1 text-[11px] text-emerald-300/80"><Check size={12} />{zh ? '当前无结构化征象冲突' : 'No structured sign conflicts'}</div>
       )}
-      <div className="mt-2 whitespace-pre-wrap rounded border border-white/10 bg-black/30 p-2 text-[9px] leading-relaxed text-gray-300">{report.prose}</div>
+      <div className="mt-2.5 whitespace-pre-wrap rounded border border-white/10 bg-black/30 p-2.5 text-[11px] leading-relaxed text-gray-300">{visibleProse}</div>
       <button
         type="button"
         onClick={resetDoctorEdits}
-        className="mt-2 inline-flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-[9px] text-gray-400 hover:bg-white/5"
+        className="mt-2.5 inline-flex items-center gap-1 rounded border border-white/10 px-2.5 py-1.5 text-[11px] text-gray-400 hover:bg-white/5"
       >
-        <RotateCcw size={10} />恢复 AI/规则建议
+        <RotateCcw size={11} />{zh ? '恢复系统建议' : 'Restore system suggestions'}
       </button>
-      <div className="mt-1 flex items-center gap-1 text-[8px] text-gray-600">
-        <Pencil size={9} />医生修正后会按病例保存字段变更、证据来源和版本信息，并进入 Agent 报告请求。
+      <div className="mt-1.5 flex items-center gap-1 text-[10px] text-gray-500">
+        <Pencil size={10} />
+        {zh
+          ? '医生可直接修改征象；修改会按病例保存，并进入辅助诊断意见。'
+          : 'Edit signs directly; changes are saved per case and feed assisted diagnosis.'}
       </div>
     </section>
   );

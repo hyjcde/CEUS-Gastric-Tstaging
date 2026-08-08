@@ -93,6 +93,12 @@ STEP_DOCS: Dict[str, Dict[str, str]] = {
         "purpose": "结合 lumen bbox 与 lesion mask 估计穿透风险 penetration_risk（low/medium/high）。",
         "tool": "wall_evidence",
     },
+    "gc_us_signs": {
+        "agent": "GcUsSignAgent",
+        "role": "核心征象算法链",
+        "purpose": "逐项评分长径、厚度、形态、边界、生长方式和胃壁结构，并区分临床、派生和几何代理证据。",
+        "tool": "gc_us_signs",
+    },
     "dinov3_seg": {
         "agent": "DINOv3Agent",
         "role": "DINOv3 候选分割（独立证据步）",
@@ -121,8 +127,9 @@ STEP_FIGURE_STEMS: Dict[str, List[str]] = {
     "morphology": ["step-07-morphology"],
     "t_staging": ["step-08-tstage"],
     "wall_evidence": ["step-09-wall"],
+    "gc_us_signs": ["step-10-gc-us-signs"],
     "dinov3_seg": ["step-06-seg-unet-vs-dino"],
-    "case_rag": ["step-11-rag"],
+    "case_rag": ["step-13-rag"],
 }
 
 # 原 six_panel 六联图对应的 6 个主可视化 Agent（逐步展示）
@@ -133,6 +140,7 @@ MAIN_VIS_AGENT_ORDER: List[tuple[str, str]] = [
     ("morphology", "形态学 · MorphologyAgent"),
     ("t_staging", "L1 T 分期 + DINO + Grad-CAM · TStagingAgent"),
     ("wall_evidence", "壁层浸润 SDF · WallEvidenceAgent"),
+    ("gc_us_signs", "核心征象算法链 / GcUsSignAgent"),
     ("dinov3_seg", "DINOv3 FM 分割 · DINOv3Agent"),
     ("case_rag", "Case-RAG · CaseRAGAgent"),
 ]

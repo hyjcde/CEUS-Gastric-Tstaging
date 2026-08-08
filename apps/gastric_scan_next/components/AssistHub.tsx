@@ -3,12 +3,12 @@
 import React, { useMemo, useState } from 'react';
 import {
   Brain, ChevronDown, ChevronUp, Clapperboard, Compass, ExternalLink,
-  LayoutGrid, Pencil, ScanSearch, Sparkles,
+  LayoutGrid, ScanSearch, Sparkles,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import type { Patient } from '@/types';
 import { getDirectionAnnotatorPath } from '@/lib/annotator-url';
 import { getVideoAnnotatorUrl } from '@/lib/video-annotator-url';
+import { navigateTo } from '@/lib/navigation';
 import {
   buildHumanAssistUrl,
   buildReaderAppUrl,
@@ -22,19 +22,14 @@ interface AssistHubProps {
 
 /** Additive discovery panel — does not replace Header buttons. */
 export function AssistHub({ patient }: AssistHubProps) {
-  const router = useRouter();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [showResearch, setShowResearch] = useState(false);
 
   const base8767 = useMemo(() => getReadingAgentBaseUrl(), []);
   const hasPatient = Boolean(patient?.id);
 
-  const openBoundary = () => {
-    window.dispatchEvent(new CustomEvent('gastric:open-boundary-edit', { detail: { sam: true } }));
-  };
-
   const focusAgent = () => {
-    window.dispatchEvent(new CustomEvent('gastric:focus-agent'));
+    window.dispatchEvent(new CustomEvent('gastric:open-full-report'));
   };
 
   const openExternal = (url: string) => {
@@ -42,7 +37,10 @@ export function AssistHub({ patient }: AssistHubProps) {
   };
 
   return (
-    <div className="pointer-events-auto absolute top-3 left-3 z-30 w-[min(280px,calc(100%-1.5rem))]">
+    <div
+      className="pointer-events-auto absolute left-3 z-30 w-[min(280px,calc(100%-1.5rem))]"
+      style={{ top: '7rem' }}
+    >
       <div className="rounded-xl border border-white/10 bg-black/75 shadow-xl backdrop-blur">
         <button
           type="button"
@@ -72,23 +70,15 @@ export function AssistHub({ patient }: AssistHubProps) {
             <HubBtn
               icon={<ScanSearch size={12} />}
               label="阅片辅助 /reader"
-              hint="SAM + 分层 + 报告"
+              hint="系统分析 + 分层 + 报告"
               tone="emerald"
               disabled={!hasPatient}
-              onClick={() => router.push(buildReaderAppUrl(patient))}
-            />
-            <HubBtn
-              icon={<Pencil size={12} />}
-              label="边界编辑 / SAM"
-              hint="同页点选分割 + 精修"
-              tone="cyan"
-              disabled={!hasPatient}
-              onClick={openBoundary}
+              onClick={() => navigateTo(buildReaderAppUrl(patient))}
             />
             <HubBtn
               icon={<Sparkles size={12} />}
-              label="跑 Agent"
-              hint="聚焦底部启动器"
+              label="辅助分析"
+              hint="打开完整报告中的分析"
               tone="sky"
               disabled={!hasPatient}
               onClick={focusAgent}
@@ -105,7 +95,7 @@ export function AssistHub({ patient }: AssistHubProps) {
               label="方向标注"
               hint="/annotate"
               tone="amber"
-              onClick={() => router.push(getDirectionAnnotatorPath())}
+              onClick={() => navigateTo(getDirectionAnnotatorPath())}
             />
             <HubBtn
               icon={<Clapperboard size={12} />}
@@ -127,7 +117,7 @@ export function AssistHub({ patient }: AssistHubProps) {
               onClick={() => setShowResearch((v) => !v)}
               className="mt-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] text-gray-400 hover:bg-white/5 hover:text-gray-200"
             >
-              <span>研究阅片（盲法，非诊断流）</span>
+              <span>更多工具入口</span>
               {showResearch ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
             </button>
             {showResearch ? (
@@ -178,20 +168,20 @@ function HubBtn({
   disabled?: boolean;
 }) {
   const toneCls: Record<string, string> = {
-    emerald: 'text-emerald-300 hover:border-emerald-500/40 hover:bg-emerald-500/10',
-    cyan: 'text-cyan-300 hover:border-cyan-500/40 hover:bg-cyan-500/10',
-    sky: 'text-sky-300 hover:border-sky-500/40 hover:bg-sky-500/10',
-    orange: 'text-orange-300 hover:border-orange-500/40 hover:bg-orange-500/10',
-    amber: 'text-amber-300 hover:border-amber-500/40 hover:bg-amber-500/10',
-    violet: 'text-violet-300 hover:border-violet-500/40 hover:bg-violet-500/10',
-    slate: 'text-gray-300 hover:border-white/20 hover:bg-white/5',
+    emerald: 'border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:border-emerald-400/50 hover:bg-emerald-500/25',
+    cyan: 'border-cyan-500/35 bg-cyan-500/15 text-cyan-200 hover:border-cyan-400/50 hover:bg-cyan-500/25',
+    sky: 'border-sky-500/35 bg-sky-500/15 text-sky-200 hover:border-sky-400/50 hover:bg-sky-500/25',
+    orange: 'border-orange-500/35 bg-orange-500/15 text-orange-200 hover:border-orange-400/50 hover:bg-orange-500/25',
+    amber: 'border-amber-500/35 bg-amber-500/15 text-amber-200 hover:border-amber-400/50 hover:bg-amber-500/25',
+    violet: 'border-violet-500/35 bg-violet-500/15 text-violet-200 hover:border-violet-400/50 hover:bg-violet-500/25',
+    slate: 'border-white/15 bg-white/[0.06] text-gray-200 hover:border-white/25 hover:bg-white/10',
   };
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${toneCls[tone]}`}
+      className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${toneCls[tone]}`}
     >
       <span className="shrink-0 opacity-90">{icon}</span>
       <span className="min-w-0 flex-1">

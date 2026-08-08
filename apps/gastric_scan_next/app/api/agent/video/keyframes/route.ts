@@ -6,6 +6,7 @@ import { PROJECT_ROOT } from '@/lib/config';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
 import { resolvePlayableVideoPath } from '@/lib/video-stream';
 import { proxyAgentRequest } from '@/lib/agent-upstream';
+import { legacyAppDataFile, runtimeDataFile } from '@/lib/runtime-data';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'video not found', video_url: videoUrl }, { status: 404 });
     }
 
-    const outDir = path.join(process.cwd(), 'data', 'keyframe_tmp', `job_${Date.now()}`);
+    const outDir = path.join(runtimeDataFile('keyframe_tmp'), `job_${Date.now()}`);
     fs.mkdirSync(outDir, { recursive: true });
 
     const { code, stdout, stderr } = await runPython(KEYFRAME_SCRIPT, [
@@ -184,7 +185,16 @@ export async function POST(request: NextRequest) {
 
     const keyframes = (parsed.keyframes || []).map((kf) => {
       const thumbPath = String(kf.thumb_path || '');
-      const rel = thumbPath.includes(`${path.sep}data${path.sep}`)
+      const resolvedThumbPath = path.resolve(thumbPath);
+      const allowedRoots = [
+        path.resolve(runtimeDataFile('keyframe_tmp')),
+        path.resolve(legacyAppDataFile('keyframe_tmp')),
+      ];
+      const isAllowedThumb = allowedRoots.some((root) => {
+        const relative = path.relative(root, resolvedThumbPath);
+        return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+      });
+      const rel = isAllowedThumb
         ? `/api/patients/keyframes/file?path=${encodeURIComponent(thumbPath)}`
         : '';
       return {

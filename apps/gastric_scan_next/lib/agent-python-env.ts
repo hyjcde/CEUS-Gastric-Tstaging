@@ -23,6 +23,7 @@ const LLM_ENV_KEYS = [
   'AGENT_MEMORY_ENABLED',
   'AGENT_MEMORY_STORE',
   'AGENT_MEMORY_FUSION_MODE',
+  'AGENT_LLM_MODE',
 ] as const;
 
 function parseEnvFile(filePath: string): Record<string, string> {

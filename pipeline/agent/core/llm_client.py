@@ -28,14 +28,26 @@ DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.1
 
 
-def _resolve_api_key() -> str:
-    for var in (
-        "AGENT_API_KEY",
-        "VLM_API_KEY",
-        "POE_API_KEY",
-        "OPENAI_API_KEY",
-        "DEEPSEEK_API_KEY",
-    ):
+def _resolve_api_key(base_url: Optional[str] = None) -> str:
+    provider_url = (base_url or "").lower()
+    key_vars = (
+        (
+            "DEEPSEEK_API_KEY",
+            "AGENT_API_KEY",
+            "VLM_API_KEY",
+            "POE_API_KEY",
+            "OPENAI_API_KEY",
+        )
+        if "deepseek" in provider_url
+        else (
+            "AGENT_API_KEY",
+            "VLM_API_KEY",
+            "POE_API_KEY",
+            "OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+        )
+    )
+    for var in key_vars:
         key = os.getenv(var)
         if key:
             return key
@@ -61,15 +73,19 @@ class AgentLLMClient:
                  max_tokens: int = DEFAULT_MAX_TOKENS,
                  temperature: float = DEFAULT_TEMPERATURE,
                  retries: int = 3,
-                 api_key: Optional[str] = None):
+                 api_key: Optional[str] = None,
+                 disable_thinking: bool = False):
+        resolved_base_url = base_url or DEFAULT_BASE_URL
         self._client = OpenAI(
-            api_key=api_key or _resolve_api_key(),
-            base_url=base_url or DEFAULT_BASE_URL,
+            api_key=api_key or _resolve_api_key(resolved_base_url),
+            base_url=resolved_base_url,
         )
+        self._base_url = resolved_base_url
         self.model = model or DEFAULT_MODEL
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.retries = retries
+        self.disable_thinking = disable_thinking
         self._total_tokens = 0
 
     def chat(self, messages: List[Dict[str, str]]) -> str:
@@ -81,11 +97,16 @@ class AgentLLMClient:
         last_error = None
         for attempt in range(1, self.retries + 1):
             try:
+                request_kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_tokens": self.max_tokens,
+                    "temperature": self.temperature,
+                }
+                if self.disable_thinking and "deepseek" in self._base_url.lower():
+                    request_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
                 response = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
+                    **request_kwargs,
                 )
                 text = self._extract_text(response)
 

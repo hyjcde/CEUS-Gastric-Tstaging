@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import { FileText, Gauge } from 'lucide-react';
-import type { Patient } from '@/types';
+import type { AgentToolResult, Patient } from '@/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import {
   bboxShortAxisRatio,
@@ -11,6 +11,7 @@ import {
   structuralStageFromExplicitSigns,
   type GcUsTscoreResult,
 } from '@/lib/gc-us-tscore';
+import { computeDirectionGrowthFromPolygons } from '@/lib/gc-us-sign-geometry';
 import { GcUsEvidencePanel } from '@/components/GcUsEvidencePanel';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
@@ -19,12 +20,15 @@ export type ImagingAssistState = {
   lesionPolygon: number[][];
   wallPolygon: number[][];
   frameSize: { width: number; height: number } | null;
+  lumenBBox?: { x1: number; y1: number; x2: number; y2: number } | null;
+  lumenPolygon?: number[][];
 };
 
 type Props = {
   patient: Patient | null;
   assist: ImagingAssistState | null;
   zh?: boolean;
+  signAnalysis?: AgentToolResult | null;
   onApplyCtStage?: (ct: string) => void;
   onEvidenceStateChange?: (state: GcUsReportState) => void;
 };
@@ -36,6 +40,7 @@ export function GcUsImagingReportCard({
   patient,
   assist,
   zh = true,
+  signAnalysis = null,
   onApplyCtStage,
   onEvidenceStateChange,
 }: Props) {
@@ -81,6 +86,11 @@ export function GcUsImagingReportCard({
             ? ceaRaw > 5
             : null;
 
+    const geom = computeDirectionGrowthFromPolygons(poly, {
+      wallPoly: assist?.wallPolygon || null,
+      frameSize: assist?.frameSize || null,
+    });
+
     const tscore: GcUsTscoreResult = computeGcUsTscore({
       lengthCm,
       thicknessCm,
@@ -94,14 +104,23 @@ export function GcUsImagingReportCard({
       serosaDisrupted,
       structuralEvidence: doctorLayerValue || doctorSerosaValue ? 'explicit' : 'proxy',
       structuralStage: structuralStageFromExplicitSigns(doctorLayerValue, doctorSerosaValue),
+      growthGrade: geom.growthGrade,
+      growthLabel: geom.growthLabel,
+      growthEvidence: geom.status === 'proxy' ? 'proxy' : geom.status === 'not_assessable' ? 'not_assessable' : 'missing',
+      continuityGrade: geom.continuityGrade,
+      continuityLabel: geom.continuityLabel,
+      continuityEvidence: geom.status === 'proxy' ? 'proxy' : geom.status === 'not_assessable' ? 'not_assessable' : 'missing',
+      directionSource: geom.directionSource,
+      usedDirectionFallback: geom.usedFallback,
+      location: clin?.location || null,
     });
 
-    return { tscore };
+    return { tscore, geom };
   }, [patient, assist, evidenceState]);
 
   if (!patient) return null;
 
-  const { tscore } = packed;
+  const { tscore, geom } = packed;
   const hasFeatures = Boolean(assist?.layerResult || (assist?.lesionPolygon?.length || 0) >= 3);
 
   return (
@@ -135,6 +154,9 @@ export function GcUsImagingReportCard({
             <span className="truncate">
               <span className="text-slate-300">{it.label}</span>
               <span className="ml-1 opacity-70">{it.detail}</span>
+              {it.status === 'proxy' ? (
+                <span className="ml-1 rounded border border-amber-400/30 px-1 text-[8px] text-amber-200">proxy</span>
+              ) : null}
             </span>
             <span className="shrink-0 font-mono text-cyan-200">
               {it.points}/{it.max}
@@ -142,6 +164,31 @@ export function GcUsImagingReportCard({
           </div>
         ))}
       </div>
+
+      {geom?.available ? (
+        <div className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[9px] leading-relaxed text-slate-400">
+          <div className="mb-0.5 font-semibold text-slate-300">
+            {zh ? '可审计几何解释' : 'Auditable geometry'}
+          </div>
+          <div>
+            {zh ? '方向来源' : 'Direction'}: {geom.directionSource}
+            {geom.usedFallback ? (zh ? '（fallback）' : ' (fallback)') : ''}
+          </div>
+          <div>
+            {zh ? '生长/连续' : 'Growth/continuity'}: {geom.detail}
+          </div>
+          {tscore.normalizedI != null ? (
+            <div>
+              {zh ? '瘦身归一化 I（不含 wall_proxy）' : 'Lean normalized I (no wall_proxy)'}: {tscore.normalizedI.toFixed(3)}
+            </div>
+          ) : null}
+          <div className="opacity-80">
+            {zh
+              ? '连续性=空间/多帧一致性，不是真实肿瘤生长速度；胃壁代理不入确定 cT。'
+              : 'Continuity is spatial/multiframe consistency, not true growth rate; wall proxy never unlocks definite cT.'}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-2 text-[9px] leading-relaxed text-slate-500">{tscore.mappingNote}</div>
       {tscore.status !== 'supported' ? (
@@ -159,9 +206,12 @@ export function GcUsImagingReportCard({
           clinical={(patient.clinical || EMPTY_CLINICAL) as unknown as Record<string, unknown>}
           lesionPolygon={assist?.lesionPolygon || EMPTY_POLYGON}
           wallPolygon={assist?.wallPolygon || EMPTY_POLYGON}
+          lumenPolygon={assist?.lumenPolygon || EMPTY_POLYGON}
+          lumenBBox={assist?.lumenBBox || null}
           frameSize={assist?.frameSize}
           layerResult={assist?.layerResult}
           productStage={tscore.ctStage}
+          signAnalysis={signAnalysis}
           zh={zh}
           onStateChange={handleEvidenceStateChange}
         />

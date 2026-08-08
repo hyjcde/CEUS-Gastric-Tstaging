@@ -371,7 +371,15 @@ export async function POST(request: NextRequest) {
   if (forwarded) return forwarded;
 
   try {
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: 'Expected multipart/form-data with a video file' },
+        { status: 400 },
+      );
+    }
     const file = formData.get('video');
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'Missing video file' }, { status: 400 });

@@ -20,6 +20,7 @@ import {
   WORKBENCH_QUEUE_GROUPS,
 } from '@/lib/cohort';
 import { useSettings } from '@/contexts/SettingsContext';
+import type { Language } from '@/lib/i18n';
 
 interface QueueTreeSelectProps {
   value: WorkbenchQueueId;
@@ -156,7 +157,7 @@ function QueueTreeItem({
   selected: boolean;
   depth: number;
   icon?: React.ReactNode;
-  language: 'zh' | 'en';
+  language: Language;
   onChoose: (value: WorkbenchQueueId) => void;
 }) {
   return (

@@ -33,7 +33,12 @@ export async function POST(request: NextRequest) {
   const base = getReadingAgentBaseUrl();
   try {
     const body = await request.json();
-    const res = await fetch(`${base}/api/sam/video-propagate`, {
+    const model = typeof body?.model === 'string' ? body.model : '';
+    const sam31Base = String(process.env.SAM31_UPSTREAM || 'http://127.0.0.1:8768').replace(/\/+$/, '');
+    const target = model === 'sam31'
+      ? `${sam31Base}/api/sam31/video-propagate`
+      : `${base}/api/sam/video-propagate`;
+    const res = await fetch(target, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -49,7 +54,12 @@ export async function POST(request: NextRequest) {
     }
     if (!res.ok) {
       return NextResponse.json(
-        { ok: false, available: true, error: `SAM2 video HTTP ${res.status}`, result: payload },
+        {
+          ok: false,
+          available: true,
+          error: `${model === 'sam31' ? 'SAM3.1' : 'SAM2'} video HTTP ${res.status}`,
+          result: payload,
+        },
         { status: res.status >= 500 ? 502 : res.status },
       );
     }

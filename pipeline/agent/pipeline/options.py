@@ -29,3 +29,9 @@ class PipelineOptions:
     mask_path: Optional[str] = None
     override_roi_bbox: Optional[Dict[str, int]] = None
     mask_override_source: str = "manual"
+    # Doctor-confirmed gastric lumen box (workbench) → prefer over YOLO for wall geometry.
+    use_lumen_override: bool = False
+    override_lumen_bbox: Optional[Dict[str, int]] = None
+    lumen_override_source: str = "manual"
+    lumen_override_polygon: Optional[List[Any]] = None
+    lumen_override_meta: Optional[Dict[str, Any]] = None

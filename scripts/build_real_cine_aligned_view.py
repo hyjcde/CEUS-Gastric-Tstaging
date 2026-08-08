@@ -301,7 +301,7 @@ def main() -> int:
 ## 定义
 
 - **只要真视频**：`video_mode=cached`（`videos/` 目录）
-- **不要** `loop_still`（静图循环）
+- **不要** `loop_still`（静图循环）；历史静态循环媒体已删除
 - **对齐清楚**：
   - 样本级：`alignment/samples_real_cine.csv`
   - 病人级：`alignment/patients_real_cine.csv`

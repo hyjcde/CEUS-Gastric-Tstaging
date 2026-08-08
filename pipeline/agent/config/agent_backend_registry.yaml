@@ -81,6 +81,12 @@ agent_bindings:
     role: wall_penetration_and_layer_profile
     trust_label: trusted
 
+  gc_us_signs_primary:
+    backend_id: gc_us_sign_scorer_v1
+    tool: GcUsSignTool
+    role: structured_core_sign_scorecard
+    trust_label: caution
+
   dino_visualization:
     backend_id: dinov3_frame_encoder_default
     tool: analyze_case._run_dino_visualization
@@ -290,6 +296,14 @@ backends:
     adapter: pipeline.agent.tools.wall_evidence_tool.WallEvidenceTool
     adapter_status: ready
     notes: "Signed distance from YOLO lumen bbox + predicted lesion mask"
+
+  gc_us_sign_scorer_v1:
+    model_task: structured_gc_us_sign_evidence
+    model_family: deterministic_evidence_scorer
+    adapter: pipeline.agent.tools.gc_us_sign_tool.GcUsSignTool
+    adapter_status: ready
+    trust_label: caution
+    notes: "Direction-normalized geometry and clinical soft score; wall output remains a proxy"
 
   yolo_internal_high_iou_v1:
     model_task: lumen_detection

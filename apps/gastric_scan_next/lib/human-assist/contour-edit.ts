@@ -67,7 +67,7 @@ export function resampleClosed(pts: number[][], targetN: number): number[][] {
 
   const out: number[][] = [];
   for (let k = 0; k < n; k += 1) {
-    let target = (k / n) * total;
+    const target = (k / n) * total;
     let acc = 0;
     let found = false;
     for (let i = 0; i < segLen.length; i += 1) {

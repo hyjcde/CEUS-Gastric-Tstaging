@@ -6,6 +6,8 @@ import {
   ensureHumanAssistGeometry,
   formatPenetration,
   toNormPolygon,
+  type LayerGeometry,
+  type LayerEchoAnalysis,
   type LayerAnalyzeResult,
 } from '@/lib/human-assist/load-contact-geom';
 import { HUMAN_ASSIST_ALGO_SOURCE, HUMAN_ASSIST_MEETING_BULLETS } from '@/lib/human-assist/meeting-notes';
@@ -21,10 +23,111 @@ type Props = {
   /** Optional infiltration pick in image pixels */
   pick?: { x: number; y: number } | null;
   wallOffsetPx?: number;
+  /** Unit vector from lesion toward lumen; orients estimated wall when wall polygon is missing. */
+  lumenPrefer?: [number, number] | null;
   /** Skip auto-run while contour is being dragged */
   paused?: boolean;
   onResult?: (result: LayerAnalyzeResult | null) => void;
 };
+
+function svgNumber(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(1) : '0';
+}
+
+function buildLocalChannelSvg(
+  geom: LayerGeometry,
+  centerIdx: number,
+  edgeFracs: number[],
+  analysis: LayerEchoAnalysis | null,
+  frameDataUrl?: string | null,
+  frameWidth?: number,
+  frameHeight?: number,
+): string {
+  if (typeof window === 'undefined') return '';
+  const wall = geom.wall_pts || [];
+  const lesionFace = geom.wall_lesion_pts || [];
+  if (wall.length < 3 || lesionFace.length < 3) return '';
+  const center = Math.max(0, Math.min(wall.length - 1, centerIdx));
+  const half = 10;
+  const indices = window.ContactGeom?.localArcIndices?.(wall.length, center, half)
+    || Array.from({ length: Math.min(wall.length, half * 2 + 1) }, (_, index) => (
+      (center - half + index + wall.length * 2) % wall.length
+    ));
+  const points = indices.flatMap((index) => [wall[index], lesionFace[index]]).filter(
+    (point): point is number[] => Array.isArray(point) && point.length >= 2,
+  );
+  if (points.length < 4) return '';
+  const minX = Math.min(...points.map((point) => point[0])) - 12;
+  const maxX = Math.max(...points.map((point) => point[0])) + 12;
+  const minY = Math.min(...points.map((point) => point[1])) - 12;
+  const maxY = Math.max(...points.map((point) => point[1])) + 12;
+  const width = Math.max(24, maxX - minX);
+  const height = Math.max(24, maxY - minY);
+  const polyline = (items: number[][]) => items
+    .map((point) => `${svgNumber(point[0])},${svgNumber(point[1])}`)
+    .join(' ');
+  const layerCurves = window.ContactGeom?.channelLayerCurvesSvg?.(
+    geom,
+    center,
+    edgeFracs,
+    {
+      half: 10,
+      minDot: 0.55,
+      maxSpanPx: 64,
+      bandOpacity: 0.28,
+      showBands: true,
+      showLines: true,
+      dashed: Boolean(analysis?.imaginary),
+      imaginary: Boolean(analysis?.imaginary),
+    },
+  ) || window.ContactGeom?.wallLayerArcsSvg?.(
+    geom,
+    center,
+    10,
+    edgeFracs,
+    { showBands: true, bandOpacity: 0.28 },
+  ) || '';
+  const wallPoint = wall[center];
+  const lesionPoint = lesionFace[center];
+  const remain = Number(geom.wall_dists?.[center] || 0);
+  const strip = window.ContactGeom?.channelStripOverlaySvg?.(
+    wallPoint,
+    lesionPoint,
+    edgeFracs,
+    Math.max(2.5, remain),
+    {
+      halfWidth: Math.max(2.5, Math.min(8, remain * 0.22)),
+      bandOpacity: 0.34,
+      showBands: true,
+      showLines: true,
+      dashed: Boolean(analysis?.imaginary),
+      imaginary: Boolean(analysis?.imaginary),
+      pxStroke: 0.85,
+    },
+  ) || '';
+  const wallLine = polyline(indices.map((index) => wall[index]).filter(Boolean));
+  const lesionLine = polyline(indices.map((index) => lesionFace[index]).filter(Boolean));
+  const sourceInfo = analysis && window.ContactGeom?.layerSourceInfo?.(analysis);
+  const sourceText = sourceInfo?.badge || (analysis?.imaginary ? '几何参考' : '回声层界');
+  const centerWall = wall[center];
+  const centerLesion = lesionFace[center];
+  const imageLayer = frameDataUrl && frameWidth && frameHeight
+    ? `<image href="${frameDataUrl}" x="0" y="0" width="${svgNumber(frameWidth)}" height="${svgNumber(frameHeight)}" preserveAspectRatio="none" opacity=".78"/>`
+    : '';
+  return `<svg viewBox="${svgNumber(minX)} ${svgNumber(minY)} ${svgNumber(width)} ${svgNumber(height)}" width="100%" height="148" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="display:block;background:#020617;border:1px solid rgba(255,255,255,.12);border-radius:8px">
+    ${imageLayer}
+    <rect x="${svgNumber(minX)}" y="${svgNumber(minY)}" width="${svgNumber(width)}" height="${svgNumber(height)}" fill="#020617" opacity="${imageLayer ? '0.16' : '1'}"/>
+    <polyline points="${wallLine}" fill="none" stroke="#fb923c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="${lesionLine}" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    ${layerCurves}
+    ${strip}
+    <line x1="${svgNumber(centerWall[0])}" y1="${svgNumber(centerWall[1])}" x2="${svgNumber(centerLesion[0])}" y2="${svgNumber(centerLesion[1])}" stroke="#f8fafc" stroke-width="1.2" stroke-dasharray="4 3" opacity=".85"/>
+    <circle cx="${svgNumber(centerWall[0])}" cy="${svgNumber(centerWall[1])}" r="3.2" fill="#fb923c" stroke="#fff" stroke-width="1"/>
+    <circle cx="${svgNumber(centerLesion[0])}" cy="${svgNumber(centerLesion[1])}" r="3.2" fill="#22d3ee" stroke="#fff" stroke-width="1"/>
+    <text x="${svgNumber(minX + 5)}" y="${svgNumber(minY + 11)}" fill="#94a3b8" font-size="9">${sourceText}</text>
+    <text x="${svgNumber(maxX - 5)}" y="${svgNumber(minY + 11)}" fill="#cbd5e1" font-size="9" text-anchor="end">局部通道</text>
+  </svg>`;
+}
 
 export function WallFeatureAnalysisCard({
   zh = true,
@@ -34,6 +137,7 @@ export function WallFeatureAnalysisCard({
   frameDataUrl,
   pick,
   wallOffsetPx,
+  lumenPrefer = null,
   paused = false,
   onResult,
 }: Props) {
@@ -57,7 +161,7 @@ export function WallFeatureAnalysisCard({
     setBusy(true);
     setError(null);
     try {
-      const { ContactGeom, LayerBridge } = await ensureHumanAssistGeometry();
+      const { LayerBridge } = await ensureHumanAssistGeometry();
       const maskNorm = toNormPolygon(lesionPolygon, frameSize.width, frameSize.height);
       const analyzed = await LayerBridge.analyzeLayersFromMask({
         maskPolygon: maskNorm,
@@ -69,6 +173,7 @@ export function WallFeatureAnalysisCard({
         halfWidth: 8,
         pickX: pick?.x,
         pickY: pick?.y,
+        lumenPrefer: lumenPrefer || undefined,
       });
       setResult(analyzed);
       onResult?.(analyzed);
@@ -81,7 +186,7 @@ export function WallFeatureAnalysisCard({
     } finally {
       setBusy(false);
     }
-  }, [canRun, frameSize, lesionPolygon, wallPolygon, frameDataUrl, offset, pick, onResult, zh]);
+  }, [canRun, frameSize, lesionPolygon, wallPolygon, frameDataUrl, offset, pick, lumenPrefer, onResult, zh]);
 
   // Auto-run when lesion contour changes (debounced); skip while dragging
   useEffect(() => {
@@ -90,7 +195,7 @@ export function WallFeatureAnalysisCard({
       void run();
     }, 320);
     return () => window.clearTimeout(t);
-  }, [canRun, paused, lesionPolygon, wallPolygon, frameDataUrl, offset, pick?.x, pick?.y]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canRun, paused, lesionPolygon, wallPolygon, frameDataUrl, offset, pick?.x, pick?.y, lumenPrefer?.[0], lumenPrefer?.[1]]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const penText = useMemo(() => {
     if (!result?.ok || !window.ContactGeom) return '—';
@@ -111,12 +216,69 @@ export function WallFeatureAnalysisCard({
     }
   }, [result]);
 
+  const fineVisuals = useMemo(() => {
+    if (typeof window === 'undefined' || !result?.ok || !result.geom) {
+      return {
+        channelSvg: '',
+        profileSvg: '',
+        remainSvg: '',
+        center: null as number | null,
+        remain: null as number | null,
+        snr: null as number | null,
+        clarity: null as number | null,
+        source: '',
+      };
+    }
+    const analysis = result.analysis || null;
+    const edgeFracs = analysis?.edgeFracs || result.plan?.edgeFracs || [];
+    const center = Number.isInteger(result.pickIdx)
+      ? Number(result.pickIdx)
+      : Number(result.geom.deep_idx || 0);
+    const channelSvg = buildLocalChannelSvg(
+      result.geom,
+      center,
+      edgeFracs,
+      analysis,
+      frameDataUrl,
+      result.videoW,
+      result.videoH,
+    );
+    let profileSvg = '';
+    let remainSvg = '';
+    try {
+      profileSvg = analysis && window.ContactGeom?.echoClusterSvg
+        ? window.ContactGeom.echoClusterSvg(analysis, 280, 92) || ''
+        : '';
+      remainSvg = window.ContactGeom?.remainProfileSvg
+        ? window.ContactGeom.remainProfileSvg(result.geom, center, 18, 280, 64) || ''
+        : '';
+    } catch {
+      profileSvg = '';
+      remainSvg = '';
+    }
+    const sourceInfo = analysis && window.ContactGeom?.layerSourceInfo?.(analysis);
+    return {
+      channelSvg,
+      profileSvg,
+      remainSvg,
+      center,
+      remain: Number.isFinite(result.pen?.remain)
+        ? Number(result.pen?.remain)
+        : Number.isFinite(result.geom.wall_dists?.[center])
+          ? Number(result.geom.wall_dists?.[center])
+          : null,
+      snr: Number.isFinite(analysis?.snr) ? Number(analysis?.snr) : null,
+      clarity: Number.isFinite(analysis?.clarity) ? Number(analysis?.clarity) : null,
+      source: sourceInfo?.badge || analysis?.source || '',
+    };
+  }, [frameDataUrl, result]);
+
   return (
     <div className="rounded-xl border border-emerald-400/25 bg-emerald-950/30 p-3 text-[11px] text-emerald-50/90">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-semibold text-emerald-100">
           <Activity size={13} />
-          {zh ? '胃壁特征分析（人机互助算法）' : 'Wall feature analysis'}
+          {zh ? '组织层观察（系统辅助）' : 'Tissue layer observation'}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -141,8 +303,8 @@ export function WallFeatureAnalysisCard({
 
       <div className="mb-2 text-[10px] text-emerald-200/70">
         {zh
-          ? '迁自 direction_demo / ContactGeom: 接触门控, 占壁厚, 达层, 回声分层'
-          : 'Migrated from ContactGeom human-assist stack'}
+          ? '先观察胃壁组织层次，再结合病灶范围和连续帧进行判断'
+          : 'Observe tissue layers first, then combine lesion extent and continuous frames'}
       </div>
 
       {showNotes && (
@@ -188,7 +350,23 @@ export function WallFeatureAnalysisCard({
             >
               {result.inContact
                 ? `${result.layer?.label || '—'}, ${result.layer?.tHint || ''}`
-                : (zh ? '未接触, 不可分期' : 'No contact, no staging')}
+                : (zh ? '未形成稳定接触, 不输出层次读数' : 'No stable contact, no layer readout')}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] text-slate-500">
+              <span>{zh ? '证据模式' : 'Evidence mode'}:</span>
+              <span className="text-slate-300">
+                {result.source?.badge
+                  || (result.analysis?.imaginary
+                    ? (zh ? '几何参考' : 'Geometric reference')
+                    : result.analysis
+                      ? (zh ? '当前帧回声剖面' : 'Current-frame echo profile')
+                      : (zh ? '几何参考' : 'Geometric reference'))}
+              </span>
+              {result.analysis?.imaginary ? (
+                <span className="rounded border border-amber-300/20 bg-amber-400/10 px-1 text-amber-200">
+                  {zh ? '推断层界' : 'Inferred interfaces'}
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -198,6 +376,94 @@ export function WallFeatureAnalysisCard({
               // ContactGeom returns trusted static SVG markup from local vendor copy
               dangerouslySetInnerHTML={{ __html: stackHtml }}
             />
+          ) : null}
+
+          {fineVisuals.channelSvg || fineVisuals.profileSvg || fineVisuals.remainSvg ? (
+            <details open className="rounded-lg border border-cyan-300/20 bg-slate-950/40">
+              <summary className="cursor-pointer list-none px-2 py-1.5 text-[10px] font-semibold text-cyan-100">
+                <span className="inline-flex items-center gap-1.5">
+                  <Activity size={11} />
+                  {zh ? '细粒度胃壁通道' : 'Fine-grained wall channel'}
+                </span>
+                <span className="float-right text-[9px] font-normal text-slate-500">
+                  {fineVisuals.source || (zh ? '当前帧' : 'Current frame')}
+                </span>
+              </summary>
+              <div className="space-y-2 border-t border-white/10 p-2">
+                {fineVisuals.channelSvg ? (
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-slate-400">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-4 rounded-full bg-orange-400" />
+                        {zh ? '胃壁参考边界' : 'Wall reference'}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-4 rounded-full bg-cyan-300" />
+                        {zh ? '病灶前沿' : 'Lesion front'}
+                      </span>
+                      <span>{zh ? '彩线=局部层界' : 'Color lines = local interfaces'}</span>
+                    </div>
+                    <div
+                      className="overflow-hidden rounded-lg"
+                      dangerouslySetInnerHTML={{ __html: fineVisuals.channelSvg }}
+                    />
+                  </div>
+                ) : null}
+                {fineVisuals.profileSvg ? (
+                  <div>
+                    <div className="mb-1 text-[9px] text-slate-500">
+                      {zh ? '局部回声剖面, 腔侧 → 浆膜侧' : 'Local echo profile, lumen → serosa'}
+                    </div>
+                    <div
+                      className="overflow-hidden rounded-lg"
+                      dangerouslySetInnerHTML={{ __html: fineVisuals.profileSvg }}
+                    />
+                  </div>
+                ) : null}
+                {!fineVisuals.profileSvg && fineVisuals.remainSvg ? (
+                  <div>
+                    <div className="mb-1 text-[9px] text-slate-500">
+                      {zh ? '局部剩余壁厚剖面' : 'Local remaining-wall profile'}
+                    </div>
+                    <div
+                      className="overflow-hidden rounded-lg"
+                      dangerouslySetInnerHTML={{ __html: fineVisuals.remainSvg }}
+                    />
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-4 gap-1 text-[9px]">
+                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
+                    <div className="text-slate-500">{zh ? '局部余厚' : 'Remain'}</div>
+                    <div className="font-mono text-slate-200">
+                      {fineVisuals.remain != null ? `${fineVisuals.remain.toFixed(1)} px` : '—'}
+                    </div>
+                  </div>
+                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
+                    <div className="text-slate-500">{zh ? '占壁厚' : 'Pen.'}</div>
+                    <div className="font-mono text-cyan-100">
+                      {Number.isFinite(result.pen?.ratio) ? `${Math.round(Number(result.pen?.ratio) * 100)}%` : '—'}
+                    </div>
+                  </div>
+                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
+                    <div className="text-slate-500">SNR</div>
+                    <div className="font-mono text-amber-100">
+                      {fineVisuals.snr != null ? fineVisuals.snr.toFixed(1) : '—'}
+                    </div>
+                  </div>
+                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
+                    <div className="text-slate-500">{zh ? '清晰度' : 'Clarity'}</div>
+                    <div className="font-mono text-emerald-100">
+                      {fineVisuals.clarity != null ? fineVisuals.clarity.toFixed(1) : '—'}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[9px] leading-relaxed text-slate-500">
+                  {zh
+                    ? '该局部通道用于定位可疑层界和接触弧，不是组织学切片，也不单独作为病理浸润结论。'
+                    : 'This local channel locates candidate interfaces and contact arcs. It is not histology and is not a standalone pathology conclusion.'}
+                </p>
+              </div>
+            </details>
           ) : null}
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
@@ -231,26 +497,33 @@ export function WallFeatureAnalysisCard({
               </strong>
             </div>
             <div className="flex justify-between gap-2 col-span-2">
-              <span className="text-slate-400">{zh ? '浆膜提示' : 'Serosa hint'}</span>
+              <span className="text-slate-400">{zh ? '外侧边界代理' : 'Outer-boundary proxy'}</span>
               <strong className="text-right">
-                {/L5|浆膜|T4|T3–T4|T3-T4/i.test(`${result.layer?.label || ''} ${result.layer?.tHint || ''}`)
-                  ? (zh ? '浆膜面欠光整/中断倾向' : 'Serosa irregular/disrupted')
-                  : (zh ? '浆膜面尚光整倾向' : 'Serosa relatively intact')}
+                {result.analysis
+                  ? result.analysis.imaginary
+                    ? (zh ? '层界为几何/假想参考, 需回看原始回声' : 'Geometric/inferred reference, review raw echo')
+                    : (result.analysis.stable
+                      ? (zh ? '当前帧回声层界相对稳定' : 'Current-frame echo interfaces relatively stable')
+                      : (zh ? '当前帧层界稳定性有限' : 'Current-frame interface stability is limited'))
+                  : (zh ? '未提供像素层界, 仅作几何参考' : 'No pixel-derived interfaces, geometric reference only')}
               </strong>
             </div>
             <div className="flex justify-between gap-2 col-span-2">
-              <span className="text-slate-400">{zh ? '影像描述要点' : 'Imaging cues'}</span>
+              <span className="text-slate-400">{zh ? '当前帧几何要点' : 'Current-frame geometry'}</span>
               <strong className="text-right text-[9px] leading-snug">
                 {zh
                   ? [
-                      result.inContact ? '胃壁连续性破坏' : '接触关系不确定',
-                      Number(result.pen?.ratio || result.analysis?.ratioHint || 0) >= 0.7
-                        ? '活动度下降/脂肪间隙模糊'
-                        : Number(result.pen?.ratio || result.analysis?.ratioHint || 0) >= 0.35
-                          ? '局部增厚僵硬感'
-                          : '胃周间隙尚清',
+                      result.inContact ? '与胃壁参考边界形成接触弧' : '未形成稳定接触弧',
+                      Number.isFinite(result.pen?.ratio)
+                        ? `局部占壁厚几何代理 ${Math.round(Number(result.pen?.ratio) * 100)}%`
+                        : '局部占壁厚代理待测',
+                      result.analysis?.imaginary
+                        ? '层界为推断参考'
+                        : result.analysis
+                          ? '含当前帧回声剖面'
+                          : '未使用像素层界',
                     ].join('; ')
-                  : 'wall continuity / motility cues'}
+                  : 'current-frame contour, contact, and layer proxies; not tissue or pathology findings'}
               </strong>
             </div>
           </div>

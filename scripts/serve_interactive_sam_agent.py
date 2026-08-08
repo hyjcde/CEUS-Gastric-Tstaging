@@ -16,6 +16,7 @@ import io
 import json
 import math
 import os
+import re
 import sys
 import threading
 import time
@@ -58,6 +59,7 @@ DEFAULT_FINETUNE_CKPTS = (
 )
 _finetune_ckpt: Path | None = None
 _finetune_meta: dict[str, Any] = {}
+_feature_adapter: torch.nn.Module | None = None
 _track_sessions: dict[str, dict[str, Any]] = {}
 _track_sessions_lock = threading.Lock()
 TRACK_SESSION_TTL_SEC = 3600.0
@@ -65,6 +67,17 @@ TRACK_MAX_FORWARD_GAP_SEC = 2.0
 
 _video_tracker = None
 _video_tracker_lock = threading.Lock()
+_dino_model = None
+_dino_model_id = ""
+_dino_model_lock = threading.Lock()
+
+DINO_CONFIG_PATH = REPO_ROOT / "configs/segmentation/dinov3/vitb16_last2blocks_mlp_decoder.yaml"
+DINO_REPO_PATH = REPO_ROOT / "external/dinov3/dinov3"
+DINO_CHECKPOINT_PATH = REPO_ROOT / "external/dinov3/weights/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
+DINO_IMAGE_SIZE = 512
+DINO_MEAN = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
+DINO_STD = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
+DINO_DEFAULT_LAYERS = (2, 5, 8, 11)
 
 
 def get_video_tracker():
@@ -118,8 +131,27 @@ def _ensure_deepseek_env() -> None:
 _ensure_deepseek_env()
 
 
+def _attach_feature_adapter(predictor: Any, adapter: torch.nn.Module) -> None:
+    """Apply a trained static feature adapter to image-predictor embeddings."""
+
+    original_set_image = predictor.set_image
+
+    def set_image_with_adapter(image: np.ndarray) -> None:
+        original_set_image(image)
+        features = predictor._features
+        levels = list(features["high_res_feats"]) + [features["image_embed"]]
+        with torch.inference_mode():
+            adapted = adapter(levels)
+        predictor._features = {
+            "image_embed": adapted[-1],
+            "high_res_feats": adapted[:-1],
+        }
+
+    predictor.set_image = set_image_with_adapter
+
+
 def apply_finetune_weights(predictor, ckpt_path: Path, device: str) -> None:
-    global _finetune_meta
+    global _finetune_meta, _feature_adapter
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     raw = ckpt.get("model_state_dict", ckpt)
     state = {
@@ -127,9 +159,43 @@ def apply_finetune_weights(predictor, ckpt_path: Path, device: str) -> None:
         for k, v in raw.items()
         if k.startswith("sam2_model.")
     }
+    adapter_state = {
+        k.replace("feature_adapter.", "", 1): v
+        for k, v in raw.items()
+        if k.startswith("feature_adapter.")
+    }
+    adaptation_mode = ckpt.get("adaptation_mode") or (
+        "context_edge" if adapter_state else "decoder_only"
+    )
     if not state:
         raise RuntimeError(f"No sam2_model.* weights in checkpoint: {ckpt_path}")
     predictor.model.load_state_dict(state, strict=True)
+    _feature_adapter = None
+    if adapter_state:
+        from prompt_mask.sam2_adapters import MultiScaleContextEdgeAdapter
+
+        bottleneck_value = ckpt.get("adapter_bottleneck")
+        if bottleneck_value is None:
+            down_weight = adapter_state.get("adapters.0.down.weight")
+            bottleneck_value = (
+                int(down_weight.shape[0])
+                if hasattr(down_weight, "shape") and len(down_weight.shape) >= 1
+                else 32
+            )
+        bottleneck = int(bottleneck_value)
+        adapter = MultiScaleContextEdgeAdapter(
+            (32, 64, 256),
+            bottleneck=bottleneck,
+        ).to(device)
+        missing, unexpected = adapter.load_state_dict(adapter_state, strict=True)
+        if missing or unexpected:
+            raise RuntimeError(
+                "Feature adapter checkpoint mismatch: "
+                f"missing={len(missing)} unexpected={len(unexpected)}"
+            )
+        adapter.eval()
+        _feature_adapter = adapter
+        _attach_feature_adapter(predictor, adapter)
     _finetune_meta = {
         "checkpoint": str(ckpt_path),
         "name": ckpt_path.parent.name or ckpt_path.stem,
@@ -140,6 +206,11 @@ def apply_finetune_weights(predictor, ckpt_path: Path, device: str) -> None:
         "val_dice": ckpt.get("val_dice"),
         "best_val_dice": ckpt.get("best_val_dice"),
         "state_key_count": len(state),
+        "adaptation_mode": adaptation_mode,
+        "adapter_bottleneck": (
+            int(bottleneck_value) if adapter_state else ckpt.get("adapter_bottleneck")
+        ),
+        "feature_adapter_loaded": bool(adapter_state),
     }
 
 
@@ -183,6 +254,7 @@ class AnalyzeRequest(BaseModel):
     image_height: int = Field(..., gt=0)
     llm_report: bool = False
     boundary_sectors: list[BoundarySectorPayload] = Field(default_factory=list)
+    gc_us_report: dict[str, Any] | None = None
 
 
 class VideoPropagateRequest(BaseModel):
@@ -198,6 +270,220 @@ class VideoPropagateRequest(BaseModel):
     max_frames: int = 0
 
 
+class DinoFeaturesRequest(BaseModel):
+    case_id: str = ""
+    frame_time: float = 0.0
+    frame_png_b64: str = ""
+    image_width: int = Field(..., gt=0)
+    image_height: int = Field(..., gt=0)
+    lesion_polygon: list[list[float]] = Field(default_factory=list)
+    wall_polygon: list[list[float]] = Field(default_factory=list)
+    layer_index: int = 11
+    layer_indices: list[int] = Field(default_factory=list)
+
+
+def dino_assets_status() -> dict[str, Any]:
+    return {
+        "available": bool(DINO_CONFIG_PATH.is_file() and DINO_REPO_PATH.is_dir() and DINO_CHECKPOINT_PATH.is_file()),
+        "loaded": _dino_model is not None,
+        "model": _dino_model_id or "dinov3_vitb16",
+        "config": str(DINO_CONFIG_PATH),
+        "checkpoint": str(DINO_CHECKPOINT_PATH),
+        "input_size": DINO_IMAGE_SIZE,
+        "feature_dim": 4608,
+    }
+
+
+def get_dino_model() -> tuple[Any, str]:
+    global _dino_model, _dino_model_id
+    with _dino_model_lock:
+        if _dino_model is None:
+            if not dino_assets_status()["available"]:
+                raise FileNotFoundError("DINOv3 repo, config, or checkpoint is unavailable")
+            import yaml
+
+            config = yaml.safe_load(DINO_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+            hub_model = str(config.get("model", {}).get("hub_model", "dinov3_vitb16"))
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            _dino_model = torch.hub.load(
+                str(DINO_REPO_PATH),
+                hub_model,
+                source="local",
+                weights=str(DINO_CHECKPOINT_PATH),
+            ).to(device).eval()
+            _dino_model_id = hub_model
+        return _dino_model, _dino_model_id
+
+
+def polygon_to_grid(
+    polygon: list[list[float]],
+    image_width: int,
+    image_height: int,
+    grid_height: int,
+    grid_width: int,
+) -> np.ndarray | None:
+    if len(polygon) < 3:
+        return None
+    points = np.asarray(polygon, dtype=np.float32).reshape(-1, 1, 2)
+    points[:, 0, 0] = np.clip(points[:, 0, 0], 0, max(image_width - 1, 0))
+    points[:, 0, 1] = np.clip(points[:, 0, 1], 0, max(image_height - 1, 0))
+    mask = np.zeros((image_height, image_width), dtype=np.uint8)
+    cv2.fillPoly(mask, [np.round(points).astype(np.int32)], 1)
+    return cv2.resize(mask, (grid_width, grid_height), interpolation=cv2.INTER_NEAREST).astype(bool)
+
+
+def dino_pool(tokens: np.ndarray, mask: np.ndarray | None) -> np.ndarray:
+    if mask is None or not mask.any():
+        return tokens.mean(axis=0)
+    return tokens[mask.reshape(-1)].mean(axis=0)
+
+
+def dino_cosine(a: np.ndarray, b: np.ndarray) -> float:
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(np.dot(a, b) / denom) if denom > 1e-8 else 0.0
+
+
+def dino_cosine_map(tokens: np.ndarray, vector: np.ndarray) -> np.ndarray:
+    token_norm = np.linalg.norm(tokens, axis=1)
+    vector_norm = float(np.linalg.norm(vector))
+    if vector_norm <= 1e-8:
+        return np.zeros(tokens.shape[0], dtype=np.float32)
+    return (tokens @ vector / np.maximum(token_norm * vector_norm, 1e-8)).astype(np.float32)
+
+
+def dino_overlay_png(image_rgb: np.ndarray, feature_map: np.ndarray, cmap: int) -> str:
+    h, w = image_rgb.shape[:2]
+    normalized = cv2.normalize(feature_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    heatmap = cv2.applyColorMap(cv2.resize(normalized, (w, h), interpolation=cv2.INTER_CUBIC), cmap)
+    image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+    overlay = cv2.addWeighted(image_bgr, 0.48, heatmap, 0.52, 0)
+    ok, encoded = cv2.imencode(".png", overlay)
+    if not ok:
+        return ""
+    return f"data:image/png;base64,{base64.b64encode(encoded.tobytes()).decode('ascii')}"
+
+
+def build_dino_layer_result(
+    image_rgb: np.ndarray,
+    feature_map: np.ndarray,
+    layer_index: int,
+    model_id: str,
+    lesion: np.ndarray | None,
+    wall: np.ndarray | None,
+    boundary: np.ndarray | None,
+) -> dict[str, Any]:
+    channels, grid_height, grid_width = feature_map.shape
+    tokens = feature_map.reshape(channels, grid_height * grid_width).T
+    pooled = {
+        "global": dino_pool(tokens, None),
+        "lesion": dino_pool(tokens, lesion),
+        "wall": dino_pool(tokens, wall),
+        "boundary": dino_pool(tokens, boundary),
+    }
+    vectors = [
+        pooled["global"],
+        pooled["lesion"],
+        pooled["wall"],
+        pooled["boundary"],
+        pooled["wall"] - pooled["lesion"],
+        pooled["boundary"] - pooled["lesion"],
+    ]
+    names = [
+        "global",
+        "lesion",
+        "wall",
+        "boundary",
+        "wall_minus_lesion",
+        "boundary_minus_lesion",
+    ]
+    feature_vector = np.concatenate(vectors).astype(np.float32)
+    lesion_affinity = dino_cosine_map(tokens, pooled["lesion"]).reshape(grid_height, grid_width)
+    wall_evidence = (
+        dino_cosine_map(tokens, pooled["wall"])
+        - dino_cosine_map(tokens, pooled["lesion"])
+    ).reshape(grid_height, grid_width)
+    return {
+        "available": True,
+        "model": model_id,
+        "layer_index": int(layer_index),
+        "input_size": DINO_IMAGE_SIZE,
+        "token_grid": [grid_height, grid_width],
+        "feature_dim": int(feature_vector.size),
+        "feature_names": [f"{name}_{index}" for name in names for index in range(channels)],
+        "feature_vector": np.round(feature_vector, 6).tolist(),
+        "vector_stats": {
+            "mean": float(feature_vector.mean()),
+            "std": float(feature_vector.std()),
+            "l2_norm": float(np.linalg.norm(feature_vector)),
+        },
+        "scalars": {
+            "cos_wall_lesion": dino_cosine(pooled["wall"], pooled["lesion"]),
+            "cos_boundary_lesion": dino_cosine(pooled["boundary"], pooled["lesion"]),
+            "lesion_token_fraction": float(0.0 if lesion is None else lesion.mean()),
+            "wall_token_fraction": float(0.0 if wall is None else wall.mean()),
+            "boundary_token_fraction": float(0.0 if boundary is None else boundary.mean()),
+        },
+        "feature_overlay_png": dino_overlay_png(image_rgb, lesion_affinity, cv2.COLORMAP_MAGMA),
+        "wall_evidence_overlay_png": dino_overlay_png(image_rgb, wall_evidence, cv2.COLORMAP_TURBO),
+    }
+
+
+def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
+    image_rgb = decode_frame_b64(req.frame_png_b64)
+    actual_height, actual_width = image_rgb.shape[:2]
+    model, hub_model = get_dino_model()
+    requested_layers = req.layer_indices or list(DINO_DEFAULT_LAYERS)
+    requested_layers = sorted({
+        int(layer)
+        for layer in requested_layers
+        if 0 <= int(layer) <= 11
+    })
+    if not requested_layers:
+        requested_layers = [11]
+    image_resized = cv2.resize(image_rgb, (DINO_IMAGE_SIZE, DINO_IMAGE_SIZE), interpolation=cv2.INTER_LINEAR)
+    tensor = torch.from_numpy(
+        ((image_resized.astype(np.float32) / 255.0 - DINO_MEAN) / DINO_STD)
+    ).permute(2, 0, 1).unsqueeze(0).contiguous()
+    device = next(model.parameters()).device
+    with torch.no_grad():
+        outputs = model.get_intermediate_layers(
+            tensor.to(device=device, dtype=torch.float32),
+            n=requested_layers,
+            reshape=True,
+            norm=True,
+        )
+    first_feature_map = outputs[0][0].detach().float().cpu().numpy()
+    _, grid_height, grid_width = first_feature_map.shape
+    lesion = polygon_to_grid(req.lesion_polygon, actual_width, actual_height, grid_height, grid_width)
+    wall = polygon_to_grid(req.wall_polygon, actual_width, actual_height, grid_height, grid_width)
+    boundary = None
+    if lesion is not None and lesion.any():
+        dilated = cv2.dilate(lesion.astype(np.uint8), np.ones((3, 3), np.uint8))
+        eroded = cv2.erode(lesion.astype(np.uint8), np.ones((3, 3), np.uint8))
+        boundary = (dilated > eroded).astype(bool)
+    layers = [
+        build_dino_layer_result(
+            image_rgb=image_rgb,
+            feature_map=layer_output[0].detach().float().cpu().numpy(),
+            layer_index=layer_index,
+            model_id=hub_model,
+            lesion=lesion,
+            wall=wall,
+            boundary=boundary,
+        )
+        for layer_index, layer_output in zip(requested_layers, outputs)
+    ]
+    primary = next(
+        (layer for layer in layers if layer["layer_index"] == int(req.layer_index)),
+        layers[-1],
+    )
+    return {
+        **primary,
+        "case_id": req.case_id,
+        "frame_time": float(req.frame_time),
+        "layer_indices": requested_layers,
+        "layers": layers,
+    }
 
 def _cleanup_track_sessions(now: float | None = None) -> None:
     now = now or time.time()
@@ -761,6 +1047,243 @@ def _sign_field(value: Any, status: str = "unevaluated", source: str = "not_avai
     }
 
 
+GC_US_TEMPLATE_ID = "gc_us_t_report_template_v1"
+GC_US_SCHEMA_VERSION = "gc_us_report_signs_v1"
+GC_US_SOURCE_DOC = "GC_US_T报告模板_20260803.docx"
+
+
+def _template_path_value(state: dict[str, Any] | None, *path: str, default: Any = None) -> Any:
+    node: Any = state
+    for key in path:
+        if not isinstance(node, dict):
+            return default
+        node = node.get(key)
+    if isinstance(node, dict) and "value" in node:
+        node = node.get("value")
+    return default if node is None or node == "" else node
+
+
+def _template_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0 else None
+
+
+def _template_number_text(value: float | None) -> str:
+    if value is None:
+        return "未评估"
+    return str(int(value)) if float(value).is_integer() else f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _template_stage(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw or "T4+" in raw.upper():
+        return None
+    stages = sorted(set(f"T{item}" for item in re.findall(r"T([1-4])", raw.upper())))
+    return stages[0] if len(stages) == 1 else None
+
+
+def _template_strip(value: Any, prefixes: tuple[str, ...]) -> str:
+    text = str(value or "").strip()
+    for prefix in prefixes:
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+    return text or "未评估"
+
+
+def _template_growth(value: Any) -> str:
+    text = str(value or "").strip()
+    for suffix in ("生长方式", "生长"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+            break
+    return text or "未评估"
+
+
+def _template_put_field(
+    signs: dict[str, Any],
+    key: str,
+    value: Any,
+    *,
+    status: str = "suggested",
+    source: str = "live_contour",
+    evidence_ref: list[str] | None = None,
+) -> None:
+    current = signs.get(key)
+    if isinstance(current, dict) and current.get("value") not in (None, ""):
+        return
+    if isinstance(current, dict):
+        signs[key] = {
+            **current,
+            "value": value,
+            "raw_value": value,
+            "status": status,
+            "source": source,
+            "evidence_ref": current.get("evidence_ref") or evidence_ref or [],
+        }
+    else:
+        signs[key] = _sign_field(value, status, source, evidence_ref)
+
+
+def _estimate_lesion_length_mm(mask: np.ndarray) -> float | None:
+    ys, xs = np.where(mask)
+    if len(xs) == 0:
+        return None
+    extent_px = max(float(xs.max() - xs.min()), float(ys.max() - ys.min()))
+    return round(extent_px / 40.0, 1) if extent_px > 1 else None
+
+
+def _build_gc_us_template_report(
+    *,
+    case_id: str,
+    frame_time: float,
+    clicks: list[ClickPayload],
+    box: BoxPayload | None,
+    sam_score: float,
+    thickness_mm: float,
+    outer_risk: float,
+    raw_stage: str,
+    conflicts: list[dict[str, Any]],
+    gc_us_report: dict[str, Any] | None,
+    lesion_length_mm: float | None,
+) -> dict[str, Any]:
+    state = gc_us_report if isinstance(gc_us_report, dict) else None
+    incoming_signs = state.get("signs") if isinstance(state, dict) else {}
+    signs = dict(incoming_signs) if isinstance(incoming_signs, dict) else {}
+    size = signs.get("size")
+    size = dict(size) if isinstance(size, dict) else {}
+    signs["size"] = size
+
+    length_field = size.get("length") if isinstance(size.get("length"), dict) else {}
+    thickness_field = size.get("thickness") if isinstance(size.get("thickness"), dict) else {}
+    length = _template_number(length_field.get("value"))
+    thickness = _template_number(thickness_field.get("value"))
+    length_unit = length_field.get("unit")
+    thickness_unit = thickness_field.get("unit")
+    if lesion_length_mm is not None and (
+        length is None
+        or (length_unit == "px" and length_field.get("status") != "doctor_edited")
+    ):
+        length = lesion_length_mm
+        length_unit = "mm"
+        size["length"] = _sign_field(length, "suggested", "live_contour", ["mask.length_mm_proxy"])
+        size["length"]["unit"] = "mm"
+        size["length"]["note"] = "由当前帧轮廓几何辅助估测，不等同于病理测量"
+    if thickness is None or (thickness_unit == "px" and thickness_field.get("status") != "doctor_edited"):
+        thickness = thickness_mm
+        thickness_unit = "mm"
+        size["thickness"] = _sign_field(thickness, "suggested", "live_contour", ["mask.thickness_mm"])
+        size["thickness"]["unit"] = "mm"
+    if length is not None and thickness is not None and length_unit != "px" and thickness_unit != "px":
+        size_phrase = (
+            f"大小约{_template_number_text(length)}×{_template_number_text(thickness)} mm，"
+            f"最大厚度{_template_number_text(thickness)} mm"
+        )
+    elif length is None and thickness is None:
+        size_phrase = "大小及最大厚度未评估"
+    else:
+        length_text = f"{_template_number_text(length)}像素（非毫米）" if length_unit == "px" else f"{_template_number_text(length)} mm"
+        thickness_text = f"{_template_number_text(thickness)}像素（非毫米）" if thickness_unit == "px" else f"{_template_number_text(thickness)} mm"
+        size_phrase = f"大小约{length_text}×{thickness_text}，最大厚度{thickness_text}"
+
+    _template_put_field(signs, "lesion_echo", "低回声", evidence_ref=["template.default_echo"])
+    _template_put_field(signs, "layer_structure", "未评估", source="not_available", evidence_ref=["layer.multiplanar_review_required"])
+    _template_put_field(signs, "morphology", "未评估", source="not_available", evidence_ref=["morphology.not_available"])
+    _template_put_field(signs, "boundary", "未评估", source="not_available", evidence_ref=["boundary.not_available"])
+    _template_put_field(signs, "growth_pattern", "未评估", source="not_available", evidence_ref=["growth.not_available"])
+    _template_put_field(signs, "serosa_change", "未评估", source="not_available", evidence_ref=["serosa.multiplanar_review_required"])
+    _template_put_field(signs, "perigastric_tissue", "未评估", source="not_available", evidence_ref=["perigastric.multiplanar_review_required"])
+
+    morphology = str(_template_path_value({"signs": signs}, "signs", "morphology", default="未评估"))
+    echo = str(_template_path_value({"signs": signs}, "signs", "lesion_echo", default="低回声"))
+    boundary = str(_template_path_value({"signs": signs}, "signs", "boundary", default="未评估"))
+    growth = str(_template_path_value({"signs": signs}, "signs", "growth_pattern", default="未评估"))
+    layer = str(_template_path_value({"signs": signs}, "signs", "layer_structure", default="未评估"))
+    serosa = str(_template_path_value({"signs": signs}, "signs", "serosa_change", default="未评估"))
+    perigastric = str(_template_path_value({"signs": signs}, "signs", "perigastric_tissue", default="未评估"))
+    lesion_noun = f"{morphology}{echo}占位性病变" if morphology != "未评估" else f"{echo}占位性病变"
+    location = "胃壁"
+    clinical = state.get("clinical") if isinstance(state, dict) else {}
+    if isinstance(clinical, dict):
+        location = str(clinical.get("location") or clinical.get("site") or location).strip()
+    finding = (
+        f"{location}见{lesion_noun}，{size_phrase}。"
+        f"病灶呈{_template_growth(growth)}生长方式，边界{_template_strip(boundary, ('边界',))}。"
+        f"胃壁层次表现为{_template_strip(layer, ('胃壁层次', '层次结构'))}，"
+        f"浆膜表现{_template_strip(serosa, ('浆膜面', '浆膜'))}，"
+        f"胃周组织{_template_strip(perigastric, ('胃周组织', '胃周'))}。"
+    )
+
+    reference = state.get("reference_stage") if isinstance(state, dict) else {}
+    reference = reference if isinstance(reference, dict) else {}
+    requested = _template_stage(reference.get("band"))
+    if requested is None and not conflicts:
+        requested = _template_stage(reference.get("requested_band"))
+    if requested is None and not conflicts:
+        requested = _template_stage(raw_stage)
+    final_stage = requested if requested and not conflicts else None
+    conflict_messages = [str(item.get("message")) for item in conflicts if item.get("message")]
+    stage_line = (
+        f"胃癌可能，超声评估c{final_stage}期。"
+        if final_stage
+        else "胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。"
+    )
+    prose_lines = [
+        "【超声所见】",
+        finding,
+        "",
+        "【超声印象】",
+        "综合超声影像征象及AI辅助分析，考虑：",
+        stage_line,
+    ]
+    if conflict_messages:
+        prose_lines.append("当前存在需要医生复核的征象冲突：" + "；".join(conflict_messages))
+    prose_lines.extend([
+        "",
+        "【建议】",
+        "1. 建议针对冲突征象进行多切面核对，必要时补扫病灶外缘及浆膜区。"
+        if conflict_messages
+        else "1. 建议结合胃镜活检明确病理性质。",
+        "备注：几何与规则辅助，非病理金标准；最终判断权在医生。",
+    ])
+    prose = "\n".join(prose_lines)
+    state_report = state.get("report") if isinstance(state, dict) else {}
+    state_report = state_report if isinstance(state_report, dict) else {}
+    reference_stage = {
+        "band": final_stage or "uncertain",
+        "requested_band": requested or _template_stage(raw_stage) or "uncertain",
+        "raw": reference.get("raw") or raw_stage,
+        "source": reference.get("source") or "product_score",
+        "conflicts": conflicts,
+    }
+    structured = {
+        "schema_version": GC_US_SCHEMA_VERSION,
+        "template_id": GC_US_TEMPLATE_ID,
+        "source_doc": GC_US_SOURCE_DOC,
+        "case_id": case_id or None,
+        "frame_id": f"{case_id}:{frame_time:.3f}",
+        "frame_time": frame_time,
+        "clinical": clinical if isinstance(clinical, dict) else {},
+        "signs": signs,
+        "reference_stage": reference_stage,
+        "report": {"prose": prose, "source": "template", "doctor_edited": bool(state_report.get("doctor_edited"))},
+        "conflicts": conflicts,
+    }
+    return {
+        "template_id": GC_US_TEMPLATE_ID,
+        "schema_version": GC_US_SCHEMA_VERSION,
+        "source_doc": GC_US_SOURCE_DOC,
+        "template_prose": prose,
+        "structured": structured,
+        "stage": final_stage or "uncertain",
+        "signs": signs,
+        "reference_stage": reference_stage,
+    }
+
+
 def build_report(
     case_id: str,
     frame_time: float,
@@ -771,6 +1294,8 @@ def build_report(
     normal_wall_mm: float,
     outer_risk: float,
     reference_pt: str | None,
+    gc_us_report: dict[str, Any] | None = None,
+    lesion_length_mm: float | None = None,
 ) -> dict[str, Any]:
     # reference_pt is intentionally ignored: pathology/reference labels must
     # never influence an AI suggestion shown during the reader study.
@@ -791,33 +1316,38 @@ def build_report(
             "fields": ["serosa_change", "reference_stage"],
             "message": f"外缘风险约 {outer_risk:.0%}，与 {raw_stage} 低分期建议冲突，需多切面复核浆膜及胃周组织。",
         })
+    if isinstance(gc_us_report, dict):
+        state_reference = gc_us_report.get("reference_stage")
+        state_conflicts = gc_us_report.get("conflicts")
+        if not isinstance(state_conflicts, list) and isinstance(state_reference, dict):
+            state_conflicts = state_reference.get("conflicts")
+        for item in state_conflicts or []:
+            if not isinstance(item, dict):
+                continue
+            code = item.get("code")
+            if code and any(existing.get("code") == code for existing in conflicts):
+                continue
+            conflicts.append(item)
+    template = _build_gc_us_template_report(
+        case_id=case_id,
+        frame_time=frame_time,
+        clicks=clicks,
+        box=box,
+        sam_score=sam_score,
+        thickness_mm=thickness_mm,
+        outer_risk=outer_risk,
+        raw_stage=raw_stage,
+        conflicts=conflicts,
+        gc_us_report=gc_us_report,
+        lesion_length_mm=lesion_length_mm,
+    )
     recommendation_status = "conflict" if conflicts else "suggested"
-    recommended_stage = "uncertain" if conflicts else raw_stage
+    recommended_stage = template["stage"]
     confidence = min(0.9, max(0.45, dist[raw_stage] + sam_score * 0.08))
     if conflicts:
         confidence = min(confidence, 0.55)
-    mm = int(frame_time // 60)
-    ss = int(frame_time % 60)
-    frame_clock = f"{mm:02d}:{ss:02d}"
-    has_prompt = bool(clicks) or box is not None
-    unresolved = "；".join(item["message"] for item in conflicts)
-    summary = (
-        f"当前帧 {frame_clock} 已完成交互分割。最大厚度约 {thickness_mm:.1f} mm，"
-        f"外缘风险约 {outer_risk:.0%}。"
-        + (f" {unresolved} 暂不输出确定性 cT，需医生结合连续视频和多切面复核。" if conflicts else " 当前仅作为超声倾向参考，最终判断由医生确认。")
-    )
-    signs = {
-        "size": {
-            "length": _sign_field(None, evidence_ref=["mask.length_unavailable"]),
-            "thickness": _sign_field(round(thickness_mm, 1), "suggested", "live_contour", ["mask.thickness_mm"]),
-        },
-        "layer_structure": _sign_field("未评估", evidence_ref=["layer.multiplanar_review_required"]),
-        "morphology": _sign_field("未评估", evidence_ref=["morphology.not_available"]),
-        "boundary": _sign_field("未评估", evidence_ref=["boundary.not_available"]),
-        "growth_pattern": _sign_field("未评估", evidence_ref=["growth.not_available"]),
-        "serosa_change": _sign_field("未评估", evidence_ref=["serosa.multiplanar_review_required"]),
-        "perigastric_tissue": _sign_field("未评估", evidence_ref=["perigastric.multiplanar_review_required"]),
-    }
+    summary = template["template_prose"]
+    signs = template["signs"]
     return {
         "recommended_stage": recommended_stage,
         "stage_distribution": dist,
@@ -825,8 +1355,13 @@ def build_report(
         "recommendation_status": recommendation_status,
         "review_flag": bool(conflicts) or confidence < 0.68,
         "conflicts": conflicts,
-        "reference_stage": {"band": recommended_stage, "source": "product_score", "conflicts": conflicts},
+        "reference_stage": template["reference_stage"],
         "signs": signs,
+        "template_id": template["template_id"],
+        "schema_version": template["schema_version"],
+        "source_doc": template["source_doc"],
+        "template_prose": template["template_prose"],
+        "structured": template["structured"],
         "sam_score": sam_score,
         "summary": summary,
         "evidence": [
@@ -1005,12 +1540,14 @@ def build_report_messages(
     )
     if boundary_text:
         prompt += f"\n{boundary_text}\n"
+    if report.get("template_prose"):
+        prompt += f"\n【七项征象标准化草稿】\n{report['template_prose']}\n"
     prompt += (
         "请用简体中文撰写超声 T 分期阅片报告，面向临床医生：\n"
-        "1) 2–3 句描述病灶边界/外壁层次，若上方有医生判读须明确引用；\n"
-        "2) 1 句 T 分期建议；\n"
-        "3) 1 句复核提示。\n"
-        "要求：仅输出简体中文正文，不要标题、不要 markdown、不要英文。"
+        "1) 严格保留七项征象事实和医生修正值；\n"
+        "2) 使用【超声所见】【超声印象】【建议】标题，并保留“综合超声影像征象及AI辅助分析，考虑：”与胃癌可能、cT评估句；\n"
+        "3) 证据不足或冲突时输出 cTx，不得把 T4+ 或混合分期强行改成单一分期。\n"
+        "要求：仅输出简体中文正文，不要新增测量、部位或确定性外侵结论。"
     )
     return [
         {
@@ -1160,7 +1697,7 @@ def maybe_attach_llm_report(
         )
         report = dict(report)
         report["llm_report"] = llm
-        report["summary"] = llm["narrative"]
+        report["summary"] = report.get("template_prose") or llm["narrative"]
         evidence = list(report.get("evidence", []))
         evidence.insert(
             0,
@@ -1285,6 +1822,7 @@ def sam_status() -> dict[str, Any]:
             "ttl_sec": TRACK_SESSION_TTL_SEC,
             "max_forward_gap_sec": TRACK_MAX_FORWARD_GAP_SEC,
         },
+        "dino": dino_assets_status(),
         "cuda": torch.cuda.is_available(),
         "static_root": str(STATIC_ROOT),
         "minimax": minimax_status_payload(),
@@ -1366,6 +1904,7 @@ def interactive_analyze(req: AnalyzeRequest) -> dict[str, Any]:
     )
     polygon = largest_contour_polygon(mask)
     thickness_mm, normal_wall_mm, outer_risk = estimate_wall_metrics(mask)
+    lesion_length_mm = _estimate_lesion_length_mm(mask)
     report = build_report(
         req.case_id,
         req.frame_time,
@@ -1376,6 +1915,8 @@ def interactive_analyze(req: AnalyzeRequest) -> dict[str, Any]:
         normal_wall_mm,
         outer_risk,
         None,
+        gc_us_report=req.gc_us_report,
+        lesion_length_mm=lesion_length_mm,
     )
     report = maybe_attach_llm_report(
         report,
@@ -1407,6 +1948,27 @@ def interactive_analyze(req: AnalyzeRequest) -> dict[str, Any]:
 @app.get("/api/sam/video-status")
 def sam_video_status() -> dict[str, Any]:
     return get_video_tracker().status()
+
+
+@app.get("/api/sam/dino-status")
+def sam_dino_status() -> dict[str, Any]:
+    return dino_assets_status()
+
+
+@app.post("/api/sam/dino-features")
+def sam_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
+    started = time.time()
+    try:
+        result = extract_dino_features(req)
+        result["elapsed_ms"] = int((time.time() - started) * 1000)
+        return {"ok": True, "result": result}
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "available": False,
+            "error": f"DINO feature extraction failed: {exc}",
+            "elapsed_ms": int((time.time() - started) * 1000),
+        }
 
 
 @app.post("/api/sam/video-propagate")

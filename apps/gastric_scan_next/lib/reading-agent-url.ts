@@ -13,7 +13,9 @@ export type ReadingAgentPatientContext = {
 };
 
 export function getReadingAgentBaseUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_READING_AGENT_URL?.trim();
+  const configured = (typeof window === 'undefined'
+    ? process.env.READING_AGENT_INTERNAL_URL?.trim() || process.env.NEXT_PUBLIC_READING_AGENT_URL?.trim()
+    : process.env.NEXT_PUBLIC_READING_AGENT_URL?.trim());
   const raw = (configured || DEFAULT_READING_AGENT_URL).replace(/\/$/, '');
   // Strip page path so API calls hit http://host:8767/api/...
   const stripped = raw
@@ -35,8 +37,12 @@ export function getReadingAgentPageUrl(): string {
 
 export function buildReaderAppUrl(patient?: ReadingAgentPatientContext | null): string {
   const params = new URLSearchParams();
-  const frameId = patient?.id || '';
-  const caseMatch = frameId.match(/\b((?:CASE|BM)-\d+)\b/i);
+  const caseCandidates = [patient?.id, patient?.id_short, patient?.patient_id]
+    .filter(Boolean)
+    .map((value) => String(value));
+  const caseMatch = caseCandidates
+    .map((value) => value.match(/\b((?:CASE|BM)-\d+)\b/i))
+    .find(Boolean);
   if (caseMatch) {
     const raw = caseMatch[1].toUpperCase();
     const m = raw.match(/^(CASE|BM)-(\d+)$/);
@@ -68,8 +74,12 @@ export function buildReadingAgentUrl(patient?: ReadingAgentPatientContext | null
   const page = getReadingAgentPageUrl();
   const params = new URLSearchParams();
 
-  const frameId = patient?.id || '';
-  const caseMatch = frameId.match(/\b((?:CASE|BM)-\d+)\b/i);
+  const caseCandidates = [patient?.id, patient?.id_short, patient?.patient_id]
+    .filter(Boolean)
+    .map((value) => String(value));
+  const caseMatch = caseCandidates
+    .map((value) => value.match(/\b((?:CASE|BM)-\d+)\b/i))
+    .find(Boolean);
   if (caseMatch) {
     const raw = caseMatch[1].toUpperCase();
     const m = raw.match(/^(CASE|BM)-(\d+)$/);

@@ -91,7 +91,7 @@ export default function SetupPage() {
         setTimeout(() => { window.location.href = "/annotate"; }, 600);
       } else {
         setError(
-          "该目录下未找到 direction_annotation_batch.json 文件。\n" +
+          "该目录下未找到 data/annotation/batches/direction_annotation_batch.json 文件。\n" +
           "请确认选择了正确的数据集根目录。"
         );
       }
@@ -238,14 +238,14 @@ export default function SetupPage() {
           <div className="px-5 pb-4 text-xs text-gray-500 space-y-2 border-t border-gray-800 pt-3">
             <div className="font-mono text-[11px] text-gray-400 bg-gray-900/50 rounded p-3 leading-relaxed">
               项目根目录/<br/>
-              ├── direction_annotation_batch.json &nbsp;<span className="text-yellow-500">← 必需</span><br/>
+              ├── data/annotation/batches/direction_annotation_batch.json &nbsp;<span className="text-yellow-500">← 必需</span><br/>
               ├── dataset/ &nbsp;<span className="text-yellow-500">← 必需，包含图像</span><br/>
               │ &nbsp;&nbsp;├── internal/<br/>
               │ &nbsp;&nbsp;└── external/<br/>
-              └── direction_annotations/ &nbsp;<span className="text-gray-600">← 自动创建</span>
+              └── data/annotation/outputs/direction_annotations/ &nbsp;<span className="text-gray-600">← 自动创建</span>
             </div>
             <p>支持两种选择方式：直接选择 <code className="text-gray-300 bg-gray-800 px-1 rounded">dataset</code> 文件夹，或选择它的上一级项目根目录。</p>
-            <p>如没有 <code className="text-gray-300 bg-gray-800 px-1 rounded">direction_annotation_batch.json</code>，请联系研究人员生成。</p>
+            <p>如没有 <code className="text-gray-300 bg-gray-800 px-1 rounded">data/annotation/batches/direction_annotation_batch.json</code>，请联系研究人员生成。</p>
           </div>
         </details>
 

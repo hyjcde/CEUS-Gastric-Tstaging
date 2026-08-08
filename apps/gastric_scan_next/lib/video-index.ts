@@ -27,6 +27,18 @@ function inferWaterFilled(name: string): boolean {
   return /water|喝水|充盈/i.test(name);
 }
 
+function videoPriority(video: VideoInfo): number {
+  let decodedUrl = video.url;
+  try {
+    decodedUrl = decodeURIComponent(video.url);
+  } catch {
+    /* keep raw URL */
+  }
+  if (decodedUrl.includes('/dataset/') && decodedUrl.includes('/crop_ui/')) return 0;
+  if (path.extname(video.filename).toLowerCase() === '.mp4') return 1;
+  return 2;
+}
+
 function scanPublicDirectory(
   dir: string,
   urlPrefix: string,
@@ -60,38 +72,103 @@ function pushUnique(bucket: Map<string, VideoInfo[]>, patientId: string, info: V
 }
 
 /** Scan allowlisted dataset/raw trees into patient → videos map. */
-function scanExternalRoots(bucket: Map<string, VideoInfo[]>) {
-  const roots = [
-    path.join(PROJECT_ROOT, 'dataset/internal/prospective_2025/2025/crop_ui/videos'),
-    path.join(PROJECT_ROOT, 'dataset/external/crop_ui/videos'),
-    path.join(PROJECT_ROOT, 'data/raw/qualified_reader_videos'),
-  ];
-
-  for (const root of roots) {
-    if (!fs.existsSync(root)) continue;
-    let entries: string[] = [];
+function scanVideoDirectory(
+  root: string,
+  bucket: Map<string, VideoInfo[]>,
+  treatment = inferTreatment(root),
+) {
+  if (!fs.existsSync(root)) return;
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!isVideoFilename(entry)) continue;
+    const abs = path.join(root, entry);
+    let st: fs.Stats;
     try {
-      entries = fs.readdirSync(root);
+      st = fs.statSync(abs);
     } catch {
       continue;
     }
-    for (const entry of entries) {
-      if (!isVideoFilename(entry)) continue;
-      const abs = path.join(root, entry);
-      let st: fs.Stats;
-      try {
-        st = fs.statSync(abs);
-      } catch {
-        continue;
-      }
-      if (!st.isFile()) continue;
+    if (!st.isFile()) continue;
+    const patientId = extractPatientIdFromVideo(entry);
+    pushUnique(bucket, patientId, {
+      url: streamUrlForAbs(abs),
+      filename: entry,
+      treatment,
+      water_filled: inferWaterFilled(entry),
+    });
+  }
+}
+
+function scanVideoTree(
+  root: string,
+  bucket: Map<string, VideoInfo[]>,
+  treatment: VideoInfo['treatment'],
+  depth = 0,
+) {
+  if (depth > 4 || !fs.existsSync(root)) return;
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const abs = path.join(root, entry);
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      scanVideoTree(abs, bucket, treatment, depth + 1);
+    } else if (isVideoFilename(entry)) {
       const patientId = extractPatientIdFromVideo(entry);
       pushUnique(bucket, patientId, {
         url: streamUrlForAbs(abs),
         filename: entry,
-        treatment: inferTreatment(root),
-        water_filled: inferWaterFilled(entry),
+        treatment,
+        water_filled: inferWaterFilled(entry) || inferWaterFilled(root),
       });
+    }
+  }
+}
+
+function scanExternalRoots(bucket: Map<string, VideoInfo[]>) {
+  const roots = [
+    path.join(PROJECT_ROOT, 'dataset/internal/prospective_2025/2025/crop_ui/videos'),
+    path.join(PROJECT_ROOT, 'data/raw/qualified_reader_videos'),
+  ];
+
+  for (const root of roots) {
+    scanVideoDirectory(root, bucket);
+  }
+  scanVideoTree(
+    path.join(PROJECT_ROOT, 'data/raw/legacy_external_direct_surgery'),
+    bucket,
+    'direct_surgery',
+  );
+  scanVideoTree(
+    path.join(PROJECT_ROOT, 'data/raw/legacy_gastric_staging'),
+    bucket,
+    'direct_surgery',
+  );
+
+  // External videos are stored under dataset/external/<center>/crop_ui/videos,
+  // not in one flat dataset/external/crop_ui/videos directory.
+  const externalRoot = path.join(PROJECT_ROOT, 'dataset/external');
+  if (fs.existsSync(externalRoot)) {
+    try {
+      for (const center of fs.readdirSync(externalRoot)) {
+        scanVideoDirectory(path.join(externalRoot, center, 'crop_ui/videos'), bucket);
+      }
+    } catch {
+      /* ignore unreadable centers */
     }
   }
 
@@ -151,8 +228,14 @@ export function getVideoMap(): Map<string, VideoInfo[]> {
   scanExternalRoots(map);
 
   for (const [key, videos] of map.entries()) {
-    videos.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true }));
-    map.set(key, videos);
+    videos.sort((a, b) => (
+      videoPriority(a) - videoPriority(b)
+      || a.filename.localeCompare(b.filename, undefined, { numeric: true })
+    ));
+    const uniqueByFilename = videos.filter((video, index, all) => (
+      all.findIndex((candidate) => candidate.filename === video.filename) === index
+    ));
+    map.set(key, uniqueByFilename);
   }
 
   cachedMap = map;
@@ -173,9 +256,18 @@ export function getVideosForPatient(patientId: string): VideoInfo[] {
   // Fast path for crop_ui filenames when cache miss (new file): glob by prefix
   const cropDirs = [
     path.join(PROJECT_ROOT, 'dataset/internal/prospective_2025/2025/crop_ui/videos'),
-    path.join(PROJECT_ROOT, 'dataset/external/crop_ui/videos'),
     path.join(PROJECT_ROOT, 'data/raw/qualified_reader_videos'),
   ];
+  const externalRoot = path.join(PROJECT_ROOT, 'dataset/external');
+  if (fs.existsSync(externalRoot)) {
+    try {
+      for (const center of fs.readdirSync(externalRoot)) {
+        cropDirs.push(path.join(externalRoot, center, 'crop_ui/videos'));
+      }
+    } catch {
+      /* ignore unreadable centers */
+    }
+  }
   const out: VideoInfo[] = [];
   const tokens = Array.from(new Set([patientId, normalized].filter(Boolean)));
   for (const dir of cropDirs) {

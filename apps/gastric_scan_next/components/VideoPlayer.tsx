@@ -3,11 +3,12 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Maximize, ChevronLeft, ChevronRight, Droplets } from 'lucide-react';
 import { VideoInfo } from '@/types';
+import type { Language } from '@/lib/i18n';
 
 interface VideoPlayerProps {
   videos: VideoInfo[];
   onClose?: () => void;
-  language?: 'zh' | 'en';
+  language?: Language;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, language = 'zh' }) => {
@@ -19,6 +20,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
   const [isMuted, setIsMuted] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [playError, setPlayError] = useState<string | null>(null);
 
   const currentVideo = videos[currentVideoIndex];
 
@@ -30,16 +32,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
   };
 
   // 播放/暂停
-  const togglePlay = useCallback(() => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
+  const togglePlay = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (video.paused) {
+        setPlayError(null);
+        await video.play();
+        setIsPlaying(true);
       } else {
-        videoRef.current.play();
+        video.pause();
+        setIsPlaying(false);
       }
-      setIsPlaying(!isPlaying);
+    } catch (error) {
+      setIsPlaying(false);
+      setPlayError(error instanceof Error ? error.message : '视频播放失败');
     }
-  }, [isPlaying]);
+  }, []);
 
   // 切换视频
   const switchVideo = (index: number) => {
@@ -47,6 +56,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
       setCurrentVideoIndex(index);
       setIsPlaying(false);
       setCurrentTime(0);
+      setPlayError(null);
       setIsLoading(true);
     }
   };
@@ -171,7 +181,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
       <div className="flex items-center justify-center h-full bg-black/90 text-gray-400">
         <div className="text-center">
           <div className="text-4xl mb-4">🎬</div>
-          <p>{language === 'zh' ? '该患者暂无视频数据' : 'No video data for this patient'}</p>
+          <p>{language !== 'en' ? '该患者暂无视频数据' : 'No video data for this patient'}</p>
         </div>
       </div>
     );
@@ -188,13 +198,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
         )}
         
         <video
+          key={currentVideo.url}
           ref={videoRef}
           src={currentVideo.url}
           className="max-h-full max-w-full object-contain"
           muted={isMuted}
-          onClick={togglePlay}
+          controls={currentVideo.treatment === 'reader_study'}
+          preload="auto"
+          onClick={currentVideo.treatment === 'reader_study' ? undefined : () => { void togglePlay(); }}
+          onLoadedData={() => { setIsLoading(false); setPlayError(null); }}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onError={() => { setIsLoading(false); setPlayError('视频媒体加载失败'); }}
           playsInline
         />
+
+        {playError ? (
+          <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded border border-red-400/40 bg-black/80 px-3 py-2 text-[10px] text-red-200">
+            {playError}
+          </div>
+        ) : null}
 
         {/* 视频信息标签 */}
         <div className="absolute top-3 left-3 flex items-center gap-2">
@@ -204,25 +227,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
           {currentVideo.water_filled && (
             <span className="flex items-center gap-1 text-[10px] font-bold text-cyan-400 bg-black/60 backdrop-blur-sm px-2 py-1 rounded border border-cyan-500/30">
               <Droplets size={10} />
-              {language === 'zh' ? '喝水' : 'Water'}
+              {language !== 'en' ? '喝水' : 'Water'}
             </span>
           )}
           <span className={`text-[10px] font-bold px-2 py-1 rounded border backdrop-blur-sm ${
-            currentVideo.treatment === 'direct_surgery' 
-              ? 'text-green-400 bg-green-500/10 border-green-500/30' 
-              : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+            currentVideo.treatment === 'reader_study'
+              ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30'
+              : currentVideo.treatment === 'direct_surgery'
+                ? 'text-green-400 bg-green-500/10 border-green-500/30'
+                : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
           }`}>
-            {currentVideo.treatment === 'direct_surgery' 
-              ? (language === 'zh' ? '直接手术' : 'Direct Surgery')
-              : (language === 'zh' ? '新辅助' : 'Neoadjuvant')
+            {currentVideo.treatment === 'reader_study'
+              ? (language !== 'en' ? '第一轮基线' : 'Round 1 Baseline')
+              : currentVideo.treatment === 'direct_surgery'
+                ? (language !== 'en' ? '直接手术' : 'Direct Surgery')
+                : (language !== 'en' ? '新辅助' : 'Neoadjuvant')
             }
           </span>
         </div>
 
-        {/* 播放/暂停大按钮 */}
-        {!isPlaying && !isLoading && (
+        {/* 播放/暂停大按钮；第一轮基线队列使用原生控件，避免覆盖浏览器播放手势 */}
+        {currentVideo.treatment !== 'reader_study' && !isPlaying && !isLoading && (
           <button
-            onClick={togglePlay}
+            onClick={() => { void togglePlay(); }}
             className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors group"
           >
             <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
@@ -237,7 +264,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
         <div className="bg-zinc-900/80 border-t border-white/10 px-3 py-2">
           <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin">
             <span className="text-[10px] text-gray-500 font-medium shrink-0">
-              {language === 'zh' ? '视频' : 'Videos'} ({videos.length})
+              {language !== 'en' ? '视频' : 'Videos'} ({videos.length})
             </span>
             {videos.map((video, idx) => (
               <button
@@ -311,7 +338,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
             <button
               onClick={() => stepFrame('backward')}
               className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-              title={language === 'zh' ? '后退一帧 (Shift+←)' : 'Step backward (Shift+←)'}
+              title={language !== 'en' ? '后退一帧 (Shift+←)' : 'Step backward (Shift+←)'}
             >
               <SkipBack size={14} className="text-gray-400" />
             </button>
@@ -328,7 +355,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
             <button
               onClick={() => stepFrame('forward')}
               className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-              title={language === 'zh' ? '前进一帧 (Shift+→)' : 'Step forward (Shift+→)'}
+              title={language !== 'en' ? '前进一帧 (Shift+→)' : 'Step forward (Shift+→)'}
             >
               <SkipForward size={14} className="text-gray-400" />
             </button>
@@ -339,14 +366,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
             <button
               onClick={cyclePlaybackRate}
               className="px-2 py-1 rounded-lg hover:bg-white/10 transition-colors text-[10px] font-mono text-gray-400"
-              title={language === 'zh' ? '播放速度' : 'Playback speed'}
+              title={language !== 'en' ? '播放速度' : 'Playback speed'}
             >
               {playbackRate}x
             </button>
             <button
               onClick={() => setIsMuted(!isMuted)}
               className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-              title={language === 'zh' ? '静音 (M)' : 'Mute (M)'}
+              title={language !== 'en' ? '静音 (M)' : 'Mute (M)'}
             >
               {isMuted ? (
                 <VolumeX size={14} className="text-gray-400" />
@@ -357,7 +384,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
             <button
               onClick={toggleFullscreen}
               className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-              title={language === 'zh' ? '全屏' : 'Fullscreen'}
+              title={language !== 'en' ? '全屏' : 'Fullscreen'}
             >
               <Maximize size={14} className="text-gray-400" />
             </button>
@@ -367,7 +394,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videos, onClose, langu
         {/* 快捷键提示 */}
         <div className="mt-2 text-center">
           <span className="text-[9px] text-gray-600">
-            {language === 'zh' 
+            {language !== 'en' 
               ? '空格: 播放/暂停 | ←→: 快进/快退 | Shift+←→: 逐帧 | ↑↓: 切换视频'
               : 'Space: Play/Pause | ←→: Seek | Shift+←→: Frame | ↑↓: Switch video'
             }

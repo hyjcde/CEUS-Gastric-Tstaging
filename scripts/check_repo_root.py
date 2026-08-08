@@ -34,6 +34,7 @@ ALLOWED_DIRS = {
     "external",
     "models",
     "pipeline",
+    "paper",
     "scripts",
     ".git",
     ".vscode",

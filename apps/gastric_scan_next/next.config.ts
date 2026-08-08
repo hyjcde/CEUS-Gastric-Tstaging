@@ -17,6 +17,18 @@ function detectLanHostname(): string | null {
   }
 }
 
+/** Tailscale 访问工作台时，浏览器 Origin 使用完整 DNS 名称。 */
+function detectTailnetHostname(): string | null {
+  try {
+    const raw = execSync("tailscale status --json 2>/dev/null", { encoding: "utf8" }).trim();
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { Self?: { DNSName?: string } };
+    return parsed.Self?.DNSName?.replace(/\.$/, "") || null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeHost(raw: string): string {
   return raw.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
 }
@@ -27,6 +39,7 @@ const extraOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || "")
   .filter(Boolean);
 
 const liveHost = detectLanHostname();
+const tailnetHost = detectTailnetHostname();
 
 const allowedDevOrigins = Array.from(
   new Set(
@@ -35,12 +48,16 @@ const allowedDevOrigins = Array.from(
       "127.0.0.1",
       LAN_FIXED_HOST,
       liveHost,
+      tailnetHost,
       ...extraOrigins,
     ].filter((h): h is string => Boolean(h)),
   ),
 );
 
 const nextConfig: NextConfig = {
+  // Production deployment uses the self-contained server bundle; local dev keeps .next.
+  output: 'standalone',
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Next 16：hostname only。固定 IP 方便地址；liveHost 防止换 IP 后再整页刷新
   allowedDevOrigins,
   // public/videos 供 :8767 阅片 Agent 深链播放时跨域读取

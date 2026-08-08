@@ -6,7 +6,7 @@ import { ConceptState, Patient } from '@/types';
 import { calculateDiagnosis } from '@/lib/diagnosis';
 import { dedupePatientsForStatistics } from '@/lib/cohort-stats';
 import { getConceptStateFromPatient } from '@/lib/patient-utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { BarChart2, TrendingUp, Users, Activity, Loader2 } from 'lucide-react';
 
 interface StatisticsPanelProps {
@@ -27,6 +27,26 @@ interface StatisticsData {
   hasMetastasisCount: number;
   t4Count: number;
 }
+
+type ChartDatum = {
+  percentage?: string;
+  value?: number | string;
+  name?: string;
+};
+
+const EMPTY_STATISTICS: StatisticsData = {
+  totalPatients: 0,
+  totalFrames: 0,
+  withClinicalCount: 0,
+  tStageDistribution: {},
+  nStageDistribution: {},
+  avgConfidence: 0,
+  avgTScore: 0,
+  avgNScore: 0,
+  highRiskCount: 0,
+  hasMetastasisCount: 0,
+  t4Count: 0,
+};
 
 const COLORS = {
   t4: '#ef4444',
@@ -105,44 +125,17 @@ function calculateStatisticsBatch(
 export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conceptStates }) => {
   const { language } = useSettings();
   const [isCalculating, setIsCalculating] = useState(true);
-  const [statistics, setStatistics] = useState<StatisticsData>({
-    totalPatients: 0,
-    totalFrames: 0,
-    withClinicalCount: 0,
-    tStageDistribution: {},
-    nStageDistribution: {},
-    avgConfidence: 0,
-    avgTScore: 0,
-    avgNScore: 0,
-    highRiskCount: 0,
-    hasMetastasisCount: 0,
-    t4Count: 0,
-  });
+  const [statistics, setStatistics] = useState<StatisticsData>(EMPTY_STATISTICS);
 
   // 使用 useEffect 异步计算，避免阻塞 UI
   useEffect(() => {
     if (patients.length === 0) {
-      setStatistics({
-        totalPatients: 0,
-        totalFrames: 0,
-        withClinicalCount: 0,
-        tStageDistribution: {},
-        nStageDistribution: {},
-        avgConfidence: 0,
-        avgTScore: 0,
-        avgNScore: 0,
-        highRiskCount: 0,
-        hasMetastasisCount: 0,
-        t4Count: 0,
-      });
-      setIsCalculating(false);
       return;
     }
 
-    setIsCalculating(true);
-    
     // 使用 requestIdleCallback 或 setTimeout 分批计算
     const calculateAsync = () => {
+      setIsCalculating(true);
       const result = calculateStatisticsBatch(patients, conceptStates, 50);
       setStatistics(result);
       setIsCalculating(false);
@@ -196,13 +189,13 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
     
     return [
       { 
-        name: language === 'zh' ? '高危' : 'High Risk', 
+        name: language !== 'en' ? '高危' : 'High Risk',
         value: statistics.highRiskCount, 
         percentage: highRiskPercentage,
         color: '#ef4444' 
       },
       { 
-        name: language === 'zh' ? '低危' : 'Low Risk', 
+        name: language !== 'en' ? '低危' : 'Low Risk',
         value: lowRiskCount, 
         percentage: lowRiskPercentage,
         color: '#10b981' 
@@ -210,23 +203,23 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
     ];
   }, [statistics, language]);
 
-  if (isCalculating) {
+  if (isCalculating && patients.length > 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
         <Loader2 className="w-8 h-8 animate-spin text-purple-400 mb-4" />
-        <span className="text-sm">{language === 'zh' ? '正在计算统计数据...' : 'Calculating statistics...'}</span>
+        <span className="text-sm">{language !== 'en' ? '正在计算统计数据...' : 'Calculating statistics...'}</span>
         <span className="text-xs text-gray-600 mt-2">
-          {language === 'zh' ? `处理 ${patients.length} 帧 / 去重后病例` : `Processing ${patients.length} frames / deduped cases`}
+          {language !== 'en' ? `处理 ${patients.length} 帧 / 去重后病例` : `Processing ${patients.length} frames / deduped cases`}
         </span>
       </div>
     );
   }
 
-  if (statistics.totalPatients === 0) {
+  if (patients.length === 0 || statistics.totalPatients === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
         <BarChart2 size={48} className="opacity-40 mb-4" />
-        <span className="text-sm">{language === 'zh' ? '暂无统计数据' : 'No statistics available'}</span>
+        <span className="text-sm">{language !== 'en' ? '暂无统计数据' : 'No statistics available'}</span>
       </div>
     );
   }
@@ -237,12 +230,12 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
       <div className="h-10 shrink-0 border-b border-white/5 flex items-center justify-between px-3 bg-[#0b0b0d]">
         <span className="flex items-center gap-2 text-[11px] font-bold text-gray-300 uppercase tracking-widest">
           <BarChart2 size={12} className="text-purple-500" />
-          {language === 'zh' ? '队列统计' : 'Cohort Statistics'}
+          {language !== 'en' ? '队列统计' : 'Cohort Statistics'}
         </span>
         <span className="text-[9px] font-mono text-gray-500">
           N={statistics.totalPatients}
           {statistics.totalFrames > statistics.totalPatients && (
-            <span className="text-gray-600"> · {statistics.totalFrames} {language === 'zh' ? '帧' : 'frames'}</span>
+            <span className="text-gray-600"> · {statistics.totalFrames} {language !== 'en' ? '帧' : 'frames'}</span>
           )}
         </span>
       </div>
@@ -253,7 +246,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
           <div className="bg-[#18181b] p-3 rounded-lg border border-white/5">
             <div className="flex items-center gap-2 mb-2">
               <Activity size={14} className="text-blue-400" />
-              <span className="text-[10px] text-gray-500 uppercase">{language === 'zh' ? '平均置信度' : 'Avg Confidence'}</span>
+              <span className="text-[10px] text-gray-500 uppercase">{language !== 'en' ? '平均置信度' : 'Avg Confidence'}</span>
             </div>
             <div className="text-2xl font-bold text-gray-200">{statistics.avgConfidence.toFixed(1)}%</div>
           </div>
@@ -261,7 +254,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
           <div className="bg-[#18181b] p-3 rounded-lg border border-white/5">
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp size={14} className="text-emerald-400" />
-              <span className="text-[10px] text-gray-500 uppercase">{language === 'zh' ? '高危病例' : 'High Risk'}</span>
+              <span className="text-[10px] text-gray-500 uppercase">{language !== 'en' ? '高危病例' : 'High Risk'}</span>
             </div>
             <div className="text-2xl font-bold text-red-400">{statistics.highRiskCount}</div>
             <div className="text-[9px] text-gray-500">
@@ -272,7 +265,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
           <div className="bg-[#18181b] p-3 rounded-lg border border-white/5">
             <div className="flex items-center gap-2 mb-2">
               <Users size={14} className="text-red-400" />
-              <span className="text-[10px] text-gray-500 uppercase">{language === 'zh' ? 'T4 分期' : 'T4 Stage'}</span>
+              <span className="text-[10px] text-gray-500 uppercase">{language !== 'en' ? 'T4 分期' : 'T4 Stage'}</span>
             </div>
             <div className="text-2xl font-bold text-red-400">{statistics.t4Count}</div>
             <div className="text-[9px] text-gray-500">
@@ -283,7 +276,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
           <div className="bg-[#18181b] p-3 rounded-lg border border-white/5">
             <div className="flex items-center gap-2 mb-2">
               <Activity size={14} className="text-amber-400" />
-              <span className="text-[10px] text-gray-500 uppercase">{language === 'zh' ? '淋巴结转移' : 'Metastasis'}</span>
+              <span className="text-[10px] text-gray-500 uppercase">{language !== 'en' ? '淋巴结转移' : 'Metastasis'}</span>
             </div>
             <div className="text-2xl font-bold text-amber-400">{statistics.hasMetastasisCount}</div>
             <div className="text-[9px] text-gray-500">
@@ -295,7 +288,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
         {/* T-Stage Distribution Chart */}
         <div className="bg-[#18181b] p-4 rounded-lg border border-white/5">
           <div className="text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-4">
-            {language === 'zh' ? 'T 分期分布' : 'T-Stage Distribution'}
+            {language !== 'en' ? 'T 分期分布' : 'T-Stage Distribution'}
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={tStageChartData}>
@@ -316,9 +309,9 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
                   borderRadius: '4px',
                 }}
                 labelStyle={{ color: '#e4e4e7' }}
-                formatter={(value: any, name: string, props: any) => [
-                  `${value} (${props.payload.percentage}%)`,
-                  language === 'zh' ? '病例数' : 'Cases'
+                formatter={(value: unknown, _name: unknown, props: { payload?: ChartDatum }) => [
+                  `${value} (${props.payload?.percentage ?? '0.0'}%)`,
+                  language !== 'en' ? '病例数' : 'Cases'
                 ]}
               />
               <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]}>
@@ -333,7 +326,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
         {/* N-Stage Distribution Chart */}
         <div className="bg-[#18181b] p-4 rounded-lg border border-white/5">
           <div className="text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-4">
-            {language === 'zh' ? 'N 分期分布' : 'N-Stage Distribution'}
+            {language !== 'en' ? 'N 分期分布' : 'N-Stage Distribution'}
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={nStageChartData}>
@@ -354,9 +347,9 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
                   borderRadius: '4px',
                 }}
                 labelStyle={{ color: '#e4e4e7' }}
-                formatter={(value: any, name: string, props: any) => [
-                  `${value} (${props.payload.percentage}%)`,
-                  language === 'zh' ? '病例数' : 'Cases'
+                formatter={(value: unknown, _name: unknown, props: { payload?: ChartDatum }) => [
+                  `${value} (${props.payload?.percentage ?? '0.0'}%)`,
+                  language !== 'en' ? '病例数' : 'Cases'
                 ]}
               />
               <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]}>
@@ -371,7 +364,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
         {/* Risk Distribution Pie Chart */}
         <div className="bg-[#18181b] p-4 rounded-lg border border-white/5">
           <div className="text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-4">
-            {language === 'zh' ? '风险分布' : 'Risk Distribution'}
+            {language !== 'en' ? '风险分布' : 'Risk Distribution'}
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -380,9 +373,10 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={(entry: any) => {
-                  const percentage = entry.percentage || ((entry.value / statistics.totalPatients) * 100).toFixed(1);
-                  return `${entry.name}: ${percentage}%`;
+                label={(entry: unknown) => {
+                  const datum = (entry ?? {}) as ChartDatum;
+                  const percentage = datum.percentage || (((datum.value as number) / statistics.totalPatients) * 100).toFixed(1);
+                  return `${datum.name ?? ''}: ${percentage}%`;
                 }}
                 outerRadius={70}
                 fill="#8884d8"
@@ -399,9 +393,9 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
                   borderRadius: '4px',
                 }}
                 labelStyle={{ color: '#e4e4e7' }}
-                formatter={(value: any, name: string, props: any) => [
-                  `${value} (${props.payload.percentage}%)`,
-                  language === 'zh' ? '病例数' : 'Cases'
+                formatter={(value: unknown, _name: unknown, props: { payload?: ChartDatum }) => [
+                  `${value} (${props.payload?.percentage ?? '0.0'}%)`,
+                  language !== 'en' ? '病例数' : 'Cases'
                 ]}
               />
             </PieChart>
@@ -411,27 +405,27 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
         {/* Detailed Statistics Table */}
         <div className="bg-[#18181b] p-4 rounded-lg border border-white/5">
           <div className="text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-4">
-            {language === 'zh' ? '详细统计' : 'Detailed Statistics'}
+            {language !== 'en' ? '详细统计' : 'Detailed Statistics'}
           </div>
           <div className="space-y-2 text-xs">
             <div className="flex justify-between text-gray-400">
-              <span>{language === 'zh' ? '平均 T 评分' : 'Avg T-Score'} (0-100):</span>
+              <span>{language !== 'en' ? '平均 T 评分' : 'Avg T-Score'} (0-100):</span>
               <span className="text-gray-200 font-mono">{statistics.avgTScore.toFixed(1)}</span>
             </div>
             <div className="flex justify-between text-gray-400">
-              <span>{language === 'zh' ? '平均 N 评分' : 'Avg N-Score'} (0-100):</span>
+              <span>{language !== 'en' ? '平均 N 评分' : 'Avg N-Score'} (0-100):</span>
               <span className="text-gray-200 font-mono">{statistics.avgNScore.toFixed(1)}</span>
             </div>
             <div className="flex justify-between text-gray-400">
-              <span>{language === 'zh' ? '总病例数（去重）' : 'Unique cases'}:</span>
+              <span>{language !== 'en' ? '总病例数（去重）' : 'Unique cases'}:</span>
               <span className="text-gray-200 font-mono">{statistics.totalPatients}</span>
             </div>
             <div className="flex justify-between text-gray-400">
-              <span>{language === 'zh' ? '总图像帧数' : 'Total frames'}:</span>
+              <span>{language !== 'en' ? '总图像帧数' : 'Total frames'}:</span>
               <span className="text-gray-200 font-mono">{statistics.totalFrames}</span>
             </div>
             <div className="flex justify-between text-gray-400">
-              <span>{language === 'zh' ? '有临床资料' : 'With clinical data'}:</span>
+              <span>{language !== 'en' ? '有临床资料' : 'With clinical data'}:</span>
               <span className="text-gray-200 font-mono">
                 {statistics.withClinicalCount}
                 {statistics.totalPatients > 0 && (
@@ -440,7 +434,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ patients, conc
               </span>
             </div>
             <div className="mt-4 pt-2 border-t border-white/5 text-[10px] text-gray-500">
-               *{language === 'zh' ? '注：统计按 patient_id + 治疗组 去重，每例只计一次；T/N 评分为 CBM 连续风险值。' : 'Note: Stats dedupe by patient_id + treatment group (one case counted once). T/N scores are CBM risk values.'}
+               *{language !== 'en' ? '注：统计按 patient_id + 治疗组 去重，每例只计一次；T/N 评分为 CBM 连续风险值。' : 'Note: Stats dedupe by patient_id + treatment group (one case counted once). T/N scores are CBM risk values.'}
             </div>
           </div>
         </div>

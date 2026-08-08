@@ -3,8 +3,10 @@ import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import type { MaskBoundaryOverride } from '@/types';
 import { bboxFromPolygon, isValidMaskOverride } from '@/lib/mask-override';
+import { legacyAppDataFile, runtimeDataFile } from '@/lib/runtime-data';
 
-const OVERRIDES_FILE = path.join(process.cwd(), 'data', 'mask_overrides.json');
+const OVERRIDES_FILE = runtimeDataFile('mask_overrides.json');
+const LEGACY_OVERRIDES_FILE = legacyAppDataFile('mask_overrides.json');
 
 type OverrideStore = Record<string, MaskBoundaryOverride>;
 
@@ -14,8 +16,9 @@ function storeKey(patientId: string, frameId?: string | null): string {
 
 function readStore(): OverrideStore {
   try {
-    if (!fs.existsSync(OVERRIDES_FILE)) return {};
-    const raw = fs.readFileSync(OVERRIDES_FILE, 'utf-8');
+    const file = fs.existsSync(OVERRIDES_FILE) ? OVERRIDES_FILE : LEGACY_OVERRIDES_FILE;
+    if (!fs.existsSync(file)) return {};
+    const raw = fs.readFileSync(file, 'utf-8');
     const parsed = JSON.parse(raw) as OverrideStore;
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {

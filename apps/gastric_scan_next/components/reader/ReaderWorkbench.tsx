@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, ExternalLink, Loader2, RefreshCw, ScanSearch,
@@ -15,19 +15,24 @@ import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
 import { readerMediaUrl } from '@/lib/reader/media-url';
 import {
   captureVideoFrameB64,
+  fetchNnInteractiveStatus,
   fetchSamStatus,
   llmReportConfigured,
+  runNnInteractiveRefine,
   runSamAnalyze,
   runSamVideoPropagation,
+  strokeToNnInteractivePayload,
   type SamVideoPropagationResult,
 } from '@/lib/reader/sam-client';
 import type {
   InteractionMode,
+  NnInteractiveStatus,
   ReaderCase,
   ReaderCohort,
   SamBackendStatus,
   SamBox,
   SamClick,
+  ReaderPromptStroke,
   ReaderDoctorAction,
   SamReport,
 } from '@/lib/reader/types';
@@ -35,6 +40,7 @@ import type { AgentAnalysisResponse } from '@/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 import { buildReadingAgentUrl, getReadingAgentPageUrl } from '@/lib/reading-agent-url';
+import { navigateTo } from '@/lib/navigation';
 
 const TRACK_INTERVAL_MS = 1000;
 const VIDEO_SPEEDS = [0.25, 0.5, 1] as const;
@@ -68,6 +74,33 @@ function seekVideoForEvidence(video: HTMLVideoElement, time: number): Promise<vo
   });
 }
 
+async function copyReaderText(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the legacy clipboard path when permission is unavailable.
+    }
+  }
+
+  if (typeof document === 'undefined' || !document.body) return false;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
 async function writeReaderAuditEvent(event: {
   event_type: AuditEventType;
   session_id: string;
@@ -93,7 +126,6 @@ async function writeReaderAuditEvent(event: {
 }
 
 export function ReaderWorkbench() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [cohort, setCohort] = useState<ReaderCohort>(
@@ -105,8 +137,11 @@ export function ReaderWorkbench() {
   const [casesLoading, setCasesLoading] = useState(true);
 
   const [samStatus, setSamStatus] = useState<SamBackendStatus | null>(null);
+  const [nnInteractiveStatus, setNnInteractiveStatus] = useState<NnInteractiveStatus | null>(null);
+  const [nnInteractiveBusy, setNnInteractiveBusy] = useState(false);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('box');
   const [clicks, setClicks] = useState<SamClick[]>([]);
+  const [promptStrokes, setPromptStrokes] = useState<ReaderPromptStroke[]>([]);
   const [box, setBox] = useState<SamBox | null>(null);
   const [maskPolygon, setMaskPolygon] = useState<number[][] | null>(null);
   const [maskOverlayPng, setMaskOverlayPng] = useState<string | null>(null);
@@ -145,6 +180,7 @@ export function ReaderWorkbench() {
   const lastVideoTrackFrameRef = useRef<number | null>(null);
   const llmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trackingClientIdRef = useRef(`reader_${Math.random().toString(36).slice(2)}`);
+  const nnInteractiveSessionRef = useRef({ key: '', id: '', initialized: false });
   const runSamRef = useRef<(opts?: {
     llmReport?: boolean;
     silent?: boolean;
@@ -159,6 +195,10 @@ export function ReaderWorkbench() {
   const auditStartedAtRef = useRef<number | null>(null);
   const lastAuditFrameRef = useRef(0);
   const initialCaseSelectionRef = useRef(false);
+  const caseLoadRequestRef = useRef(0);
+  const caseSelectionRequestRef = useRef(0);
+  const loadedCohortRef = useRef<ReaderCohort | null>(null);
+  const ignoreDeepCaseRef = useRef(false);
   const externalVideo = searchParams.get('video') || '';
   const externalImage = searchParams.get('image') || '';
   const deepCaseId = searchParams.get('case') || '';
@@ -166,7 +206,9 @@ export function ReaderWorkbench() {
   const readerIdParam = searchParams.get('reader_id') || 'unknown_reader';
   const roundParam = searchParams.get('round') || 'round2';
   const callbackUrl = searchParams.get('callback') || '';
-  const activeCaseId = selectedCase?.case_id || deepCaseId || patientIdParam || 'external';
+  const effectiveDeepCaseId = ignoreDeepCaseRef.current ? '' : deepCaseId;
+  const effectivePatientIdParam = ignoreDeepCaseRef.current ? '' : patientIdParam;
+  const activeCaseId = selectedCase?.case_id || effectiveDeepCaseId || effectivePatientIdParam || 'external';
   const hasExternalMedia = Boolean(externalVideo || externalImage);
 
   const llmReady = llmReportConfigured(samStatus);
@@ -252,6 +294,10 @@ export function ReaderWorkbench() {
     const parts: string[] = [];
     if (box) parts.push('1 框');
     if (pos || neg) parts.push(`${pos} 正 / ${neg} 负`);
+    const scribbleCount = promptStrokes.filter((stroke) => stroke.kind === 'scribble').length;
+    const lassoCount = promptStrokes.filter((stroke) => stroke.kind === 'lasso').length;
+    if (scribbleCount) parts.push(`${scribbleCount} 涂鸦`);
+    if (lassoCount) parts.push(`${lassoCount} 套索`);
     if (maskPolygon?.length) {
       parts.push(samScore != null && samScore > 0
         ? `Mask 已生成 · ${Math.round(samScore * 100)}%`
@@ -260,24 +306,32 @@ export function ReaderWorkbench() {
       parts.push(`分割 ${Math.round(samScore * 100)}%`);
     }
     return parts.join(' · ');
-  }, [box, clicks, maskPolygon, samScore]);
+  }, [box, clicks, maskPolygon, promptStrokes, samScore]);
 
   const loadCases = useCallback(async (c: ReaderCohort) => {
+    const requestId = ++caseLoadRequestRef.current;
+    loadedCohortRef.current = null;
     setCasesLoading(true);
     try {
       const res = await fetch(`/api/reader/cases?cohort=${encodeURIComponent(c)}`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'cases load failed');
+      if (requestId !== caseLoadRequestRef.current) return;
       setCaseSummaries(data.cases || []);
       setBundleVersion(data.created_at);
     } catch (err) {
+      if (requestId !== caseLoadRequestRef.current) return;
       toast.error(err instanceof Error ? err.message : '病例库加载失败');
     } finally {
-      setCasesLoading(false);
+      if (requestId === caseLoadRequestRef.current) {
+        loadedCohortRef.current = c;
+        setCasesLoading(false);
+      }
     }
   }, []);
 
   const loadCaseDetail = useCallback(async (caseId: string) => {
+    const requestId = ++caseSelectionRequestRef.current;
     if (auditSessionRef.current && auditCaseRef.current && auditCaseRef.current !== caseId) {
       recordAudit(
         'session_end',
@@ -292,10 +346,13 @@ export function ReaderWorkbench() {
       const res = await fetch(`/api/reader/cases?case_id=${encodeURIComponent(caseId)}`, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
       const data = await res.json();
       if (!data.ok || !data.case) throw new Error('case not found');
+      if (requestId !== caseSelectionRequestRef.current) return;
       const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.set('case', caseId);
+      nextParams.set('cohort', cohort);
       ['patient_id', 'video', 'image', 'frame_id', 'title'].forEach((key) => nextParams.delete(key));
-      router.replace(`/reader?${nextParams.toString()}`, { scroll: false });
+      navigateTo(`/reader?${nextParams.toString()}`, { replace: true });
+      ignoreDeepCaseRef.current = false;
       const sessionId = newAuditId('reader');
       auditSessionRef.current = sessionId;
       auditCaseRef.current = caseId;
@@ -320,10 +377,12 @@ export function ReaderWorkbench() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '病例加载失败');
     }
-  }, [cohort, readerIdParam, recordAudit, roundParam, router, searchParams]);
+  }, [cohort, readerIdParam, recordAudit, roundParam, searchParams]);
 
   const resetInteraction = () => {
     setClicks([]);
+    setPromptStrokes([]);
+    setInteractionMode('box');
     setBox(null);
     setMaskPolygon(null);
     setMaskOverlayPng(null);
@@ -344,6 +403,7 @@ export function ReaderWorkbench() {
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
+    nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
   };
 
   useEffect(() => {
@@ -352,6 +412,12 @@ export function ReaderWorkbench() {
 
   useEffect(() => {
     fetchSamStatus().then(setSamStatus).catch(() => setSamStatus({ available: false }));
+    fetchNnInteractiveStatus()
+      .then(setNnInteractiveStatus)
+      .catch((error) => setNnInteractiveStatus({
+        available: false,
+        error: error instanceof Error ? error.message : 'nnInteractive status unavailable',
+      }));
   }, []);
 
   useEffect(() => () => {
@@ -373,12 +439,21 @@ export function ReaderWorkbench() {
   }, [patientIdParam, readerIdParam, roundParam]);
 
   useEffect(() => {
-    if (initialCaseSelectionRef.current || !caseSummaries.length) return;
-    const hasExternalDeepLink = Boolean(deepCaseId || patientIdParam || externalVideo || externalImage);
-    const mappedPatientCase = patientIdParam
-      ? caseSummaries.find((item) => item.patient_id === patientIdParam)?.case_id
+    if (
+      initialCaseSelectionRef.current
+      || !caseSummaries.length
+      || loadedCohortRef.current !== cohort
+    ) return;
+    const hasExternalDeepLink = Boolean(effectiveDeepCaseId || effectivePatientIdParam || externalVideo || externalImage);
+    const deepCaseInCohort = effectiveDeepCaseId
+      ? caseSummaries.some((item) => item.case_id === effectiveDeepCaseId)
+      : false;
+    const mappedPatientCase = effectivePatientIdParam
+      ? caseSummaries.find((item) => item.patient_id === effectivePatientIdParam)?.case_id
       : undefined;
-    const target = deepCaseId || mappedPatientCase || (hasExternalDeepLink ? undefined : caseSummaries[0]?.case_id);
+    const target = (deepCaseInCohort ? effectiveDeepCaseId : undefined)
+      || mappedPatientCase
+      || (hasExternalDeepLink ? undefined : caseSummaries[0]?.case_id);
     if (target) {
       initialCaseSelectionRef.current = true;
       void loadCaseDetail(target);
@@ -398,13 +473,26 @@ export function ReaderWorkbench() {
         study_mode: 'external_media',
         frame_count: 0,
         software_version: 'gastric_scan_next_reader',
-      }, { sessionId, caseId: activeCaseId, patientId: patientIdParam || activeCaseId });
+      }, { sessionId, caseId: activeCaseId, patientId: effectivePatientIdParam || activeCaseId });
     } else if (hasExternalDeepLink) {
       // Never silently load BM-001 when an unmapped patient link is supplied.
       initialCaseSelectionRef.current = true;
       toast.error('深链未映射到阅片病例；未自动加载其他病例');
     }
-  }, [activeCaseId, caseSummaries, cohort, deepCaseId, externalImage, externalVideo, hasExternalMedia, loadCaseDetail, patientIdParam, readerIdParam, recordAudit, roundParam]);
+  }, [
+    activeCaseId,
+    caseSummaries,
+    cohort,
+    effectiveDeepCaseId,
+    effectivePatientIdParam,
+    externalImage,
+    externalVideo,
+    hasExternalMedia,
+    loadCaseDetail,
+    readerIdParam,
+    recordAudit,
+    roundParam,
+  ]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -413,10 +501,12 @@ export function ReaderWorkbench() {
         e.preventDefault();
         togglePlay();
       }
-      if (e.key === '1') setInteractionMode('positive');
-      if (e.key === '2') setInteractionMode('negative');
-      if (e.key === '3') setInteractionMode('box');
-      if (e.key === '4') setInteractionMode('inspect');
+      if (e.key === '1') setInteractionMode('box');
+      if (e.key === '2') setInteractionMode('inspect');
+      if (e.key === '3') setInteractionMode('positive');
+      if (e.key === '4') setInteractionMode('negative');
+      if (e.key === '5') setInteractionMode('scribble');
+      if (e.key === '6') setInteractionMode('lasso');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -498,6 +588,7 @@ export function ReaderWorkbench() {
     setMaskPolygon(result.mask_polygon || null);
     setMaskOverlayPng(result.mask_overlay_png || null);
     setSamScore(result.sam_score ?? null);
+    nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
     const suggestionId = newAuditId('suggestion');
     auditSuggestionRef.current = suggestionId;
     if (withReport && result.report) {
@@ -644,12 +735,12 @@ export function ReaderWorkbench() {
         elapsed_ms: result.elapsed_ms,
         direction_reports: result.direction_reports,
       });
-      if (result.needs_reanchor) toast.error('全视频传播已在质量门处停止，请重新框选或点击重锚定');
-      else toast.success(`全视频传播完成 · ${result.accepted_frames}/${result.num_frames} 帧`);
+      if (result.needs_reanchor) toast.error('跟踪扩散已在质量门处停止，请重新框选或点击重锚定');
+      else toast.success(`跟踪扩散完成, ${result.accepted_frames}/${result.num_frames} 帧`);
     } catch (error) {
       if (requestId !== videoTrackRequestRef.current) return;
-      setVideoTrackStatus('全视频传播失败');
-      toast.error(error instanceof Error ? error.message : '全视频传播失败');
+      setVideoTrackStatus('跟踪扩散失败');
+      toast.error(error instanceof Error ? error.message : '跟踪扩散失败');
     } finally {
       if (requestId === videoTrackRequestRef.current) {
         setVideoTrackBusy(false);
@@ -750,7 +841,7 @@ export function ReaderWorkbench() {
         belief_state_schema_version: data.result.belief_state?.schema_version || null,
         next_action: data.result.belief_state?.next_actions?.[0]?.action_type || null,
       });
-      toast.success('统一科研 Agent 已完成当前帧分析');
+      toast.success('辅助诊断意见已更新');
     } catch (error) {
       const message = error instanceof Error ? error.message : '统一 Agent 分析失败';
       setUnifiedAgentError(message);
@@ -801,7 +892,7 @@ export function ReaderWorkbench() {
     setBadge(`视频传播 · ${Math.round(frame.quality_score * 100)}% · ${frame.frame_index + 1}/${videoTrack?.num_frames || 0}`);
   }, [nearestVideoTrackFrame, samBusy, videoTrack?.num_frames, videoTrackBusy]);
 
-  const postCallbackIfNeeded = async (result: Awaited<ReturnType<typeof runSamAnalyze>>) => {
+  const postCallbackIfNeeded = useCallback(async (result: Awaited<ReturnType<typeof runSamAnalyze>>) => {
     const url = callbackUrl || (typeof window !== 'undefined' ? `${window.location.origin}/api/reader-agent/result` : '');
     if (!url || !result.mask_polygon?.length) return;
     try {
@@ -822,12 +913,127 @@ export function ReaderWorkbench() {
     } catch {
       /* optional write-back */
     }
-  };
+  }, [
+    activeCaseId,
+    callbackUrl,
+    layerResult?.inContact,
+    layerResult?.layer?.label,
+    layerResult?.layer?.tHint,
+    patientIdParam,
+    searchParams,
+    selectedCase?.patient_id,
+  ]);
+
+  const runNnInteractive = useCallback(async (
+    point?: SamClick,
+    stroke?: ReaderPromptStroke,
+  ) => {
+    if (nnInteractiveStatus?.available !== true) {
+      toast.error('nnInteractive 未连接，未切换到 SAM3.1');
+      return;
+    }
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) {
+      toast.error('当前视频帧尚未就绪');
+      return;
+    }
+    const initialPolygon = maskPolygon && maskPolygon.length >= 3
+      ? maskPolygon
+      : box
+        ? [
+          [box.x1, box.y1],
+          [box.x2, box.y1],
+          [box.x2, box.y2],
+          [box.x1, box.y2],
+        ]
+        : null;
+    if (!initialPolygon) {
+      toast.error('请先框选病灶并生成初始轮廓');
+      return;
+    }
+    if (!point && !stroke) return;
+
+    const frameKey = [
+      activeCaseId,
+      currentFrame?.media_token || currentFrame?.video_rel || videoSrc,
+      (video.currentTime || currentTime).toFixed(3),
+    ].join(':');
+    const session = nnInteractiveSessionRef.current;
+    if (session.key !== frameKey || !session.id) {
+      session.key = frameKey;
+      session.id = `reader_nn_${activeCaseId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      session.initialized = false;
+    }
+    setNnInteractiveBusy(true);
+    try {
+      const strokePayload = stroke ? strokeToNnInteractivePayload(stroke) : null;
+      const result = await runNnInteractiveRefine({
+        session_id: session.id,
+        case_id: activeCaseId,
+        frame_time: video.currentTime || currentTime || 0,
+        frame_png_b64: captureVideoFrameB64(video),
+        image_width: video.videoWidth,
+        image_height: video.videoHeight,
+        reset_session: !session.initialized,
+        initial_mask_polygon: !session.initialized ? initialPolygon : [],
+        points: point ? [point] : [],
+        scribbles: strokePayload && stroke?.kind === 'scribble' ? [strokePayload] : [],
+        lassos: strokePayload && stroke?.kind === 'lasso' ? [strokePayload] : [],
+      });
+      session.initialized = true;
+      setMaskPolygon(result.mask_polygon || null);
+      setMaskOverlayPng(null);
+      setSamScore(null);
+      setBadge(`nnInteractive 已生成 Mask${result.elapsed_ms ? `, ${Math.round(result.elapsed_ms)} ms` : ''}`);
+      recordAudit('ai_suggestion', {
+        backend_id: result.backend_id || 'nninteractive_remote_v1',
+        model: result.model || 'nnInteractive_v1.0',
+        prompt_meta: result.prompt_meta || null,
+        elapsed_ms: result.elapsed_ms || null,
+        frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
+        frame_time: currentTime,
+      });
+      if (result.mask_polygon?.length) {
+        await postCallbackIfNeeded({
+          mask_polygon: result.mask_polygon,
+          sam_score: undefined,
+          elapsed_ms: result.elapsed_ms,
+        });
+      }
+    } catch (error) {
+      session.initialized = false;
+      toast.error(error instanceof Error ? error.message : 'nnInteractive 推理失败');
+    } finally {
+      setNnInteractiveBusy(false);
+    }
+  }, [
+    activeCaseId,
+    box,
+    currentFrame?.media_token,
+    currentFrame?.video_rel,
+    currentTime,
+    maskPolygon,
+    nnInteractiveStatus?.available,
+    postCallbackIfNeeded,
+    recordAudit,
+    videoSrc,
+  ]);
 
   const onAddClick = (click: SamClick) => {
     setVideoTrack(null);
     setVideoTrackStatus(null);
     lastVideoTrackFrameRef.current = null;
+    if (interactionMode === 'positive' || interactionMode === 'negative') {
+      if (nnInteractiveStatus?.available !== true) {
+        toast.error('nnInteractive 未连接，正点和负点不会改走 SAM3.1');
+        return;
+      }
+      setClicks((prev) => [...prev, click]);
+      queueMicrotask(() => {
+        void runNnInteractive(click);
+      });
+      return;
+    }
     setClicks((prev) => {
       const next = [...prev, click];
       // Schedule outside the updater — never toast/setState synchronously while React is rendering.
@@ -843,10 +1049,29 @@ export function ReaderWorkbench() {
     });
   };
 
+  const onAddStroke = (stroke: ReaderPromptStroke) => {
+    setVideoTrack(null);
+    setVideoTrackStatus(null);
+    lastVideoTrackFrameRef.current = null;
+    if (nnInteractiveStatus?.available !== true) {
+      toast.error('nnInteractive 未连接，自由涂鸦和套索不会改走 SAM3.1');
+      return;
+    }
+    if (!maskPolygon?.length && !box) {
+      toast.error('请先框选病灶并生成初始轮廓');
+      return;
+    }
+    setPromptStrokes((prev) => [...prev, stroke]);
+    queueMicrotask(() => {
+      void runNnInteractive(undefined, stroke);
+    });
+  };
+
   const onPointerUpAfterBox = () => {
     setVideoTrack(null);
     setVideoTrackStatus(null);
     lastVideoTrackFrameRef.current = null;
+    nnInteractiveSessionRef.current = { key: '', id: '', initialized: false };
     if (box && Math.abs(box.x2 - box.x1) > 8 && Math.abs(box.y2 - box.y1) > 8) {
       queueMicrotask(() => {
         void runSamRef.current({
@@ -941,7 +1166,7 @@ export function ReaderWorkbench() {
 
   const caseTitle = selectedCase
     ? `${selectedCase.case_id}${selectedCase.patient_id ? ` · ${selectedCase.patient_id}` : ''}`
-    : deepCaseId || patientIdParam || '—';
+    : effectiveDeepCaseId || effectivePatientIdParam || '—';
   const frameTitle = currentFrame?.axis_label || (externalVideo ? '外部视频' : '—');
 
   const samBadge = samStatus?.available
@@ -952,7 +1177,7 @@ export function ReaderWorkbench() {
     <div className="flex h-full flex-col bg-[#08090a] text-gray-100">
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2.5">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => router.push('/')} className="reader-btn">
+          <button type="button" onClick={() => navigateTo('/')} className="reader-btn">
             <ArrowLeft size={14} /> 工作台
           </button>
           <div>
@@ -991,7 +1216,14 @@ export function ReaderWorkbench() {
           >
             <ExternalLink size={12} /> HTML 版
           </button>
-          <button type="button" className="reader-btn" onClick={() => fetchSamStatus().then(setSamStatus)}>
+          <button
+            type="button"
+            className="reader-btn"
+            onClick={() => {
+              fetchSamStatus().then(setSamStatus);
+              fetchNnInteractiveStatus().then(setNnInteractiveStatus);
+            }}
+          >
             <RefreshCw size={12} />
           </button>
         </div>
@@ -1001,6 +1233,7 @@ export function ReaderWorkbench() {
         <ReaderCaseSidebar
           cohort={cohort}
           onCohortChange={(c) => {
+            if (c === cohort) return;
             if (auditSessionRef.current && auditCaseRef.current) {
               recordAudit('session_end', {
                 elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
@@ -1009,10 +1242,19 @@ export function ReaderWorkbench() {
             }
             auditSessionRef.current = null;
             auditCaseRef.current = null;
+            caseLoadRequestRef.current += 1;
+            caseSelectionRequestRef.current += 1;
+            loadedCohortRef.current = null;
+            ignoreDeepCaseRef.current = true;
             initialCaseSelectionRef.current = false;
+            setCaseSummaries([]);
             setCohort(c);
             setSelectedCase(null);
             resetInteraction();
+            const nextParams = new URLSearchParams(searchParams.toString());
+            nextParams.set('cohort', c);
+            ['case', 'patient_id', 'video', 'image', 'frame_id', 'title'].forEach((key) => nextParams.delete(key));
+            navigateTo(`/reader?${nextParams.toString()}`, { replace: true });
           }}
           cases={caseSummaries}
           selectedCaseId={selectedCase?.case_id || null}
@@ -1045,6 +1287,8 @@ export function ReaderWorkbench() {
             reportBusy={reportBusy}
             llmReady={llmReady}
             hasPrompt={hasPrompt}
+            nnInteractiveAvailable={nnInteractiveStatus?.available ?? null}
+            nnInteractiveBusy={nnInteractiveBusy}
             onGenerateReport={() => runSam({ llmReport: true })}
             onClearPrompt={resetInteraction}
             onUndoPoint={() => setClicks((prev) => prev.slice(0, -1))}
@@ -1058,6 +1302,7 @@ export function ReaderWorkbench() {
               playbackRate={playbackRate}
               interactionMode={interactionMode}
               clicks={clicks}
+              promptStrokes={promptStrokes}
               box={box}
               maskPolygon={maskPolygon}
               showMask={showMask}
@@ -1066,10 +1311,11 @@ export function ReaderWorkbench() {
               onVideoReady={onVideoReady}
               onTimeUpdate={onVideoTimeUpdate}
               onAddClick={onAddClick}
+              onAddStroke={onAddStroke}
               onSetBox={setBox}
               onPointerUpAfterBox={onPointerUpAfterBox}
               badge={badge}
-              hint="优先框选病灶，再用正/负向点修正 → 自动分割 → 右侧查看文字报告与胃壁分层"
+              hint="先框选病灶，再用 nnInteractive 正点、负点、自由涂鸦或套索修正"
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
@@ -1084,7 +1330,7 @@ export function ReaderWorkbench() {
                   <button
                     type="button"
                     className="reader-btn"
-                    onClick={() => router.push('/')}
+                    onClick={() => navigateTo('/')}
                   >
                     返回工作台选例
                   </button>
@@ -1121,21 +1367,27 @@ export function ReaderWorkbench() {
           caseId={activeCaseId}
           frameId={currentFrame?.media_token || currentFrame?.video_rel || null}
           frameTime={currentTime}
+          clinical={selectedCase?.clinical}
           layerResult={layerResult}
           onLayerResult={setLayerResult}
           onEvidenceStateChange={handleGcUsEvidenceState}
           onDoctorAction={onDoctorAction}
           unifiedResult={unifiedAgentResult}
-          onCopy={() => {
+          onCopy={async () => {
             const text = unifiedAgentResult?.report.dynamic_report_draft?.full_text
               || gcUsReport?.report.prose
               || report?.template_prose
               || report?.llm_report?.narrative
               || report?.summary
               || '';
-            if (text) {
-              navigator.clipboard.writeText(text);
+            if (!text) {
+              toast.error('暂无可复制报告');
+              return;
+            }
+            if (await copyReaderText(text)) {
               toast.success('已复制报告');
+            } else {
+              toast.error('浏览器暂未授权剪贴板，请先点击页面后重试');
             }
           }}
         />

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Patient } from '@/types';
 import { ExplainableAnalysisResult } from '@/lib/concept-agent-merge';
-import { Columns, Eye, Layers, Maximize2, RefreshCw, Ruler, Scan, Settings2, Undo2, XCircle, CircleDashed, ZoomIn, Minimize2, Brain, Grid2X2, ChevronLeft, ChevronRight, Video, FileStack } from 'lucide-react';
+import { Columns, Eye, Layers, Maximize2, RefreshCw, Ruler, Scan, Settings2, Undo2, XCircle, CircleDashed, ZoomIn, Minimize2, Brain, Grid2X2, ChevronLeft, ChevronRight, Video, FileStack, MousePointer2 } from 'lucide-react';
 import { ExplainableAnalysis } from './ExplainableAnalysis';
 import { DicomViewer } from './DicomViewer';
 import { VideoPlayer } from './VideoPlayer';
@@ -36,6 +36,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
   onExplainableComplete,
 }) => {
   const { t, language, dataset } = useSettings();
+  const isReaderStudyQueue = patient?.phase === 'reader_v150';
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<ViewMode>('original');
   
@@ -184,11 +185,11 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
 
   useEffect(() => {
     resetAdjustments();
-    setMode('original');
-  }, [patient?.id, dataset]);
+    setMode(isReaderStudyQueue ? 'video' : 'original');
+  }, [dataset, isReaderStudyQueue, patient?.id]);
 
   useEffect(() => {
-    if (!patient) {
+    if (!patient || !patient.json_url) {
       setAnnotationBbox(null);
       setCropOffset(null);
       setRingImageUrl(null);
@@ -210,8 +211,10 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
             const filename = decodeURIComponent(imageUrl.pathname.split('/').pop() || '');
             const cohort = imageUrl.searchParams.get('cohort') || '2025';
             const treatment = imageUrl.searchParams.get('treatment') || 'surgery';
+            const queue = imageUrl.searchParams.get('queue');
+            const queueQuery = queue ? `&queue=${encodeURIComponent(queue)}` : '';
             const offsetRes = await fetch(
-              `/api/images/crop-offset?filename=${encodeURIComponent(filename)}&cohort=${cohort}&treatment=${treatment}`,
+              `/api/images/crop-offset?filename=${encodeURIComponent(filename)}&cohort=${cohort}&treatment=${treatment}${queueQuery}`,
               { signal: controller.signal },
             );
             if (offsetRes.ok) {
@@ -262,7 +265,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
         })
         .catch(err => {
            console.error("[Ring] Failed to generate peritumoral ring", err);
-           toast.error(language === 'zh' ? "生成瘤周环失败: " + err.message : "Failed to generate peritumoral ring: " + err.message);
+           toast.error(language !== 'en' ? "生成瘤周环失败: " + err.message : "Failed to generate peritumoral ring: " + err.message);
            setShowRing(false);
         });
     } else if (!showRing) {
@@ -286,6 +289,8 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
+      // VideoPlayer owns playback shortcuts while the queue is in video mode.
+      if (mode === 'video' || e.target instanceof HTMLVideoElement) return;
       // Only handle if not typing in input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
@@ -460,16 +465,16 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
     }
   };
 
-  const primaryViewLabel = dataset === 'cropped' ? t.viewer.cropUi : t.viewer.bmode;
+  const primaryViewLabel = t.viewer.bmode;
 
   const getModeLabel = () => {
       if (mode === 'split') return 'SPLIT COMPARISON';
       if (mode === 'multi') return `MULTI-IMAGE (${siblingImages.length})`;
       if (mode === 'video') return `VIDEO (${patient?.video_urls?.length || 0})`;
-      if (mode === 'dicom') return language === 'zh' ? 'DICOM 原始帧' : 'DICOM RAW';
+      if (mode === 'dicom') return language !== 'en' ? 'DICOM 原始帧' : 'DICOM RAW';
       if (mode === 'original') return primaryViewLabel;
       if (mode === 'overlay') return t.viewer.mask;
-      if (mode === 'roi') return language === 'zh' ? '病灶 ROI' : 'LESION ROI';
+      if (mode === 'roi') return language !== 'en' ? '病灶 ROI' : 'LESION ROI';
       return t.viewer.heatmap;
   }
   
@@ -495,6 +500,11 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
       return 'bg-red-500 text-red-500';
   }
 
+  const openBoundaryTool = (detail: { sam?: boolean; videoSam?: boolean; keyframes?: boolean }) => {
+    if (detail.videoSam || detail.keyframes) setMode('video');
+    window.dispatchEvent(new CustomEvent('gastric:open-boundary-edit', { detail }));
+  };
+
   // Apply filters dynamically
   const imgStyle = {
       filter: `brightness(${brightness}%) contrast(${contrast}%)`
@@ -513,7 +523,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
               </span>
            </div>
            <span className="text-[10px] font-mono text-gray-400 ml-4 tracking-wide opacity-80">
-             PID: {patient.id}
+             PID: {patient.id_short || patient.patient_id}
            </span>
         </div>
         
@@ -530,7 +540,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
            )}
            {zoomToROI && (
              <div className="text-[10px] font-mono text-cyan-400 animate-pulse">
-               {language === 'zh' ? '🔍 ROI 放大模式' : '🔍 ROI ZOOM MODE'}
+               {language !== 'en' ? '🔍 ROI 放大模式' : '🔍 ROI ZOOM MODE'}
              </div>
            )}
         </div>
@@ -585,20 +595,19 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
             >
               <ChevronLeft size={16} />
             </button>
-            <div className="flex items-center gap-1.5">
-              {siblingImages.map((img, idx) => (
-                <button
-                  key={img.id}
-                  onClick={() => onSelectSibling?.(img)}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    img.id === patient?.id 
-                      ? 'bg-blue-500 scale-125' 
-                      : 'bg-gray-600 hover:bg-gray-400'
-                  }`}
-                  title={img.id_short}
-                />
+            <select
+              value={patient?.id || ''}
+              onChange={(event) => {
+                const next = siblingImages.find((img) => img.id === event.target.value);
+                if (next) onSelectSibling?.(next);
+              }}
+              className="max-w-[180px] rounded border border-white/10 bg-black/60 px-2 py-1 text-[10px] text-gray-300 outline-none"
+              aria-label={language !== 'en' ? '选择当前帧' : 'Select frame'}
+            >
+              {siblingImages.map((img) => (
+                <option key={img.id} value={img.id}>{img.id_short}</option>
               ))}
-            </div>
+            </select>
             <button 
               onClick={() => navigateImage('next')}
               className="p-1 text-gray-400 hover:text-white transition-colors"
@@ -751,7 +760,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
               ) : (
                 <div className="flex flex-col items-center justify-center text-gray-500">
                   <Scan size={32} className="opacity-40 mb-2" />
-                  <span className="text-xs">{language === 'zh' ? '分割图像不可用' : 'Segmentation image unavailable'}</span>
+                  <span className="text-xs">{language !== 'en' ? '分割图像不可用' : 'Segmentation image unavailable'}</span>
                 </div>
               )}
             </div>
@@ -984,8 +993,8 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
       </div>
 
       {/* Toolbar - Compact Design */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 transition-opacity duration-300 opacity-0 group-hover:opacity-100">
-        <div className="flex items-center gap-1.5">
+      <div className="absolute inset-x-2 top-3 z-30 overflow-x-auto transition-opacity duration-300 opacity-0 group-hover:opacity-100">
+        <div className="mx-auto flex min-w-full w-max items-center justify-center gap-1.5 pb-1">
           
           {/* View Mode Group */}
           <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-1 py-0.5 flex items-center gap-0.5">
@@ -1017,7 +1026,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
                     ? 'bg-emerald-500/30 text-emerald-400'
                     : 'text-gray-500 hover:text-white hover:bg-white/10'
             }`}
-              title={language === 'zh' ? '病灶 ROI' : 'Lesion ROI'}
+              title={language !== 'en' ? '病灶 ROI' : 'Lesion ROI'}
           >
               <Scan size={14} />
           </button>
@@ -1036,7 +1045,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
                 className={`p-1.5 rounded-md transition-all relative ${
                   mode === 'multi' ? 'bg-blue-500/30 text-blue-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
                 }`}
-                title={language === 'zh' ? `${siblingImages.length} 张图片` : `${siblingImages.length} images`}
+                title={language !== 'en' ? `${siblingImages.length} 张图片` : `${siblingImages.length} images`}
               >
                 <Grid2X2 size={14} />
                 <span className="absolute -top-1 -right-1 text-[8px] bg-blue-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold">
@@ -1050,7 +1059,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
                 className={`p-1.5 rounded-md transition-all relative ${
                   mode === 'video' ? 'bg-rose-500/30 text-rose-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
                 }`}
-                title={language === 'zh' ? `${patient.video_urls.length} 个视频` : `${patient.video_urls.length} videos`}
+                title={language !== 'en' ? `${patient.video_urls.length} 个视频` : `${patient.video_urls.length} videos`}
               >
                 <Video size={14} />
                 <span className="absolute -top-1 -right-1 text-[8px] bg-rose-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold">
@@ -1065,7 +1074,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
                 ? 'text-violet-400'
                 : 'text-gray-500 hover:text-gray-300'
               }`}
-              title={language === 'zh' ? 'DICOM 原始帧查看' : 'DICOM Raw Viewer'}
+              title={language !== 'en' ? 'DICOM 原始帧查看' : 'DICOM Raw Viewer'}
             >
               <div className={`absolute inset-0 bg-violet-500/10 rounded-xl blur-md transition-opacity duration-500 ${mode === 'dicom' ? 'opacity-100' : 'opacity-0'}`}></div>
               <FileStack size={16} className="relative z-10" />
@@ -1092,7 +1101,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
                 !patient.json_url ? 'opacity-30 cursor-not-allowed text-gray-600' :
                 showRing ? 'bg-orange-500/30 text-orange-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
             }`}
-              title={language === 'zh' ? '瘤周环' : 'Peritumoral'}
+              title={language !== 'en' ? '瘤周环' : 'Peritumoral'}
           >
               <CircleDashed size={14} />
           </button>
@@ -1116,7 +1125,7 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
               className={`p-1.5 rounded-md transition-all ${
                 isMeasuring ? 'bg-amber-500/30 text-amber-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
               }`}
-              title={language === 'zh' ? '测量' : 'Measure'}
+              title={language !== 'en' ? '测量' : 'Measure'}
             >
               <Ruler size={14} />
             </button>
@@ -1125,12 +1134,55 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
               className={`p-1.5 rounded-md transition-all ${
                 showControls ? 'bg-blue-500/30 text-blue-400' : 'text-gray-500 hover:text-white hover:bg-white/10'
               }`}
-              title={language === 'zh' ? '调节' : 'Adjust'}
+              title={language !== 'en' ? '调节' : 'Adjust'}
           >
              <Settings2 size={14} />
           </button>
           </div>
           
+          {/* Segmentation and video analysis tools reuse the existing editor. */}
+          <div className="bg-black/70 backdrop-blur-md border border-cyan-400/20 rounded-lg px-1 py-0.5 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => openBoundaryTool({ sam: true })}
+              disabled={!patient.image_url}
+              className={`flex items-center gap-1 rounded-md px-1.5 py-1.5 text-[10px] transition-all ${
+                patient.image_url
+                  ? 'text-cyan-300 hover:bg-cyan-400/15 hover:text-cyan-100'
+                  : 'cursor-not-allowed text-gray-700'
+              }`}
+              aria-label={language !== 'en' ? '静态图交互分割' : 'Interactive segmentation'}
+              title={language !== 'en' ? '静态图交互分割' : 'Interactive segmentation'}
+            >
+              <MousePointer2 size={14} />
+              <span>{language !== 'en' ? '分割' : 'Seg'}</span>
+            </button>
+            {patient.video_urls && patient.video_urls.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openBoundaryTool({ videoSam: true })}
+                  className="relative flex items-center gap-1 rounded-md px-1.5 py-1.5 text-[10px] text-rose-300 transition-all hover:bg-rose-400/15 hover:text-rose-100"
+                  aria-label={language !== 'en' ? '视频分析与全视频传播' : 'Video analysis and propagation'}
+                  title={language !== 'en' ? '视频分析与全视频传播' : 'Video analysis and propagation'}
+                >
+                  <Video size={14} />
+                  <span>{language !== 'en' ? '视频' : 'Video'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openBoundaryTool({ videoSam: true, keyframes: true })}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-1.5 text-[10px] text-violet-300 transition-all hover:bg-violet-400/15 hover:text-violet-100"
+                  aria-label={language !== 'en' ? '智能选择关键帧' : 'Select quality keyframes'}
+                  title={language !== 'en' ? '智能选择关键帧' : 'Select quality keyframes'}
+                >
+                  <Grid2X2 size={14} />
+                  <span>{language !== 'en' ? '关键帧' : 'Keyframes'}</span>
+                </button>
+              </>
+            )}
+          </div>
+
           {/* Analysis Button - Highlighted */}
           <button 
             onClick={() => setShowExplainableAnalysis(true)}
@@ -1142,14 +1194,14 @@ export const UltrasoundViewer: React.FC<UltrasoundViewerProps> = ({
             }`}
           >
             <Brain size={14} />
-            <span>{language === 'zh' ? '分析' : 'AI'}</span>
+            <span>{language !== 'en' ? '分析' : 'AI'}</span>
           </button>
 
           {/* Fullscreen */}
           <button 
             onClick={toggleFullscreen}
             className="p-1.5 bg-black/70 backdrop-blur-md border border-white/10 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-all"
-            title={language === 'zh' ? '全屏' : 'Fullscreen'}
+            title={language !== 'en' ? '全屏' : 'Fullscreen'}
           >
              <Maximize2 size={14} />
           </button>

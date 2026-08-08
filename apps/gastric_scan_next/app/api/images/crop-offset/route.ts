@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { getDatasetPaths, parseCohortYear, TreatmentType } from '@/lib/config';
+import { getBenignDatasetPaths, getDatasetPaths, getExternalDatasetPaths, parseCohortYear, TreatmentType } from '@/lib/config';
+import { isExternalQueue, parseWorkbenchQueueId } from '@/lib/cohort';
 
 export const runtime = 'nodejs';
 
@@ -36,19 +37,38 @@ export async function GET(request: NextRequest) {
   const filename = searchParams.get('filename');
   const cohortYear = parseCohortYear(searchParams.get('cohort'));
   const treatmentType: TreatmentType = searchParams.get('treatment') === 'nac' ? 'nac' : 'surgery';
+  const queueParam = searchParams.get('queue');
+  const queueId = queueParam ? parseWorkbenchQueueId(queueParam) : null;
 
   if (!filename) {
     return NextResponse.json({ error: 'filename is required' }, { status: 400 });
   }
 
   const safeFilename = path.basename(decodeURIComponent(filename));
-  const cacheKey = `${cohortYear}:${treatmentType}:${safeFilename}`;
+  const externalCenterId = queueId && isExternalQueue(queueId) && queueId.startsWith('external:')
+    ? queueId.slice('external:'.length)
+    : null;
+  const benignCenterId = queueId?.startsWith('benign:')
+    ? queueId.slice('benign:'.length)
+    : null;
+  const cacheKey = `${queueId || cohortYear}:${treatmentType}:${safeFilename}`;
   if (offsetCache.has(cacheKey)) {
     return NextResponse.json(offsetCache.get(cacheKey));
   }
 
-  const originalPaths = getDatasetPaths('original', cohortYear, treatmentType);
-  const croppedPaths = getDatasetPaths('cropped', cohortYear, treatmentType);
+  const originalPaths = benignCenterId
+    ? getBenignDatasetPaths('original', benignCenterId)
+    : externalCenterId
+      ? getExternalDatasetPaths('original', externalCenterId)
+      : getDatasetPaths('original', cohortYear, treatmentType);
+  const croppedPaths = benignCenterId
+    ? getBenignDatasetPaths('cropped', benignCenterId)
+    : externalCenterId
+      ? getExternalDatasetPaths('cropped', externalCenterId)
+      : getDatasetPaths('cropped', cohortYear, treatmentType);
+  if (!originalPaths || !croppedPaths) {
+    return NextResponse.json({ error: 'Unknown data queue' }, { status: 404 });
+  }
   const originalPath = path.join(originalPaths.images, safeFilename);
   const cropPath = path.join(croppedPaths.images, safeFilename);
 

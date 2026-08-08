@@ -1,7 +1,12 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef } from 'react';
-import type { InteractionMode, SamBox, SamClick } from '@/lib/reader/types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  InteractionMode,
+  ReaderPromptStroke,
+  SamBox,
+  SamClick,
+} from '@/lib/reader/types';
 
 export type ViewerTransform = {
   vw: number;
@@ -15,14 +20,17 @@ type Props = {
   videoSrc: string;
   interactionMode: InteractionMode;
   clicks: SamClick[];
+  promptStrokes: ReaderPromptStroke[];
   box: SamBox | null;
   maskPolygon: number[][] | null;
   showMask: boolean;
   maskOpacity: number;
   maskOverlayPng?: string | null;
   onVideoReady: (video: HTMLVideoElement) => void;
+  playbackRate: number;
   onTimeUpdate: (time: number, duration: number) => void;
   onAddClick: (click: SamClick) => void;
+  onAddStroke: (stroke: ReaderPromptStroke) => void;
   onSetBox: (box: SamBox | null) => void;
   onPointerUpAfterBox?: () => void;
   badge?: string | null;
@@ -65,18 +73,29 @@ function imageToCanvas(ix: number, iy: number, t: ViewerTransform) {
   return { x: t.offsetX + ix * t.scale, y: t.offsetY + iy * t.scale };
 }
 
+function capturePointerSafely(target: HTMLElement, pointerId: number): void {
+  try {
+    target.setPointerCapture(pointerId);
+  } catch {
+    // Synthetic or already-ended pointer events may not have an active capture target.
+  }
+}
+
 export function ReaderViewer({
   videoSrc,
   interactionMode,
   clicks,
+  promptStrokes,
   box,
   maskPolygon,
   showMask,
   maskOpacity,
   maskOverlayPng,
   onVideoReady,
+  playbackRate,
   onTimeUpdate,
   onAddClick,
+  onAddStroke,
   onSetBox,
   onPointerUpAfterBox,
   badge,
@@ -87,6 +106,8 @@ export function ReaderViewer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayImgRef = useRef<HTMLImageElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; active: boolean } | null>(null);
+  const strokeDraftRef = useRef<ReaderPromptStroke | null>(null);
+  const [strokeDraft, setStrokeDraft] = useState<ReaderPromptStroke | null>(null);
 
   const redraw = useCallback(() => {
     const video = videoRef.current;
@@ -141,6 +162,24 @@ export function ReaderViewer({
       ctx.setLineDash([]);
     }
 
+    [...promptStrokes, ...(strokeDraft ? [strokeDraft] : [])].forEach((stroke) => {
+      if (stroke.points.length < 2) return;
+      ctx.beginPath();
+      stroke.points.forEach((point, index) => {
+        const p = imageToCanvas(point.x, point.y, t);
+        if (index === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      if (stroke.kind === 'lasso') ctx.closePath();
+      ctx.strokeStyle = stroke.label === 'negative'
+        ? 'rgba(248, 113, 113, 0.95)'
+        : 'rgba(167, 243, 208, 0.95)';
+      ctx.lineWidth = Math.max(2, stroke.width * t.scale);
+      ctx.setLineDash(stroke.kind === 'lasso' ? [6, 3] : []);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
     clicks.forEach((c) => {
       const p = imageToCanvas(c.x, c.y, t);
       const neg = c.label === 'negative';
@@ -152,7 +191,7 @@ export function ReaderViewer({
       ctx.lineWidth = 1.5;
       ctx.stroke();
     });
-  }, [box, clicks, maskOpacity, maskOverlayPng, maskPolygon, showMask]);
+  }, [box, clicks, maskOpacity, maskOverlayPng, maskPolygon, promptStrokes, showMask, strokeDraft]);
 
   useEffect(() => {
     if (!maskOverlayPng) {
@@ -193,6 +232,21 @@ export function ReaderViewer({
     };
   }, [onTimeUpdate, onVideoReady, redraw, videoSrc]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      video.defaultPlaybackRate = playbackRate;
+    } catch {
+      // Some remote browsers reject this property for an unready media element.
+    }
+    try {
+      video.playbackRate = playbackRate;
+    } catch {
+      // Keep the viewer usable if the browser rejects the requested rate.
+    }
+  }, [playbackRate, videoSrc]);
+
   const handlePointerDown = (e: React.PointerEvent) => {
     const video = videoRef.current;
     const container = containerRef.current;
@@ -201,11 +255,24 @@ export function ReaderViewer({
       const pt = clientToImage(e.clientX, e.clientY, video, container);
       if (!pt.inVideo) return;
       dragRef.current = { startX: pt.x, startY: pt.y, active: true };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      capturePointerSafely(e.currentTarget as HTMLElement, e.pointerId);
       return;
     }
     const pt = clientToImage(e.clientX, e.clientY, video, container);
     if (!pt.inVideo) return;
+    if (interactionMode === 'scribble' || interactionMode === 'lasso') {
+      const transform = getTransform(video, container);
+      const stroke: ReaderPromptStroke = {
+        kind: interactionMode,
+        points: [{ x: pt.x, y: pt.y }],
+        label: e.shiftKey ? 'negative' : 'positive',
+        width: Math.max(4, Math.round(8 / Math.max(transform.scale, 0.1))),
+      };
+      strokeDraftRef.current = stroke;
+      setStrokeDraft(stroke);
+      capturePointerSafely(e.currentTarget as HTMLElement, e.pointerId);
+      return;
+    }
     onAddClick({
       x: pt.x,
       y: pt.y,
@@ -217,7 +284,21 @@ export function ReaderViewer({
     const video = videoRef.current;
     const container = containerRef.current;
     const drag = dragRef.current;
-    if (!video || !container || !drag?.active || interactionMode !== 'box') return;
+    if (!video || !container) return;
+    if (strokeDraftRef.current && (interactionMode === 'scribble' || interactionMode === 'lasso')) {
+      const pt = clientToImage(e.clientX, e.clientY, video, container);
+      if (!pt.inVideo) return;
+      const draft = strokeDraftRef.current;
+      const last = draft.points[draft.points.length - 1];
+      if (!last || Math.hypot(pt.x - last.x, pt.y - last.y) >= 1) {
+        const next = { ...draft, points: [...draft.points, { x: pt.x, y: pt.y }] };
+        strokeDraftRef.current = next;
+        setStrokeDraft(next);
+        redraw();
+      }
+      return;
+    }
+    if (!drag?.active || interactionMode !== 'box') return;
     const pt = clientToImage(e.clientX, e.clientY, video, container);
     onSetBox({
       x1: Math.min(drag.startX, pt.x),
@@ -229,6 +310,13 @@ export function ReaderViewer({
   };
 
   const handlePointerUp = () => {
+    const stroke = strokeDraftRef.current;
+    if (stroke) {
+      if (stroke.points.length >= 2) onAddStroke(stroke);
+      strokeDraftRef.current = null;
+      setStrokeDraft(null);
+      return;
+    }
     if (dragRef.current?.active && interactionMode === 'box') {
       dragRef.current.active = false;
       onPointerUpAfterBox?.();
@@ -246,10 +334,14 @@ export function ReaderViewer({
         loop
         muted
         playsInline
-        preload="metadata"
+        autoPlay
+        preload="auto"
       />
       <div
-        className={`absolute inset-0 ${interactionMode === 'box' ? 'cursor-crosshair' : 'cursor-pointer'}`}
+        className={`absolute inset-0 ${interactionMode === 'box' || interactionMode === 'scribble' || interactionMode === 'lasso' ? 'cursor-crosshair' : 'cursor-pointer'}`}
+        role="application"
+        aria-label="Ultrasound interaction canvas"
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

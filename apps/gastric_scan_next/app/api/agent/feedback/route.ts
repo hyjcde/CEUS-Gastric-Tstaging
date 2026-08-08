@@ -52,6 +52,7 @@ function runPythonFeedback(payload: unknown): Promise<string> {
 
 interface FeedbackRequestBody {
   patient_id: string;
+  case_id?: string;
   session_id?: string;
   memory_store?: string;
   memory_store_path?: string;
@@ -62,8 +63,12 @@ interface FeedbackRequestBody {
   final_t_stage?: string;
   gold_t_stage?: string;
   feedback_type?: 'doctor_correction' | 'pathology_result' | 'quality_review';
+  review_action?: 'accept' | 'modify' | 'reject' | 'request_more_evidence';
   correction_text?: string;
   error_type?: string;
+  quality_flags?: string[];
+  accepted_evidence?: string[];
+  rejected_evidence?: string[];
   confidence?: string;
   reviewer?: string;
 }

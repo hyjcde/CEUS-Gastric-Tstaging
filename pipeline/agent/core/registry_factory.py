@@ -32,10 +32,13 @@ _DEFAULT_TOOL_NAMES = [
     "segment",                 # 4. SegmentationTool
     "classify",                # 5. ClassificationTool (L1 T 4-class)
     "morphology",              # 6. MorphologyTool
+    "gc_us_signs",             # 6b. GcUsSignTool (direction-aware soft score)
     "clinical_risk",           # 7. ClinicalTool
     "structure_report",        # 8. ReportTool
     "clinical_decision",       # 9. Cross-modal MDT decision support
     "retrieve_similar",        # 10. SimilarityTool (RAG, optional)
+    "concept_extract",         # 11. ConceptTool (clinical_concept_v1)
+    "report_draft",            # 12. ReportDraftTool (report_draft_v1)
 ]
 
 
@@ -67,8 +70,10 @@ def build_default_registry(
     from ..tools.clinical_decision_tool import ClinicalDecisionTool
     from ..tools.lumen_detection_tool import LumenDetectionTool
     from ..tools.morphology_tool import MorphologyTool
+    from ..tools.gc_us_sign_tool import GcUsSignTool
     from ..tools.quality_tool import QualityTool
-    from ..tools.report_tool import ReportTool
+    from ..tools.concept_tool import ConceptTool
+    from ..tools.report_tool import ReportDraftTool, ReportTool
     from ..tools.segmentation_tool import SegmentationTool
     from ..tools.similarity_tool import SimilarityTool
     from ..tools.wall_evidence_tool import WallEvidenceTool
@@ -91,9 +96,12 @@ def build_default_registry(
     registry.register(SegmentationTool(device=device))
     registry.register(ClassificationTool(device=device))
     registry.register(MorphologyTool())
+    registry.register(GcUsSignTool())
     registry.register(ClinicalTool())
     registry.register(ReportTool())
     registry.register(ClinicalDecisionTool())
+    registry.register(ConceptTool())
+    registry.register(ReportDraftTool())
     if enable_rag:
         registry.register(SimilarityTool())
 

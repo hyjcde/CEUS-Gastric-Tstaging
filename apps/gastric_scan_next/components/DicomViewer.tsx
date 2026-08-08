@@ -98,10 +98,10 @@ export const DicomViewer: React.FC<DicomViewerProps> = ({ patient, language = 'z
         if (data.frames && data.frames.length > 0) {
           setFrames(data.frames);
         } else {
-          setError(language === 'zh' ? '该患者无可用DICOM文件' : 'No DICOM files available for this patient');
+          setError(language !== 'en' ? '该患者无可用DICOM文件' : 'No DICOM files available for this patient');
         }
       })
-      .catch(() => setError(language === 'zh' ? '加载DICOM列表失败' : 'Failed to load DICOM list'))
+      .catch(() => setError(language !== 'en' ? '加载DICOM列表失败' : 'Failed to load DICOM list'))
       .finally(() => setLoading(false));
   }, [patient.patient_id, cohort, treatment, language]);
 
@@ -230,7 +230,7 @@ export const DicomViewer: React.FC<DicomViewerProps> = ({ patient, language = 'z
       }
     } catch (err) {
       console.error('[DicomViewer] Render error:', err);
-      setError(language === 'zh' ? `渲染失败: ${(err as Error).message}` : `Render failed: ${(err as Error).message}`);
+      setError(language !== 'en' ? `渲染失败: ${(err as Error).message}` : `Render failed: ${(err as Error).message}`);
     } finally {
       setFrameLoading(false);
     }
@@ -253,7 +253,7 @@ export const DicomViewer: React.FC<DicomViewerProps> = ({ patient, language = 'z
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-500">
         <Loader2 size={32} className="animate-spin text-blue-500" />
         <span className="text-[11px] font-mono uppercase tracking-widest">
-          {language === 'zh' ? '加载DICOM...' : 'Loading DICOM...'}
+          {language !== 'en' ? '加载DICOM...' : 'Loading DICOM...'}
         </span>
       </div>
     );
@@ -309,7 +309,7 @@ export const DicomViewer: React.FC<DicomViewerProps> = ({ patient, language = 'z
           ref={imgRef}
           alt="DICOM frame"
           className={`max-h-full max-w-full object-contain transition-opacity duration-300 ${isJpegFrame ? 'block' : 'hidden'}`}
-          onError={() => setError(language === 'zh' ? '图像解码失败' : 'Image decode failed')}
+          onError={() => setError(language !== 'en' ? '图像解码失败' : 'Image decode failed')}
         />
 
         {/* Canvas display (uncompressed DICOMs) */}
@@ -439,7 +439,7 @@ export const DicomViewer: React.FC<DicomViewerProps> = ({ patient, language = 'z
               }}
               disabled={isJpegFrame}
               className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-500 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-              title={language === 'zh' ? '减小窗宽' : 'Narrow Window'}
+              title={language !== 'en' ? '减小窗宽' : 'Narrow Window'}
             >
               <Minus size={12} />
             </button>
@@ -452,7 +452,7 @@ export const DicomViewer: React.FC<DicomViewerProps> = ({ patient, language = 'z
               }}
               disabled={isJpegFrame}
               className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-500 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-              title={language === 'zh' ? '增大窗宽' : 'Widen Window'}
+              title={language !== 'en' ? '增大窗宽' : 'Widen Window'}
             >
               <Plus size={12} />
             </button>

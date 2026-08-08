@@ -53,6 +53,24 @@ function pickNarrative(report: SamReport | null): string {
   return report.template_prose || report.llm_report?.narrative || report.summary || '';
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function clinicalNumber(value: unknown, fallback?: unknown): number | null {
+  const direct = Number(value);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const alternate = Number(fallback);
+  return Number.isFinite(alternate) && alternate > 0 ? alternate : null;
+}
+
+function clinicalLabValue(value: unknown, positive: unknown): string {
+  const number = clinicalNumber(value);
+  if (number != null) return String(number);
+  if (positive === true || positive === 1 || positive === '1') return '阳性';
+  return '未提供';
+}
+
 export function ReaderReportPanel({
   report,
   loading,
@@ -98,6 +116,14 @@ export function ReaderReportPanel({
   const [doctorStage, setDoctorStage] = useState('');
   const [reason, setReason] = useState('');
   const selectedStage = doctorStage || (STAGES.includes(stage) ? stage : '');
+  const tumorSize = asRecord(clinical.tumorSize);
+  const biomarkers = asRecord(clinical.biomarkers);
+  const clinicalLocation = typeof clinical.location === 'string' && clinical.location.trim()
+    ? clinical.location
+    : '暂无来源';
+  const clinicalLength = clinicalNumber(clinical.tumor_size_mm, Number(tumorSize?.length) * 10);
+  const clinicalThickness = clinicalNumber(clinical.tumor_thickness_mm, Number(tumorSize?.thickness) * 10);
+  const clinicalHasData = Object.keys(clinical).length > 0;
 
   return (
     <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-white/10 bg-[#0c0d0f]">
@@ -235,6 +261,38 @@ export function ReaderReportPanel({
       ) : null}
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <section className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.04] p-3 text-[11px] text-gray-200">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-cyan-100">临床辅助资料</span>
+            <span className="text-[9px] text-cyan-200/70">仅供医生参考，不参与自动分期</span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-[9px] text-gray-500">病灶部位</div>
+              <div className="mt-0.5 truncate text-gray-200">{clinicalHasData ? clinicalLocation : '暂无来源'}</div>
+            </div>
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-[9px] text-gray-500">肿瘤长径</div>
+              <div className="mt-0.5 font-mono text-gray-200">{clinicalLength != null ? `${clinicalLength} mm` : '未评估'}</div>
+            </div>
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-[9px] text-gray-500">肿瘤厚度</div>
+              <div className="mt-0.5 font-mono text-gray-200">{clinicalThickness != null ? `${clinicalThickness} mm` : '未评估'}</div>
+            </div>
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-[9px] text-gray-500">CEA</div>
+              <div className="mt-0.5 font-mono text-gray-200">
+                {clinicalLabValue(clinical.cea, biomarkers?.cea_positive)}
+              </div>
+            </div>
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-[9px] text-gray-500">CA19-9</div>
+              <div className="mt-0.5 font-mono text-gray-200">
+                {clinicalLabValue(clinical.ca199, biomarkers?.ca199_positive)}
+              </div>
+            </div>
+          </div>
+        </section>
         <WallFeatureAnalysisCard
           zh
           lesionPolygon={maskPolygon || EMPTY_POLYGON}

@@ -3,6 +3,7 @@
 import React, {
   useState, useEffect, useRef, useCallback, useMemo,
 } from "react";
+import Link from "next/link";
 import type {
   DirectionBatchItem, GridCellAnnotation, BreachPolygon,
   VisibleLayers, BreachConfidence, DirectionAnnotationPayload,
@@ -531,7 +532,7 @@ export default function AnnotatePage() {
       {/* ─── Top bar ─── */}
       <header className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 bg-[#0d1117] shrink-0">
         <div className="flex items-center gap-3">
-          <a href="/" className="text-gray-500 hover:text-white text-xs transition-colors" title="返回工作站">←</a>
+          <Link href="/" className="text-gray-500 hover:text-white text-xs transition-colors" title="返回工作站">←</Link>
           <a href="/annotate/setup" className="text-gray-500 hover:text-white text-xs transition-colors" title="数据设置">⚙</a>
           <h1 className="text-sm font-semibold tracking-tight">突破方向标注</h1>
           {currentItem && (

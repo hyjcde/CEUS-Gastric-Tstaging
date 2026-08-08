@@ -1,9 +1,9 @@
 """
 BinaryClassificationTool — wraps the single-branch benign-vs-malignant ConvNeXt.
 
-Frozen mainline (2026-05-31, L0 stage-1):
-  pipeline/experiments/tree/gastric_binary/classification/single_image_only/
-    binary_current_gastritis_screened_eval_image_only_20260531_121138/best_model.pth
+Current local candidate (2026-08-02, L0 stage-1):
+  pipeline/experiments/tree/gastric_binary/classification/single_convnext/
+    binary_clean_audit_v1_20260802_103058/best_model.pth
 
 Validation reference:
   pipeline/experiments/tree/gastric_binary/.../analysis/.../*.md
@@ -49,17 +49,29 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_DIR = PROJECT_ROOT / "pipeline"
 
-BINARY_RUN_DIR = (
+_BINARY_RUN_CANDIDATES = [
+    PIPELINE_DIR
+    / "experiments"
+    / "tree"
+    / "gastric_binary"
+    / "classification"
+    / "single_convnext"
+    / "binary_clean_audit_v1_20260802_103058",
     PIPELINE_DIR
     / "experiments"
     / "tree"
     / "gastric_binary"
     / "classification"
     / "single_image_only"
-    / "binary_current_gastritis_screened_eval_image_only_20260531_121138"
+    / "binary_current_gastritis_screened_eval_image_only_20260531_121138",
+]
+BINARY_RUN_DIR = next(
+    (candidate for candidate in _BINARY_RUN_CANDIDATES if (candidate / "best_model.pth").exists()),
+    _BINARY_RUN_CANDIDATES[0],
 )
 BINARY_CKPT = BINARY_RUN_DIR / "best_model.pth"
 BINARY_CONFIG = BINARY_RUN_DIR / "config.json"
+BINARY_BACKEND_ID = f"{BINARY_RUN_DIR.parent.name}/{BINARY_RUN_DIR.name}"
 
 CLASS_NAMES = ["benign", "malignant"]
 
@@ -169,8 +181,7 @@ class BinaryClassificationTool(BaseTool):
         if not BINARY_CKPT.exists():
             raise FileNotFoundError(
                 f"Binary checkpoint not found: {BINARY_CKPT}. "
-                "Run pipeline/experiments/.../binary_current_gastritis_screened_eval_image_only_20260531_121138 "
-                "or update BinaryClassificationTool.BINARY_RUN_DIR."
+                "Set BinaryClassificationTool.BINARY_RUN_DIR to a compatible local run."
             )
         self._model, self._transform, self._cfg = _load_binary(self._device)
         logger.info("BinaryClassificationTool loaded on %s", self._device_str)
@@ -199,7 +210,7 @@ class BinaryClassificationTool(BaseTool):
             return {
                 "available": False,
                 "error": f"PIL open failed: {exc}",
-                "backend_id": "binary_current_gastritis_screened_20260531",
+                "backend_id": BINARY_BACKEND_ID,
             }
 
         x = self._transform(rgb_pil)  # torchvision Compose, returns Tensor
@@ -223,7 +234,7 @@ class BinaryClassificationTool(BaseTool):
 
         return {
             "available": True,
-            "backend_id": "binary_current_gastritis_screened_20260531",
+            "backend_id": BINARY_BACKEND_ID,
             "model_task": "binary_gastritis",
             "model_family": "single_branch",
             "image_path": str(image_path),
@@ -251,7 +262,7 @@ class BinaryClassificationTool(BaseTool):
     def _unavailable(image_path: str, reason: str) -> Dict[str, Any]:
         return {
             "available": False,
-            "backend_id": "binary_current_gastritis_screened_20260531",
+            "backend_id": BINARY_BACKEND_ID,
             "image_path": str(image_path),
             "error": reason,
             "top1_label": None,

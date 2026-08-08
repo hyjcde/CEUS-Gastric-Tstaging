@@ -23,6 +23,7 @@ import {
 import { getVideosForPatient } from '@/lib/video-index';
 import { loadReaderCasesBundle } from '@/lib/reader/cases-server';
 import { readerMediaUrl } from '@/lib/reader/media-url';
+import { clinicalFromReaderUsTable } from '@/lib/reader/us-clinical-server';
 import { enrichConceptFeaturesFromClinical } from '@/lib/concept-extract';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
 
@@ -682,6 +683,7 @@ function buildReaderStudyV150Patients(): Patient[] {
         treatment: 'reader_study' as const,
         water_filled: false,
       }));
+      const clinical = clinicalFromReaderUsTable(item);
       return {
         id: item.case_id,
         id_short: item.display_id || item.case_id,
@@ -718,6 +720,7 @@ function buildReaderStudyV150Patients(): Patient[] {
           similar_case_support: { status: 'pending', summary: 'Reference queue; launch Reader Agent for analysis.' },
           manual_review_recommended: true,
         },
+        clinical,
       };
     });
 }

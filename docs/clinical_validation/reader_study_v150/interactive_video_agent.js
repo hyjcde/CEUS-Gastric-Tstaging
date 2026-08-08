@@ -652,6 +652,39 @@
       .replace(/"/g, '&quot;');
   }
 
+  function readerClinicalForCase(caseItem) {
+    const byCase = window.READER_V150_CLINICAL?.by_case || {};
+    if (!caseItem) return null;
+    return byCase[caseItem.case_id] || byCase[caseItem.display_id] || null;
+  }
+
+  function readerClinicalValue(value, suffix = '') {
+    if (value === null || value === undefined || value === '') return '暂无来源';
+    return `${escapeHtml(value)}${suffix}`;
+  }
+
+  function renderReaderClinical(caseItem = currentCase()) {
+    const host = el('readerClinicalFields');
+    if (!host) return;
+    const clinical = readerClinicalForCase(caseItem);
+    if (!clinical || clinical.match_status !== 'matched') {
+      host.innerHTML = '<div class="interactive-empty">当前病例暂无来源，保留空值，不用像素值替代毫米临床值。</div>';
+      return;
+    }
+    const fields = [
+      ['肿瘤长径', readerClinicalValue(clinical.tumor_size_mm, ' mm')],
+      ['肿瘤厚度', readerClinicalValue(clinical.tumor_thickness_mm, ' mm')],
+      ['部位', readerClinicalValue(clinical.tumor_location)],
+      ['CEA', readerClinicalValue(clinical.cea)],
+      ['CEA 状态', clinical.cea_positive == null ? '暂无来源' : clinical.cea_positive ? '阳性' : '阴性'],
+      ['CA19-9', readerClinicalValue(clinical.ca199)],
+      ['CA19-9 状态', clinical.ca199_positive == null ? '暂无来源' : clinical.ca199_positive ? '阳性' : '阴性'],
+    ];
+    host.innerHTML = `<div class="reader-clinical-grid">${fields.map(([label, value]) => (
+      `<div class="reader-clinical-cell"><span>${label}</span><strong>${value}</strong></div>`
+    )).join('')}</div>`;
+  }
+
   function formatNarrativeHtml(text) {
     if (!text) return '';
     const cleaned = String(text)
@@ -747,7 +780,13 @@
     if (!hero || !stageNode || !narrativeNode) return;
 
     if (!report) {
+      hero.classList.remove('loading', 'ready');
       if (stageNode) stageNode.textContent = '—';
+      if (confNode) {
+        confNode.textContent = '—';
+        confNode.className = 'clinical-report-confidence warn';
+      }
+      if (statusNode) statusNode.textContent = '待分析';
       if (narrativeNode) {
         narrativeNode.innerHTML = '<p>选择病例并完成分割后，此处显示 T 分期文字报告。</p>';
         narrativeNode.classList.add('is-placeholder');
@@ -1307,6 +1346,7 @@
     });
     const total = state.cases.length;
     el('caseCounter').textContent = total ? `${state.currentIndex + 1} / ${total} · ${cohortLabel(state.caseCohort)}` : '0';
+    renderReaderClinical(currentCase());
   }
 
   function renderEmptyAgent(message) {
@@ -1318,6 +1358,7 @@
     el('reviewFlag').textContent = '待分析';
     el('reviewFlag').className = 'interactive-confidence';
     renderClinicalReport(null);
+    renderReaderClinical(currentCase());
     updateMaskControlBar();
     updateGenerateReportBtn();
     clearBoundaryDetailPanel();
@@ -2132,6 +2173,11 @@
       state.maskPolygon = null;
       state.contourEditDirty = false;
       state.lastMaskOverlayPng = null;
+      state.lastPromptMeta = null;
+      state.layerResult = null;
+      state.wallPtsManual = null;
+      state.wallOffsetPx = null;
+      state.layerPickImage = null;
       clearBoundaryDetailPanel();
       clearOverlay();
       renderEmptyAgent('已清除标注。请框选区域或点击病灶。');
@@ -2143,14 +2189,46 @@
         state.clicks.pop();
         updatePromptCounter();
         redrawOverlay();
-        if (hasUserPrompt()) runSamFastUpdate();
+        if (hasUserPrompt()) {
+          runSamFastUpdate();
+        } else {
+          state.lastReport = null;
+          state.maskPolygon = null;
+          state.lastMaskOverlayPng = null;
+          state.lastPromptMeta = null;
+          state.layerResult = null;
+          state.wallPtsManual = null;
+          state.wallOffsetPx = null;
+          state.layerPickImage = null;
+          clearBoundaryDetailPanel();
+          clearOverlay();
+          renderEmptyAgent('已撤销标注。请框选区域或点击病灶。');
+        }
+        updateMaskControlBar();
+        updateGenerateReportBtn();
         return;
       }
       if (state.box) {
         state.box = null;
         updatePromptCounter();
         redrawOverlay();
-        if (hasUserPrompt()) runSamFastUpdate();
+        if (hasUserPrompt()) {
+          runSamFastUpdate();
+        } else {
+          state.lastReport = null;
+          state.maskPolygon = null;
+          state.lastMaskOverlayPng = null;
+          state.lastPromptMeta = null;
+          state.layerResult = null;
+          state.wallPtsManual = null;
+          state.wallOffsetPx = null;
+          state.layerPickImage = null;
+          clearBoundaryDetailPanel();
+          clearOverlay();
+          renderEmptyAgent('已撤销标注。请框选区域或点击病灶。');
+        }
+        updateMaskControlBar();
+        updateGenerateReportBtn();
       }
     });
     el('playPauseBtn').addEventListener('click', () => {

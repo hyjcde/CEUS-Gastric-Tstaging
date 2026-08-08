@@ -57,14 +57,14 @@ export const statusCounts: Record<StatusFilter, number> = {
 
 export const getStatusLabel = (status: StatusFilter | ReportStatus, language: Language) => {
   if (status === 'All') {
-    return language === 'zh' ? '全部' : 'All';
+    return language !== 'en' ? '全部' : 'All';
   }
   if (status === 'Finalized') {
-    return language === 'zh' ? '已完成' : 'Finalized';
+    return language !== 'en' ? '已完成' : 'Finalized';
   }
   if (status === 'Reviewed') {
-    return language === 'zh' ? '待审核' : 'Reviewed';
+    return language !== 'en' ? '待审核' : 'Reviewed';
   }
-  return language === 'zh' ? '草稿' : 'Draft';
+  return language !== 'en' ? '草稿' : 'Draft';
 };
 

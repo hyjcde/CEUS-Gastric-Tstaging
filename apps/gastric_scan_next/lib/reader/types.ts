@@ -16,6 +16,7 @@ export type ReaderCase = {
   reference_pt?: string;
   reference_lesion_nature?: string;
   has_video?: boolean;
+  clinical?: Record<string, unknown>;
   frames: ReaderFrame[];
 };
 
@@ -29,6 +30,13 @@ export type SamClick = {
   x: number;
   y: number;
   label: 'positive' | 'negative' | string;
+};
+
+export type ReaderPromptStroke = {
+  kind: 'scribble' | 'lasso';
+  points: Array<{ x: number; y: number }>;
+  label: 'positive' | 'negative' | string;
+  width: number;
 };
 
 export type SamBox = {
@@ -62,6 +70,11 @@ export type SamReport = {
   stage_distribution?: Record<string, number>;
   calibrated_confidence?: number;
   summary?: string;
+  template_id?: string;
+  schema_version?: string;
+  source_doc?: string;
+  template_prose?: string;
+  structured?: Record<string, unknown>;
   sam_score?: number;
   elapsed_ms?: number;
   evidence?: Array<{ title?: string; detail?: string; status?: string; source?: string }>;
@@ -71,6 +84,7 @@ export type SamReport = {
     provider?: string;
     model?: string;
     narrative?: string;
+    ai_polish?: string;
     error?: string;
     tokens?: number;
   };
@@ -110,7 +124,7 @@ export type SamAnalyzeResult = {
   report?: SamReport;
 };
 
-export type InteractionMode = 'positive' | 'negative' | 'box' | 'inspect';
+export type InteractionMode = 'positive' | 'negative' | 'box' | 'inspect' | 'scribble' | 'lasso';
 
 export type SamBackendStatus = {
   available: boolean;
@@ -123,5 +137,18 @@ export type SamBackendStatus = {
     deepseek?: { configured?: boolean };
     llm_report?: { configured?: boolean; preferred?: string; providers?: string[] };
   };
+  error?: string;
+};
+
+export type NnInteractiveStatus = {
+  available: boolean;
+  client_available?: boolean;
+  configured?: boolean;
+  remote_available?: boolean;
+  remote_error?: string | null;
+  server_url?: string | null;
+  model?: string;
+  mode?: string;
+  supports?: string[];
   error?: string;
 };

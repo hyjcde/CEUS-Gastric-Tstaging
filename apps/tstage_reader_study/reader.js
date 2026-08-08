@@ -88,6 +88,11 @@
       if (raw) results = JSON.parse(raw);
     } catch (e) { results = []; }
   }
+  function resumeCursorFromResults() {
+    const completed = new Set(results.map(r => r.case_id));
+    const nextOpen = caseOrder.findIndex(c => !completed.has(c.case_id));
+    cursor = nextOpen === -1 ? caseOrder.length : nextOpen;
+  }
   function updateProgress() {
     const total = caseOrder.length || casesPerSession;
     const done = results.length;
@@ -106,7 +111,6 @@
     // Pass 2: show immediate AI-consistency feedback
     if (pass === 2) {
       const aiButton = AI_T_TO_BUTTON[c.ai_pred];
-      const truthButton = (c.pathology_t_stage && c.pathology_t_stage.startsWith("T4")) ? "T4" : c.pathology_t_stage;
       const agreeAI = (value === aiButton);
       els.aiFeedback.classList.remove("agree", "disagree");
       els.aiFeedback.classList.add(agreeAI ? "agree" : "disagree");
@@ -232,7 +236,7 @@
     const a = document.createElement("a");
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(URL.revokeObjectURL, 1500);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
   function buildTruthTable() {
     // For pass 2 only: show per-case reader choice vs AI vs truth.
@@ -378,6 +382,7 @@
     // Shuffle per pass: pass 1 uses seed 1, pass 2 uses seed 2 (different order)
     caseOrder = shuffle(casesAll, pass === 1 ? 0xC0FFEE : 0xBADF00D).slice(0, casesPerSession);
     loadLocal();
+    resumeCursorFromResults();
     wireVideo();
     wireKeyboard();
     els.choices.forEach(b => b.addEventListener("click", () => setChoice(b.dataset.value)));

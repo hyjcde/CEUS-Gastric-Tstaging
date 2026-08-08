@@ -22,16 +22,25 @@ class Sam2VideoTracker:
 
     def __init__(self) -> None:
         self.config = os.getenv("SAM2_VIDEO_CONFIG", "configs/sam2.1/sam2.1_hiera_t.yaml")
-        checkpoint_raw = os.getenv(
-            "SAM2_VIDEO_CHECKPOINT",
-            os.getenv(
-                "SAM2_CHECKPOINT",
-                "experiments/segmentation/model_compare_20260802/sabm_gus_sam2_finetune_r001/best_sabm_gus_sam2.pt",
-            ),
+        project_root = Path(os.getenv("GASTRIC_ROOT", str(Path.cwd())))
+        explicit_checkpoint = os.getenv("SAM2_VIDEO_CHECKPOINT", "").strip()
+        temporal_candidate = (
+            project_root
+            / "experiments/prompt_mask_agent/r003_temporal_adapter/full_proxy"
+            / "best_sam2_temporal_adapter.pt"
+        )
+        fallback_checkpoint = os.getenv(
+            "SAM2_CHECKPOINT",
+            "experiments/segmentation/model_compare_20260802/"
+            "sabm_gus_sam2_finetune_r001/best_sabm_gus_sam2.pt",
+        )
+        checkpoint_raw = explicit_checkpoint or (
+            str(temporal_candidate)
+            if temporal_candidate.is_file()
+            else fallback_checkpoint
         )
         checkpoint = Path(checkpoint_raw)
         if not checkpoint.is_absolute():
-            project_root = Path(os.getenv("GASTRIC_ROOT", str(Path.cwd())))
             checkpoint = project_root / checkpoint
         self.checkpoint = checkpoint.resolve()
         self.model_id = f"{self.config} + {self.checkpoint.parent.name}"
@@ -56,6 +65,12 @@ class Sam2VideoTracker:
                 )
                 checkpoint = torch.load(self.checkpoint, map_location="cpu", weights_only=False)
                 raw = checkpoint.get("model_state_dict", checkpoint)
+                if any(key.startswith("feature_adapter.") for key in raw):
+                    raise RuntimeError(
+                        "Static context-edge adapter checkpoint cannot be loaded by "
+                        "SAM2VideoPredictor. Use a decoder-only/video-compatible "
+                        "checkpoint until temporal adapter support is implemented."
+                    )
                 state = {
                     key.replace("sam2_model.", "", 1): value
                     for key, value in raw.items()

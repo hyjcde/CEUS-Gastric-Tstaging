@@ -40,12 +40,12 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
   const sourceMeta = (source?: ConceptFieldSource) => {
     if (!source || source === 'default') return null;
     if (source === 'clinical') {
-      return { label: language === 'zh' ? '病理' : 'PATH', className: 'text-emerald-400/90 border-emerald-500/30 bg-emerald-500/10' };
+      return { label: language !== 'en' ? '病理' : 'PATH', className: 'text-emerald-400/90 border-emerald-500/30 bg-emerald-500/10' };
     }
     if (source === 'agent') {
-      return { label: language === 'zh' ? 'Agent' : 'AGT', className: 'text-purple-400/90 border-purple-500/30 bg-purple-500/10' };
+      return { label: language !== 'en' ? 'Agent' : 'AGT', className: 'text-purple-400/90 border-purple-500/30 bg-purple-500/10' };
     }
-    return { label: language === 'zh' ? '手动' : 'EDIT', className: 'text-amber-400/90 border-amber-500/30 bg-amber-500/10' };
+    return { label: language !== 'en' ? '手动' : 'EDIT', className: 'text-amber-400/90 border-amber-500/30 bg-amber-500/10' };
   };
 
   const renderSourceBadge = (key: keyof ConceptState) => {
@@ -167,7 +167,7 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
                 : "text-gray-600 hover:text-gray-400"
             }`}
           >
-            {language === 'zh' ? '无' : 'NO'}
+            {language !== 'en' ? '无' : 'NO'}
           </button>
           <button
             onClick={() => onChange(key, 1)}
@@ -177,7 +177,7 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
                 : "text-gray-600 hover:text-gray-400"
             }`}
           >
-            {language === 'zh' ? '有' : 'YES'}
+            {language !== 'en' ? '有' : 'YES'}
           </button>
         </div>
       </div>
@@ -189,7 +189,7 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
       <div className="h-9 shrink-0 border-b border-white/5 flex items-center justify-between px-4 bg-panel-bg">
         <span className="flex items-center gap-2 text-[11px] font-bold text-gray-300 uppercase tracking-widest">
           <Sliders size={12} className="text-blue-500" /> 
-          {language === 'zh' ? '病理特征推理 (CBM)' : 'Pathology CBM Reasoning'}
+          {language !== 'en' ? '病理特征推理 (CBM)' : 'Pathology CBM Reasoning'}
         </span>
         <div className="flex items-center gap-2">
           {onSave && (
@@ -203,16 +203,16 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
                     ? 'border-blue-500/40 text-blue-300 bg-blue-500/10 hover:bg-blue-500/20'
                     : 'border-white/10 text-gray-500 hover:text-gray-300'
               }`}
-              title={language === 'zh' ? '保存当前 CBM 调整' : 'Save CBM adjustments'}
+              title={language !== 'en' ? '保存当前 CBM 调整' : 'Save CBM adjustments'}
             >
               <Save size={10} />
               {saveStatus === 'saving'
-                ? (language === 'zh' ? '保存中' : 'Saving')
+                ? (language !== 'en' ? '保存中' : 'Saving')
                 : saveStatus === 'saved'
-                  ? (language === 'zh' ? '已保存' : 'Saved')
+                  ? (language !== 'en' ? '已保存' : 'Saved')
                   : saveStatus === 'error'
-                    ? (language === 'zh' ? '失败' : 'Failed')
-                    : (language === 'zh' ? '保存' : 'Save')}
+                    ? (language !== 'en' ? '失败' : 'Failed')
+                    : (language !== 'en' ? '保存' : 'Save')}
             </button>
           )}
           <button onClick={onReset} className="text-gray-600 hover:text-white transition-colors" title="Reset">
@@ -224,18 +224,18 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
       <div className="px-4 py-1.5 border-b border-white/5 bg-[#101014] text-[9px] text-gray-500 flex items-center justify-between gap-2">
         <span className="truncate">
           {hasClinicalData
-            ? (language === 'zh'
+            ? (language !== 'en'
               ? `病理/IHC ${populatedCount > 0 ? `${populatedCount} 项` : '已载入'}`
               : `Pathology/IHC ${populatedCount > 0 ? `(${populatedCount})` : 'loaded'}`)
-            : (language === 'zh' ? '无临床数据，显示默认值' : 'No clinical data, defaults')}
+            : (language !== 'en' ? '无临床数据，显示默认值' : 'No clinical data, defaults')}
           {agentFilledCount > 0 && (
             <span className="text-purple-400 ml-1">
-              {language === 'zh' ? `· Agent/超声 +${agentFilledCount}` : `· Agent/US +${agentFilledCount}`}
+              {language !== 'en' ? `· Agent/超声 +${agentFilledCount}` : `· Agent/US +${agentFilledCount}`}
             </span>
           )}
           {autoSaveEnabled && isDirty && saveStatus === 'idle' && (
             <span className="text-blue-400 ml-1">
-              {language === 'zh' ? '· 待自动保存' : '· pending autosave'}
+              {language !== 'en' ? '· 待自动保存' : '· pending autosave'}
             </span>
           )}
         </span>
@@ -265,7 +265,7 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold text-blue-400/80 uppercase tracking-wider">
              <Activity size={10} />
-             {language === 'zh' ? '免疫组化 (IHC)' : 'IHC Markers'}
+             {language !== 'en' ? '免疫组化 (IHC)' : 'IHC Markers'}
           </div>
           {renderSlider('c1')}
           {renderSlider('c2')}
@@ -277,7 +277,7 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
         <div className="space-y-1 pt-2 border-t border-white/5">
           <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold text-emerald-400/80 uppercase tracking-wider">
              <Activity size={10} />
-             {language === 'zh' ? '免疫微环境 (TME)' : 'TME Status'}
+             {language !== 'en' ? '免疫微环境 (TME)' : 'TME Status'}
           </div>
           {renderSlider('c5')}
           {renderSlider('c6')}
@@ -288,25 +288,25 @@ export const ConceptReasoning: React.FC<ConceptReasoningProps> = React.memo(({
         <div className="space-y-1 pt-2 border-t border-white/5">
           <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold text-purple-400/80 uppercase tracking-wider">
              <ShieldAlert size={10} />
-             {language === 'zh' ? '病理分型 & 侵犯' : 'Type & Invasion'}
+             {language !== 'en' ? '病理分型 & 侵犯' : 'Type & Invasion'}
           </div>
           
-          {renderSelect("differentiation", language === 'zh' ? "分化程度" : "Differentiation", [
-            { value: 1, label: language === 'zh' ? "1: 高分化 (Well)" : "1: Well Diff" },
-            { value: 2, label: language === 'zh' ? "2: 中分化 (Mod)" : "2: Mod Diff" },
-            { value: 3, label: language === 'zh' ? "3: 中-低分化" : "3: Mod-Poor" },
-            { value: 4, label: language === 'zh' ? "4: 低分化 (Poor)" : "4: Poorly Diff" },
-            { value: 5, label: language === 'zh' ? "5: 不确定" : "5: Unknown" },
+          {renderSelect("differentiation", language !== 'en' ? "分化程度" : "Differentiation", [
+            { value: 1, label: language !== 'en' ? "1: 高分化 (Well)" : "1: Well Diff" },
+            { value: 2, label: language !== 'en' ? "2: 中分化 (Mod)" : "2: Mod Diff" },
+            { value: 3, label: language !== 'en' ? "3: 中-低分化" : "3: Mod-Poor" },
+            { value: 4, label: language !== 'en' ? "4: 低分化 (Poor)" : "4: Poorly Diff" },
+            { value: 5, label: language !== 'en' ? "5: 不确定" : "5: Unknown" },
           ])}
 
           {renderSelect("lauren", "Lauren 分型", [
-            { value: 1, label: language === 'zh' ? "1: 肠型 (Intestinal)" : "1: Intestinal" },
-            { value: 0, label: language === 'zh' ? "0: 弥漫型 (Diffuse)" : "0: Diffuse" },
-            { value: 4, label: language === 'zh' ? "4: 混合/不确定" : "4: Mixed/Unk" },
+            { value: 1, label: language !== 'en' ? "1: 肠型 (Intestinal)" : "1: Intestinal" },
+            { value: 0, label: language !== 'en' ? "0: 弥漫型 (Diffuse)" : "0: Diffuse" },
+            { value: 4, label: language !== 'en' ? "4: 混合/不确定" : "4: Mixed/Unk" },
           ])}
 
-          {renderToggle("vascularInvasion", language === 'zh' ? "脉管侵犯 (LVI)" : "Vascular Inv")}
-          {renderToggle("neuralInvasion", language === 'zh' ? "神经侵犯 (PNI)" : "Neural Inv")}
+          {renderToggle("vascularInvasion", language !== 'en' ? "脉管侵犯 (LVI)" : "Vascular Inv")}
+          {renderToggle("neuralInvasion", language !== 'en' ? "神经侵犯 (PNI)" : "Neural Inv")}
         </div>
       </div>
     </div>

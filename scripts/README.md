@@ -73,8 +73,15 @@
 | `build_patient_media_registry.py` | 从 manifest + 视频索引生成 `data/registry/patient_media_*.csv` 患者级图片/视频注册表。 |
 | `build_patient_training_view.py` | 病人级训练 CSV/缺口清单 → `data/registry/patient_training_view/`。 |
 | `build_training_media_view.py` | 按任务/模态软链视图 → `dataset/training_views/`（含 loop）。 |
+| `build_dataset_detail_html.py` | 固定数据登记的详细 HTML，包含胃腔手动标注、胃炎外部、胃癌视频、胃炎视频和子集可视化 → `dataset/dataset_detail_20260803.html`。 |
+| `build_dataset_inventory.py` | 数据集盘点 JSON + inventory HTML。 |
+| `build_dataset_visual_overview.py` | **图文总览**（三视图样例置顶）→ `dataset/index.html` + `figures/gallery/`。 |
+| `build_static_images_view.py` | 静态图数据集包（默认真实拷贝 original/crop_ui/crop_roi + Excel）→ `dataset/static_images/{internal,external}/`；`--audit-only` 查中心/年份/表格齐全。 |
+| `rebuild_safe_crop_ui_review.py` | 非破坏性安全 CROP UI 审阅包：保留超声区域、遮挡周边个人信息，并生成各队列 HTML 对照页。 |
+| `build_videos_view.py` | 视频数据集包（真实拷贝 crop_ui + 前瞻 raw）→ `dataset/videos/{internal,external}/`。 |
+| `build_gastritis_video_previews.py` | 为胃炎视频测试集生成浏览器兼容的代表性 MP4 预览，不修改 raw 视频。 |
 | `build_real_cine_aligned_view.py` | **仅真视频**对齐视图 → `dataset/training_views/t_staging_real_cine/`（监督表 + by_patient）。 |
-| `quarantine_loop_still_videos.py` | 将全部 `loop_still` crop MP4 隔离到 `dataset/_quarantine/loop_still/`（先登记后移动）。 |
+| `quarantine_loop_still_videos.py` | 历史 `loop_still` 清理脚本；当前静态循环媒体已删除，不再作为可用视频入口。 |
 | `freeze_real_cine_training_package.py` | 冻结 eval_role 拆分、泄漏检查、标注队列、`by_split/` 软链。 |
 | `export_patient_media_splits.py` | 导出 `pipeline/data/patient_media_tstaging_v1/*_clinical.csv`（含视频列）。 |
 | `verify_patient_split_leakage.py` | 检查患者级 split 是否跨 train/val/test 泄漏。 |
@@ -103,6 +110,14 @@
 
 包含但不限于：`analyze_wall_penetration.py`、`analyze_wall_strip_statistics.py`、`generate_contact_focus_analysis.py`、`generate_contact_focus_visualization.py`、`generate_curved_wall_band_overlay.py`、`generate_edge_zoom_clustering.py`、`generate_gastric_lumen_dual_overlays.py`、`generate_local_zoom_group.py`、`generate_overlay_overview.py`、`generate_single_case_wall_strip_figure.py`、`generate_t2_t3_local_examples.py`、`generate_wall_neighborhood_examples.py`、`export_wall_proxy_from_lumen.py`、`visualize_wall_strip_examples.py`、`visualize_local_junction_continuity.py`、`visualize_wall_layer_profiles.py`、`visualize_overlays.py`、`regenerate_overlays.py`、`regenerate_overlays_from_json.py`。
 
+影像真相 × T 分期 / T-score 草案：`analyze_imaging_truth_tstage_corr.py`（v2）、`analyze_imaging_truth_tstage_corr_v3.py`、`analyze_imaging_truth_paper_metrics.py`、`build_imaging_truth_charts_zh.py`、`draft_tscore_discrete_bins_v1.py`（A4/B6 离散分档 → 总分切点）。
+
+GC-US 轮廓 T-score 特征（morphology / margin / growth）：`gc_us_contour_features.py`（共享库）、`extract_gc_us_morphology_features_v1.py`、`extract_gc_us_margin_features_v1.py`、`extract_gc_us_growth_features_v1.py`、`analyze_gc_us_feature_batch_stats.py`、`eval_gc_us_margin_split_discrimination.py`、`build_gc_us_tscore_feature_pack_v1.py`、`eval_gc_us_tscore_feature_pack_models_v1.py`、`plot_gc_us_tscore_feature_triplets_3d.py`、`analyze_gc_us_feature_lasso_shap_triplets_v1.py`、`analyze_gc_us_tscore_latest_lasso_3d_v1.py`、`build_gc_us_tscore_results_html_v1.py`、`build_gc_us_tscore_results_html_zh_v1.py`（最新 feature pack 的 LASSO 稳定性、显著性筛查、3D 分群图、中文特征计算字典与汇总 HTML → `pipeline/data/gc_us_tscore_features_v1/feature_pack_v1/`）。
+
+产品侧方向归一化征象评分（`ccus_t_rubric_v1.4_us`，不改产品切点）：`pipeline/agent/signs/`（schema / direction_growth / wall_gate / scorer）、`pipeline/agent/tools/gc_us_sign_tool.py`、研究校准 `gc_us_tscore_featurepack_v2.py`、患者级验证 `eval_gc_us_sign_scoring_v1.py`（输出 `docs/plans/ccus_t_scoring/sign_scoring_validation_v1/`）。
+
+结果汇总默认入口为 `pipeline/experiments/reports/gc_us_tscore_feature_stats_v1/index.html`，英文版为同目录的 `index_en.html`。
+
 **注意：** 部分脚本内写死了本机字体或目录（例如 `generate_overlay_overview.py` 使用 macOS 字体路径），换环境运行前需自行核对路径。
 
 ---
@@ -118,7 +133,64 @@
 
 ---
 
-## 6. 辅助工具与运维
+## 6. Prompt-Mask 交互分割（胃壁感知）
+
+**用途说明：** 静态 Dice 门控 + 同协议 real-cine 视频比较，决定训练 SAM2 adapter、SAM3 adapter 或双模型分工。协议与产物见 `docs/prompt_mask_agent/`、`experiments/prompt_mask_agent/`。
+
+| 脚本 | 备注 |
+|------|------|
+| `freeze_prompt_mask_static_protocol.py` | 冻结静态评估、算力与数据 contract |
+| `freeze_prompt_mask_baselines.py` | 固化 SABM / UNet / DINO / IBIS 基线指针 |
+| `run_prompt_mask_static_eval.py` | 六类 prompt 的 patient-level 离线评估 |
+| `run_prompt_mask_ibis_baseline.py` | 同 SAM backend 的 IBIS-like greedy click baseline |
+| `run_sam2_static_prompt_adapter_finetune.py` | r001/r002 静态 multi-prompt adapter（含 consistency loss） |
+| `run_interactive_unet_finetune.py` | 不依赖 SAM3 的 RITM-style 交互 UNet，对照正负 click、当前 mask 和 box |
+| `run_dino_guided_prompt_policy.py` | DINOv3 / wall evidence 候选与小型 PromptPolicy |
+| `run_sam3_concept_candidate_probe.py` | UltraSAM3/SAM3 concept candidate 合同（非主 mask） |
+| `run_prompt_mask_video_benchmark.py` | SAM2 vs SAM3 real-cine 同协议视频 benchmark 脚手架 |
+| `run_sam2_native_video_canary.py` | 真实 `SAM2VideoPredictor` external cine canary |
+| `run_prompt_policy_sft.py` | GT error trajectory SFT + 可验证奖励项 |
+| `run_static_promotion_gate.py` | 静态 promotion gate |
+| `run_sam2_tracking_canary.py` | mask-logit carryover 视频 canary 与 deployment manifest |
+| `choose_prompt_mask_training_route.py` | 写出 `model_route_decision.json`（旧入口） |
+| `freeze_clean_adapter_static_candidates.py` | Clean Adapter：冻结 performance / replay-safe 静态候选 |
+| `run_clean_dino_prompt_policy.py` | Clean DINOv3 胃壁 evidence + development-only PromptPolicy |
+| `build_dense_cine_annotation_subset.py` | prospective dense-cine 标注子集与 QA 门禁 |
+| `run_real_temporal_adapter_gate.py` | 真实相邻帧 temporal 训练门禁（拒绝 photometric 终证） |
+| `run_dino_guided_reprompt_ab.py` | fixed box+point vs DINO re-prompt 视频对照 |
+| `freeze_clean_adapter_route_decision.py` | Clean Adapter 路线冻结（不切换线上默认） |
+| `prompt_mask/` | 协议、prompt、metrics、rewards、policy 共享库 |
+
+### 6.1 Clinical SAM2 loop（自动发现 + 医生纠正）
+
+静态 `crop_ui` mask 为首批强监督；MedSAM2 仅作兼容探针与受控对照；视频只报稳定性，不宣称 temporal Dice。
+
+| 脚本 | 备注 |
+|------|------|
+| `freeze_clinical_sam2_loop_contract.py` | 冻结患者级 split、纠正 schema、frozen test cohort |
+| `build_clinical_loop_static_manifest.py` | 版本化静态训练 manifest（含纠正合约字段） |
+| `build_auto_discovery_seed_prompts.py` | YOLO/GT-box 自动发现种子 + abstention |
+| `ingest_doctor_mask_corrections.py` | `mask_overrides.json` → QA-gated pending/approved + mask PNG |
+| `rank_clinical_loop_review_queue.py` | 下一批评阅队列（患者/年份分层） |
+| `probe_medsam2_checkpoint_compat.py` | MedSAM2 权重兼容性探针（不下载） |
+| `run_clinical_loop_static_benchmark.py` | SAM2.1 / MedSAM2 / PEFT 候选对照矩阵，`--mode pilot --execute` 可真实跑小规模对照 |
+| `run_clinical_loop_correction_finetune.py` | 纠正感知静态 adapter 课程与训练入口 |
+| `run_clinical_loop_promotion_gate.py` | 冻结 holdout + 流程指标 promotion（不改线上默认） |
+| `collect_clinical_loop_workflow_metrics.py` | 从 reader audit 汇总 workflow metrics |
+| `assert_temporal_claims_deferred.py` | 未过 dense cine QA 前禁止 temporal Dice 宣称 |
+
+产物根目录：`experiments/clinical_sam2_loop/`；说明见 `docs/plans/clinical_sam2_loop/`。
+
+`run_sam2_static_prompt_adapter_finetune.py --adaptation-mode context_edge`
+implements the PEFT candidate with a frozen image encoder and trainable
+multi-scale context-edge depthwise-dilated adapters. `decoder_only` remains
+the compatibility default; `full_finetune` is an upper-bound experiment.
+
+全量训练默认 `CUDA_VISIBLE_DEVICES=1`，保留 GPU0 给 `:8767`。
+
+---
+
+## 7. 辅助工具与运维
 
 **用途说明：** 与核心训练无直接耦合的实验室或排障工具。
 
@@ -128,7 +200,7 @@
 
 ---
 
-## 7. 历史、一次性或与旧环境强绑定的脚本（新人慎作默认入口）
+## 8. 历史、一次性或与旧环境强绑定的脚本（新人慎作默认入口）
 
 **用途说明：** 下列脚本多含**硬编码绝对路径、旧项目根目录或非本仓库数据布局**，适合审计、迁移或一次性批处理，**不应**在未通读代码与改路径的情况下直接当作当前主线步骤。
 
@@ -142,7 +214,21 @@
 
 ---
 
-## 8. 非脚本文件说明
+## 8.5 本地多模态 Tool-Controller Agent（离线自进化）
+
+文档入口：`docs/plans/local_multimodal_agent/README.md`。
+
+| 脚本 | 作用 |
+|------|------|
+| `build_multimodal_agent_dataset.py` | 脱敏 + 患者级 split freeze + cine inventory SSOT |
+| `build_agent_traces.py` | 分层 instruction / trajectory / clinical_text |
+| `run_multimodal_agent_smoke.py` | JSON 动作 + concept + report 冒烟验收 |
+| `run_local_mllm_sft.py` | GPU1 QLoRA SFT（仅 candidate，默认 `--smoke` 只写 records） |
+| `run_evolution_replay.py` | baseline/candidate 回放与安全门禁 |
+
+---
+
+## 9. 非脚本文件说明
 
 - `README_GPU_SCHEDULE.md`：`generate_gpu_schedule.py` 的配套说明。
 - `extracted_pathology_concepts.json`：概念抽取的示例/中间产物数据，**不是**可执行脚本。

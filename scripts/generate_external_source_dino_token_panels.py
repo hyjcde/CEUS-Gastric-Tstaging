@@ -132,12 +132,17 @@ def mask_to_grid(path_value: object, grid_hw: tuple[int, int]) -> np.ndarray | N
 
 
 def boundary_grid(mask: np.ndarray | None) -> np.ndarray | None:
-    if mask is None:
+    if mask is None or not mask.any():
         return None
     u8 = mask.astype(np.uint8)
     kernel = np.ones((3, 3), dtype=np.uint8)
     ring = (cv2.dilate(u8, kernel, iterations=1) - cv2.erode(u8, kernel, iterations=1)).astype(bool)
-    return ring if ring.any() else mask
+    if ring.any():
+        return ring
+    # Tiny lesion: morphological ring may vanish — use 1px outer halo, not full mask.
+    outer = cv2.dilate(u8, kernel, iterations=1).astype(bool)
+    halo = outer & ~mask
+    return halo if halo.any() else None
 
 
 def pca_first(feature: torch.Tensor) -> np.ndarray:
@@ -207,13 +212,21 @@ def infer_dino_maps(model, image_path: Path, row: pd.Series, image_size: int, la
     lesion_vec = region_mean(tokens, lesion)
     outer_vec = region_mean(tokens, outer)
     inner_vec = region_mean(tokens, inner)
-    boundary_vec = region_mean(tokens, boundary)
+    boundary_vec = region_mean(tokens, boundary) if boundary is not None else None
 
     token_norm = np.linalg.norm(tokens, axis=1).reshape(h, w)
     lesion_aff = cosine_map(tokens, lesion_vec).reshape(h, w)
-    boundary_aff = cosine_map(tokens, boundary_vec).reshape(h, w)
+    boundary_aff = (
+        cosine_map(tokens, boundary_vec).reshape(h, w)
+        if boundary_vec is not None
+        else np.zeros((h, w), dtype=np.float32)
+    )
     wall_evidence = (cosine_map(tokens, outer_vec) - cosine_map(tokens, inner_vec)).reshape(h, w)
-    boundary_minus_lesion = (boundary_aff - lesion_aff).reshape(h, w)
+    bml_valid = lesion is not None and boundary is not None
+    if bml_valid:
+        boundary_minus_lesion = (boundary_aff - lesion_aff).reshape(h, w)
+    else:
+        boundary_minus_lesion = np.zeros((h, w), dtype=np.float32)
     pca = pca_first(feature)
     rainbow = rainbow_pca_official(feature, lesion)
     qy, qx = lesion_query_index(lesion, h, w)
@@ -236,6 +249,8 @@ def infer_dino_maps(model, image_path: Path, row: pd.Series, image_size: int, la
         "lesion_affinity": upsample(lesion_aff),
         "wall_evidence": upsample(wall_evidence),
         "boundary_minus_lesion": upsample(boundary_minus_lesion),
+        "boundary_minus_lesion_valid": bml_valid,
+        "lesion_mask_on_grid": lesion is not None and bool(lesion.any()),
         "token_grid_h": h,
         "token_grid_w": w,
         "input_size": image_size,

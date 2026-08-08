@@ -21,6 +21,8 @@ const empty = computeGcUsTscore({});
 assert.equal(empty.ctStage, 'cTx');
 assert.equal(empty.status, 'not_assessable');
 assert.equal(empty.items.length, 0);
+assert.equal(empty.rubricId, 'ccus_t_rubric_v1.4_us');
+assert.equal(empty.explanation.wallGate.unlockDefiniteCt, false);
 expectIncludes(empty.uncertaintyReasons, 'no_scoring_evidence');
 
 const proxyOnly = computeGcUsTscore({
@@ -35,6 +37,7 @@ const proxyOnly = computeGcUsTscore({
 assert.equal(proxyOnly.ctStage, 'cTx');
 assert.equal(proxyOnly.status, 'uncertain');
 expectIncludes(proxyOnly.uncertaintyReasons, 'wall_layer_not_explicitly_confirmed');
+assert.equal(proxyOnly.explanation.wallGate.unlockDefiniteCt, false);
 
 const noContact = computeGcUsTscore({
   layerLabel: 'L4',
@@ -74,8 +77,26 @@ const explicitSerosa = computeGcUsTscore({
 assert.equal(explicitSerosa.status, 'supported');
 assert.equal(explicitSerosa.ctStage, 'cT4a');
 
+const withGrowth = computeGcUsTscore({
+  lengthCm: 5.0,
+  thicknessCm: 1.6,
+  growthGrade: 2,
+  growthLabel: '明显浸润型',
+  growthEvidence: 'proxy',
+  continuityGrade: 2,
+  continuityLabel: '外侧壁连续外凸',
+  continuityEvidence: 'proxy',
+  directionSource: 'lumen_bbox_center',
+  structuralEvidence: 'proxy',
+});
+assert.equal(withGrowth.ctStage, 'cTx');
+assert.ok(withGrowth.items.some((it) => it.id === 'growth_pattern'));
+assert.ok(withGrowth.items.some((it) => it.id === 'sign_continuity'));
+assert.equal(withGrowth.explanation.continuity.semantic.includes('not_tumor_growth_rate'), true);
+assert.ok(withGrowth.normalizedI != null && withGrowth.normalizedI > 0);
+
 const narrative = buildImagingNarrative({ tscore: proxyOnly, zh: true });
 assert.match(narrative, /进一步评估/);
 assert.doesNotMatch(narrative, /考虑cT[1-4]/);
 
-console.log('gc_us_tscore regression: 7/7 passed');
+console.log('gc_us_tscore regression: 8/8 passed');

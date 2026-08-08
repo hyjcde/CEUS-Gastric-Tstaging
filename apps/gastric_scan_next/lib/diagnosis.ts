@@ -375,12 +375,12 @@ export function generateNarrativeReport(
   const { tStage, nStage, confidence, flags, validation, reasoning } = diagnosis;
   const lines: string[] = [];
   const timeStr = new Date().toISOString().split('T')[1].substring(0, 8);
-  const dateStr = new Date().toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US');
+  const dateStr = new Date().toLocaleDateString(language !== 'en' ? 'zh-CN' : 'en-US');
   const clin = patient?.clinical;
 
   const descriptions = getFeatureDescriptions(state, language);
 
-  if (language === 'zh') {
+  if (language !== 'en') {
     // ==================== 报告头 ====================
     lines.push(`╔══════════════════════════════════════════════════════════════╗`);
     lines.push(`║           胃癌 T/N 分期 AI 辅助诊断报告                       ║`);
@@ -541,23 +541,23 @@ export function generateSummaryPoints(
 ): string[] {
   const { tStage, nStage, flags } = diagnosis;
   
-  const inferencePoint = language === 'zh'
+  const inferencePoint = language !== 'en'
     ? `模型结合 Ki-67/CPS/FoxP3/Lauren分型 推断 ${tStage}${nStage}，侵犯与微环境指标支持该结论。`
     : `Model fuses Ki-67/CPS/FoxP3/Lauren dynamics to infer ${tStage}${nStage}, supported by invasion/TME markers.`;
 
   const clinicalCorrelation = patient?.clinical
-    ? language === 'zh'
+    ? language !== 'en'
       ? `分化${patient.clinical.differentiation || '待补充'}，Lauren ${patient.clinical.lauren || '待补充'}，CEA ${patient.clinical.biomarkers.cea ?? 'N/A'}${patient.clinical.biomarkers.cea_positive ? ' +' : ''}。`
       : `Differentiation ${patient.clinical.differentiation || 'pending'}, Lauren ${patient.clinical.lauren || 'pending'}; biomarkers CEA ${patient.clinical.biomarkers.cea ?? 'N/A'}${patient.clinical.biomarkers.cea_positive ? ' +' : ''}.`
-    : language === 'zh'
+    : language !== 'en'
       ? '临床摘要待补录。'
       : 'Clinical summary pending.';
 
   const actionPoint = flags.highRisk
-    ? language === 'zh'
+    ? language !== 'en'
       ? '高危预警：建议多学科(MDT)讨论，特别是关于新辅助治疗的介入时机。'
       : 'High Risk Alert: Recommend MDT discussion regarding timing of neoadjuvant therapy.'
-    : language === 'zh'
+    : language !== 'en'
       ? '低危提示：建议定期复查监测 Ki-67 及免疫指标变化。'
       : 'Low Risk: Monitor Ki-67 and immune markers regularly.';
 

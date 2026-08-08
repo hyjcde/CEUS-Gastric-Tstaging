@@ -24,7 +24,7 @@ def run_langgraph_case_pipeline(
     options: Optional[PipelineOptions] = None,
 ) -> CasePipelineState:
     """
-    Production pipeline via LangGraph: 12 Agent nodes, each with plan+interpret LLM trace.
+    Production pipeline via LangGraph: 15 Agent nodes, each with plan+interpret LLM trace.
     """
     options = options or PipelineOptions()
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -36,6 +36,12 @@ LINKS: dict[str, str] = {
     "外部测试集炎症视频.zip": "artifacts/raw_imports/incoming/外部测试集炎症视频.zip",
     "外部测试集胃癌视频.zip": "artifacts/raw_imports/incoming/外部测试集胃癌视频.zip",
     "胃癌直接手术外部测试集(1).zip": "artifacts/raw_imports/incoming/胃癌直接手术外部测试集(1).zip",
+    "协和直接手术视频.zip": "artifacts/raw_imports/incoming/协和直接手术视频.zip",
+    "合格视频.zip": "artifacts/raw_imports/incoming/合格视频.zip",
+    "胃炎外部测试集.zip": "artifacts/raw_imports/incoming/胃炎外部测试集.zip",
+    "2025_Patient_Videos": "data/raw/patient_videos_2025",
+    "临床资料_前瞻外部分析_20260609": "data/staging_review/clinical_prospective_20260609",
+    "人机对比结果": "docs/clinical_validation/human_ai_comparison",
 }
 
 KEEP_AT_ROOT = {

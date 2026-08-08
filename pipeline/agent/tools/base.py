@@ -117,11 +117,31 @@ class ToolRegistry:
         Dispatch an Action to the named tool and return its Observation.
 
         Returns an error dict if the tool is unknown or throws.
+        Every observation is enriched with evidence_id / provenance fields.
         """
+        from ..multimodal.provenance import ensure_observation_provenance
+
         tool = self._tools.get(tool_name)
+        patient_id = str(kwargs.get("patient_id") or "")
+        sample_id = str(kwargs.get("sample_id") or "")
+        frame_id = kwargs.get("frame_id")
+        time_bucket = kwargs.get("time_bucket")
+        source_refs = kwargs.get("source_refs")
+        if source_refs is not None and not isinstance(source_refs, list):
+            source_refs = [str(source_refs)]
+
         if tool is None:
             err = {"error": f"Unknown tool: {tool_name}",
                    "available": self.tool_names}
+            err = ensure_observation_provenance(
+                err,
+                tool_name=tool_name,
+                patient_id=patient_id,
+                sample_id=sample_id,
+                frame_id=frame_id,
+                time_bucket=time_bucket,
+                source_refs=source_refs,
+            )
             self._traces.append({"tool": tool_name, "kwargs": kwargs,
                                  "result": err, "status": "error"})
             return err
@@ -130,10 +150,22 @@ class ToolRegistry:
         try:
             result = tool.execute(**kwargs)
             elapsed = time.time() - t0
+            if not isinstance(result, dict):
+                result = {"value": result}
+            result = ensure_observation_provenance(
+                result,
+                tool_name=tool_name,
+                patient_id=patient_id,
+                sample_id=sample_id,
+                frame_id=frame_id,
+                time_bucket=time_bucket,
+                source_refs=source_refs,
+            )
             self._traces.append({
                 "tool": tool_name,
                 "kwargs": {k: str(v)[:200] for k, v in kwargs.items()},
                 "result_keys": list(result.keys()),
+                "evidence_id": result.get("evidence_id"),
                 "elapsed_s": round(elapsed, 3),
                 "status": "ok",
             })
@@ -141,10 +173,20 @@ class ToolRegistry:
         except Exception as exc:
             elapsed = time.time() - t0
             err = {"error": f"{type(exc).__name__}: {exc}"}
+            err = ensure_observation_provenance(
+                err,
+                tool_name=tool_name,
+                patient_id=patient_id,
+                sample_id=sample_id,
+                frame_id=frame_id,
+                time_bucket=time_bucket,
+                source_refs=source_refs,
+            )
             self._traces.append({
                 "tool": tool_name,
                 "kwargs": {k: str(v)[:200] for k, v in kwargs.items()},
                 "error": str(exc),
+                "evidence_id": err.get("evidence_id"),
                 "elapsed_s": round(elapsed, 3),
                 "status": "error",
             })

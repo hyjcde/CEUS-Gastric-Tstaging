@@ -44,3 +44,11 @@ export function findReaderCase(cases: ReaderCase[], caseId: string): ReaderCase 
   const norm = caseId.trim().toUpperCase();
   return cases.find((c) => String(c.case_id || '').toUpperCase() === norm);
 }
+
+export function findReaderCaseByPatientId(
+  cases: ReaderCase[],
+  patientId: string,
+): ReaderCase | undefined {
+  const norm = patientId.trim().toUpperCase();
+  return cases.find((c) => String(c.patient_id || '').trim().toUpperCase() === norm);
+}

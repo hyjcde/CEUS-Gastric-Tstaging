@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { BrainCircuit, ChevronRight, CircleAlert, Database, Dna, FileText, Loader2, ShieldCheck, X } from 'lucide-react';
-import type { AgentAnalysisResponse, AgentBeliefAction, AgentBeliefState, AgentEvidenceItem } from '@/types';
+import type { AgentAnalysisResponse, AgentBeliefAction, AgentEvidenceItem } from '@/types';
 
 type Props = {
   result: AgentAnalysisResponse | null;
@@ -10,6 +10,7 @@ type Props = {
   zh?: boolean;
   onRun?: () => void;
   onNextAction?: (actionType?: string) => void;
+  onOpenFullReport?: () => void;
 };
 
 function valueText(value: unknown): string {
@@ -23,11 +24,64 @@ function valueText(value: unknown): string {
   }
   return String(value);
 }
-function topStage(belief?: AgentBeliefState, fallback?: string): string {
-  const stages = belief?.hypotheses
-    .filter((item) => /^T[1-4]\+?$/.test(item.label))
-    .sort((a, b) => Number(b.probability || 0) - Number(a.probability || 0));
-  return stages?.[0]?.label || fallback || 'cTx';
+function answerLabel(value: unknown): string | null {
+  const raw = String(value || '').trim();
+  const stage = raw.toUpperCase().match(/\bT([1-4])(\+)?\b/);
+  if (stage) return `T${stage[1]}${stage[2] || ''}`;
+  if (/^(benign|良性)$/i.test(raw)) return 'benign';
+  if (/^(malignant|恶性)$/i.test(raw)) return 'malignant';
+  return null;
+}
+
+function answerText(value: string | null, zh: boolean): string {
+  if (value === 'benign') return zh ? '良性' : 'Benign';
+  if (value === 'malignant') return zh ? '恶性' : 'Malignant';
+  return value || (zh ? '待生成' : 'Pending');
+}
+
+function stageSummary(result: AgentAnalysisResponse | null): {
+  stage: string | null;
+  confidence: number | null;
+} {
+  const hypotheses = result?.belief_state?.hypotheses
+    .map((item) => ({
+      stage: answerLabel(item.label),
+      probability: typeof item.probability === 'number' && Number.isFinite(item.probability)
+        ? item.probability
+        : null,
+    }))
+    .filter((item): item is { stage: string; probability: number } => (
+      Boolean(item.stage) && item.probability != null
+    ))
+    .sort((a, b) => b.probability - a.probability);
+  const classification = result?.tool_evidence?.classification;
+  const classificationStage = answerLabel(classification?.top1_stage);
+  const classificationConfidence = typeof classification?.top1_prob === 'number'
+    && Number.isFinite(classification.top1_prob)
+    ? classification.top1_prob
+    : null;
+  const evidence = result?.belief_state?.evidence || result?.evidence || [];
+  const binaryEvidence = evidence
+    .filter((item) => item.source_type === 'binary_gate')
+    .map((item) => ({
+      label: item.feature === 'p_benign' ? 'benign' : item.feature === 'p_malignant' ? 'malignant' : null,
+      confidence: typeof item.confidence === 'number'
+        ? item.confidence
+        : typeof item.value === 'number' ? item.value : null,
+    }))
+    .filter((item): item is { label: string; confidence: number } => (
+      Boolean(item.label) && item.confidence != null && Number.isFinite(item.confidence)
+    ))
+    .sort((a, b) => b.confidence - a.confidence);
+  const answer = answerLabel(result?.report?.recommended_t_stage);
+  const binaryConfidence = binaryEvidence.find((item) => item.label === answer)?.confidence
+    ?? binaryEvidence[0]?.confidence
+    ?? null;
+  const top = hypotheses?.[0];
+  return {
+    stage: top?.stage || classificationStage || answer,
+    confidence: top?.probability ?? classificationConfidence ?? binaryConfidence,
+  };
 }
 
 function actionLabel(action: AgentBeliefAction | undefined, zh: boolean): string {
@@ -36,7 +90,7 @@ function actionLabel(action: AgentBeliefAction | undefined, zh: boolean): string
     inspect_conflict_frame: ['定位冲突帧', 'Inspect conflict frame'],
     inspect_next_frame: ['检查下一帧', 'Inspect next frame'],
     run_wall_evidence: ['补充胃壁证据', 'Run wall evidence'],
-    run_dino_shadow_evidence: ['运行 DINO 影子证据', 'Run DINO shadow evidence'],
+    run_dino_shadow_evidence: ['补充区域特征证据', 'Add region-feature evidence'],
     request_doctor_confirmation: ['请求医生确认', 'Request physician confirmation'],
   };
   const pair = labels[action.action_type];
@@ -61,9 +115,18 @@ function EvidenceRow({ item, zh }: { item: AgentEvidenceItem; zh: boolean }) {
     </div>
   );
 }
-export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun, onNextAction }: Props) {
+export function ReaderEvidencePanel({
+  result,
+  loading = false,
+  zh = true,
+  onRun,
+  onNextAction,
+  onOpenFullReport,
+}: Props) {
   const [fullReportOpen, setFullReportOpen] = React.useState(false);
+  const previousResultRef = React.useRef<AgentAnalysisResponse | null>(result);
   const belief = result?.belief_state;
+  const summary = stageSummary(result);
   const decision = result?.report?.clinical_decision;
   const dino = result?.tool_evidence?.dino;
   const dinoPayload = dino?.dino && typeof dino.dino === 'object'
@@ -78,43 +141,56 @@ export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun,
   ].slice(0, 5);
   const nextAction = belief?.next_actions?.[0];
 
+  React.useEffect(() => {
+    if (!previousResultRef.current && result) {
+      setFullReportOpen(true);
+    } else if (!result) {
+      setFullReportOpen(false);
+    }
+    previousResultRef.current = result;
+  }, [result]);
+
   return (
     <>
     <section className="flex min-h-0 flex-col border-t border-white/10 bg-[#0b0d10]">
-      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <BrainCircuit size={14} className="shrink-0 text-cyan-300" />
           <div className="min-w-0">
             <div className="truncate text-xs font-semibold text-slate-100">
-              {zh ? '科研 Agent 证据状态' : 'Research Agent evidence state'}
+              {zh ? '辅助诊断意见' : 'Assisted diagnosis'}
             </div>
             <div className="truncate text-[9px] text-slate-500">
-              {belief?.schema_version || (zh ? '尚未运行统一 Agent' : 'Unified Agent not run')}
+              {belief?.schema_version || (zh ? '尚未生成辅助意见' : 'Assisted opinion not generated yet')}
             </div>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {result ? (
-            <button
-              type="button"
-              onClick={() => setFullReportOpen(true)}
-              className="reader-btn border-white/15 text-slate-300"
-            >
-              <FileText size={11} />
-              {zh ? '完整报告' : 'Full report'}
-            </button>
-          ) : null}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenFullReport) {
+                onOpenFullReport();
+              } else {
+                setFullReportOpen(true);
+              }
+            }}
+            className="reader-btn min-w-[5.5rem] justify-center border-emerald-400/30 text-emerald-100"
+          >
+            <FileText size={11} />
+            {zh ? '完整报告' : 'Full report'}
+          </button>
           {onRun ? (
             <button
               type="button"
               onClick={() => (onNextAction ? onNextAction(nextAction?.action_type) : onRun())}
               disabled={loading}
-              className="reader-btn shrink-0 border-cyan-400/30 text-cyan-200"
+              className="reader-btn min-w-[6.5rem] justify-center border-cyan-400/30 text-cyan-200"
             >
               {loading ? <Loader2 size={11} className="animate-spin" /> : <ChevronRight size={11} />}
               {loading
                 ? (zh ? '分析中' : 'Running')
-                : (nextAction ? actionLabel(nextAction, zh) : (zh ? '运行统一 Agent' : 'Run unified Agent'))}
+                : (nextAction ? actionLabel(nextAction, zh) : (zh ? '生成辅助意见' : 'Generate assist'))}
             </button>
           ) : null}
         </div>
@@ -125,7 +201,14 @@ export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun,
           <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-2">
             <div className="text-[9px] text-slate-500">{zh ? '当前阶段倾向' : 'Provisional stage'}</div>
             <div className="mt-1 text-xl font-black text-emerald-200">
-              {topStage(belief, result?.report?.recommended_t_stage)}
+              {result ? answerText(summary.stage, zh) : '—'}
+            </div>
+            <div className="mt-1 text-[9px] text-emerald-100/70">
+              {summary.confidence != null
+                ? `${zh ? '置信度' : 'Confidence'} ${Math.round(summary.confidence * 100)}%`
+                : (result?.report?.confidence
+                  ? `${zh ? '置信度等级' : 'Confidence level'} ${result.report.confidence}`
+                  : (zh ? '等待分析' : 'Awaiting analysis'))}
             </div>
           </div>
           <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-2">
@@ -141,7 +224,7 @@ export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun,
 
         <div className="flex flex-wrap gap-1.5 text-[9px]">
           <span className="inline-flex items-center gap-1 rounded border border-cyan-400/20 bg-cyan-400/5 px-2 py-1 text-cyan-200">
-            <Dna size={10} /> DINO {dinoAvailable ? 'shadow:ok' : (zh ? '待补' : 'pending')}
+            <Dna size={10} /> {zh ? '区域特征' : 'Region features'} {dinoAvailable ? (zh ? '已就绪' : 'ready') : (zh ? '待补' : 'pending')}
           </span>
           <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-slate-400">
             <ShieldCheck size={10} /> {belief?.evidence?.length || result?.evidence?.length || 0} {zh ? '条证据' : 'evidence'}
@@ -191,22 +274,24 @@ export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun,
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-white/10 px-2.5 py-3 text-[10px] text-slate-600">
-            {zh ? '运行统一 Agent 后，这里显示病例信念、DINO、七征象和跨模态证据。' : 'Run the unified Agent to populate case belief, DINO, seven-sign, and cross-modal evidence.'}
+            {zh ? '生成辅助意见后，这里显示病例信念、区域特征、七征象和跨模态证据。' : 'After assisted analysis, this shows case belief, region features, seven-sign, and cross-modal evidence.'}
           </div>
         )}
       </div>
     </section>
-    {fullReportOpen && result ? (
+    {fullReportOpen ? (
       <div className="fixed inset-0 z-[300000] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm">
         <div className="relative flex max-h-[92vh] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-xl border border-white/15 bg-[#080b0f] shadow-2xl">
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-black px-4 py-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
                 <FileText size={15} />
-                {zh ? '病例 Agent 多模态报告' : 'Case Agent multimodal report'}
+                {zh ? '辅助诊断完整报告' : 'Assisted diagnosis full report'}
               </div>
               <div className="mt-1 truncate text-[10px] text-slate-500">
-                {result.session_id} · {result.traces?.length || 0} traces · {result.knowledge_context?.length || 0} knowledge snippets
+                {result
+                  ? `${result.session_id} / ${result.traces?.length || 0} traces / ${result.knowledge_context?.length || 0} knowledge snippets`
+                  : (zh ? '当前帧尚未生成辅助意见' : 'Assisted opinion has not been generated for this frame')}
               </div>
             </div>
             <button
@@ -219,14 +304,23 @@ export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun,
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.15fr_0.85fr]">
+            {result ? (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.15fr_0.85fr]">
               <div className="space-y-3">
                 <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/[0.04] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.16em] text-emerald-200/70">{zh ? '综合建议' : 'Integrated recommendation'}</div>
-                      <div className="mt-1 text-3xl font-black text-emerald-100">{result.report?.recommended_t_stage || 'cTx'}</div>
-                      <div className="mt-1 text-[10px] text-emerald-100/70">{result.report?.confidence || 'uncertain'}</div>
+                      <div className="mt-1 text-3xl font-black text-emerald-100">
+                        {answerText(summary.stage || answerLabel(result.report?.recommended_t_stage), zh)}
+                      </div>
+                      <div className="mt-1 text-[10px] text-emerald-100/70">
+                        {summary.confidence != null
+                          ? `${zh ? '置信度' : 'Confidence'} ${Math.round(summary.confidence * 100)}%`
+                          : (result.report?.confidence
+                            ? `${zh ? '置信度等级' : 'Confidence level'} ${result.report.confidence}`
+                            : (zh ? '置信度待生成' : 'Confidence pending'))}
+                      </div>
                     </div>
                     <div className="max-w-[65%] text-[11px] leading-relaxed text-slate-300">
                       {result.report?.reasoning || (zh ? '等待报告推理文本。' : 'No report reasoning returned.')}
@@ -316,7 +410,33 @@ export function ReaderEvidencePanel({ result, loading = false, zh = true, onRun,
                   </div>
                 </div>
               </div>
-            </div>
+              </div>
+            ) : (
+              <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-cyan-400/20 bg-cyan-400/[0.03] p-6 text-center">
+                <FileText size={24} className="text-cyan-300/70" />
+                <div className="mt-3 text-sm font-semibold text-slate-100">
+                  {zh ? '当前帧尚未生成完整报告' : 'No full report has been generated for this frame'}
+                </div>
+                <div className="mt-2 max-w-md text-[11px] leading-relaxed text-slate-500">
+                  {zh
+                    ? '当前证据面板已准备好。先生成辅助意见后，这里会显示病例信念、区域特征、七征象和跨模态证据。'
+                    : 'The evidence panel is ready. Generate an assisted opinion to populate belief, region features, seven signs, and cross-modal evidence.'}
+                </div>
+                {onRun ? (
+                  <button
+                    type="button"
+                    onClick={() => (onNextAction ? onNextAction(nextAction?.action_type) : onRun())}
+                    disabled={loading}
+                    className="reader-btn mt-4 border-cyan-400/30 text-cyan-200"
+                  >
+                    {loading ? <Loader2 size={11} className="animate-spin" /> : <ChevronRight size={11} />}
+                    {loading
+                      ? (zh ? '分析中' : 'Running')
+                      : (zh ? '生成辅助意见' : 'Generate assisted opinion')}
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       </div>

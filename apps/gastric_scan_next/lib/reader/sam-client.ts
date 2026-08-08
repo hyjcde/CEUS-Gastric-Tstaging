@@ -1,4 +1,12 @@
-import type { SamAnalyzeResult, SamBackendStatus, SamBox, SamClick } from '@/lib/reader/types';
+import type {
+  NnInteractiveStatus,
+  ReaderPromptStroke,
+  SamAnalyzeResult,
+  SamBackendStatus,
+  SamBox,
+  SamClick,
+} from '@/lib/reader/types';
+import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
 export async function fetchSamStatus(): Promise<SamBackendStatus> {
   const res = await fetch('/api/agent/sam-interactive', { cache: 'no-store' });
@@ -6,6 +14,80 @@ export async function fetchSamStatus(): Promise<SamBackendStatus> {
     return { available: false, error: `HTTP ${res.status}` };
   }
   return res.json() as Promise<SamBackendStatus>;
+}
+
+export async function fetchNnInteractiveStatus(): Promise<NnInteractiveStatus> {
+  const res = await fetch('/api/agent/nninteractive', { cache: 'no-store' });
+  const data = await res.json() as NnInteractiveStatus;
+  if (!res.ok) return { ...data, available: false, error: data.error || `HTTP ${res.status}` };
+  return data;
+}
+
+export type NnInteractiveRefinePayload = {
+  session_id: string;
+  case_id: string;
+  frame_time: number;
+  frame_png_b64: string;
+  image_width: number;
+  image_height: number;
+  reset_session: boolean;
+  initial_mask_polygon?: number[][];
+  points?: SamClick[];
+  scribbles?: Array<{
+    points: SamClick[];
+    label: string;
+    width: number;
+  }>;
+  lassos?: Array<{
+    points: SamClick[];
+    label: string;
+    width: number;
+  }>;
+};
+
+export type NnInteractiveRefineResult = {
+  ok?: boolean;
+  mask_polygon?: number[][];
+  lesion_area_ratio?: number;
+  backend_id?: string;
+  model?: string;
+  session_id?: string;
+  prompt_meta?: Record<string, unknown>;
+  elapsed_ms?: number;
+  error?: string;
+};
+
+export function strokeToNnInteractivePayload(stroke: ReaderPromptStroke) {
+  const points = stroke.points.map((point) => ({
+    x: point.x,
+    y: point.y,
+    label: stroke.label,
+  }));
+  return {
+    points,
+    label: stroke.label,
+    width: Math.max(1, Math.round(stroke.width)),
+  };
+}
+
+export async function runNnInteractiveRefine(
+  payload: NnInteractiveRefinePayload,
+): Promise<NnInteractiveRefineResult> {
+  const res = await fetch('/api/agent/nninteractive', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json() as {
+    ok?: boolean;
+    error?: string;
+    result?: NnInteractiveRefineResult;
+  };
+  const result = (data.result || data) as NnInteractiveRefineResult;
+  if (!res.ok || data.ok === false || result.ok === false || !result.mask_polygon?.length) {
+    throw new Error(String(data.error || result.error || `nnInteractive HTTP ${res.status}`));
+  }
+  return result;
 }
 
 export type SamAnalyzePayload = {
@@ -22,6 +104,7 @@ export type SamAnalyzePayload = {
   clicks?: SamClick[];
   box?: SamBox | null;
   llm_report?: boolean;
+  gc_us_report?: GcUsReportState | null;
 };
 
 export async function runSamAnalyze(payload: SamAnalyzePayload): Promise<SamAnalyzeResult> {

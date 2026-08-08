@@ -23,6 +23,7 @@ from .theme import FIGURE_DPI, FIGURE_FACECOLOR, TEXT_COLOR
 __all__ = [
     "save_binary_panel",
     "save_classification_panel",
+    "save_gc_us_sign_panel",
     "save_lumen_overlay",
     "save_morphology_panel",
     "save_quality_panel",
@@ -103,6 +104,79 @@ def save_morphology_panel(morph_obs: Dict[str, Any], out_path: Path) -> Path:
         ax.set_xlim(0, 1.05)
     ax.set_title("Morphology metrics", color=TEXT_COLOR, loc="left")
     ax.tick_params(colors=TEXT_COLOR)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=FIGURE_DPI, facecolor=fig.get_facecolor(), bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
+def save_gc_us_sign_panel(sign_obs: Dict[str, Any], out_path: Path) -> Optional[Path]:
+    """Save the structured sign scorecard beside its directional geometry proxy."""
+    explanation = sign_obs.get("explanation") or {}
+    geometry_audit = explanation.get("geometry_audit") or {}
+    viz = geometry_audit.get("viz") or {}
+    contour = np.asarray(viz.get("contour_xy") or [], dtype=np.float32)
+    if contour.ndim != 2 or contour.shape[1] < 2:
+        contour = np.empty((0, 2), dtype=np.float32)
+
+    items = [
+        item for item in (sign_obs.get("items") or [])
+        if isinstance(item, dict) and item.get("max") is not None
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig.patch.set_facecolor(FIGURE_FACECOLOR)
+
+    ax_geom, ax_score = axes
+    if len(contour) >= 3:
+        closed = np.vstack([contour[:, :2], contour[0, :2]])
+        ax_geom.fill(closed[:, 0], closed[:, 1], color="#d946ef", alpha=0.18)
+        ax_geom.plot(closed[:, 0], closed[:, 1], color="#e879f9", linewidth=2)
+        lesion_center = np.asarray(viz.get("lesion_center") or [], dtype=np.float32)
+        lumen_center = np.asarray(viz.get("lumen_center") or [], dtype=np.float32)
+        arrow = np.asarray(viz.get("outward_arrow") or [], dtype=np.float32)
+        if lesion_center.size >= 2:
+            ax_geom.scatter(lesion_center[0], lesion_center[1], color="#fef08a", s=28, label="lesion center")
+        if lumen_center.size >= 2:
+            ax_geom.scatter(lumen_center[0], lumen_center[1], color="#67e8f9", s=28, label="lumen center")
+        if arrow.size >= 4:
+            ax_geom.arrow(
+                arrow[0],
+                arrow[1],
+                arrow[2] - arrow[0],
+                arrow[3] - arrow[1],
+                color="#bef264",
+                width=0.5,
+                head_width=4,
+                length_includes_head=True,
+            )
+        ax_geom.invert_yaxis()
+        ax_geom.set_aspect("equal", adjustable="box")
+        ax_geom.legend(loc="best", fontsize=8, frameon=False)
+    else:
+        ax_geom.text(0.5, 0.5, "Geometry unavailable", ha="center", va="center", color=TEXT_COLOR)
+    ax_geom.set_title("Directional geometry proxy", color=TEXT_COLOR, loc="left")
+    ax_geom.set_xticks([])
+    ax_geom.set_yticks([])
+
+    if items:
+        labels = [str(item.get("id", "sign")) for item in items]
+        values = [float(item.get("points") or 0) for item in items]
+        maxima = [max(float(item.get("max") or 1), 1.0) for item in items]
+        ax_score.barh(labels, maxima, color="#334155", alpha=0.8)
+        ax_score.barh(labels, values, color="#a78bfa")
+        ax_score.set_xlim(0, max(maxima) * 1.15)
+        ax_score.tick_params(axis="y", colors=TEXT_COLOR, labelsize=8)
+        ax_score.tick_params(axis="x", colors=TEXT_COLOR, labelsize=8)
+    else:
+        ax_score.text(0.5, 0.5, "No assessable signs", ha="center", va="center", color=TEXT_COLOR)
+    ax_score.set_title(
+        f"GC-US sign score, {sign_obs.get('status', 'unknown')}",
+        color=TEXT_COLOR,
+        loc="left",
+    )
+    for spine in ax_score.spines.values():
+        spine.set_visible(False)
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=FIGURE_DPI, facecolor=fig.get_facecolor(), bbox_inches="tight")
     plt.close(fig)

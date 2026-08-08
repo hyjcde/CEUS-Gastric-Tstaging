@@ -1,8 +1,8 @@
 """
 MorphologyTool — extract shape and boundary features from a lesion mask.
 
-Computes convexity, solidity, boundary irregularity, compactness, and
-lesion area ratio. These morphological biomarkers provide additional
+Computes convexity, solidity, boundary irregularity, compactness, smoothness,
+and lesion area ratio. These morphological biomarkers provide additional
 evidence for T-stage differentiation, especially at the T2/T3 boundary
 where shape irregularity correlates with deeper invasion.
 """
@@ -30,6 +30,8 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
       - solidity: area / convex_hull_area
       - boundary_irregularity: 1 - (4*pi*area / perimeter^2)  (0 = perfect circle)
       - compactness: sqrt(area) / perimeter
+      - smoothness_index: weighted circularity and solidity, higher = smoother
+      - roughness_index: 1 - smoothness_index
       - lesion_area_ratio: lesion_pixels / total_pixels
       - aspect_ratio: bounding box width / height
     """
@@ -43,6 +45,8 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
             "solidity": 0.0,
             "boundary_irregularity": 0.0,
             "compactness": 0.0,
+            "smoothness_index": 0.0,
+            "roughness_index": 1.0,
             "lesion_area_ratio": 0.0,
             "aspect_ratio": 1.0,
             "valid": False,
@@ -54,6 +58,7 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
         return {
             "convexity": 0.0, "solidity": 0.0,
             "boundary_irregularity": 0.0, "compactness": 0.0,
+            "smoothness_index": 0.0, "roughness_index": 1.0,
             "lesion_area_ratio": 0.0, "aspect_ratio": 1.0, "valid": False,
         }
 
@@ -66,6 +71,7 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
         return {
             "convexity": 0.0, "solidity": 0.0,
             "boundary_irregularity": 0.0, "compactness": 0.0,
+            "smoothness_index": 0.0, "roughness_index": 1.0,
             "lesion_area_ratio": 0.0, "aspect_ratio": 1.0, "valid": False,
         }
 
@@ -79,6 +85,10 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
     # Circularity-based irregularity
     circularity = (4 * math.pi * area) / (perimeter ** 2) if perimeter > 0 else 0
     boundary_irregularity = 1.0 - min(circularity, 1.0)
+    smoothness_index = max(
+        0.0,
+        min(1.0, 0.65 * min(circularity, 1.0) + 0.35 * solidity),
+    )
 
     compactness = math.sqrt(area) / perimeter if perimeter > 0 else 0
 
@@ -92,6 +102,8 @@ def compute_morphology(mask: np.ndarray) -> Dict[str, Any]:
         "solidity": round(solidity, 4),
         "boundary_irregularity": round(boundary_irregularity, 4),
         "compactness": round(compactness, 4),
+        "smoothness_index": round(smoothness_index, 4),
+        "roughness_index": round(1.0 - smoothness_index, 4),
         "lesion_area_ratio": round(lesion_area_ratio, 4),
         "aspect_ratio": round(aspect_ratio, 3),
         "valid": True,
@@ -102,7 +114,7 @@ class MorphologyTool(BaseTool):
     name = "morphology"
     description = (
         "Extract mask-derived shape descriptors (convexity, solidity, boundary "
-        "irregularity, compactness). These are exploratory evidence features, "
+        "irregularity, compactness, smoothness). These are exploratory evidence features, "
         "not direct measurements of pathological invasion depth."
     )
     parameters = [

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
 import { proxyAgentRequest } from '@/lib/agent-upstream';
+import { buildPythonAgentEnv } from '@/lib/agent-python-env';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
 export const runtime = 'nodejs';
@@ -39,6 +40,8 @@ type ReaderAgentRequest = {
   report_text?: Record<string, unknown>;
   gc_us_report?: GcUsReportState;
   mask_override?: Record<string, unknown>;
+  lumen_override?: Record<string, unknown>;
+  use_lumen_override?: boolean;
 };
 
 function safeSegment(value: string, fallback: string): string {
@@ -70,7 +73,7 @@ function runPython(payload: Record<string, unknown>): Promise<Record<string, unk
     const child = spawn(PYTHON_BIN, [ANALYZE_SCRIPT], {
       cwd: PROJECT_ROOT,
       env: {
-        ...process.env,
+        ...buildPythonAgentEnv(),
         AGENT_STREAM_EVENTS: '0',
         PYTHONPATH: `${PROJECT_ROOT}/pipeline:${PROJECT_ROOT}/scripts${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
       },
@@ -169,6 +172,8 @@ export async function POST(request: NextRequest) {
       gc_us_report: body.gc_us_report,
       use_mask_override: Boolean(body.mask_override),
       mask_override: body.mask_override,
+      use_lumen_override: Boolean(body.use_lumen_override && body.lumen_override),
+      lumen_override: body.lumen_override,
       reader_context: {
         case_id: body.case_id,
         reader_id: body.reader_id || 'unknown_reader',

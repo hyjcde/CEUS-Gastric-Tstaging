@@ -41,7 +41,19 @@ function readStoredDataset(): DatasetType {
 function readStoredLanguage(): Language {
   if (typeof window === 'undefined') return 'zh';
   const stored = window.localStorage.getItem('gastric_language');
-  return stored === 'en' || stored === 'zh' ? stored : 'zh';
+  if (stored === 'en' || stored === 'zh' || stored === 'zh-HK') return stored;
+  // Legacy aliases → Hong Kong Traditional
+  if (
+    stored === 'zh-TW'
+    || stored === 'zh_TW'
+    || stored === 'zh-Hant'
+    || stored === 'zh-HK'
+    || stored === 'tw'
+    || stored === 'hk'
+  ) {
+    return 'zh-HK';
+  }
+  return 'zh';
 }
 
 function readStoredQueue(): WorkbenchQueueId {
@@ -83,7 +95,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   };
   const [cohortYear, setCohortYear] = useState<CohortYear>('reader_v150');
   const [queueId, setQueueIdState] = useState<WorkbenchQueueId>(DEFAULT_WORKBENCH_QUEUE);
-  const [treatmentType, setTreatmentType] = useState<TreatmentType>('surgery'); // Default to surgery (can be 'surgery' or 'nac')
+  const [treatmentType, setTreatmentType] = useState<TreatmentType>('surgery');
 
   useEffect(() => {
     const storedQueue = readStoredQueue();
@@ -120,4 +132,3 @@ export const useSettings = () => {
   }
   return context;
 };
-

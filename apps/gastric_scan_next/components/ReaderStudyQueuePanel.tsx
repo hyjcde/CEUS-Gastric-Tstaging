@@ -81,7 +81,7 @@ export function ReaderStudyQueuePanel({
 }: Props) {
   const searchParams = useSearchParams();
   const { language } = useSettings();
-  const zh = language === 'zh';
+  const zh = language !== 'en';
   const [finalStage, setFinalStage] = useState('');
   const [finalNature, setFinalNature] = useState('');
   const [reason, setReason] = useState('');

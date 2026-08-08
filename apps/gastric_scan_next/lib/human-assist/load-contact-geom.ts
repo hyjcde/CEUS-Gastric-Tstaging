@@ -17,6 +17,41 @@ export type PenetrationResult = {
   [key: string]: unknown;
 };
 
+export type LayerGeometry = {
+  wall_pts?: number[][];
+  lesion_poly?: number[][];
+  wall_lesion_pts?: number[][];
+  wall_dists?: number[];
+  wall_dirs?: number[][];
+  contact_idx?: number[];
+  contact_ratio?: number;
+  deep_idx?: number;
+  min_remain_px?: number;
+  mean_remain_px?: number;
+  ref_thickness?: number;
+  [key: string]: unknown;
+};
+
+export type LayerEchoAnalysis = {
+  values?: number[];
+  labels?: number[];
+  edgeFracs?: number[];
+  pixelEdges?: number[];
+  dpFracs?: number[];
+  ratioHint?: number;
+  occFrac?: number;
+  nLayers?: number;
+  source?: string;
+  imaginary?: boolean;
+  stable?: boolean;
+  snr?: number;
+  noise?: number;
+  clarity?: number;
+  fromIdx?: number;
+  sourceIdx?: number;
+  [key: string]: unknown;
+};
+
 export type LayerAnalyzeResult = {
   ok: boolean;
   message?: string;
@@ -33,15 +68,10 @@ export type LayerAnalyzeResult = {
   layer?: LayerJudgment | null;
   source?: { badge?: string; [key: string]: unknown } | null;
   plan?: { edgeFracs?: number[]; [key: string]: unknown };
-  analysis?: { edgeFracs?: number[]; ratioHint?: number; imaginary?: boolean; [key: string]: unknown } | null;
+  analysis?: LayerEchoAnalysis | null;
   wallEstimated?: boolean;
   offsetPx?: number;
-  geom?: {
-    contact_idx?: number[];
-    contact_ratio?: number;
-    deep_idx?: number;
-    [key: string]: unknown;
-  };
+  geom?: LayerGeometry;
 };
 
 type LayerBridgeApi = {
@@ -60,6 +90,37 @@ type LayerBridgeApi = {
 type ContactGeomApi = {
   formatPenPct?: (pen: PenetrationResult) => string;
   wallStackSvg?: (fracs: number[], occ: number, opts?: { w?: number; h?: number }) => string;
+  remainProfileSvg?: (geom: LayerGeometry, centerIdx: number, half?: number, w?: number, h?: number) => string;
+  echoClusterSvg?: (analysis: LayerEchoAnalysis, w?: number, h?: number) => string;
+  wallLayerArcsSvg?: (
+    geom: LayerGeometry,
+    centerIdx: number,
+    half: number,
+    edgeFracs?: number[],
+    opts?: Record<string, unknown>,
+  ) => string;
+  channelLayerCurvesSvg?: (
+    geom: LayerGeometry,
+    centerIdx: number,
+    edgeFracs?: number[],
+    opts?: Record<string, unknown>,
+  ) => string;
+  channelStripOverlaySvg?: (
+    wallPoint: number[],
+    lesionPoint: number[],
+    edgeFracs?: number[],
+    remain?: number,
+    opts?: Record<string, unknown>,
+  ) => string;
+  localArcIndices?: (n: number, center: number, half: number) => number[];
+  layerDrawCenter?: (geom: LayerGeometry, center: number, sourceIdx?: number) => number;
+  layerSourceInfo?: (analysis: LayerEchoAnalysis) => {
+    badge?: string;
+    detail?: string;
+    confidence?: string;
+    dashed?: boolean;
+    [key: string]: unknown;
+  };
   computeGeometry?: (...args: unknown[]) => unknown;
   layerJudgment?: (ratio: number) => LayerJudgment;
   isContactPoint?: (...args: unknown[]) => boolean;

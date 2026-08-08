@@ -45,6 +45,7 @@ def _pipeline_step_to_agent_step(record: StepRecord, order: int) -> Dict[str, An
         "morphology": "形态学特征提取",
         "t_staging": "T 分期 4-class 分类",
         "wall_evidence": "壁层侵犯证据（SDF）",
+        "gc_us_signs": "核心征象算法链",
         "dinov3_seg": "DINOv3 候选分割",
         "dino_sign_fusion": "DINOv3 + 结构化征象融合证据",
         "case_rag": "Case-RAG 相似病例检索",
@@ -147,7 +148,7 @@ def _build_belief_state(
 
 
 def _evidence_source_type(record: StepRecord) -> str:
-    if record.step_id in {"morphology", "dino_sign_fusion", "report_synth"}:
+    if record.step_id in {"morphology", "gc_us_signs", "dino_sign_fusion", "report_synth"}:
         return "derived_rule"
     if record.step_id == "triage":
         return "case_registry"
@@ -383,6 +384,35 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         override_path = mask_override.get("mask_path")
         override_source = str(mask_override.get("source") or "manual")
 
+    lumen_override = payload.get("lumen_override") if payload.get("use_lumen_override") else None
+    override_lumen_bbox = None
+    lumen_override_polygon = None
+    lumen_override_source = "manual"
+    lumen_override_meta = None
+    if isinstance(lumen_override, dict):
+        raw_bbox = lumen_override.get("lumen_bbox")
+        if isinstance(raw_bbox, dict):
+            try:
+                override_lumen_bbox = {
+                    "x1": int(round(float(raw_bbox["x1"]))),
+                    "y1": int(round(float(raw_bbox["y1"]))),
+                    "x2": int(round(float(raw_bbox["x2"]))),
+                    "y2": int(round(float(raw_bbox["y2"]))),
+                }
+            except (KeyError, TypeError, ValueError):
+                override_lumen_bbox = None
+        poly = lumen_override.get("lumen_polygon")
+        if isinstance(poly, list) and len(poly) >= 3:
+            lumen_override_polygon = list(poly)
+        lumen_override_source = str(lumen_override.get("source") or "manual")
+        lumen_override_meta = {
+            "lumen_confidence": lumen_override.get("lumen_confidence"),
+            "lumen_mask_type": lumen_override.get("lumen_mask_type"),
+            "detector_backend_id": lumen_override.get("detector_backend_id"),
+            "sam_backend_id": lumen_override.get("sam_backend_id"),
+            "sam_score": lumen_override.get("sam_score"),
+        }
+
     roi_mode = str(payload.get("roi_mode") or "predicted")
     if roi_mode not in ("predicted", "doctor", "auto"):
         roi_mode = "predicted"
@@ -405,6 +435,11 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         mask_path=str(override_path) if override_path else None,
         override_roi_bbox=dict(override_roi) if isinstance(override_roi, dict) else None,
         mask_override_source=override_source,
+        use_lumen_override=bool(payload.get("use_lumen_override") and override_lumen_bbox),
+        override_lumen_bbox=dict(override_lumen_bbox) if isinstance(override_lumen_bbox, dict) else None,
+        lumen_override_source=lumen_override_source,
+        lumen_override_polygon=lumen_override_polygon,
+        lumen_override_meta=lumen_override_meta,
     )
 
     state = run_case_pipeline(case_input, pipeline_out, options)
@@ -431,6 +466,7 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         classification.setdefault("frame_aggregation", "mean_probability")
         classification.setdefault("aggregated_frame_count", len(state.per_frame_classifications))
     morphology = _step_obs(state, "morphology")
+    gc_us_signs = _step_obs(state, "gc_us_signs")
     synth = _step_obs(state, "report_synth")
     clinical = synth.get("clinical_risk") or {}
     report_text = synth.get("structure_report") or {}
@@ -439,6 +475,16 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     prediction_artifacts = _build_prediction_artifacts_from_pipeline(state, payload, artifact_info)
     real_script_artifacts = ac._save_real_script_artifacts(payload, artifact_info)
     prediction_artifacts.update(real_script_artifacts)
+    dino_feature_artifacts: Dict[str, Any] = {"enabled": bool(options.enable_dino)}
+    if options.enable_dino:
+        dino_feature_artifacts.update(
+            ac._save_current_image_dino_feature_panel(
+                image_path=image_path,
+                prediction_artifacts=prediction_artifacts,
+                artifact_info=artifact_info,
+            )
+        )
+        prediction_artifacts.update(dino_feature_artifacts)
 
     traces: List[Dict[str, Any]] = []
     for record in state.steps:
@@ -451,6 +497,20 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         agent_steps.append(step)
         if ac._stream_enabled():
             ac._emit_stream_event("agent_step", {"step": step})
+    if dino_feature_artifacts.get("current_image_dino_feature_panel_url"):
+        dino_refs = {
+            key: dino_feature_artifacts[key]
+            for key in (
+                "current_image_dino_feature_panel_url",
+                "real_dino_multimodal_panel_url",
+            )
+            if dino_feature_artifacts.get(key)
+        }
+        for step in agent_steps:
+            if step.get("step_id") not in {"dinov3_seg", "dino_sign_fusion"}:
+                continue
+            step.setdefault("outputs", {}).update(dino_feature_artifacts)
+            step.setdefault("visual_refs", {}).update(dino_refs)
 
     knowledge_query = " ".join([
         str(payload.get("data_source", "")),
@@ -491,6 +551,19 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         report=report,
         report_text=report_text,
         traces=traces,
+    )
+    report["report_pack"] = ac._build_report_pack(
+        payload=payload,
+        report=report,
+        lumen_detection=lumen_detection,
+        segmentation=segmentation,
+        classification=classification,
+        morphology=morphology,
+        clinical=clinical,
+        report_text=report_text,
+        similar_cases=similar_cases,
+        wall_evidence=wall_evidence,
+        gc_us_signs=gc_us_signs,
     )
     belief_state = _build_belief_state(state, payload, report)
     report["belief_state_schema_version"] = belief_state.get("schema_version")
@@ -566,7 +639,8 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         memory_source="pipeline",
         llm_invocation=llm_invocation,
         prediction_artifacts=prediction_artifacts,
-        dino_feature_artifacts={},
+        dino_feature_artifacts=dino_feature_artifacts,
+        gc_us_signs=gc_us_signs,
     )
 
     if ac._stream_enabled():
@@ -600,6 +674,7 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
             "segmentation": segmentation,
             "classification": classification,
             "morphology": morphology,
+            "gc_us_signs": gc_us_signs,
             "clinical": clinical,
             "report": report_text,
             "dino": _step_obs(state, "dino_sign_fusion") or _step_obs(state, "dinov3_seg"),

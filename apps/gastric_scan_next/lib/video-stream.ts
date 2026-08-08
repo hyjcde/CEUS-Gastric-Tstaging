@@ -6,9 +6,11 @@ import { PROJECT_ROOT } from '@/lib/config';
 export const VIDEO_STREAM_ROOTS = [
   'apps/gastric_scan_next/public/videos',
   'dataset/internal/prospective_2025/2025/crop_ui/videos',
-  'dataset/external/crop_ui/videos',
+  'dataset/external',
   'data/raw/qualified_reader_videos',
   'data/raw/patient_videos_2025',
+  'data/raw/legacy_external_direct_surgery',
+  'data/raw/legacy_gastric_staging',
   'docs/clinical_validation/reader_study_v150',
 ] as const;
 
@@ -42,10 +44,16 @@ export function resolvePlayableVideoPath(videoUrl: string): string | null {
 
   try {
     const u = new URL(videoUrl, 'http://local.invalid');
-    if (u.pathname.includes('/api/patients/videos/stream')) {
+    if (
+      u.pathname.includes('/api/patients/videos/stream')
+      || u.pathname.includes('/api/reader/media')
+    ) {
       const rel = u.searchParams.get('rel') || '';
       if (!rel) return null;
-      const abs = path.resolve(PROJECT_ROOT, rel);
+      const baseRoot = u.pathname.includes('/api/reader/media')
+        ? path.join(PROJECT_ROOT, 'docs/clinical_validation/reader_study_v150')
+        : PROJECT_ROOT;
+      const abs = path.resolve(baseRoot, rel);
       if (!isUnderAllowedRoot(abs) || !fs.existsSync(abs)) return null;
       return abs;
     }

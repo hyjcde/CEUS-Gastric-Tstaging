@@ -8,6 +8,7 @@ import { getQueueDisplayLabel, isInternalQueue } from '@/lib/cohort';
 import { QueueTreeSelect } from './QueueTreeSelect';
 import toast from 'react-hot-toast';
 import { PatientListGroupSkeleton } from './Skeleton';
+import type { Language } from '@/lib/i18n';
 
 interface PatientListProps {
   onSelect: (patient: Patient) => void;
@@ -77,7 +78,7 @@ async function fetchPatientPage(
   treatment: TreatmentKey,
   offset: number,
   signal: AbortSignal,
-  language: 'zh' | 'en',
+  language: Language,
 ): Promise<PatientPage> {
   const params = new URLSearchParams({
     dataset,
@@ -118,7 +119,7 @@ async function fetchPatientPage(
 
 export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded, readerStudyMode, onReaderStudyModeChange }) => {
   const { dataset, cohortYear, queueId, setQueueId, language, readerOnly, t } = useSettings();
-  const zh = language === 'zh';
+  const zh = language !== 'en';
   const publicQueueLabel = zh ? '阅片任务 · 第一轮' : 'Reader task · Round 1';
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);

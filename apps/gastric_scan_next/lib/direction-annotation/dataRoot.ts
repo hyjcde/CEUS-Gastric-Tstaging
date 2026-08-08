@@ -87,12 +87,22 @@ export function resolveConfiguredPaths(configuredPath = getDataRoot()): Resolved
 
 export function getBatchFilePath(): string {
   const { projectRoot } = resolveConfiguredPaths();
-  return path.join(projectRoot, "direction_annotation_batch.json");
+  const candidates = [
+    path.join(projectRoot, "data", "annotation", "batches", "direction_annotation_batch.json"),
+    path.join(projectRoot, "direction_annotation_batch.json"),
+    path.join(projectRoot, "_compat", "direction_annotation_batch.json"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
 }
 
 export function getSaveDir(): string {
   const { projectRoot } = resolveConfiguredPaths();
-  return path.join(projectRoot, "direction_annotations");
+  const candidates = [
+    path.join(projectRoot, "data", "annotation", "outputs", "direction_annotations"),
+    path.join(projectRoot, "direction_annotations"),
+    path.join(projectRoot, "_compat", "direction_annotations"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
 }
 
 export function getDirectionAnnotationFilePath(imagePath: string): string {

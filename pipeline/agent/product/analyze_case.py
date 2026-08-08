@@ -1424,11 +1424,13 @@ def _build_rule_based_report(
     *,
     lumen_detection: Optional[Dict[str, Any]] = None,
     wall_evidence: Optional[Dict[str, Any]] = None,
+    gc_us_signs: Optional[Dict[str, Any]] = None,
     memory_context: Optional[Dict[str, Any]] = None,
     memory_fusion_mode: str = "soft_prior",
 ) -> Dict[str, Any]:
     lumen_detection = lumen_detection or {}
     wall_evidence = wall_evidence or {}
+    gc_us_signs = gc_us_signs or {}
     scores = {stage: 0.0 for stage in STAGES}
     uncertainty_flags: List[str] = []
     supporting_evidence: List[str] = []
@@ -1517,6 +1519,19 @@ def _build_rule_based_report(
     else:
         uncertainty_flags.append("Live wall evidence unavailable; using lesion-centered proxy visuals only.")
 
+    if gc_us_signs.get("available"):
+        sign_items = gc_us_signs.get("items") or []
+        sign_status = gc_us_signs.get("status", "unknown")
+        normalized_i = gc_us_signs.get("normalized_i")
+        supporting_evidence.append(
+            f"GC-US structured sign scorer status={sign_status}, "
+            f"items={len(sign_items)}, normalized_i={normalized_i if normalized_i is not None else 'n/a'}."
+        )
+        if any(str(item.get("status")) == "proxy" for item in sign_items if isinstance(item, dict)):
+            uncertainty_flags.append("GC-US sign card includes geometry proxy evidence; physician review remains required.")
+    else:
+        uncertainty_flags.append("GC-US structured sign scorer was unavailable or not assessable.")
+
     rag_gate = _compute_rag_gate(classification, similar_cases, wall_evidence)
     rag_weight = float(rag_gate.get("rag_weight", 0.0))
 
@@ -1577,6 +1592,7 @@ def _build_rule_based_report(
             "segmentation": "available" if segmentation.get("available") else "fallback",
             "classification": "available" if classification.get("available") else "unavailable",
             "morphology": "available" if morphology.get("valid") else "partial",
+            "gc_us_signs": "available" if gc_us_signs.get("available") else "partial",
             "clinical": "available" if clinical.get("factors_available") else "partial",
             "report": "available" if report_text.get("available") else "missing",
             "memory": "available" if similar_cases else "partial",
@@ -1608,7 +1624,13 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
         "skip_reason": "missing_api_key",
         "total_tokens": 0,
     }
-    if not any(os.getenv(key) for key in ("AGENT_API_KEY", "VLM_API_KEY", "POE_API_KEY", "OPENAI_API_KEY")):
+    if not any(os.getenv(key) for key in (
+        "AGENT_API_KEY",
+        "VLM_API_KEY",
+        "POE_API_KEY",
+        "OPENAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+    )):
         return base_report, invocation
 
     prompt = {
@@ -1616,16 +1638,24 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
         "data_source": payload.get("data_source"),
         "candidate_report": base_report,
         "instruction": (
-            "Rewrite only the narrative reasoning as compact JSON. The deterministic pipeline owns "
+            "Rewrite only the narrative reasoning and report quality notes as compact JSON. The deterministic pipeline owns "
             "recommended_t_stage, confidence, supporting_evidence, uncertainty_flags, guideline_evidence, "
-            "and management_advice; preserve those fields exactly and never change them. Return an optional "
-            "reasoning string only. Do not invent missing tool outputs, treatment regimens, or guideline claims."
+            "management_advice, and every numeric measurement; preserve those fields exactly and never change them. "
+            "Return {reasoning: string, quality_notes: string[]} only. The reasoning must state what evidence is "
+            "actually present and keep unknown or proxy findings explicitly unknown. Quality notes should identify "
+            "missing modalities, evidence conflicts, and what the physician should verify. Do not invent missing "
+            "tool outputs, treatment regimens, pathology, fluid status, or guideline claims."
         ),
     }
     try:
         from agent.core.llm_client import AgentLLMClient
 
-        llm = AgentLLMClient(max_tokens=500, temperature=0.1, retries=2)
+        llm = AgentLLMClient(
+            max_tokens=500,
+            temperature=0.1,
+            retries=2,
+            disable_thinking=True,
+        )
         response = llm.chat([
             {"role": "system", "content": "You are a careful medical AI orchestrator. Return JSON only."},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
@@ -1636,6 +1666,12 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
         locked_confidence = base_report.get("confidence")
         if isinstance(parsed.get("reasoning"), str) and parsed["reasoning"].strip():
             merged["llm_reasoning"] = parsed["reasoning"].strip()
+        if isinstance(parsed.get("quality_notes"), list):
+            merged["llm_quality_notes"] = [
+                str(item).strip()
+                for item in parsed["quality_notes"]
+                if str(item).strip()
+            ][:8]
         merged["recommended_t_stage"] = locked_stage
         merged["confidence"] = locked_confidence
         ignored_fields = [
@@ -1690,8 +1726,11 @@ def _build_runtime_verification(
     llm_invocation: Dict[str, Any],
     prediction_artifacts: Dict[str, Any],
     dino_feature_artifacts: Dict[str, Any],
+    gc_us_signs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Summarize which real APIs/models were invoked for frontend audit."""
+    dino_enabled = bool(dino_feature_artifacts.get("enabled", True))
+    dino_panel_ready = bool(dino_feature_artifacts.get("current_image_dino_feature_panel_url"))
     invocations: List[Dict[str, Any]] = [
         {
             "component": "nextjs_stream_route",
@@ -1734,6 +1773,13 @@ def _build_runtime_verification(
             "status": "ok" if morphology.get("valid") else "partial",
         },
         {
+            "component": "gc_us_sign_scorer",
+            "api_kind": "local_numpy_rule_engine",
+            "called": bool(gc_us_signs and gc_us_signs.get("available")),
+            "backend_id": (gc_us_signs or {}).get("backend_id", "gc_us_sign_scorer_v1"),
+            "status": "ok" if gc_us_signs and gc_us_signs.get("available") else "partial",
+        },
+        {
             "component": "clinical_rules",
             "api_kind": "local_rule_engine",
             "called": True,
@@ -1758,10 +1804,10 @@ def _build_runtime_verification(
         {
             "component": "dino_feature_panel",
             "api_kind": "local_torch_dino_script",
-            "called": bool(dino_feature_artifacts.get("current_image_dino_feature_panel_url")),
+            "called": dino_panel_ready,
             "source_script": dino_feature_artifacts.get("current_image_dino_source_script"),
             "model": dino_feature_artifacts.get("current_image_dino_model"),
-            "status": "ok" if dino_feature_artifacts.get("current_image_dino_feature_panel_url") else "partial",
+            "status": "ok" if dino_panel_ready else ("skipped" if not dino_enabled else "partial"),
         },
         {
             "component": "llm_report_synthesis",
@@ -1779,7 +1825,9 @@ def _build_runtime_verification(
     ):
         proxy_visuals.append("real_wall_analysis_panel (live current-image proxy)")
 
-    required_components = {"segmentation", "classification", "dino_feature_panel", "nextjs_stream_route"}
+    required_components = {"segmentation", "classification", "nextjs_stream_route"}
+    if dino_enabled:
+        required_components.add("dino_feature_panel")
     failed_required = [
         str(item.get("component"))
         for item in invocations
@@ -1871,6 +1919,7 @@ def _gc_us_template_report(
     payload: Dict[str, Any],
     clinical_payload: Dict[str, Any],
     report: Dict[str, Any],
+    report_text: Dict[str, Any],
     morphology: Dict[str, Any],
     wall_evidence: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -1997,6 +2046,24 @@ def _gc_us_template_report(
         f"浆膜表现{_gc_us_strip_prefix(serosa_text, ('浆膜面', '浆膜'))}，"
         f"胃周组织{_gc_us_strip_prefix(perigastric_text, ('胃周组织', '胃周'))}。"
     )
+    smoothness = _gc_us_number(morphology.get("smoothness_index"))
+    roughness = _gc_us_number(morphology.get("roughness_index"))
+    expansion = _gc_us_number(morphology.get("outward_expansion_ratio"))
+    geometry_cues = []
+    if smoothness is not None:
+        geometry_cues.append(f"轮廓平滑度{smoothness * 100:.0f}%")
+    if roughness is not None:
+        geometry_cues.append(f"轮廓粗糙度{roughness * 100:.0f}%")
+    if expansion is not None:
+        geometry_cues.append(
+            f"向外扩张几何代理{expansion * 100:+.0f}%"
+        )
+    if geometry_cues:
+        finding += (
+            "当前帧轮廓几何辅助："
+            + "，".join(geometry_cues)
+            + "；仅作形态与方向参考，不等同于病理浸润或真实生长速度。"
+        )
 
     reference_stage = state.get("reference_stage", {}) if isinstance(state, dict) else {}
     if not isinstance(reference_stage, dict):
@@ -2015,6 +2082,62 @@ def _gc_us_template_report(
         for item in conflicts
         if isinstance(item, dict) and item.get("message")
     ]
+    fluid_evidence = report_text.get("fluid_evidence") if isinstance(report_text, dict) else {}
+    if not isinstance(fluid_evidence, dict):
+        fluid_evidence = {}
+    fluid_status = str(fluid_evidence.get("status") or "not_assessed").lower()
+    fluid_terms = [
+        str(item)
+        for item in (fluid_evidence.get("matched_terms") or [])
+        if str(item).strip()
+    ]
+    fluid_term_text = "、".join(fluid_terms[:4])
+    if fluid_status == "present":
+        fluid_line = (
+            "文字报告提示腹腔游离液/积液可能存在"
+            f"{f'（匹配词：{fluid_term_text}）' if fluid_term_text else ''}；"
+            "该结果属于文本线索，需结合原始影像及其他检查确认。"
+        )
+    elif fluid_status == "absent":
+        fluid_line = "文字报告未提示腹腔游离液/积液；这只是报告文本线索阴性，不替代影像判断。"
+    elif fluid_status == "uncertain":
+        fluid_line = (
+            "文字报告对腹腔游离液/积液描述不确定"
+            f"{f'（匹配词：{fluid_term_text}）' if fluid_term_text else ''}；建议结合影像复核。"
+        )
+    else:
+        fluid_line = "当前未获得可用于判断腹腔游离液/积液的文字线索。"
+
+    management_advice = report.get("management_advice") or []
+    management_lines: List[str] = []
+    if isinstance(management_advice, list):
+        for item in management_advice[:4]:
+            if isinstance(item, dict):
+                action = str(item.get("action") or item.get("recommendation") or "").strip()
+                basis = [
+                    str(value).strip()
+                    for value in (item.get("basis") or [])
+                    if str(value).strip()
+                ]
+                if action:
+                    basis_text = "；".join(basis[:2])
+                    management_lines.append(f"{action}{f'（依据：{basis_text}）' if basis_text else ''}")
+            elif str(item).strip():
+                management_lines.append(str(item).strip())
+    if not management_lines:
+        management_lines.append(advice)
+
+    review_lines = []
+    if conflict_messages:
+        review_lines.extend(f"证据冲突：{item}" for item in conflict_messages[:3])
+    review_lines.extend(
+        f"不确定性：{str(item)}"
+        for item in (report.get("uncertainty_flags") or [])[:3]
+        if str(item).strip()
+    )
+    if not review_lines:
+        review_lines.append("当前未记录额外冲突；仍需医生结合原始影像完成最终确认。")
+
     if stage:
         impression_lines = [
             "综合超声影像征象及AI辅助分析，考虑：",
@@ -2057,14 +2180,28 @@ def _gc_us_template_report(
             ),
         },
         {
+            "heading": "【腹腔及相关线索】",
+            "lines": [fluid_line],
+            "evidence_refs": ["report_text:fluid_evidence"],
+        },
+        {
             "heading": "【超声印象】",
-            "lines": impression_lines[:2] + ([f"2. {impression_lines[2]}"] if len(impression_lines) > 2 else []),
+            "lines": (
+                impression_lines[:2]
+                + ([f"2. {impression_lines[2]}"] if len(impression_lines) > 2 else [])
+                + [f"证据融合置信度：{report.get('confidence') or '未评估'}。"]
+            ),
             "evidence_refs": evidence_refs("layer_structure", "serosa_change", "perigastric_tissue"),
+        },
+        {
+            "heading": "【证据冲突与复核重点】",
+            "lines": review_lines,
+            "evidence_refs": ["report:conflicting_evidence", "report:uncertainty_flags", "doctor_review:required"],
         },
         {
             "heading": "【建议】",
             "lines": [
-                f"1. {advice}",
+                *[f"{index}. {line}" for index, line in enumerate(management_lines, start=1)],
                 "备注：几何与规则辅助，非病理金标准；最终判断权在医生。",
             ],
             "evidence_refs": ["clinical_decision:recommendation", "doctor_review:required"],
@@ -2074,7 +2211,12 @@ def _gc_us_template_report(
     for section in sections:
         full_text_lines.extend([section["heading"], *section["lines"], ""])
     full_text = "\n".join(full_text_lines).strip()
-    review_required = bool(report.get("uncertainty_flags")) or report.get("confidence") == "low" or bool(conflict_messages)
+    review_required = (
+        bool(report.get("uncertainty_flags"))
+        or report.get("confidence") == "low"
+        or bool(conflict_messages)
+        or fluid_status == "uncertain"
+    )
     return {
         "title": "胃癌超声标准化辅助诊断报告草稿",
         "generated_by": "gastric-self-evolving-agent",
@@ -2108,9 +2250,427 @@ def _build_dynamic_report_draft(
         payload=payload,
         clinical_payload=clinical_payload,
         report=report,
+        report_text=report_text,
         morphology=morphology,
         wall_evidence=wall_evidence,
     )
+
+
+def _report_pack_number(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) else None
+
+
+def _report_pack_metric(
+    metric_id: str,
+    label: str,
+    value: Any,
+    *,
+    unit: str = "",
+    scale: Optional[float] = None,
+    note: str = "",
+) -> Optional[Dict[str, Any]]:
+    number = _report_pack_number(value)
+    if number is None:
+        return None
+    return {
+        "id": metric_id,
+        "label": label,
+        "value": round(number, 4),
+        "unit": unit,
+        "scale": scale,
+        "note": note,
+    }
+
+
+def _build_report_pack(
+    *,
+    payload: Dict[str, Any],
+    report: Dict[str, Any],
+    lumen_detection: Optional[Dict[str, Any]] = None,
+    segmentation: Dict[str, Any],
+    classification: Dict[str, Any],
+    morphology: Dict[str, Any],
+    clinical: Dict[str, Any],
+    report_text: Dict[str, Any],
+    similar_cases: List[Dict[str, Any]],
+    wall_evidence: Optional[Dict[str, Any]] = None,
+    gc_us_signs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build one clinician-facing evidence bundle for all report surfaces.
+
+    The pack is descriptive rather than diagnostic. It lets the workbench show
+    the same evidence matrix, charts, uncertainty, and review actions that the
+    deterministic report used, instead of asking the UI to reverse-engineer
+    scattered tool payloads.
+    """
+    lumen_detection = lumen_detection or {}
+    wall_evidence = wall_evidence or {}
+    gc_us_signs = gc_us_signs or {}
+    probabilities = classification.get("probabilities") or {}
+    if not isinstance(probabilities, dict):
+        probabilities = {}
+
+    stage_probability = []
+    for stage in STAGES:
+        value = _report_pack_number(probabilities.get(stage))
+        if value is not None:
+            stage_probability.append({
+                "stage": stage,
+                "value": round(max(0.0, min(1.0, value)), 4),
+            })
+
+    ordered_probability = sorted(stage_probability, key=lambda item: item["value"], reverse=True)
+    top_gap = (
+        ordered_probability[0]["value"] - ordered_probability[1]["value"]
+        if len(ordered_probability) > 1
+        else None
+    )
+
+    boundary_metrics = [
+        _report_pack_metric(
+            "boundary_irregularity",
+            "边界不规则度",
+            morphology.get("boundary_irregularity"),
+            scale=1.0,
+            note="轮廓几何代理，不等同于病理浸润深度",
+        ),
+        _report_pack_metric(
+            "smoothness_index",
+            "轮廓平滑度",
+            morphology.get("smoothness_index"),
+            scale=1.0,
+        ),
+        _report_pack_metric(
+            "roughness_index",
+            "轮廓粗糙度",
+            morphology.get("roughness_index"),
+            scale=1.0,
+        ),
+        _report_pack_metric(
+            "convexity",
+            "凸性",
+            morphology.get("convexity"),
+            scale=1.0,
+        ),
+        _report_pack_metric(
+            "solidity",
+            "实心度",
+            morphology.get("solidity"),
+            scale=1.0,
+        ),
+        _report_pack_metric(
+            "compactness",
+            "紧致度",
+            morphology.get("compactness"),
+            note="受像素尺度影响的形态描述",
+        ),
+        _report_pack_metric(
+            "lesion_area_ratio",
+            "病灶面积占比",
+            morphology.get("lesion_area_ratio"),
+            scale=1.0,
+        ),
+        _report_pack_metric(
+            "aspect_ratio",
+            "外接框长宽比",
+            morphology.get("aspect_ratio"),
+        ),
+    ]
+    boundary_metrics = [metric for metric in boundary_metrics if metric is not None]
+
+    wall_features = wall_evidence.get("wall_features")
+    if not isinstance(wall_features, dict):
+        wall_features = {}
+    wall_metrics = [
+        _report_pack_metric(
+            "fraction_outside_lumen",
+            "病灶位于胃腔外比例",
+            wall_features.get("fraction_outside_lumen"),
+            scale=1.0,
+            note="胃腔框 SDF 几何代理",
+        ),
+        _report_pack_metric(
+            "fraction_inside_lumen",
+            "病灶位于胃腔内比例",
+            wall_features.get("fraction_inside_lumen"),
+            scale=1.0,
+        ),
+        _report_pack_metric(
+            "contact_arc_ratio",
+            "病灶与胃腔接触弧比例",
+            wall_features.get("contact_arc_ratio"),
+            scale=1.0,
+            note="过低时壁层代理不宜解释",
+        ),
+        _report_pack_metric(
+            "max_outward_depth",
+            "最大向外距离",
+            wall_features.get("max_outward_depth"),
+            unit="px",
+        ),
+        _report_pack_metric(
+            "mean_outward_depth",
+            "平均向外距离",
+            wall_features.get("mean_outward_depth"),
+            unit="px",
+        ),
+        _report_pack_metric(
+            "proxy_quality_score",
+            "壁层代理质量",
+            wall_evidence.get("proxy_quality_score"),
+            scale=1.0,
+        ),
+    ]
+    wall_metrics = [metric for metric in wall_metrics if metric is not None]
+
+    fluid_evidence = report_text.get("fluid_evidence")
+    if not isinstance(fluid_evidence, dict):
+        fluid_evidence = {
+            "status": "not_assessed",
+            "matched_terms": [],
+            "source_sections": [],
+            "evidence_role": "text_cue_only",
+        }
+
+    raw_core_sign_items = {
+        str(item.get("id") or item.get("name")): item
+        for item in (gc_us_signs.get("items") or [])
+        if isinstance(item, dict) and (item.get("id") or item.get("name"))
+    }
+    feature_pack = gc_us_signs.get("feature_pack")
+    feature_fields = feature_pack.get("fields") if isinstance(feature_pack, dict) else None
+    if not isinstance(feature_fields, dict):
+        explanation = gc_us_signs.get("explanation")
+        feature_fields = explanation.get("fields") if isinstance(explanation, dict) else {}
+    if not isinstance(feature_fields, dict):
+        feature_fields = {}
+    core_sign_specs = [
+        ("size_length", "肿瘤长径"),
+        ("size_thickness", "肿瘤厚度"),
+        ("morphology", "肿瘤形态"),
+        ("boundary", "肿瘤边界"),
+        ("growth_pattern", "生长方式"),
+        ("marker_cea", "CEA"),
+        ("wall_structure", "胃壁结构"),
+    ]
+    core_sign_items = []
+    for sign_id, label in core_sign_specs:
+        item = raw_core_sign_items.get(sign_id)
+        field = feature_fields.get(sign_id)
+        if not isinstance(field, dict):
+            field = {}
+        if item is None and not field:
+            core_sign_items.append({
+                "id": sign_id,
+                "label": label,
+                "value": None,
+                "status": "not_assessable",
+                "confidence": None,
+                "evidence_role": "not_assessed",
+                "note": "当前证据不足，不能从缺失输入推断该征象。",
+            })
+            continue
+        value = field.get("value")
+        if value is None and item is not None:
+            value = item.get("value") if item.get("value") is not None else item.get("detail")
+        note = field.get("detail") or (item.get("note") if item is not None else None)
+        core_sign_items.append({
+            "id": sign_id,
+            "label": field.get("label") or (item.get("label") if item is not None else label),
+            "value": value,
+            "status": field.get("status") or (item.get("status") if item is not None else "unknown"),
+            "confidence": field.get("confidence") if field.get("confidence") is not None else (
+                item.get("confidence") if item is not None else None
+            ),
+            "unit": field.get("unit") or (item.get("unit") if item is not None else None),
+            "evidence_role": field.get("source") or (
+                item.get("evidence_role") or item.get("source") if item is not None else "not_assessed"
+            ),
+            "note": note,
+            "points": item.get("points") if item is not None else field.get("grade"),
+            "max": item.get("max") if item is not None else field.get("grade_max"),
+            "group": item.get("group") if item is not None else None,
+        })
+
+    modality_status = [
+        {
+            "id": "segmentation",
+            "label": "病灶分割",
+            "status": "available" if segmentation.get("available") or segmentation.get("mask_available") else "fallback",
+            "detail": segmentation.get("roi_source") or segmentation.get("error") or "未提供",
+        },
+        {
+            "id": "lumen",
+            "label": "胃腔定位",
+            "status": "available" if lumen_detection.get("lumen_detected") else (
+                "partial" if lumen_detection.get("available") else "missing"
+            ),
+            "detail": lumen_detection.get("lumen_confidence") or lumen_detection.get("error") or "未提供",
+        },
+        {
+            "id": "wall",
+            "label": "壁层几何",
+            "status": "available" if wall_evidence.get("available") else "partial",
+            "detail": wall_evidence.get("penetration_risk") or wall_evidence.get("error") or "未提供",
+        },
+        {
+            "id": "classification",
+            "label": "T 分期分类器",
+            "status": "available" if classification.get("available") else "unavailable",
+            "detail": classification.get("backend_id") or classification.get("error") or "未提供",
+        },
+        {
+            "id": "morphology",
+            "label": "边界和形态",
+            "status": "available" if morphology.get("valid") else "partial",
+            "detail": morphology.get("evidence_source") or "未提供",
+        },
+        {
+            "id": "gc_us_signs",
+            "label": "七项核心征象",
+            "status": "available" if gc_us_signs.get("available") else "partial",
+            "detail": gc_us_signs.get("status") or "未提供",
+        },
+        {
+            "id": "report",
+            "label": "文字报告线索",
+            "status": "available" if report_text.get("available") else "missing",
+            "detail": ", ".join(report_text.get("sections_available") or []) or "未提供",
+        },
+        {
+            "id": "memory",
+            "label": "相似病例记忆",
+            "status": "available" if similar_cases else "partial",
+            "detail": f"{len(similar_cases)} 例",
+        },
+    ]
+    conflicts = list(report.get("conflicting_evidence") or [])
+    uncertainties = list(report.get("uncertainty_flags") or [])
+    review_reasons = [str(item) for item in conflicts + uncertainties if item]
+    review_required = bool(
+        report.get("confidence") == "low"
+        or review_reasons
+        or wall_evidence.get("penetration_risk") in {"uncertain", "high"}
+        or not classification.get("available")
+    )
+    next_actions = []
+    if not segmentation.get("available") and not segmentation.get("mask_available"):
+        next_actions.append("确认病灶边界或补充人工 ROI。")
+    if not lumen_detection or not lumen_detection.get("lumen_detected"):
+        next_actions.append("确认胃腔定位和充盈声窗，再解释壁层几何。")
+    if wall_evidence.get("quality_flags"):
+        next_actions.append("针对壁层代理质量标记进行多切面复核。")
+    if fluid_evidence.get("status") in {"present", "uncertain"}:
+        next_actions.append("结合增强 CT 或腹腔镜资料核对腹腔积液和腹膜播散风险。")
+    if not next_actions:
+        next_actions.append("结合原始影像和临床资料完成医生复核。")
+
+    evidence_matrix = [
+        {
+            "id": "classifier",
+            "domain": "t_staging",
+            "label": "T 分期分类器",
+            "value": classification.get("top1_stage") or "未输出",
+            "confidence": classification.get("top1_prob"),
+            "status": "available" if classification.get("available") else "unavailable",
+            "source": classification.get("backend_id") or "classification_tool",
+            "supports": [f"分类器首选 {classification.get('top1_stage')}"] if classification.get("top1_stage") else [],
+            "refutes": [],
+        },
+        {
+            "id": "boundary",
+            "domain": "lesion",
+            "label": "边界形态",
+            "value": morphology.get("boundary_irregularity"),
+            "confidence": morphology.get("valid"),
+            "status": "available" if morphology.get("valid") else "partial",
+            "source": morphology.get("evidence_source") or "lesion_mask_geometry",
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "id": "wall",
+            "domain": "wall",
+            "label": "壁层几何代理",
+            "value": wall_evidence.get("penetration_risk") or "未评估",
+            "confidence": wall_evidence.get("proxy_quality_score"),
+            "status": "available" if wall_evidence.get("available") else "partial",
+            "source": wall_evidence.get("evidence_source") or "wall_evidence",
+            "supports": [],
+            "refutes": [],
+        },
+        {
+            "id": "free_fluid",
+            "domain": "extra_gastric",
+            "label": "腹腔积液/游离液",
+            "value": fluid_evidence.get("status") or "not_assessed",
+            "confidence": None,
+            "status": "available" if fluid_evidence.get("status") != "not_assessed" else "not_assessed",
+            "source": "report_text",
+            "supports": fluid_evidence.get("matched_terms") or [],
+            "refutes": [],
+        },
+        {
+            "id": "similar_cases",
+            "domain": "memory",
+            "label": "相似病例分布",
+            "value": report.get("similar_case_summary", {}).get("majority_stage") if isinstance(report.get("similar_case_summary"), dict) else "未检索",
+            "confidence": None,
+            "status": "available" if similar_cases else "partial",
+            "source": "case_memory",
+            "supports": [],
+            "refutes": [],
+        },
+    ]
+
+    return {
+        "schema_version": "doctor_report_pack_v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "case": {
+            "patient_id": payload.get("patient_id"),
+            "case_token": payload.get("case_token"),
+            "data_source": payload.get("data_source"),
+            "cohort_year": payload.get("cohort_year"),
+            "frame_count": payload.get("frame_count"),
+        },
+        "stage": {
+            "recommended_t_stage": report.get("recommended_t_stage"),
+            "confidence": report.get("confidence"),
+            "top_gap": round(top_gap, 4) if top_gap is not None else None,
+            "probabilities": stage_probability,
+            "classifier_backend": classification.get("backend_id"),
+        },
+        "charts": {
+            "stage_probability": stage_probability,
+            "boundary_geometry": boundary_metrics,
+            "wall_geometry": wall_metrics,
+            "modality_status": modality_status,
+        },
+        "core_signs": core_sign_items,
+        "fluid_evidence": fluid_evidence,
+        "evidence_matrix": evidence_matrix,
+        "review": {
+            "required": review_required,
+            "priority": "high" if review_required and (conflicts or report.get("confidence") == "low") else "routine",
+            "reasons": review_reasons[:12],
+            "next_actions": next_actions[:8],
+        },
+        "llm_guardrail": {
+            "role": "language_only",
+            "stage_owned_by": "deterministic_evidence_fusion",
+            "reasoning": report.get("llm_reasoning") or "",
+            "quality_notes": report.get("llm_quality_notes") or [],
+        },
+        "memory_loop": {
+            "memory_applied": bool(report.get("memory_applied")),
+            "active_rules_used": report.get("active_rules_used") or [],
+            "candidate_count": len(report.get("memory_update_candidates") or []),
+        },
+    }
 
 
 def _build_memory_update_candidates(

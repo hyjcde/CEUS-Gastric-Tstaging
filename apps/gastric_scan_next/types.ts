@@ -111,9 +111,35 @@ export interface VideoMaskFrameOverride {
   imageHeight: number;
   mask_polygon: number[][];
   roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
+  /** Optional lumen contour tracked on the same timestamp. */
+  lumen_polygon?: number[][];
+  lumen_bbox?: { x1: number; y1: number; x2: number; y2: number };
   source?: 'video_track' | 'video_propagate' | 'sam' | 'manual';
   propagation_status?: 'seed' | 'accepted';
   quality_score?: number;
+}
+
+/** Doctor-confirmed gastric lumen (cavity) box / SAM3.1 contour for the current frame. */
+export interface LumenOverride {
+  patientId: string;
+  frameId?: string;
+  imageWidth: number;
+  imageHeight: number;
+  /** YOLO or doctor-edited lumen bounding box in image pixel coords. */
+  lumen_bbox: { x1: number; y1: number; x2: number; y2: number };
+  /** Optional SAM3.1 lumen polygon in image pixel coords [[x,y], ...]. */
+  lumen_polygon?: number[][];
+  lumen_confidence?: number;
+  lumen_mask_type?: 'bbox_proxy' | 'sam31_polygon' | 'nninteractive_polygon';
+  source?: 'yolo' | 'manual' | 'sam31' | 'sam2_fallback' | 'yolo_then_manual' | 'yolo_then_sam31' | 'nninteractive';
+  detector_backend_id?: string;
+  sam_backend_id?: string;
+  sam_score?: number;
+  video_time_sec?: number;
+  video_url?: string;
+  updated_at?: string;
+  note?: string;
+  reviewer_id?: string;
 }
 
 /** Doctor-edited lesion boundary fed into Agent analyze as mask/ROI override. */
@@ -130,7 +156,7 @@ export interface MaskBoundaryOverride {
   roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
   /** predicted = use override bbox; doctor = use on-disk crop ROI when available */
   roi_mode?: 'predicted' | 'doctor' | 'auto';
-  source?: 'manual' | 'sam' | 'labelme' | 'imported' | 'video_track' | 'video_propagate';
+  source?: 'manual' | 'sam' | 'labelme' | 'imported' | 'video_track' | 'video_propagate' | 'nninteractive';
   /** When editing on video: timestamp in seconds */
   video_time_sec?: number;
   video_url?: string;
@@ -138,6 +164,25 @@ export interface MaskBoundaryOverride {
   video_frames?: VideoMaskFrameOverride[];
   updated_at?: string;
   note?: string;
+  /** Clinical-loop provenance: model mask before doctor edit (pixel coords). */
+  pre_correction_polygon?: number[][];
+  prompt_type?: string;
+  prompt_payload?: {
+    mode?: 'point' | 'box' | 'scribble' | 'lasso' | string;
+    box?: { x1: number; y1: number; x2: number; y2: number } | null;
+    clicks?: Array<{ x: number; y: number; label: 'positive' | 'negative' }>;
+    scribbles?: Array<{
+      points: Array<{ x: number; y: number }>;
+      label: 'positive' | 'negative';
+      width?: number;
+      kind?: 'scribble' | 'lasso' | string;
+    }>;
+  };
+  model_version?: string;
+  sam_score?: number;
+  detector_confidence?: number;
+  abstain?: boolean;
+  reviewer_id?: string;
 }
 
 export interface AgentReport {
@@ -242,6 +287,80 @@ export interface ManagementAdvice {
   citations?: string[];
 }
 
+export interface AgentReportPack {
+  schema_version: string;
+  generated_at?: string;
+  case?: Record<string, unknown>;
+  stage?: {
+    recommended_t_stage?: string;
+    confidence?: string;
+    top_gap?: number | null;
+    probabilities?: Array<{ stage: string; value: number }>;
+    classifier_backend?: string;
+  };
+  charts?: {
+    stage_probability?: Array<{ stage: string; value: number }>;
+    boundary_geometry?: Array<{
+      id: string;
+      label: string;
+      value: number;
+      unit?: string;
+      scale?: number | null;
+      note?: string;
+    }>;
+    wall_geometry?: Array<{
+      id: string;
+      label: string;
+      value: number;
+      unit?: string;
+      scale?: number | null;
+      note?: string;
+    }>;
+    modality_status?: Array<{
+      id: string;
+      label: string;
+      status: string;
+      detail?: unknown;
+    }>;
+  };
+  core_signs?: Array<Record<string, unknown>>;
+  fluid_evidence?: {
+    status?: 'present' | 'absent' | 'uncertain' | 'not_assessed' | string;
+    matched_terms?: string[];
+    source_sections?: string[];
+    evidence_role?: string;
+    note?: string;
+  };
+  evidence_matrix?: Array<{
+    id: string;
+    domain?: string;
+    label: string;
+    value?: unknown;
+    confidence?: unknown;
+    status?: string;
+    source?: string;
+    supports?: string[];
+    refutes?: string[];
+  }>;
+  review?: {
+    required?: boolean;
+    priority?: string;
+    reasons?: string[];
+    next_actions?: string[];
+  };
+  llm_guardrail?: {
+    role?: string;
+    stage_owned_by?: string;
+    reasoning?: string;
+    quality_notes?: string[];
+  };
+  memory_loop?: {
+    memory_applied?: boolean;
+    active_rules_used?: string[];
+    candidate_count?: number;
+  };
+}
+
 export interface AgentWorkbenchReport {
   schema_version: string;
   status: string;
@@ -288,6 +407,8 @@ export interface AgentWorkbenchReport {
   active_rules_used?: string[];
   governance_trust_labels?: Record<string, string>;
   memory_context_summary?: Record<string, unknown>;
+  report_pack?: AgentReportPack;
+  llm_quality_notes?: string[];
   clinical_decision?: {
     status?: string;
     requires_mdt?: boolean;
@@ -450,6 +571,7 @@ export interface AgentAnalysisResponse {
     segmentation: AgentToolResult;
     classification: AgentToolResult;
     morphology: AgentToolResult;
+    gc_us_signs?: AgentToolResult;
     clinical: AgentToolResult;
     report?: AgentToolResult;
     dino?: AgentToolResult;

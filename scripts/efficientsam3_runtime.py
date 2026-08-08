@@ -701,6 +701,269 @@ def apply_lora_by_patterns(
     return patched
 
 
+class ClipSemanticAdapter(nn.Module):
+    """Fuse CLIP patch, image-text similarity and text features into SAM features."""
+
+    def __init__(self, clip_dim: int, target_channels: int) -> None:
+        super().__init__()
+        hidden = max(32, min(256, target_channels))
+        self.visual_similarity = nn.Sequential(
+            nn.Linear(clip_dim + 1, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, target_channels),
+        )
+        self.text = nn.Sequential(
+            nn.Linear(clip_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, target_channels),
+        )
+        # Zero semantic residual preserves the pretrained SAM output at step 0
+        # while keeping a nonzero gradient for the adapter projections.
+        nn.init.zeros_(self.visual_similarity[-1].weight)
+        nn.init.zeros_(self.visual_similarity[-1].bias)
+        nn.init.zeros_(self.text[-1].weight)
+        nn.init.zeros_(self.text[-1].bias)
+        self.gain = nn.Parameter(torch.ones(1))
+
+    def forward(
+        self,
+        base_features: torch.Tensor,
+        patch_features: torch.Tensor,
+        text_features: torch.Tensor,
+    ) -> torch.Tensor:
+        batch_size, num_patches, _ = patch_features.shape
+        side = int(round(math.sqrt(num_patches)))
+        if side * side != num_patches:
+            raise ValueError(f"Expected square CLIP patch grid, got {num_patches} patches")
+        patch_features = F.normalize(patch_features, dim=-1)
+        text_features = F.normalize(text_features, dim=-1)
+        similarity = (patch_features * text_features[:, None, :]).sum(dim=-1, keepdim=True)
+        visual_input = torch.cat([patch_features, similarity], dim=-1)
+        visual_condition = self.visual_similarity(visual_input)
+        visual_condition = visual_condition.transpose(1, 2).reshape(
+            batch_size, -1, side, side
+        )
+        if base_features.ndim == 3:
+            token_side = int(round(math.sqrt(base_features.shape[1])))
+            if token_side * token_side != base_features.shape[1]:
+                raise ValueError(
+                    f"Expected square SAM token grid, got {base_features.shape[1]} tokens"
+                )
+            visual_condition = F.interpolate(
+                visual_condition,
+                size=(token_side, token_side),
+                mode="bilinear",
+                align_corners=False,
+            )
+            text_condition = self.text(text_features).unsqueeze(1)
+            return base_features + self.gain * (
+                visual_condition.flatten(2).transpose(1, 2) + text_condition
+            )
+        visual_condition = F.interpolate(
+            visual_condition,
+            size=base_features.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+        text_condition = self.text(text_features).view(batch_size, -1, 1, 1)
+        return base_features + self.gain * (visual_condition + text_condition)
+
+
+class ClipSemanticGuidance(nn.Module):
+    """CLIP semantic conditioning for FPN or TinyViT block features."""
+
+    def __init__(
+        self,
+        config: dict[str, Any],
+        block_specs: list[tuple[str, int]] | None = None,
+    ) -> None:
+        super().__init__()
+        try:
+            import open_clip
+        except ImportError as exc:
+            raise ImportError("clip_guidance requires the open_clip package") from exc
+
+        model_name = str(config.get("model_name", "ViT-B-32"))
+        pretrained = str(config.get("pretrained", "openai"))
+        self.input_resolution = int(config.get("input_resolution", 224))
+        self.injection_mode = str(config.get("injection_mode", "fpn")).strip().lower()
+        self.block_specs = list(block_specs or [])
+        self.block_key_by_name = {
+            name: f"block_{index:03d}" for index, (name, _) in enumerate(self.block_specs)
+        }
+        self._block_hooks: list[Any] = []
+        self._context: tuple[torch.Tensor, torch.Tensor] | None = None
+        self.train_clip_vision = bool(config.get("train_clip_vision", False))
+        self.clip_train_patterns = [
+            re.compile(pattern) for pattern in config.get("clip_train_patterns", [])
+        ]
+        self.clip_model, _, _ = open_clip.create_model_and_transforms(
+            model_name,
+            pretrained=pretrained,
+        )
+        self.clip_model.visual.output_tokens = True
+        self.clip_model.eval()
+        set_requires_grad(self.clip_model, False)
+
+        tokenizer = open_clip.get_tokenizer(model_name)
+        text_prompts = list(
+            config.get(
+                "text_prompts",
+                ["gastric wall lesion on ultrasound"],
+            )
+        )
+        self.configured_text_prompts = text_prompts
+        with torch.no_grad():
+            text_tokens = tokenizer(text_prompts)
+            text_features = self.clip_model.encode_text(text_tokens)
+            text_features = F.normalize(text_features.float(), dim=-1).mean(dim=0, keepdim=True)
+            text_features = F.normalize(text_features, dim=-1)
+            dummy = torch.zeros(1, 3, self.input_resolution, self.input_resolution)
+            _, patch_tokens = self.clip_model.visual(dummy)
+            if self.clip_model.visual.proj is not None:
+                patch_tokens = patch_tokens @ self.clip_model.visual.proj
+            clip_dim = int(patch_tokens.shape[-1])
+        self.register_buffer("text_features", text_features.float(), persistent=True)
+        self.clip_dim = clip_dim
+        if self.injection_mode == "block":
+            if not self.block_specs:
+                raise ValueError("Block semantic injection requires non-empty block_specs")
+            self.adapters = nn.ModuleList()
+            self.block_adapters = nn.ModuleDict(
+                {
+                    self.block_key_by_name[name]: ClipSemanticAdapter(clip_dim, int(channels))
+                    for name, channels in self.block_specs
+                }
+            )
+        else:
+            target_channels = list(config.get("target_channels", [256, 32, 64]))
+            self.adapters = nn.ModuleList(
+                [ClipSemanticAdapter(clip_dim, int(channels)) for channels in target_channels]
+            )
+            self.block_adapters = nn.ModuleDict()
+        self.register_buffer(
+            "clip_mean",
+            torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1),
+            persistent=False,
+        )
+        self.register_buffer(
+            "clip_std",
+            torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1),
+            persistent=False,
+        )
+        self.configure_trainable()
+
+    def configure_trainable(self) -> None:
+        set_requires_grad(self.clip_model, False)
+        if self.train_clip_vision:
+            for name, parameter in self.clip_model.visual.named_parameters():
+                if not self.clip_train_patterns or any(
+                    pattern.search(name) for pattern in self.clip_train_patterns
+                ):
+                    parameter.requires_grad = True
+        set_requires_grad(self.adapters, True)
+        set_requires_grad(self.block_adapters, True)
+
+    def apply_train_mode(self, mode: bool) -> None:
+        if mode and self.train_clip_vision:
+            self.clip_model.train()
+        else:
+            self.clip_model.eval()
+        self.adapters.train(mode)
+        self.block_adapters.train(mode)
+
+    def trainable_parameter_summary(self) -> dict[str, Any]:
+        clip_trainable = sum(
+            parameter.numel()
+            for parameter in self.clip_model.parameters()
+            if parameter.requires_grad
+        )
+        adapter_trainable = sum(
+            parameter.numel() for parameter in self.adapters.parameters() if parameter.requires_grad
+        )
+        block_adapter_trainable = sum(
+            parameter.numel()
+            for parameter in self.block_adapters.parameters()
+            if parameter.requires_grad
+        )
+        return {
+            "model_name": self.clip_model.__class__.__name__,
+            "injection_mode": self.injection_mode,
+            "clip_trainable_parameters": clip_trainable,
+            "adapter_trainable_parameters": adapter_trainable,
+            "block_adapter_trainable_parameters": block_adapter_trainable,
+            "block_adapter_count": len(self.block_adapters),
+            "text_prompts": self.configured_text_prompts if hasattr(self, "configured_text_prompts") else [],
+        }
+
+    def attach_block_hooks(self, root: nn.Module) -> None:
+        if self.injection_mode != "block":
+            return
+        modules = dict(root.named_modules())
+        for name, _ in self.block_specs:
+            if name not in modules:
+                raise KeyError(f"Semantic adapter target module not found: {name}")
+            key = self.block_key_by_name[name]
+            self._block_hooks.append(
+                modules[name].register_forward_hook(
+                    lambda _module, _inputs, output, adapter_key=key: self.inject_block(
+                        adapter_key,
+                        output,
+                    )
+                )
+            )
+
+    def prepare_context(self, images: torch.Tensor) -> None:
+        clip_images = F.interpolate(
+            images,
+            size=(self.input_resolution, self.input_resolution),
+            mode="bicubic",
+            align_corners=False,
+        )
+        clip_images = (clip_images - self.clip_mean) / self.clip_std
+        context = (
+            torch.enable_grad()
+            if self.train_clip_vision and self.training
+            else torch.no_grad()
+        )
+        with context:
+            _, patch_tokens = self.clip_model.visual(clip_images)
+            if self.clip_model.visual.proj is not None:
+                patch_tokens = patch_tokens @ self.clip_model.visual.proj
+            patch_tokens = patch_tokens.float()
+        text_features = self.text_features.expand(images.shape[0], -1)
+        self._context = (patch_tokens, text_features)
+
+    def clear_context(self) -> None:
+        self._context = None
+
+    def inject_block(self, adapter_key: str, output: torch.Tensor) -> torch.Tensor:
+        if self._context is None:
+            return output
+        patch_features, text_features = self._context
+        return self.block_adapters[adapter_key](output, patch_features, text_features)
+
+    def forward(
+        self,
+        images: torch.Tensor,
+        image_embed: torch.Tensor,
+        high_res_feats: list[torch.Tensor],
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        if self.injection_mode != "fpn":
+            raise RuntimeError("ClipSemanticGuidance.forward is only valid in fpn mode")
+        self.prepare_context(images)
+        patch_tokens, text_features = self._context
+        features = [image_embed, *high_res_feats]
+        try:
+            conditioned = [
+                adapter(base, patch_tokens, text_features)
+                for adapter, base in zip(self.adapters, features)
+            ]
+            return conditioned[0], conditioned[1:]
+        finally:
+            self.clear_context()
+
+
 def set_requires_grad(module: nn.Module, enabled: bool) -> None:
     for parameter in module.parameters():
         parameter.requires_grad = enabled
@@ -782,8 +1045,46 @@ class EfficientSAM3Segmenter(nn.Module):
             text_encoder_pos_embed_table_size=model_cfg.get("text_encoder_pos_embed_table_size"),
             interpolate_pos_embed=bool(model_cfg.get("interpolate_pos_embed", False)),
         )
+        clip_cfg = config.get("clip_guidance", {})
+        clip_block_specs: list[tuple[str, int]] = []
+        if bool(clip_cfg.get("enabled", False)) and str(
+            clip_cfg.get("injection_mode", "fpn")
+        ).strip().lower() == "block":
+            block_patterns = [
+                re.compile(pattern)
+                for pattern in clip_cfg.get("block_target_patterns", [])
+            ]
+            for name, module in self.model.backbone.vision_backbone.named_modules():
+                if not name.endswith(".mlp"):
+                    continue
+                if block_patterns and not any(pattern.search(name) for pattern in block_patterns):
+                    continue
+                fc2 = getattr(module, "fc2", None)
+                channels = getattr(fc2, "out_features", None)
+                if channels is None and hasattr(fc2, "base"):
+                    channels = getattr(fc2.base, "out_features", None)
+                if channels is not None:
+                    clip_block_specs.append((name, int(channels)))
+        self.clip_guidance: ClipSemanticGuidance | None = (
+            ClipSemanticGuidance(clip_cfg, clip_block_specs)
+            if bool(clip_cfg.get("enabled", False))
+            else None
+        )
+        if self.clip_guidance is not None and self.clip_guidance.injection_mode == "block":
+            self.clip_guidance.attach_block_hooks(self.model.backbone.vision_backbone)
         self.stage_name = stage_name
         self._patch_summary: dict[str, Any] = {}
+        configured_before_load = False
+        state_contains_lora = (
+            deferred_wrapper_state_dict is not None
+            and any(
+                ".lora_a." in key or ".lora_b." in key or ".base." in key
+                for key in deferred_wrapper_state_dict
+            )
+        )
+        if lora_enabled and state_contains_lora:
+            self._configure_trainable_modules()
+            configured_before_load = True
         if deferred_wrapper_state_dict is not None:
             missing, unexpected = self.load_state_dict(deferred_wrapper_state_dict, strict=False)
             print(
@@ -794,13 +1095,31 @@ class EfficientSAM3Segmenter(nn.Module):
                 print(f"Sample missing: {missing[:5]}")
             if unexpected:
                 print(f"Sample unexpected: {unexpected[:5]}")
-        self._configure_trainable_modules()
+        if not configured_before_load:
+            self._configure_trainable_modules()
 
     def train(self, mode: bool = True):
         super().train(mode)
+        clear_autocast_cache = getattr(torch, "clear_autocast_cache", None)
+        if callable(clear_autocast_cache):
+            clear_autocast_cache()
+        self._clear_runtime_caches()
         if mode:
             self._apply_train_mode_overrides()
         return self
+
+    def _clear_runtime_caches(self) -> None:
+        for module in self.modules():
+            cache = getattr(module, "cache", None)
+            if isinstance(cache, dict):
+                cache.clear()
+            coord_cache = getattr(module, "coord_cache", None)
+            if isinstance(coord_cache, dict):
+                coord_cache.clear()
+            if hasattr(module, "compilable_cord_cache"):
+                module.compilable_cord_cache = None
+            if hasattr(module, "compilable_stored_size"):
+                module.compilable_stored_size = None
 
     def _configure_trainable_modules(self) -> None:
         freeze_all(self.model)
@@ -810,6 +1129,15 @@ class EfficientSAM3Segmenter(nn.Module):
             predictor_model.sam_mask_decoder,
             bool(model_cfg.get("train_mask_decoder", True)),
         )
+        mask_decoder_patterns = [
+            re.compile(pattern)
+            for pattern in model_cfg.get("mask_decoder_train_patterns", [])
+        ]
+        if mask_decoder_patterns and bool(model_cfg.get("train_mask_decoder", True)):
+            for name, parameter in predictor_model.sam_mask_decoder.named_parameters():
+                parameter.requires_grad = any(
+                    pattern.search(name) for pattern in mask_decoder_patterns
+                )
         set_requires_grad(
             predictor_model.sam_prompt_encoder,
             bool(model_cfg.get("train_prompt_encoder", True)),
@@ -817,6 +1145,7 @@ class EfficientSAM3Segmenter(nn.Module):
 
         lora_cfg = model_cfg.get("lora", {})
         lora_enabled = bool(lora_cfg.get("enabled", False))
+        train_lora = bool(model_cfg.get("train_lora", True))
         if self.stage_name in {"stage_b", "stage_c"} and lora_enabled:
             include_patterns = list(lora_cfg.get("target_patterns", []))
             exclude_patterns = list(lora_cfg.get("exclude_patterns", []))
@@ -829,16 +1158,42 @@ class EfficientSAM3Segmenter(nn.Module):
                 dropout=float(lora_cfg.get("dropout", 0.0)),
             )
             self._patch_summary["lora_modules"] = patched
+            if not train_lora:
+                for module in self.model.backbone.vision_backbone.modules():
+                    if isinstance(module, LoRALinear):
+                        set_requires_grad(module, False)
         else:
             self._patch_summary["lora_modules"] = []
+        if self.clip_guidance is not None:
+            self.clip_guidance.configure_trainable()
 
     def _apply_train_mode_overrides(self) -> None:
         model_cfg = self.config.get("model", {})
         predictor_model = self.model.inst_interactive_predictor.model
-        if not bool(model_cfg.get("train_mask_decoder", True)):
+        if (
+            not bool(model_cfg.get("train_mask_decoder", True))
+            or bool(model_cfg.get("disable_trainable_dropout", False))
+        ):
             predictor_model.sam_mask_decoder.eval()
         if not bool(model_cfg.get("train_prompt_encoder", True)):
             predictor_model.sam_prompt_encoder.eval()
+        lora_cfg = model_cfg.get("lora", {})
+        lora_enabled = bool(lora_cfg.get("enabled", False))
+        vision_backbone = self.model.backbone.vision_backbone
+        if self.stage_name in {"stage_b", "stage_c"} and lora_enabled:
+            # TinyViT-11M has stochastic-depth blocks. Keep the frozen base
+            # deterministic during LoRA training, while leaving LoRA dropout
+            # and parameters in train mode.
+            vision_backbone.eval()
+            for module in vision_backbone.modules():
+                if isinstance(module, LoRALinear) and any(
+                    parameter.requires_grad for parameter in module.parameters()
+                ):
+                    module.train()
+        elif not any(parameter.requires_grad for parameter in vision_backbone.parameters()):
+            # Decoder-only stages also freeze the full vision backbone. Its
+            # stochastic depth must stay off so train and eval use one model.
+            vision_backbone.eval()
         if bool(model_cfg.get("freeze_backbone_norm_stats", False)):
             norm_types = (
                 nn.BatchNorm1d,
@@ -849,6 +1204,8 @@ class EfficientSAM3Segmenter(nn.Module):
             for module in self.model.backbone.vision_backbone.modules():
                 if isinstance(module, norm_types):
                     module.eval()
+        if self.clip_guidance is not None:
+            self.clip_guidance.apply_train_mode(True)
 
     def dump_module_names(self) -> list[str]:
         return [name for name, _ in self.model.named_modules()]
@@ -856,14 +1213,23 @@ class EfficientSAM3Segmenter(nn.Module):
     def trainable_parameter_summary(self) -> dict[str, Any]:
         trainable = sum(parameter.numel() for parameter in self.parameters() if parameter.requires_grad)
         total = sum(parameter.numel() for parameter in self.parameters())
-        return {
+        summary = {
             "trainable_parameters": trainable,
             "total_parameters": total,
             "trainable_ratio": (trainable / total) if total else 0.0,
             "lora_modules": self._patch_summary.get("lora_modules", []),
         }
+        if self.clip_guidance is not None:
+            summary["clip_guidance"] = self.clip_guidance.trainable_parameter_summary()
+        return summary
 
     def _prepare_visual_features(self, images: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor], dict[str, Any]]:
+        block_injection = (
+            self.clip_guidance is not None
+            and self.clip_guidance.injection_mode == "block"
+        )
+        if block_injection:
+            self.clip_guidance.prepare_context(images)
         normalized = (images - 0.5) / 0.5
         backbone_out = self.model.backbone.forward_image(normalized)
         sam2_backbone_out = backbone_out["sam2_backbone_out"]
@@ -884,6 +1250,15 @@ class EfficientSAM3Segmenter(nn.Module):
         ]
         image_embed = feats[-1]
         high_res_feats = feats[:-1]
+        if self.clip_guidance is not None:
+            if block_injection:
+                self.clip_guidance.clear_context()
+            else:
+                image_embed, high_res_feats = self.clip_guidance(
+                    images,
+                    image_embed,
+                    high_res_feats,
+                )
         return image_embed, high_res_feats, backbone_out
 
     def _build_prompt_tensors(self, prompts: list[PromptSpec], device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:

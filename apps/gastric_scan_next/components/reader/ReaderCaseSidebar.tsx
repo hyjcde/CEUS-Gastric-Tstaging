@@ -5,6 +5,7 @@ import type { ReaderCohort } from '@/lib/reader/types';
 
 type CaseSummary = {
   case_id: string;
+  patient_id?: string;
   display_id?: string;
   study_mode?: string;
   reference_pt?: string;

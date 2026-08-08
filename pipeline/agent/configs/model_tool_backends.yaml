@@ -18,6 +18,30 @@ default_backend_policy:
   emit_backend_id_in_tool_trace: true
 
 backends:
+  - backend_id: gc_us_sign_scorer_v1
+    tool_name: gc_us_signs
+    model_task: structured_gc_us_sign_evidence
+    adapter_target: pipeline.agent.tools.gc_us_sign_tool.GcUsSignTool
+    algorithm: direction_normalized_geometry_and_clinical_rules
+    model_family: deterministic_evidence_scorer
+    network_backends:
+      lesion_mask: segmentation_primary
+      lumen_geometry: lumen_detection_primary
+      wall_evidence: wall_evidence_lumen_sdf_v1
+    trust_label: caution
+    use_for:
+      - core_sign_scorecard
+      - auditable_geometry_visualization
+      - physician_review_queue
+    evidence_outputs:
+      - sign_items
+      - normalized_i
+      - structural_gate
+      - directional_geometry
+    known_limits:
+      - This is a structured evidence scorer, not an independently trained sign classifier.
+      - Wall and growth outputs are geometry proxies and cannot establish pathological layer truth.
+
   - backend_id: lesion_segmentation_current_best
     tool_name: segmentation
     model_task: lesion_segmentation
