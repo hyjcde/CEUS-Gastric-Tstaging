@@ -17,3 +17,10 @@ This file records material project changes, their validation, and deployment sta
 - Reason: Make the saved `video_frames` data explicitly complete for review and restoration.
 - Key changes: Preserve tracker-provided frame indices, retain lesion segmentation with `roi_bbox`, retain lumen segmentation with `lumen_bbox`, and derive missing boxes from saved polygons before validation and response.
 - Validation: TypeScript check, ESLint, production build, and mask history API smoke test.
+
+## 2026-08-09, On-demand history viewing
+
+- Scope: Interactive mask history panel and saved-lumen messaging.
+- Reason: Keep historical versions closed and unloaded at case start while allowing doctors to inspect and restore them on demand.
+- Key changes: Removed the automatic saved-lumen notification, hid history counts while the panel is closed, added viewable snapshot summaries for lesion and lumen masks and boxes, kept the panel open after restore, and refreshed the list after restore.
+- Follow-up: Confirm the view and restore flow with a logged-in browser session.

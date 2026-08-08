@@ -59,6 +59,11 @@ type PersistOverrideOptions = {
   silent?: boolean;
 };
 
+function formatHistoryBox(box: LumenBBox | null | undefined): string {
+  if (!box) return '—';
+  return `${Math.round(box.x1)}, ${Math.round(box.y1)} - ${Math.round(box.x2)}, ${Math.round(box.y2)}`;
+}
+
 function capturePointerSafely(target: HTMLCanvasElement, pointerId: number): void {
   try {
     target.setPointerCapture(pointerId);
@@ -843,6 +848,7 @@ export function InteractiveSegPanel({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [maskHistory, setMaskHistory] = useState<MaskHistoryEntry[]>([]);
+  const [historyPreviewId, setHistoryPreviewId] = useState<string | null>(null);
   const [samBusy, setSamBusy] = useState(false);
   const [samReport, setSamReport] = useState<SamReport | null>(null);
   const [dinoBusy, setDinoBusy] = useState(false);
@@ -1192,6 +1198,7 @@ export function InteractiveSegPanel({
     setHistoryOpen(false);
     setHistoryBusy(false);
     setMaskHistory([]);
+    setHistoryPreviewId(null);
   }, [patient?.id]);
 
   useEffect(() => {
@@ -1214,14 +1221,7 @@ export function InteractiveSegPanel({
       sam_score: lumenOverride.sam_score,
       source: lumenOverride.source,
     } : null);
-    if (lumenOverride?.lumen_bbox) {
-      setMessage(
-        zh
-          ? '已载入此前保存的胃腔结果，未自动重新检测；需要重新检测请点击“检测胃腔”'
-          : 'Loaded the previously saved lumen result; no automatic re-detection was run',
-      );
-    }
-  }, [patient?.id, lumenOverride?.updated_at, lumenOverride?.lumen_bbox, lumenOverride?.lumen_polygon, lumenOverride?.lumen_confidence, lumenOverride?.detector_backend_id, lumenOverride?.sam_backend_id, lumenOverride?.sam_score, lumenOverride?.source, zh]);
+  }, [patient?.id, lumenOverride?.updated_at, lumenOverride?.lumen_bbox, lumenOverride?.lumen_polygon, lumenOverride?.lumen_confidence, lumenOverride?.detector_backend_id, lumenOverride?.sam_backend_id, lumenOverride?.sam_score, lumenOverride?.source]);
 
   const refreshNnInteractiveStatus = useCallback(async (): Promise<boolean> => {
     try {
@@ -4959,7 +4959,11 @@ export function InteractiveSegPanel({
       const res = await fetch(`/api/patients/mask-overrides?${params.toString()}`, { cache: 'no-store' });
       const data = await res.json() as { history?: MaskHistoryEntry[]; error?: string };
       if (!res.ok) throw new Error(data.error || 'History loading failed');
-      setMaskHistory(Array.isArray(data.history) ? data.history : []);
+      const nextHistory = Array.isArray(data.history) ? data.history : [];
+      setMaskHistory(nextHistory);
+      setHistoryPreviewId((current) => (
+        current && nextHistory.some((entry) => entry.id === current) ? current : null
+      ));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : (zh ? '历史记录加载失败' : 'History loading failed'));
     } finally {
@@ -4968,9 +4972,10 @@ export function InteractiveSegPanel({
   }, [patient, zh]);
 
   const restoreMaskHistory = useCallback(async (entry: MaskHistoryEntry) => {
-    if (!patient || !entry?.override) return;
-    setSaving(true);
+    if (!patient || !entry?.override || historyBusy || savingRef.current) return;
+    setHistoryBusy(true);
     try {
+      await persistChainRef.current.catch(() => false);
       const res = await fetch('/api/patients/mask-overrides', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4986,14 +4991,16 @@ export function InteractiveSegPanel({
       setWallPoints(wallPointsRef.current);
       setVideoFrameOverrides(videoFrameOverridesRef.current);
       onOverrideChange(restored);
-      setHistoryOpen(false);
-      setMessage(zh ? '已恢复完整遮罩版本' : 'Complete mask version restored');
+      setHistoryOpen(true);
+      setHistoryPreviewId(entry.id);
+      setMessage(zh ? '已恢复完整遮罩版本，历史面板保持打开' : 'Complete mask version restored; history stays open');
+      await loadMaskHistory();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : (zh ? '历史版本恢复失败' : 'History restore failed'));
     } finally {
-      setSaving(false);
+      setHistoryBusy(false);
     }
-  }, [onOverrideChange, patient, zh]);
+  }, [historyBusy, loadMaskHistory, onOverrideChange, patient, zh]);
 
   const handleSave = async () => {
     await persistOverride('manual_save');
@@ -6686,7 +6693,10 @@ export function InteractiveSegPanel({
                 onClick={() => {
                   const nextOpen = !historyOpen;
                   setHistoryOpen(nextOpen);
-                  if (nextOpen) void loadMaskHistory();
+                  if (nextOpen) {
+                    setHistoryPreviewId(null);
+                    void loadMaskHistory();
+                  }
                 }}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold ${
                   historyOpen
@@ -6696,7 +6706,7 @@ export function InteractiveSegPanel({
                 title={zh ? '默认关闭，按需查看并恢复完整遮罩版本' : 'Closed by default; open to inspect and restore complete mask versions'}
               >
                 <History size={13} />
-                {zh ? '历史记录' : 'History'}{maskHistory.length ? ` (${maskHistory.length})` : ''}
+                {zh ? '历史记录' : 'History'}{historyOpen && maskHistory.length ? ` (${maskHistory.length})` : ''}
               </button>
               {!simpleVideoMode && (
                 <>
@@ -6769,29 +6779,78 @@ export function InteractiveSegPanel({
                   <div className="py-2 text-[10px] text-slate-400">{zh ? '正在读取历史版本…' : 'Loading saved versions…'}</div>
                 ) : maskHistory.length ? (
                   <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
-                    {maskHistory.map((entry) => (
-                      <div key={entry.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-2.5 py-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-[10px] text-slate-200">
-                            {new Date(entry.saved_at).toLocaleString()}
+                    {maskHistory.map((entry) => {
+                      const frames = entry.override.video_frames || [];
+                      const lastFrame = frames[frames.length - 1];
+                      const latestLumenFrame = [...frames].reverse().find(
+                        (frame) => frame.lumen_polygon?.length || frame.lumen_bbox,
+                      );
+                      const previewing = historyPreviewId === entry.id;
+                      return (
+                        <div key={entry.id} className="rounded-lg border border-white/10 bg-black/30 px-2.5 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-[10px] text-slate-200">
+                                {new Date(entry.saved_at).toLocaleString()}
+                              </div>
+                              <div className="mt-0.5 text-[9px] text-slate-500">
+                                {entry.action || 'manual_save'}
+                                {frames.length
+                                  ? `, ${frames.length} ${zh ? '帧' : 'frames'}`
+                                  : ''}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={historyBusy}
+                                onClick={() => setHistoryPreviewId(previewing ? null : entry.id)}
+                                className="rounded border border-white/15 px-2 py-1 text-[10px] text-slate-300 hover:bg-white/10 disabled:opacity-40"
+                              >
+                                {previewing ? (zh ? '收起' : 'Hide') : (zh ? '查看' : 'View')}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={saving || historyBusy}
+                                onClick={() => void restoreMaskHistory(entry)}
+                                className="rounded border border-sky-300/30 bg-sky-400/10 px-2 py-1 text-[10px] text-sky-100 hover:bg-sky-400/20 disabled:opacity-40"
+                              >
+                                {zh ? '恢复' : 'Restore'}
+                              </button>
+                            </div>
                           </div>
-                          <div className="mt-0.5 text-[9px] text-slate-500">
-                            {entry.action || 'manual_save'}
-                            {entry.override.video_frames?.length
-                              ? `, ${entry.override.video_frames.length} ${zh ? '帧' : 'frames'}`
-                              : ''}
-                          </div>
+                          {previewing && (
+                            <div className="mt-2 space-y-1 border-t border-white/10 pt-2 text-[9px] leading-relaxed text-slate-400">
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                <span>{zh ? `病灶分割 ${entry.override.mask_polygon?.length || 0} 点` : `Lesion mask ${entry.override.mask_polygon?.length || 0} points`}</span>
+                                <span>{zh ? `病灶框 ${formatHistoryBox(entry.override.roi_bbox)}` : `Lesion box ${formatHistoryBox(entry.override.roi_bbox)}`}</span>
+                                <span>{zh ? `胃壁 ${entry.override.wall_polygon?.length || 0} 点` : `Wall ${entry.override.wall_polygon?.length || 0} points`}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                <span>{zh ? `胃腔分割 ${latestLumenFrame?.lumen_polygon?.length || 0} 点` : `Lumen mask ${latestLumenFrame?.lumen_polygon?.length || 0} points`}</span>
+                                <span>{zh ? `胃腔框 ${formatHistoryBox(latestLumenFrame?.lumen_bbox)}` : `Lumen box ${formatHistoryBox(latestLumenFrame?.lumen_bbox)}`}</span>
+                              </div>
+                              {lastFrame && (
+                                <div className="rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                                  <div className="text-slate-300">
+                                    {zh ? '末帧' : 'Last frame'}: {lastFrame.frame_index ?? '—'} / {lastFrame.timestamp_sec.toFixed(3)}s
+                                  </div>
+                                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                                    <span>{zh ? `病灶分割 ${lastFrame.mask_polygon?.length || 0} 点` : `Lesion mask ${lastFrame.mask_polygon?.length || 0} points`}</span>
+                                    <span>{zh ? `病灶框 ${formatHistoryBox(lastFrame.roi_bbox)}` : `Lesion box ${formatHistoryBox(lastFrame.roi_bbox)}`}</span>
+                                    <span>{zh ? `胃腔分割 ${lastFrame.lumen_polygon?.length || 0} 点` : `Lumen mask ${lastFrame.lumen_polygon?.length || 0} points`}</span>
+                                    <span>{zh ? `胃腔框 ${formatHistoryBox(lastFrame.lumen_bbox)}` : `Lumen box ${formatHistoryBox(lastFrame.lumen_bbox)}`}</span>
+                                  </div>
+                                </div>
+                              )}
+                              <div className="text-slate-500">
+                                {zh ? '查看只展开记录摘要，不会自动恢复；确认后点击“恢复”。' : 'View only expands the snapshot summary. Nothing is restored until Restore is clicked.'}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void restoreMaskHistory(entry)}
-                          className="shrink-0 rounded border border-sky-300/30 bg-sky-400/10 px-2 py-1 text-[10px] text-sky-100 hover:bg-sky-400/20 disabled:opacity-40"
-                        >
-                          {zh ? '恢复' : 'Restore'}
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-2 text-[10px] text-slate-500">
