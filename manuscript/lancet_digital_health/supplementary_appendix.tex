@@ -1,0 +1,150 @@
+% Supplementary appendix — compile: latexmk -pdf supplementary_appendix.tex
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{longtable}
+
+\title{Supplementary appendix\\Multicentre deep learning for gastric cancer T-staging on oral contrast-enhanced gastric ultrasonography}
+\author{CEUS-Gastric-Tstaging Collaborative Group}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Extended cohort and centre mapping}
+\begin{table}[h]
+\centering
+\caption{Centre contribution to static image cohort (training and validation combined)}
+\begin{tabular}{llr}
+\toprule
+Centre role & Description & Patients (train+val) \\
+\midrule
+Peking Union Medical College Hospital & Internal development, prospective test & \todo{fill} \\
+Putian centre & External geographic validation & 173 (test only) \\
+Tertiary cancer hospital & External referral validation & 54 (test only) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Video archive (future deployment)}
+\begin{table}[h]
+\centering
+\caption{Video subsets with T labels (not primary endpoints in main Article)}
+\begin{tabular}{lrrrr}
+\toprule
+Source & Files & Patients (labelled) & T2 count & Format \\
+\midrule
+2018 internal & 90 & 58 & 4 & AVI \\
+2024 internal & 502 & 142 & 5 & WMV \\
+2025 Union & 557 & 213 & 22 & MP4 \\
+Historical pool (water contrast) & 215 & -- & -- & WMV \\
+Historical pool (echogenic contrast) & 152 & -- & -- & WMV \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Segmentation experiments}
+\subsection{Mainline U-Net results}
+\begin{itemize}
+  \item Comprehensive internal evaluation: mean Dice $\approx$ 0.65
+  \item Strict patient-level protocol: prospective Dice 0.713; Putian 2024 Dice 0.433
+  \item Predicted mask bank: $\approx$12\,193 images (UNet + ConvNeXt-Tiny, smp)
+\end{itemize}
+
+\subsection{SAM2 cascade and SAM3 zero-shot}
+SAM2 with ground-truth bounding-box prompts achieved high Dice (oracle upper bound). Cascade mode (UNet coarse mask $\rightarrow$ SAM2 refine) slightly exceeded pure UNet on external data when prompts were stable. SAM3 text zero-shot segmentation was ineffective (Dice $\approx$0), and is not pursued further.
+
+\subsection{MedDINOv3 and nnU-Net explorations}
+The MedDINOv3 workspace contains full-image and two-stage segmentation summaries indicating feasibility of full-stomach segmentation, but end-to-end ROI Dice in deployment-like chains remained unstable relative to strict internal protocols.
+
+\section{Localisation benchmark catalogue}
+\begin{longtable}{lcccc}
+\toprule
+Experiment & Precision & Recall & mAP@0.5 & mAP@0.5:0.95 \\
+\midrule
+\endhead
+v9 grand overnight (YOLO11) & 81.2\% & 76.8\% & 78.5\% & 52.3\% \\
+v7 unified finetune & 81.3\% & 71.7\% & 78.6\% & 43.6\% \\
+v7 unified (earlier) & 59.2\% & 56.4\% & 59.0\% & 29.5\% \\
+multiclass v4 (high precision) & 88.5\% & 27.0\% & 34.8\% & 24.7\% \\
+leviathan locator & 65.6\% & 57.6\% & 54.3\% & 35.8\% \\
+\bottomrule
+\caption{Archived detector experiments. High-recall models are preferred for ROI proposal despite lower precision variants.}
+\end{longtable}
+
+\section{Classification experiment matrix (full)}
+\begin{table}[h]
+\centering
+\caption{Attention guidance and two-stage experiments (patient-level AUC)}
+\begin{tabular}{lcccccc}
+\toprule
+Experiment & $\lambda$ & Val AUC & Prospective AUC & Prospective T2R & Prospective T3R & External AUC \\
+\midrule
+boundary\_boost\_frozen (mask4ch ref.) & -- & 0.718 & 0.752 & 15.6\% & 33.0\% & 0.659 \\
+attn guidance v1 & 0.5 & 0.704 & -- & -- & -- & -- \\
+attn guidance v2 & 0.1 & 0.721 & 0.727 & 21.9\% & 18.0\% & 0.638 \\
+two-stage pretrain$\rightarrow$finetune & -- & 0.719 & 0.739 & 15.6\% & 33.0\% & 0.620 \\
+no-mask baseline & -- & 0.698 & 0.681 & 3.1\% & 12.0\% & 0.635 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Grad-CAM border alignment}
+\begin{table}[h]
+\centering
+\caption{Global Grad-CAM vs mask-derived border band}
+\begin{tabular}{lcc}
+\toprule
+Metric & Attention guidance v2 & No-mask baseline \\
+\midrule
+Mean IoU & 0.098 & 0.041 \\
+Mean Dice & 0.168 & 0.073 \\
+Mean correlation & 0.177 & 0.055 \\
+Specificity ratio (in/out border) & 4.28 & 1.83 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Per-class Grad-CAM--border correlation}
+\begin{tabular}{lccc}
+\toprule
+Class & Attention v2 & Baseline & $\Delta$ \\
+\midrule
+T1 & 0.128 & 0.032 & +0.096 \\
+T2 & 0.172 & 0.184 & $-$0.012 \\
+T3 & 0.182 & 0.105 & +0.077 \\
+T4+ & 0.201 & 0.003 & +0.198 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Morphology-only baseline}
+On 9\,959 mask-bearing images, 22/24 engineered features associated with T category (Kruskal--Wallis $p<0.05$). Gradient boosting on morphology achieved AUC 0.706 with T2 recall 7.6\%, supporting use of mask shape as auxiliary signal but not as a standalone clinical model.
+
+\section{AI and diagnostic study reporting checklist (draft)}
+Items aligned with CONSORT-AI and STARD principles for prespecified reporting in the final submission:
+\begin{enumerate}
+  \item Define the intended clinical user (sonographer) and setting (community vs tertiary).
+  \item State input data format (static frame vs video) separately for development and deployment claims.
+  \item Report patient-level primary metrics with confidence intervals (bootstrap planned).
+  \item Disclose train--deploy differences (mask/ROI availability).
+  \item Predefine harmful error types (T2$\rightarrow$T1, T3$\rightarrow$T2) for threshold selection.
+  \item Provide external validation across $\geq$2 geographically distinct centres.
+  \item Release code and model cards; govern data access via multicentre agreements.
+\end{enumerate}
+
+\section{Reproducibility}
+\begin{itemize}
+  \item Repository: \url{https://github.com/hyjcde/CEUS-Gastric-Tstaging}
+  \item Split policy: \texttt{docs/data\_governance/data\_split\_policy.md}
+  \item Validation protocol: \texttt{docs/evaluation/validation\_protocol.md}
+  \item Experiment registry template: \texttt{experiments/experiment\_registry\_template.csv}
+\end{itemize}
+
+\end{document}

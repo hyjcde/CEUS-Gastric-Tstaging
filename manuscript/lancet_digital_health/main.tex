@@ -1,0 +1,204 @@
+% Deep learning for gastric cancer T-staging on oral contrast-enhanced gastric ultrasonography
+% Target journal: The Lancet Digital Health
+% Compile: pdflatex + bibtex (see README.md)
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{tabularx}
+\usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+
+\onehalfspacing
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+% Lancet-style section numbering (no subsubsection depth in main text)
+\setcounter{secnumdepth}{2}
+
+\newcommand{\todo}[1]{\textbf{[TODO: #1]}}
+\newcommand{\wordcountnote}{\textit{[Draft: verify final word count $\leq$3500 for Article; abstract $\leq$300 words before submission.]}}
+
+\title{%
+  \textbf{Patient-level deep learning pipeline for gastric cancer T-staging on oral contrast-enhanced gastric ultrasonography: a multicentre development and validation study}%
+}
+
+\author{%
+  \todo{Author list, affiliations, corresponding author email, ORCID}\\
+  \textit{On behalf of the CEUS-Gastric-Tstaging Collaborative Group}%
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent\textbf{Background}\par
+Accurate preoperative T staging of gastric cancer guides treatment, yet transabdominal oral contrast-enhanced gastric ultrasonography remains operator-dependent and limited in layer resolution compared with endoscopic ultrasound. We aimed to develop and validate a patient-level deep learning pipeline that links lesion localisation, segmentation, and four-class T staging (T1, T2, T3, T4 or higher) without requiring manual region-of-interest annotation at inference.
+
+\noindent\textbf{Methods}\par
+In this multicentre diagnostic development and validation study, we curated static gastric ultrasonography images with physician-drawn lesion masks and pathological T-stage labels from three Chinese centres. Images were split at the patient level into training ($n$=1\,441 patients, 9\,138 images), validation ($n$=167, 1\,117 images), internal prospective testing ($n$=54, 253 images), internal retrospective testing ($n$=120, 783 images), and external testing at Putian ($n$=173, 1\,155 images) and a tertiary cancer hospital ($n$=54, 229 images). Stage~1 comprised lesion detection (YOLO11-class localisers) and U-Net-style segmentation; Stage~2 comprised a dual-branch classifier (global image plus region-of-interest) with optional boundary attention guidance trained using ground-truth masks but deployed without mask input via a two-stage pretrain--finetune strategy. Primary outcomes were patient-level area under the receiver operating characteristic curve (AUC) and balanced accuracy; secondary outcomes included class-specific recall (especially T2 and T3), segmentation Dice, and localisation recall. Grad-CAM was used to assess alignment between model attention and lesion borders.
+
+\noindent\textbf{Findings}\par
+Among 9\,138 training images, T2 was the minority class (11.8\%). Morphological features derived from masks were associated with T stage ($p$<0.05 for 22 of 24 features) but yielded poor T2 recall (7.6\%) in a gradient-boosting baseline. For segmentation, patient-level Dice was 0.713 on prospective internal testing but 0.433 on external Putian data, indicating substantial domain shift. The best mask-dependent reference classifier achieved prospective AUC 0.752 and external AUC 0.659. A two-stage classifier without mask at inference achieved prospective AUC 0.739 (vs 0.681 for a no-mask baseline), with prospective T2 recall 15.6\% and T3 recall 33.0\%. Boundary attention guidance increased Grad-CAM--border overlap (IoU 0.098 vs 0.041) but did not surpass the external performance of the mask-input reference (external AUC 0.620--0.638 vs 0.659). High-recall localisation (e.g., precision 81.2\%, recall 76.8\%, mAP@0.5 78.5\%) was necessary to avoid centre-crop fallback that degraded downstream classification.
+
+\noindent\textbf{Interpretation}\par
+A staged deep learning pipeline can provide patient-level T-stage discrimination on oral contrast-enhanced gastric ultrasonography without manual ROI at inference, but performance degrades across centres and remains weakest for T2. Clinical deployment should be framed as triage to endoscopic ultrasound or cross-sectional staging rather than replacement. Prospective impact studies and explicit cost-sensitive decision thresholds are needed before implementation.
+
+\noindent\textbf{Funding}\par
+\todo{Funding sources and funder role in study design, data collection, analysis, and publication decision.}
+\end{abstract}
+
+\section*{Research in context}
+
+\subsection*{Evidence before this study}
+We searched PubMed and Embase for studies published in English or Chinese from database inception to \todo{search end date}, using terms for ``gastric cancer'', ``ultrasonography'', ``contrast-enhanced'', ``T staging'', and ``deep learning''. Endoscopic ultrasound is recognised as the most accurate imaging modality for local gastric T staging, with accuracies often reported between 70\% and 90\%, whereas transabdominal gastric ultrasonography is recommended as a complementary, accessible modality in screening and community settings. Prior machine-learning work on gastric ultrasound has frequently relied on manual cropping, single-centre cohorts, or image-level evaluation, and seldom reported patient-level external validation with explicit failure analysis for T2 and T3, the stages that drive markedly different treatment pathways (endoscopic resection vs standard surgery vs neoadjuvant therapy).
+
+\subsection*{Added value of this study}
+This study unifies data governance, patient-level splits, lesion localisation, segmentation, and four-class T staging into one reproducible pipeline aligned with real-world inference constraints (no manual mask or ROI at test time for the primary deployable classifier). We quantify domain shift across hospitals and years, report segmentation and classification performance separately, and show that boundary-aware training improves interpretability (Grad-CAM alignment) even when discrimination gains are uneven across classes. The work clarifies that upstream localisation recall and predicted ROI stability are part of the diagnostic task, not optional preprocessing.
+
+\subsection*{Implications of all the available evidence}
+Artificial intelligence for gastric T staging on oral contrast-enhanced ultrasonography should be evaluated as a staged system with multicentre patient-level metrics, not as a single end-to-end accuracy number. Current models may support risk stratification and referral decisions, especially for detecting advanced T categories, but are not yet sufficient for reliable T2 identification. Policy and clinical integration should require external validation, audit for shortcut learning (e.g., benign vs malignant behaviour), and predefined operating points that reflect asymmetric clinical harm (under-staging T2 or T3 is more harmful than over-staging in selected pathways).
+
+\section{Introduction}
+Gastric cancer remains a leading cause of cancer-related death worldwide. Preoperative T category in the TNM classification determines whether patients receive endoscopic resection, primary surgery, or neoadjuvant chemotherapy, making accurate locoregional staging clinically consequential.\cite{ajcc8,china_gastric_guideline2022} Endoscopic ultrasound (EUS) is the reference standard for local T staging in many guidelines, but its availability is limited outside tertiary centres.\cite{eus_staging_review}
+
+Oral contrast-enhanced gastric ultrasonography (oral contrast-enhanced gastric ultrasonography; ``gastric filling ultrasound'') uses swallowed contrast agents to distend the stomach and create an acoustic window through which transabdominal convex probes (typically 1--6~MHz) can assess wall layers and tumour depth.\cite{oral_contrast_expert2020} The technique is non-invasive and suitable for community screening, but layer resolution is inferior to EUS, and T2 versus T3 discrimination depends on subtle cues related to muscularis propria invasion rather than always-visible five-layer patterns.
+
+Deep learning has shown promise in medical imaging, yet many ultrasound staging studies train on static crops with implicit human localisation, evaluate at the image level, or report only internal validation.\cite{deeplearning_medical_imaging,prospective_ai_validation} For gastric filling ultrasound, additional challenges include contrast-agent heterogeneity (anechoic water vs echogenic commercial agents), anatomical site effects on wall thickness, severe class imbalance for T2, and a train--deploy gap: training often uses physician-drawn masks and regions of interest (ROIs) that are absent during real-time video examination.
+
+We therefore built a two-stage research pipeline: Stage~1 establishes reproducible lesion localisation and segmentation baselines; Stage~2 performs four-class T staging on patient-level splits with internal prospective and external testing. Our primary hypothesis was that a deployable classifier without mask input at inference could approach the performance of mask-augmented models when boundary-aware representation learning and stable ROI generation are combined. Secondary aims were to characterise cross-centre degradation, T2/T3 confusion, and whether model attention aligns with anatomically plausible lesion borders.
+
+\section{Methods}
+
+\subsection{Study design and participants}
+We conducted a retrospective development study with internal prospective and external validation cohorts from three participating centres in China (\todo{institutional names}). Eligible participants had histologically confirmed gastric adenocarcinoma and oral contrast-enhanced gastric ultrasonography examinations with stored static images; labels were pathological T categories mapped to four classes: T1, T2, T3, and T4 or higher (T4+). Exclusion criteria at the image level included unusable quality after quality control, missing labels, or failed patient-level deduplication. Ethics approval was obtained from \todo{ethics committee and approval numbers}. Requirement for informed consent followed each centre's policy for retrospective image reuse (\todo{consent waiver or written consent details}).
+
+\subsection{Data governance and splits}
+All experiments used patient-level splits to prevent leakage across frames from the same individual. A registry recorded centre, acquisition year, batch, contrast type where available, and label provenance. Training comprised 9\,138 images from 1\,441 patients (95.6\% with physician polygon masks); validation comprised 1\,117 images from 167 patients. Internal testing included a prospective set (253 images, 54 patients) and retrospective sets (783 images, 120 patients). External testing used 1\,155 images (173 patients) from Putian and 229 images (54 patients) from a tertiary cancer hospital. Class distribution was imbalanced: T2 comprised 11.8\% of training images (1\,076/9\,138), consistent with clinical prevalence and staging difficulty.
+
+\subsection{Imaging and reference standards}
+Images were acquired with standard gastric filling protocols per national expert consensus.\cite{oral_contrast_expert2020} Reference T stage was pathological TNM after surgery; ultrasound T labels used for training followed centre-specific mapping to the four-class scheme. Physician-drawn LabelMe polygon masks served as reference for segmentation and for training-only attention targets. No masks were available for historical video-only subsets; video-based multiple-instance learning was reserved for future work.
+
+\subsection{Stage 1: localisation and segmentation}
+Figure~\ref{fig:pipeline} summarises the staged pipeline. \textbf{Localisation:} YOLO11- and RT-DETR-style detectors were trained with centre-aware augmentation; we prioritised recall and ROI success because missed lesions triggered centre-crop fallback. \textbf{Segmentation:} U-Net variants (ConvNeXt-Tiny encoder) were trained under patient-level constraints; predicted masks ($\approx$12\,193 images) supported ROI construction and mask4ch reference classifiers. Alternative segmenters (SAM2 cascade, nnU-Net variants) were explored in the supplementary appendix.
+
+\subsection{Stage 2: T-staging models}
+The primary classifier was a dual-branch convolutional network: a global branch on full images and a local branch on ROI crops, fused for four-way softmax output. Reference model \textit{boundary\_boost\_frozen} appended a predicted or ground-truth mask channel (mask4ch) and represented an upper bound that requires segmentation at inference.
+
+To reduce the train--deploy gap, we implemented \textbf{boundary attention guidance}: a dilated--eroded band around the ground-truth mask defined a spatial target; an auxiliary loss aligned the L2 norm of global backbone feature maps with this border target during training only ($\mathcal{L}=\mathcal{L}_{\mathrm{cls}}+\lambda\,\mathrm{MSE}(\mathrm{attention},\mathrm{border})$). We compared $\lambda{=}0.1$ (attention guidance v2) against a no-mask baseline and a \textbf{two-stage schedule}: short boundary-guided pretraining followed by fine-tuning without mask input (deployable model).
+
+Training used class rebalancing and standard augmentation. Table~\ref{tab:clinical_harm} summarises why under-staging T2 or T3 carries higher clinical risk than over-staging in selected pathways; cost-sensitive thresholds are prespecified but not yet locked for deployment. Hyperparameters were selected on the validation split only.
+
+\subsection{Evaluation and explainability}
+Primary classification endpoints were patient-level one-vs-rest macro-averaged AUC and balanced accuracy. Prespecified secondary endpoints included per-class recall for T1, T2, T3, and T4+, confusion matrices stratified by centre and year, and segmentation Dice on the same splits. Grad-CAM heatmaps were compared with mask border bands using IoU, Dice, Pearson correlation, and inside-to-outside attention ratios.\cite{gradcam} Error atlases linked failures to ROI fallback, low predicted Dice, contrast type, and site.
+
+\subsection{Role of the funding source}
+\todo{Describe funder involvement.}
+
+\section{Results}
+
+\input{figures/study_flow}
+\input{figures/pipeline_diagram}
+
+\subsection{Cohort and label characteristics}
+Table~\ref{tab:cohort} and Table~\ref{tab:tstage_dist} summarise splits and T-category imbalance. Masks were available for more than 95\% of training and validation frames. Video archives (2018--2025) exist for future video multiple-instance learning but were outside the primary inference endpoint of this report.
+
+\input{tables/cohort_tstage}
+\input{tables/clinical_harm}
+
+\begin{table}[htbp]
+\centering
+\caption{Cohort overview for static image development and validation}
+\label{tab:cohort}
+\begin{tabular}{lrrrr}
+\toprule
+Split & Images & Patients & With mask (\%) & Notes \\
+\midrule
+Training & 9\,138 & 1\,441 & 95.6 & T2 11.8\% of images \\
+Validation & 1\,117 & 167 & 96.9 & Hyperparameter selection \\
+Prospective internal test & 253 & 54 & Available & Peking Union internal \\
+Retrospective internal test & 783 & 120 & Available & Multi-year internal \\
+External Putian & 1\,155 & 173 & Available & Geographic external \\
+External cancer hospital & 229 & 54 & Available & Tertiary referral \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Mask morphology and localisation}
+Among 9\,959 mask-bearing images, 22 of 24 engineered morphological features differed significantly across T classes (Kruskal--Wallis $p{<}0.05$); curvature-based features were strongest. A gradient-boosting classifier on morphology alone achieved AUC 0.706 but T2 recall only 7.6\%, indicating that shape cues alone are insufficient for clinically relevant T2 detection.
+
+Representative high-recall localisers reached precision 81.2\%, recall 76.8\%, mAP@0.5 78.5\%, and mAP@0.5:0.95 52.3\% on internal detection benchmarks. Architectures with high precision but low recall were deemed unsuitable as sole ROI proposers because false negatives propagated to classification.
+
+\subsection{Segmentation performance and domain shift}
+Internal comprehensive evaluation reported mean Dice near 0.65. A stricter segmentation protocol achieved prospective Dice 0.713 but external Putian Dice 0.433, illustrating substantial domain shift. SAM2-based cascades improved masks when prompts were accurate; text-prompted SAM3 zero-shot segmentation failed on this modality. Predicted masks enabled mask4ch reference classifiers but introduced noise externally, motivating mask-free deployable training.
+
+\subsection{T-staging classification}
+Table~\ref{tab:classification} shows the prespecified classification experiment matrix on patient-level AUC.
+
+\begin{table}[htbp]
+\centering
+\caption{Patient-level T-staging performance for key models}
+\label{tab:classification}
+\begin{tabular}{lcccc}
+\toprule
+Model & Val AUC & Prospective AUC & Prospective T2 recall & External AUC \\
+\midrule
+Mask4ch reference (boundary boost frozen) & 0.718 & \textbf{0.752} & 15.6\% & \textbf{0.659} \\
+Two-stage (pretrain$\rightarrow$finetune, no mask at inference) & 0.719 & 0.739 & 15.6\% & 0.620 \\
+Attention guidance v2 ($\lambda{=}0.1$) & 0.721 & 0.727 & \textbf{21.9\%} & 0.638 \\
+No-mask baseline & 0.698 & 0.681 & 3.1\% & 0.635 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The deployable two-stage model improved prospective AUC by 0.058 versus the no-mask baseline (0.739 vs 0.681) and recovered prospective T3 recall (33.0\% vs 12.0\%) while approaching the prospective performance of the mask-dependent reference (0.739 vs 0.752). External AUC remained highest for the mask4ch reference (0.659). Attention guidance v2 improved prospective T2 recall (21.9\% vs 15.6\% for two-stage; 3.1\% for baseline) but did not improve external generalisation.
+
+Grad-CAM analyses showed attention guidance increased border alignment (mean IoU 0.098 vs 0.041; correlation 0.177 vs 0.055). Per-class border correlation improved markedly for T1 and T4+; T2 correlation was already relatively high at baseline (0.184) and did not increase with guidance (0.172), supporting the view that T2/T3 confusion reflects subtle layer invasion patterns rather than gross attention mislocalisation alone.
+
+\subsection{Error patterns}
+Qualitative review indicated T2$\rightarrow$T3 confusion clustered where ROI generation failed or predicted segmentation Dice was low. Contrast-agent subtype and acquisition-year shifts contributed to external degradation. Confusion matrices, ROI-fallback rates, and Grad-CAM atlases are provided in the supplementary appendix and project visualisation repository (\texttt{results/visualizations/}).
+
+\section{Discussion}
+We present a multicentre, patient-level deep learning pipeline for four-class gastric cancer T staging on oral contrast-enhanced gastric ultrasonography that explicitly separates localisation, segmentation, and classification. Three findings are clinically salient.
+
+First, deployable models without manual masks at inference can approach mask-augmented prospective discrimination when boundary-aware pretraining is combined with fine-tuning, but external validation lags behind internal prospective performance. This pattern warns against single-centre claims and supports mandatory geographic and temporal external testing for ultrasound AI.
+
+Second, T2 remains the rate-limiting class despite border-aware losses and improved Grad-CAM plausibility. Morphology and attention analyses suggest T2 errors are not solely due to looking away from the lesion; discriminating muscularis propria invasion from serosal involvement on transabdominal frequencies may exceed current image information without EUS-level resolution. Directional labelling pilots (indicating invasion direction relative to wall layers) and video-based multiple-instance learning are rational next steps rather than further backbone proliferation.
+
+Third, Stage~1 quality gates overall safety. Segmentation Dice above 0.7 prospectively but near 0.43 externally implies that any pipeline requiring predicted masks must monitor centre-specific calibration. High-recall localisation is non-negotiable because centre-crop fallback silently removes tumour signal from classification inputs.
+
+\subsection{Limitations}
+This study is retrospective for most splits; prospective collection was modest in size. Video streams---the clinical native format---were not primary endpoints here. Contrast-agent labels were incomplete for all static images. CT or EUS was not simultaneously scored as a comparator on every case. Cost-sensitive thresholds were analysed conceptually but not yet deployed as locked operating points. Finally, fairness across sites with different scanners and gain settings requires ongoing registry-standardised harmonisation.
+
+\subsection{Clinical implications}
+On available evidence, the system is best positioned as a triage and documentation aid that flags likely advanced T categories and prompts EUS or CT when uncertainty is high, especially for suspected T2 or T3. \todo{Report sensitivity/specificity at prespecified clinical thresholds once locked.} Implementation should include audit modules for benign--malignant shortcut behaviour and continuous monitoring of ROI failure rates.
+
+\section{Contributors}
+\todo{CRediT author contribution statements.}
+
+\section{Declaration of interests}
+We declare no competing interests. \todo{Update with full ICMJE forms.}
+
+\section{Data sharing}
+De-identified data, patient-level prediction tables, and training configurations can be shared after approval of a collaborative proposal to the corresponding author, subject to multicentre governance agreements. Code for baseline reproduction is maintained in the project repository (\url{https://github.com/hyjcde/CEUS-Gastric-Tstaging}). \todo{Add persistent DOI and data access committee contact.}
+
+\section{Acknowledgments}
+We thank participating sonographers, pathologists, and data managers at all sites. \todo{List grants and infrastructure support.}
+
+\section{Supplementary material}
+See \texttt{supplementary\_appendix.pdf} for detector ablations, extended segmentation comparisons (SAM2 cascade, SAM3 zero-shot, nnU-Net), per-class Grad-CAM correlations, AI reporting checklist items, and reproducibility paths.
+
+\bibliographystyle{vancouver}
+\bibliography{references}
+
+\end{document}

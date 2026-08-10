@@ -1,0 +1,31 @@
+% Figure 2: Pipeline diagram
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm and 0.5cm,
+  stage/.style={rectangle, draw=black, fill=gray!8, rounded corners=2pt,
+                align=center, minimum width=2.9cm, minimum height=1.0cm, font=\small},
+  data/.style={rectangle, draw=black, dashed, align=center,
+               minimum width=2.6cm, minimum height=0.8cm, font=\footnotesize},
+  arr/.style={-{Stealth[length=2mm]}, thick},
+  darr/.style={-{Stealth[length=2mm]}, dashed}
+]
+  \node[data] (img) {B-mode frame\\(full stomach view)};
+  \node[stage, right=1.2cm of img] (det) {Detector\\(YOLO11 / RT-DETR)};
+  \node[stage, right=1.2cm of det] (seg) {Segmentation\\(U-Net family)};
+  \node[stage, right=1.2cm of seg] (roi) {ROI crop\\+ optional mask channel};
+  \node[stage, below=1.1cm of seg] (cls) {Dual-branch classifier\\global + local};
+  \node[data, below=1.1cm of cls] (out) {T1 / T2 / T3 / T4+\\+ explainability maps};
+
+  \draw[arr] (img) -- (det);
+  \draw[arr] (det) -- node[above,font=\footnotesize]{bbox} (seg);
+  \draw[arr] (seg) -- node[above,font=\footnotesize]{mask (train/ref)} (roi);
+  \draw[arr] (roi) -- (cls);
+  \draw[arr] (cls) -- (out);
+  \draw[darr] (det) to[bend right=25] node[below,font=\footnotesize]{fallback if miss} (cls);
+
+  \node[font=\footnotesize, align=center, below=0.15cm of out] (note) {Deployable path: boundary-guided pretrain $\rightarrow$ finetune without mask};
+\end{tikzpicture}
+\caption{Staged deep learning pipeline. High-recall localisation reduced centre-crop fallback. Segmentation supported reference mask4ch models; the deployable classifier omitted mask input at inference after boundary-aware pretraining.}
+\label{fig:pipeline}
+\end{figure}
