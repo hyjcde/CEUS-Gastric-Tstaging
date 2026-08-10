@@ -7,7 +7,6 @@ import { PROJECT_ROOT } from '@/lib/config';
 import { proxyAgentRequest } from '@/lib/agent-upstream';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
-import { resolveResearchReader } from '@/lib/reader/study-auth';
 import {
   READER_ROUND2_AGENT_VERSION,
   READER_ROUND2_FREEZE_ID,
@@ -17,6 +16,7 @@ import {
   READER_ROUND2_RULE_VERSION,
   READER_ROUND2_SOFTWARE_VERSION,
 } from '@/lib/reader/study-contract';
+import { assertResearchCaseAccess } from '@/lib/reader/research-gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +41,7 @@ type ReaderAgentRequest = {
   patient_id?: string;
   reader_id?: string;
   authenticated_reader_id?: string;
+  session_id?: string;
   round?: string;
   condition?: string;
   study_mode?: string;
@@ -62,7 +63,10 @@ type ReaderAgentRequest = {
   mask_override?: Record<string, unknown>;
   lumen_override?: Record<string, unknown>;
   use_lumen_override?: boolean;
+  contour_context?: Record<string, unknown>;
   workflow_trace?: Array<Record<string, unknown>>;
+  /** contour_anchored_fast skips DINO/RAG/binary + remote LLM for Assist latency */
+  assist_profile?: string;
 };
 
 function safeSegment(value: string, fallback: string): string {
@@ -89,7 +93,10 @@ function scheduleInputCleanup(inputDir: string) {
   timer.unref?.();
 }
 
-function runPython(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+function runPython(
+  payload: Record<string, unknown>,
+  envOverrides: Record<string, string> = {},
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const child = spawn(PYTHON_BIN, [ANALYZE_SCRIPT], {
       cwd: PROJECT_ROOT,
@@ -97,6 +104,7 @@ function runPython(payload: Record<string, unknown>): Promise<Record<string, unk
         ...buildPythonAgentEnv(),
         AGENT_STREAM_EVENTS: '0',
         PYTHONPATH: `${PROJECT_ROOT}/pipeline:${PROJECT_ROOT}/scripts${process.env.PYTHONPATH ? `:${process.env.PYTHONPATH}` : ''}`,
+        ...envOverrides,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -158,22 +166,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Invalid JSON request' }, { status: 400 });
   }
   const environment = body.environment || (body.round === 'qa' ? 'qa' : 'staging');
+  let researchVersions = {
+    freeze_id: body.freeze_id || READER_ROUND2_FREEZE_ID,
+    software_version: body.software_version || READER_ROUND2_SOFTWARE_VERSION,
+    agent_version: body.agent_version || READER_ROUND2_AGENT_VERSION,
+    model_version: body.model_version || READER_ROUND2_MODEL_VERSION,
+    rule_version: body.rule_version || READER_ROUND2_RULE_VERSION,
+    prompt_version: body.prompt_version || READER_ROUND2_PROMPT_VERSION,
+    manifest_version: body.manifest_version || READER_ROUND2_MANIFEST_VERSION,
+  };
   if (environment === 'research') {
-    if (body.round !== 'round2') {
-      return NextResponse.json({ ok: false, error: 'research Agent requests must use round2' }, { status: 422 });
+    if (!body.case_id) {
+      return NextResponse.json({ ok: false, error: 'case_id is required' }, { status: 400 });
     }
-    const auth = resolveResearchReader(request.headers, body.reader_id);
-    if (!auth.ok) {
+    const access = await assertResearchCaseAccess({
+      headers: request.headers,
+      requestedReaderId: body.reader_id,
+      caseId: body.case_id,
+      round: body.round,
+      versions: {
+        freeze_id: body.freeze_id,
+        software_version: body.software_version,
+        agent_version: body.agent_version,
+        model_version: body.model_version,
+        rule_version: body.rule_version,
+        prompt_version: body.prompt_version,
+        manifest_version: body.manifest_version,
+      },
+      requireInitialJudgment: true,
+      sessionId: body.session_id,
+    });
+    if (!access.ok) {
       return NextResponse.json(
-        { ok: false, error: auth.message, code: `research_auth_${auth.code}` },
-        { status: auth.code === 'invalid_identity' ? 403 : 401 },
+        { ok: false, error: access.message, code: access.code },
+        { status: access.status },
       );
     }
-    if (body.freeze_id && body.freeze_id !== READER_ROUND2_FREEZE_ID) {
-      return NextResponse.json({ ok: false, error: `freeze_id must be ${READER_ROUND2_FREEZE_ID}` }, { status: 422 });
+    if (body.authenticated_reader_id && body.authenticated_reader_id !== access.readerId) {
+      return NextResponse.json(
+        { ok: false, error: 'authenticated_reader_id does not match the trusted proxy identity' },
+        { status: 403 },
+      );
     }
-    body.reader_id = auth.readerId;
-    body.authenticated_reader_id = auth.readerId;
+    body.reader_id = access.readerId;
+    body.authenticated_reader_id = access.readerId;
+    researchVersions = access.versions;
   }
   if (!validPolygon(body.mask_override?.mask_polygon)) {
     return NextResponse.json(
@@ -202,8 +239,12 @@ export async function POST(request: NextRequest) {
       timestamp_sec: body.frame_time,
       quality_score: 1,
     }] : []),
-  ].filter((frame) => Boolean(frame.frame_png_b64)).slice(0, MAX_FRAMES);
-  if (!incoming.length) {
+  ].filter((frame) => Boolean(frame.frame_png_b64));
+  const assistProfile = String(body.assist_profile || '').trim().toLowerCase();
+  const contourFast = ['contour_anchored_fast', 'assist_fast', 'fast'].includes(assistProfile);
+  // Assist fast path: only the primary/current frame; full profile keeps up to MAX_FRAMES.
+  const selectedFrames = (contourFast ? incoming.slice(0, 1) : incoming).slice(0, MAX_FRAMES);
+  if (!selectedFrames.length) {
     return NextResponse.json({ ok: false, error: 'At least one frame is required' }, { status: 400 });
   }
 
@@ -215,7 +256,7 @@ export async function POST(request: NextRequest) {
   );
   fs.mkdirSync(inputDir, { recursive: true });
   try {
-    const frames = incoming.map((frame, index) => {
+    const frames = selectedFrames.map((frame, index) => {
       const imagePath = path.join(inputDir, `frame_${String(index).padStart(2, '0')}.jpg`);
       fs.writeFileSync(imagePath, decodeFrame(String(frame.frame_png_b64)));
       return {
@@ -226,6 +267,7 @@ export async function POST(request: NextRequest) {
         quality_score: frame.quality_score == null ? 1 : Number(frame.quality_score),
       };
     });
+    const lumenPresent = Boolean(body.lumen_override);
     const payload = {
       session_id: runId,
       case_token: `reader_v150:${body.case_id}`,
@@ -244,8 +286,12 @@ export async function POST(request: NextRequest) {
       workflow_trace: Array.isArray(body.workflow_trace) ? body.workflow_trace.slice(-160) : [],
       use_mask_override: Boolean(body.mask_override),
       mask_override: body.mask_override,
-      use_lumen_override: Boolean(body.use_lumen_override && body.lumen_override),
+      use_lumen_override: Boolean((body.use_lumen_override ?? true) && lumenPresent),
       lumen_override: body.lumen_override,
+      assist_profile: assistProfile || undefined,
+      contour_context: body.contour_context && typeof body.contour_context === 'object'
+        ? body.contour_context
+        : undefined,
       reader_context: {
         case_id: body.case_id,
         reader_id: body.reader_id || 'unknown_reader',
@@ -254,25 +300,40 @@ export async function POST(request: NextRequest) {
         condition: body.condition || 'ai_assisted',
         study_mode: body.study_mode || 'unknown',
         environment,
-        freeze_id: body.freeze_id || READER_ROUND2_FREEZE_ID,
-        software_version: body.software_version || READER_ROUND2_SOFTWARE_VERSION,
-        agent_version: body.agent_version || READER_ROUND2_AGENT_VERSION,
-        model_version: body.model_version || READER_ROUND2_MODEL_VERSION,
-        rule_version: body.rule_version || READER_ROUND2_RULE_VERSION,
-        prompt_version: body.prompt_version || READER_ROUND2_PROMPT_VERSION,
-        manifest_version: body.manifest_version || READER_ROUND2_MANIFEST_VERSION,
+        ...researchVersions,
         bridge: 'reader_v150_to_unified_agent_v1',
+        assist_profile: assistProfile || null,
         frame_input_dir: inputDir,
         frame_input_retention_hours: 24,
         workflow_trace_count: Array.isArray(body.workflow_trace) ? body.workflow_trace.length : 0,
       },
     };
-    const result = await runPython(payload);
+    const envOverrides: Record<string, string> = {};
+    // Contour Assist: full per-step remote LLM (DeepSeek-V4-Flash) when ASSIST_KEEP_LLM=1;
+    // otherwise one final synthesis only. Set ASSIST_LLM_MODE=heuristic to disable remote.
+    if (contourFast) {
+      const assistMode = process.env.ASSIST_LLM_MODE
+        || (process.env.ASSIST_KEEP_LLM === '1' ? 'deepseek' : 'assist_deepseek');
+      envOverrides.AGENT_LLM_MODE = assistMode;
+      envOverrides.DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL
+        || process.env.AGENT_LLM_MODEL
+        || process.env.ASSIST_LLM_MODEL
+        || 'deepseek-v4-flash';
+      envOverrides.AGENT_LLM_MODEL = envOverrides.DEEPSEEK_MODEL;
+      if (process.env.DEEPSEEK_BASE_URL || process.env.ASSIST_LLM_BASE_URL) {
+        envOverrides.DEEPSEEK_BASE_URL = process.env.ASSIST_LLM_BASE_URL
+          || process.env.DEEPSEEK_BASE_URL
+          || 'https://api.deepseek.com';
+        envOverrides.AGENT_LLM_BASE_URL = envOverrides.DEEPSEEK_BASE_URL;
+      }
+    }
+    const result = await runPython(payload, envOverrides);
     return NextResponse.json({
       ok: true,
       bridge_schema_version: 'reader_unified_agent_bridge_v1',
       run_id: runId,
       case_id: body.case_id,
+      assist_profile: assistProfile || null,
       result,
     });
   } catch (error) {

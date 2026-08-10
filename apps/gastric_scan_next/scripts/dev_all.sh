@@ -1,30 +1,28 @@
 #!/usr/bin/env bash
-# 一键启动主工作站 (3000) + 视频标注 (3100)
+# 一键启动 Next 主工作站 (3000) 及其推理后端
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VIDEO_ROOT="${VIDEO_ANNOTATOR_ROOT:-/data/research/gastric/Tstaging/archived/legacy_tools_v1/annotators/video_annotator}"
-VIDEO_PORT="${VIDEO_ANNOTATOR_PORT:-3100}"
 GASTRIC_ROOT="${GASTRIC_ROOT:-/data/research/gastric/GastricTstaging}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
-NNINTERACTIVE_SERVER_PYTHON_BIN="${NNINTERACTIVE_SERVER_PYTHON_BIN:-/tmp/gastric-nninteractive-venv/bin/python}"
+NNINTERACTIVE_SERVER_PYTHON_BIN="${NNINTERACTIVE_SERVER_PYTHON_BIN:-$GASTRIC_ROOT/.venv-nninteractive/bin/python}"
 if [[ ! -x "$NNINTERACTIVE_SERVER_PYTHON_BIN" ]]; then
   NNINTERACTIVE_SERVER_PYTHON_BIN="$PYTHON_BIN"
 fi
 NNINTERACTIVE_BRIDGE_PYTHON_BIN="${NNINTERACTIVE_BRIDGE_PYTHON_BIN:-$NNINTERACTIVE_SERVER_PYTHON_BIN}"
-SAM_HOST="${SAM_HOST:-0.0.0.0}"
+SAM_HOST="${SAM_HOST:-127.0.0.1}"
 SAM_PORT="${SAM_PORT:-8767}"
-SAM31_HOST="${SAM31_HOST:-0.0.0.0}"
+SAM31_HOST="${SAM31_HOST:-127.0.0.1}"
 SAM31_PORT="${SAM31_PORT:-8768}"
 SAM31_CUDA_VISIBLE_DEVICES="${SAM31_CUDA_VISIBLE_DEVICES:-1}"
 SAM31_CHECKPOINT="${SAM31_CHECKPOINT:-$GASTRIC_ROOT/external/sam3.1/sam3.1_multiplex.pt}"
-SAM31_LORA_CHECKPOINT="${SAM31_LORA_CHECKPOINT:-$GASTRIC_ROOT/artifacts/sam31_training/sam31_gastric_lora_full/best_lora_weights.pt}"
+SAM31_LORA_CHECKPOINT="${SAM31_LORA_CHECKPOINT:-$GASTRIC_ROOT/artifacts/sam31_training/sam31_gastric_lora_full_components_5epoch_run2/best_lora_weights.pt}"
 NNINTERACTIVE_HOST="${NNINTERACTIVE_HOST:-127.0.0.1}"
 NNINTERACTIVE_PORT="${NNINTERACTIVE_PORT:-8770}"
-NNINTERACTIVE_AUTOSTART="${NNINTERACTIVE_AUTOSTART:-0}"
+NNINTERACTIVE_AUTOSTART="${NNINTERACTIVE_AUTOSTART:-1}"
 NN_INTERACTIVE_SERVER_URL="${NN_INTERACTIVE_SERVER_URL:-}"
 NN_INTERACTIVE_API_KEY="${NN_INTERACTIVE_API_KEY:-}"
-NNINTERACTIVE_SERVER_AUTOSTART="${NNINTERACTIVE_SERVER_AUTOSTART:-0}"
+NNINTERACTIVE_SERVER_AUTOSTART="${NNINTERACTIVE_SERVER_AUTOSTART:-1}"
 NNINTERACTIVE_SERVER_HOST="${NNINTERACTIVE_SERVER_HOST:-127.0.0.1}"
 NNINTERACTIVE_SERVER_PORT="${NNINTERACTIVE_SERVER_PORT:-1527}"
 NNINTERACTIVE_SERVER_DEVICE="${NNINTERACTIVE_SERVER_DEVICE:-cuda:0}"
@@ -143,6 +141,11 @@ start_nninteractive_server() {
   echo $! > "$NNINTERACTIVE_SERVER_PID"
 
   for _ in $(seq 1 180); do
+    if [[ -f "$NNINTERACTIVE_SERVER_PID" ]] && ! kill -0 "$(cat "$NNINTERACTIVE_SERVER_PID")" 2>/dev/null; then
+      echo "nnInteractive official server exited during startup. Check log: $NNINTERACTIVE_SERVER_LOG"
+      tail -40 "$NNINTERACTIVE_SERVER_LOG" || true
+      return 1
+    fi
     if curl -sf -m 3 "http://127.0.0.1:$NNINTERACTIVE_SERVER_PORT/healthz" -o /dev/null 2>/dev/null; then
       NN_INTERACTIVE_SERVER_URL="http://127.0.0.1:$NNINTERACTIVE_SERVER_PORT"
       echo "nnInteractive official server ready: $NN_INTERACTIVE_SERVER_URL"
@@ -178,6 +181,11 @@ start_nninteractive_bridge() {
   echo $! > "$NNINTERACTIVE_PID"
 
   for _ in $(seq 1 30); do
+    if [[ -f "$NNINTERACTIVE_PID" ]] && ! kill -0 "$(cat "$NNINTERACTIVE_PID")" 2>/dev/null; then
+      echo "nnInteractive bridge exited during startup. Check log: $NNINTERACTIVE_LOG"
+      tail -40 "$NNINTERACTIVE_LOG" || true
+      return 1
+    fi
     if curl -sf -m 3 "http://127.0.0.1:$NNINTERACTIVE_PORT/api/nninteractive/status" -o /dev/null 2>/dev/null; then
       echo "nnInteractive bridge ready: http://${NNINTERACTIVE_HOST}:$NNINTERACTIVE_PORT"
       return 0
@@ -207,35 +215,12 @@ else
   echo "nnInteractive bridge skipped (NNINTERACTIVE_AUTOSTART=$NNINTERACTIVE_AUTOSTART)"
 fi
 
-if [[ -d "$VIDEO_ROOT" ]]; then
-  echo "==> Starting video annotator on :$VIDEO_PORT ..."
-  pkill -f "next dev -p $VIDEO_PORT" 2>/dev/null || true
-  sleep 1
-  nohup env GASTRIC_ROOT="${GASTRIC_ROOT:-/data/research/gastric/GastricTstaging}" \
-    bash -lc "cd '$VIDEO_ROOT' && npm run dev -- -H 0.0.0.0 -p $VIDEO_PORT" \
-    >> "$LOG_DIR/video_annotator.log" 2>&1 \
-    < /dev/null &
-  echo $! > "$LOG_DIR/video_annotator.pid"
-
-  for _ in $(seq 1 30); do
-    if curl -sf "http://127.0.0.1:$VIDEO_PORT/" -o /dev/null 2>/dev/null; then
-      echo "Video annotator ready: http://127.0.0.1:$VIDEO_PORT"
-      break
-    fi
-    sleep 1
-  done
-else
-  echo "Video annotator skipped (not found: $VIDEO_ROOT)"
-fi
-
 echo
 echo "Main:  http://127.0.0.1:3000"
 echo "LAN:   http://${LAN_FIXED_IP:-10.13.199.162}:3000"
-echo "SAM2:  http://${SAM_HOST}:$SAM_PORT/interactive_video_agent.html"
+echo "SAM2 API: http://${SAM_HOST}:$SAM_PORT"
 echo "SAM3.1 static: http://${SAM31_HOST}:$SAM31_PORT"
 echo "nnInteractive bridge: http://${NNINTERACTIVE_HOST}:$NNINTERACTIVE_PORT"
 echo "Annot: http://127.0.0.1:3000/annotate"
-if [[ -d "$VIDEO_ROOT" ]]; then
-  echo "Video: http://127.0.0.1:$VIDEO_PORT"
-fi
+echo "Legacy HTML/video frontend: disabled (Next-only mode)"
 echo "Tip: run scripts/serve_visual_review.sh for Grad-CAM screening (:3110) + mainline figures (:3111)"

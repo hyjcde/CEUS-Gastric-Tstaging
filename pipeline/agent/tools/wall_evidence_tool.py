@@ -15,7 +15,7 @@ import numpy as np
 from scipy import ndimage
 
 from .base import BaseTool, ToolParameter
-from .lumen_detection_tool import lumen_mask_from_bbox
+from .lumen_detection_tool import lumen_bbox_from_mask, lumen_mask_from_bbox
 
 logger = logging.getLogger(__name__)
 
@@ -205,11 +205,13 @@ class WallEvidenceTool(BaseTool):
     name = "wall_evidence"
     description = (
         "Compute proxy gastric wall penetration evidence from a lesion mask and "
-        "the detected lumen bounding box. This is not a pathological wall-layer estimate."
+        "lumen geometry. A confirmed lumen mask is preferred over the detector box. "
+        "This is not a pathological wall-layer estimate."
     )
     parameters = [
         ToolParameter("image_path", "str", "Absolute path to ultrasound image"),
         ToolParameter("lumen_bbox", "dict", "Lumen bounding box {x1,y1,x2,y2}", required=False),
+        ToolParameter("lumen_mask", "ndarray", "Confirmed lumen mask (H,W)", required=False),
         ToolParameter("lesion_mask", "ndarray", "Binary lesion mask (H,W)", required=False),
     ]
 
@@ -217,7 +219,9 @@ class WallEvidenceTool(BaseTool):
         self,
         image_path: str,
         lumen_bbox: Optional[Dict[str, int]] = None,
+        lumen_mask: Optional[np.ndarray] = None,
         lesion_mask: Optional[np.ndarray] = None,
+        lumen_mask_source: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         image = cv2.imread(image_path)
@@ -229,12 +233,12 @@ class WallEvidenceTool(BaseTool):
             }
 
         h, w = image.shape[:2]
-        if lumen_bbox is None:
+        if lumen_bbox is None and lumen_mask is None:
             return {
                 "available": False,
                 "evidence_source": "missing_lumen",
                 "evidence_role": "proxy_geometry_unavailable",
-                "error": "lumen_bbox required for wall evidence",
+                "error": "lumen_bbox or lumen_mask required for wall evidence",
                 "image_height": h,
                 "image_width": w,
             }
@@ -249,13 +253,48 @@ class WallEvidenceTool(BaseTool):
                 "image_width": w,
             }
 
+        exact_lumen_mask = None
+        if lumen_mask is not None:
+            exact_lumen_mask = np.asarray(lumen_mask)
+            if exact_lumen_mask.ndim == 3:
+                exact_lumen_mask = exact_lumen_mask[..., 0]
+            if exact_lumen_mask.shape[:2] != (h, w):
+                exact_lumen_mask = cv2.resize(
+                    exact_lumen_mask.astype(np.uint8),
+                    (w, h),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            exact_lumen_mask = (exact_lumen_mask > 0).astype(np.uint8) * 255
+            if not np.any(exact_lumen_mask):
+                exact_lumen_mask = None
+            else:
+                mask_bbox = lumen_bbox_from_mask(exact_lumen_mask)
+                if mask_bbox is not None:
+                    lumen_bbox = mask_bbox
+
+        if lumen_bbox is None:
+            return {
+                "available": False,
+                "evidence_source": "invalid_lumen_geometry",
+                "evidence_role": "proxy_geometry_unavailable",
+                "error": "Lumen mask and bbox are both invalid",
+                "image_height": h,
+                "image_width": w,
+            }
+
         bbox_quality, quality_flags = bbox_geometry_quality(lumen_bbox, h, w)
         lesion = lesion_mask.astype(np.uint8)
         if lesion.shape[:2] != (h, w):
             lesion = cv2.resize(lesion, (w, h), interpolation=cv2.INTER_NEAREST)
+        if lesion.max() <= 1:
+            lesion = lesion * 255
 
-        lumen_mask = lumen_mask_from_bbox(lumen_bbox, h, w)
-        if not np.any(lumen_mask > 0):
+        geometry_mask = (
+            exact_lumen_mask
+            if exact_lumen_mask is not None
+            else lumen_mask_from_bbox(lumen_bbox, h, w)
+        )
+        if not np.any(geometry_mask > 0):
             return {
                 "available": False,
                 "evidence_source": "empty_lumen_mask",
@@ -265,9 +304,9 @@ class WallEvidenceTool(BaseTool):
                 "image_width": w,
             }
 
-        sdf = signed_distance_from_lumen((lumen_mask > 127).astype(np.uint8))
-        features = compute_wall_features(lesion, lumen_mask, sdf)
-        visuals = render_wall_visuals(image, lesion, lumen_mask, sdf, lumen_bbox)
+        sdf = signed_distance_from_lumen((geometry_mask > 127).astype(np.uint8))
+        features = compute_wall_features(lesion, geometry_mask, sdf)
+        visuals = render_wall_visuals(image, lesion, geometry_mask, sdf, lumen_bbox)
 
         contact_arc_ratio = float(features.get("contact_arc_ratio", 0.0))
         proxy_quality = bbox_quality
@@ -289,7 +328,11 @@ class WallEvidenceTool(BaseTool):
 
         return {
             "available": True,
-            "evidence_source": "lumen_bbox_proxy_signed_distance",
+            "evidence_source": (
+                "confirmed_lumen_mask_signed_distance"
+                if exact_lumen_mask is not None
+                else "lumen_bbox_proxy_signed_distance"
+            ),
             "evidence_role": "proxy_geometry",
             "penetration_risk": penetration_risk,
             "risk_semantics": "proxy_only_not_pathological_layer_truth",
@@ -305,13 +348,22 @@ class WallEvidenceTool(BaseTool):
             },
             "wall_features": {k: round(v, 4) if isinstance(v, float) else v for k, v in features.items()},
             "lumen_bbox": lumen_bbox,
-            "lumen_geometry_source": "yolo_bbox_proxy",
+            "lumen_geometry_source": (
+                lumen_mask_source or "confirmed_lumen_mask"
+                if exact_lumen_mask is not None
+                else "yolo_bbox_proxy"
+            ),
+            "lumen_mask_type": "confirmed_mask" if exact_lumen_mask is not None else "bbox_proxy",
             "image_height": h,
             "image_width": w,
             "runtime_invocation": {
                 "api_kind": "local_numpy_scipy_wall_analysis",
                 "forward_pass": True,
-                "method": "signed_distance_from_yolo_bbox_proxy",
+                "method": (
+                    "signed_distance_from_confirmed_lumen_mask"
+                    if exact_lumen_mask is not None
+                    else "signed_distance_from_yolo_bbox_proxy"
+                ),
             },
             "_visuals": visuals,
         }

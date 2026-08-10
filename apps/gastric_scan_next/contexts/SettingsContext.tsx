@@ -1,7 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Language, dictionary } from '@/lib/i18n';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { Language, dictionary, resolveDictionary } from '@/lib/i18n';
+import { convertDomToTraditionalHK, toTraditionalHK } from '@/lib/zh-convert';
 import {
   CohortYear,
   DatasetType,
@@ -26,6 +27,8 @@ interface SettingsContextType {
   treatmentType: TreatmentType;
   setTreatmentType: (type: TreatmentType) => void;
   t: typeof dictionary['en'];
+  /** Convert a Simplified UI string to Traditional when locale is zh-HK. */
+  tr: (text: string) => string;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -47,7 +50,6 @@ function readStoredLanguage(): Language {
     stored === 'zh-TW'
     || stored === 'zh_TW'
     || stored === 'zh-Hant'
-    || stored === 'zh-HK'
     || stored === 'tw'
     || stored === 'hk'
   ) {
@@ -116,10 +118,57 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const t = dictionary[language];
+  const t = useMemo(() => resolveDictionary(language), [language]);
+  const tr = useCallback(
+    (text: string) => (language === 'zh-HK' ? toTraditionalHK(text) : text),
+    [language],
+  );
+
+  // Auto-convert inline Simplified UI copy when locale is Hong Kong Traditional.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang = language === 'en' ? 'en' : language === 'zh-HK' ? 'zh-HK' : 'zh-CN';
+    if (language !== 'zh-HK') return;
+
+    let scheduled = 0;
+    const run = () => {
+      scheduled = 0;
+      convertDomToTraditionalHK(document.body);
+    };
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = window.requestAnimationFrame(run);
+    };
+
+    schedule();
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    return () => {
+      observer.disconnect();
+      if (scheduled) window.cancelAnimationFrame(scheduled);
+    };
+  }, [language]);
 
   return (
-    <SettingsContext.Provider value={{ language, readerOnly: READER_ONLY_MODE, setLanguage, dataset, setDataset, cohortYear, setCohortYear, queueId, setQueueId, treatmentType, setTreatmentType, t }}>
+    <SettingsContext.Provider value={{
+      language,
+      readerOnly: READER_ONLY_MODE,
+      setLanguage,
+      dataset,
+      setDataset,
+      cohortYear,
+      setCohortYear,
+      queueId,
+      setQueueId,
+      treatmentType,
+      setTreatmentType,
+      t,
+      tr,
+    }}>
       {children}
     </SettingsContext.Provider>
   );

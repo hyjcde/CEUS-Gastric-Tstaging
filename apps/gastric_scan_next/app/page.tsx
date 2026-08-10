@@ -28,16 +28,25 @@ import { GcUsEvidencePanel, mergeFreshEvidence } from '@/components/GcUsEvidence
 // VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, LumenOverride, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useDoctorAccount } from '@/contexts/DoctorAccountContext';
 import toast from 'react-hot-toast';
 import type { SamReport } from '@/lib/reader/types';
 import {
+  buildGcUsTemplateReport,
   createGcUsReportState,
   createGcUsField,
   deriveGcUsSigns,
+  resolveGcUsReportLocale,
   type GcUsReportImage,
   type GcUsReportState,
+  type GcUsSigns,
 } from '@/lib/gc-us-report-template';
+import {
+  hasLumenOrientation,
+  mapLayerResultToGcUsDerive,
+} from '@/lib/human-assist/map-layer-to-gc-us';
 import { reportImageFromBase64 } from '@/lib/report-evidence-images';
+import { isRenderableReportImageUrl, sanitizeReportImages } from '@/lib/report-image-url';
 import { lumenOverrideToAnalyzePayload } from '@/lib/lumen-override';
 import {
   compactReaderSigns,
@@ -45,6 +54,7 @@ import {
   readerEvidenceIds,
   READER_ROUND2_VERSION_FIELDS,
 } from '@/lib/reader/study-contract';
+import { getAssistDisplayStage } from '@/lib/reader/assist-display-stage';
 import { ChevronLeft, ChevronRight, Users, BarChart2, FileText, X } from 'lucide-react';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
 import {
@@ -62,7 +72,7 @@ import {
 
 const EMPTY_READER_CLINICAL: Record<string, unknown> = {};
 const EMPTY_POLYGON: number[][] = [];
-const EVIDENCE_PANEL_WIDTH = 'clamp(20rem, 30vw, 32rem)';
+const EVIDENCE_PANEL_WIDTH = 'clamp(16rem, 24vw, 24rem)';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -156,23 +166,16 @@ function normalizeAgentStage(value: unknown): string | null {
 }
 
 function getReaderAgentStage(result: AgentAnalysisResponse | null): string | null {
-  if (!result) return null;
-  const hypotheses = result.belief_state?.hypotheses
-    .filter((item) => normalizeAgentStage(item.label) && typeof item.probability === 'number')
-    .sort((a, b) => Number(b.probability) - Number(a.probability));
-  const beliefStage = normalizeAgentStage(hypotheses?.[0]?.label);
-  if (beliefStage) return beliefStage;
-  const classificationStage = normalizeAgentStage(result.tool_evidence?.classification?.top1_stage);
-  if (classificationStage) return classificationStage;
-  return normalizeAgentStage(result.report?.recommended_t_stage);
+  // Clinical assistant stage must use ContourEvidenceGate display, not fusion/recommended.
+  return getAssistDisplayStage(result);
 }
 
 function getReaderAgentConfidence(result: AgentAnalysisResponse | null): number | null {
   if (!result) return null;
-  const hypotheses = result.belief_state?.hypotheses
+  const hypotheses = (result.belief_state?.hypotheses || [])
     .filter((item) => normalizeAgentStage(item.label) && typeof item.probability === 'number')
     .sort((a, b) => Number(b.probability) - Number(a.probability));
-  const beliefConfidence = hypotheses?.[0]?.probability;
+  const beliefConfidence = hypotheses[0]?.probability;
   if (typeof beliefConfidence === 'number' && Number.isFinite(beliefConfidence)) return beliefConfidence;
   const classifierConfidence = result.tool_evidence?.classification?.top1_prob;
   if (typeof classifierConfidence === 'number' && Number.isFinite(classifierConfidence)) {
@@ -198,13 +201,21 @@ function getReaderAgentConfidence(result: AgentAnalysisResponse | null): number 
 
 export default function Home() {
   const { dataset, cohortYear, queueId, language, readerOnly } = useSettings();
+  const reportLocale = resolveGcUsReportLocale(language !== 'en');
+  const { readerId: accountReaderId, authHeaders } = useDoctorAccount();
   const [conceptState, setConceptState] = useState<ConceptState>(DEFAULT_STATE);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [readerStudyMode, setReaderStudyMode] = useState<ReaderStudyMode>('benign_malignancy');
   const [systemReport, setSystemReport] = useState<SamReport | null>(null);
   const [dinoFeature, setDinoFeature] = useState<DinoFeatureResult | null>(null);
+  const [researchInitialJudgmentReady, setResearchInitialJudgmentReady] = useState(false);
   const isReaderStudyQueue = selectedPatient?.phase === 'reader_v150';
   const isBenignQueue = selectedPatient?.phase === 'benign';
+  const researchAiLocked = (() => {
+    if (typeof window === 'undefined') return false;
+    return readerEnvironmentFromSearchParams(new URLSearchParams(window.location.search)) === 'research'
+      && !researchInitialJudgmentReady;
+  })();
   const handleDinoFeatures = useCallback((result: DinoFeatureResult | null) => {
     setDinoFeature(result);
     if (result?.available) {
@@ -268,7 +279,8 @@ export default function Home() {
   }, [cohortYear]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   // Evidence drawer overlays the canvas; keep middle imaging dominant by default.
-  const [isEvidencePanelOpen, setIsEvidencePanelOpen] = useState(false);
+  // Default open so assist/evidence is findable (translation plugins often cover the right-edge chevron).
+  const [isEvidencePanelOpen, setIsEvidencePanelOpen] = useState(true);
   const [, setIsReportExpanded] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
@@ -296,6 +308,15 @@ export default function Home() {
   const [fieldSources, setFieldSources] = useState<ConceptFieldSources>(createDefaultFieldSources());
 
   useEffect(() => {
+    // Rebuild template prose when UI language switches so EN mode yields English report body.
+    setGcUsReport((previous) => {
+      if (!previous) return previous;
+      if (previous.report.status === 'finalized') return previous;
+      return buildGcUsTemplateReport(previous, reportLocale);
+    });
+  }, [reportLocale]);
+
+  useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 720) {
       setIsSidebarOpen(false);
     }
@@ -313,6 +334,7 @@ export default function Home() {
   const reportLoadTokenRef = useRef(0);
   const reportLoadAbortRef = useRef<AbortController | null>(null);
   const readerAgentAbortRef = useRef<AbortController | null>(null);
+  const handleAgentAnalysisRef = useRef<(next: AgentAnalysisResponse | null) => void>(() => {});
   const selectedPatientRef = useRef<Patient | null>(null);
   const deepLinkCaseAppliedRef = useRef<string | null>(null);
   const conceptStateRef = useRef(conceptState);
@@ -441,6 +463,9 @@ export default function Home() {
     gcUsAuditSessionRef.current = selectedPatient
       ? `gcus-${selectedPatient.id}-${Date.now()}`
       : null;
+    setResearchInitialJudgmentReady(false);
+    setReaderUnifiedAgentResult(null);
+    setReaderUnifiedAgentError(null);
   }, [selectedPatient, selectedPatient?.id]);
 
   const conceptPopulatedCount = useMemo(
@@ -474,6 +499,15 @@ export default function Home() {
 
   const handleReaderUnifiedAgent = useCallback(async (capture: UnifiedAgentCapture) => {
     if (!selectedPatient || !isReaderStudyQueue) return;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    if (readerEnvironmentFromSearchParams(params) === 'research' && !researchInitialJudgmentReady) {
+      const message = language === 'en'
+        ? 'Record the physician initial judgment before running AI analysis.'
+        : '请先记录医生初始判断，再运行 AI 分析。';
+      setReaderUnifiedAgentError(message);
+      toast.error(message);
+      return;
+    }
     const lesionReady = capture.mask_polygon.length >= 3;
     const lumenReady = Boolean(
       (capture.lumen_polygon && capture.lumen_polygon.length >= 3)
@@ -499,15 +533,14 @@ export default function Home() {
           ? frame
           : best
       ), capture.frames[0]);
-      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
       const environment = readerEnvironmentFromSearchParams(params);
       const readerId = environment === 'research'
         ? undefined
-        : (params?.get('reader_id') || 'workbench_reader');
+        : (accountReaderId || params?.get('reader_id') || 'workbench_reader');
       const response = await fetch('/api/reader/agent/analyze', {
         method: 'POST',
         signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...READER_ROUND2_VERSION_FIELDS,
           case_id: selectedPatient.id,
@@ -558,6 +591,16 @@ export default function Home() {
                 }
               : lumenOverride,
           ),
+          contour_context: capture.contour_context || {
+            lesion_confirmed: lesionReady,
+            lumen_mask_type: capture.lumen_polygon && capture.lumen_polygon.length >= 3
+              ? 'sam31_polygon'
+              : (capture.lumen_bbox ? 'bbox_proxy' : 'missing'),
+            layer_label: imagingAssist?.layerResult?.layer?.label || null,
+            layer_pixel_based: Boolean(imagingAssist?.layerResult?.pixelBased),
+            in_contact: imagingAssist?.layerResult?.inContact ?? null,
+          },
+          assist_profile: capture.assist_profile || 'contour_anchored_fast',
         }),
       });
       const data = await response.json() as {
@@ -588,13 +631,21 @@ export default function Home() {
             capture.image_width,
             capture.image_height,
             'sabm_sam2_guided',
+            undefined,
+            language !== 'en',
           ),
         );
       }
       setReaderUnifiedAgentResult(data.result);
+      try {
+        handleAgentAnalysisRef.current(data.result);
+      } catch (renderError) {
+        // Do not let a downstream render/parse failure mask a successful Assist result.
+        console.error('assist post-process failed', renderError);
+      }
       void fetch('/api/reader-audit/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...READER_ROUND2_VERSION_FIELDS,
           event_type: 'ai_suggestion',
@@ -635,7 +686,7 @@ export default function Home() {
         setReaderUnifiedAgentBusy(false);
       }
     }
-  }, [gcUsReport, isReaderStudyQueue, language, lumenOverride, readerStudyMode, readerWorkflowTrace, selectedPatient]);
+  }, [accountReaderId, authHeaders, gcUsReport, imagingAssist, isReaderStudyQueue, language, lumenOverride, readerStudyMode, readerWorkflowTrace, researchInitialJudgmentReady, selectedPatient]);
 
   const handleGcUsEvidenceState = useCallback((next: GcUsReportState) => {
     const currentPatient = selectedPatientRef.current;
@@ -643,21 +694,40 @@ export default function Home() {
       ? new Set([currentPatient.id, currentPatient.patient_id].filter(Boolean))
       : new Set<string>();
     if (!currentPatient || (next.case_id && !currentCaseIds.has(next.case_id))) return;
-    setGcUsReport((previous) => mergeFreshEvidence(previous, next));
+    setGcUsReport((previous) => {
+      const merged = mergeFreshEvidence(previous, next);
+      const templated = buildGcUsTemplateReport(merged, reportLocale);
+      const nextOwnsReport = next.report.doctor_edited || next.report.source === 'doctor' || next.report.status === 'finalized';
+      const previousOwnsReport = previous?.report.status === 'finalized'
+        || previous?.report.doctor_edited
+        || previous?.report.source === 'doctor';
+      return {
+        ...templated,
+        report: nextOwnsReport
+          ? next.report
+          : previousOwnsReport
+            ? previous!.report
+            : {
+                ...templated.report,
+                status: 'draft',
+                source: 'template',
+              },
+      };
+    });
     if (currentPatient.phase !== 'reader_v150') return;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const sessionId = gcUsAuditSessionRef.current || `gcus-${currentPatient.id}`;
     const environment = readerEnvironmentFromSearchParams(params);
     const readerId = environment === 'research'
       ? undefined
-      : (params?.get('reader_id') || 'workbench_reader');
+      : (accountReaderId || params?.get('reader_id') || 'workbench_reader');
     const round = params?.get('round') || 'round2';
     for (const action of next.doctor_actions || []) {
       if (gcUsActionIdsRef.current.has(action.action_id)) continue;
       gcUsActionIdsRef.current.add(action.action_id);
       void fetch('/api/reader-audit/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...READER_ROUND2_VERSION_FIELDS,
           event_id: action.action_id,
@@ -689,7 +759,7 @@ export default function Home() {
         // Audit failure must not interrupt the reading workflow.
       });
     }
-  }, [readerStudyMode]);
+  }, [accountReaderId, authHeaders, readerStudyMode]);
 
   const handleWorkflowStep = useCallback((step: WorkflowTraceStep) => {
     setReaderWorkflowTrace((previous) => [...previous, step].slice(-160));
@@ -713,54 +783,84 @@ export default function Home() {
           ? Number(currentPatient.clinical.tumorSize.thickness) * 10
           : undefined,
       } as Record<string, unknown>;
-      const layer = next.layerResult?.layer;
+      const lumenOriented = hasLumenOrientation({
+        lumenPolygon: next.lumenPolygon,
+        lumenBBox: next.lumenBBox,
+        wallPolygon: next.wallPolygon,
+      });
+      const mapped = mapLayerResultToGcUsDerive(next.layerResult, {
+        lesionPolygon: next.lesionPolygon,
+        wallPolygon: next.wallPolygon,
+        frameSize: next.frameSize,
+        lumenOriented,
+        irregularityFn: contourIrregularity,
+        caseId: currentPatient.patient_id || currentPatient.id,
+        frameId: currentPatient.id,
+      });
       const derivedSigns = deriveGcUsSigns({
         caseId: currentPatient.patient_id || currentPatient.id,
         frameId: currentPatient.id,
         clinical,
-        layer: {
-          label: next.layerResult?.inContact === false ? null : layer?.label,
-          tHint: next.layerResult?.inContact === false ? null : layer?.tHint,
-          inContact: next.layerResult?.inContact,
-          confidence: typeof layer?.confidence === 'number' ? layer.confidence : null,
-        },
-        pixel: {
-          irregularity: contourIrregularity(next.lesionPolygon),
-        },
-        evidenceRef: [
-          currentPatient.id,
-          next.frameSize ? `frame_size:${next.frameSize.width}x${next.frameSize.height}` : 'frame_size:unknown',
-          next.wallPolygon.length >= 3 ? 'wall_polygon' : 'wall_unavailable',
-        ],
+        layer: mapped.layer,
+        pixel: mapped.pixel,
+        evidenceRef: mapped.evidenceRef,
       });
       if (next.lesionPolygon.length >= 3) {
+        // Report-template phrasing (no raw placeholder sentence embedded mid-prose).
         if (derivedSigns.layer_structure.value == null) {
           derivedSigns.layer_structure = createGcUsField(
-            '当前帧层次显示有限，需多切面复核',
+            lumenOriented
+              ? '层次显示欠清'
+              : '请先勾画胃腔以定向胃壁后再评估层次',
             { status: 'pending', source: 'live_contour', confidence: 0.25 },
           );
         }
         if (derivedSigns.serosa_change.value == null) {
           derivedSigns.serosa_change = createGcUsField(
-            '当前帧浆膜连续性需多切面核对',
+            '浆膜连续性欠清',
             { status: 'pending', source: 'live_contour', confidence: 0.25 },
           );
         }
         if (derivedSigns.perigastric_tissue.value == null) {
           derivedSigns.perigastric_tissue = createGcUsField(
-            '当前帧胃周组织需多切面核对',
+            '胃周组织显示欠清',
             { status: 'pending', source: 'live_contour', confidence: 0.25 },
           );
         }
       }
-      const derived = createGcUsReportState({
+      // Boss wall-layer template is the only doctor-facing formal output.
+      // Imaging assist fills signs → template_fields → template prose; never Agent free text.
+      const derived = buildGcUsTemplateReport(createGcUsReportState({
         case_id: currentPatient.patient_id || currentPatient.id,
         frame_id: currentPatient.id,
         frame_time: null,
         clinical,
         signs: derivedSigns,
+        reference_stage: {
+          band: 'uncertain',
+          requested_band: 'uncertain',
+          raw: null,
+          source: 'product_score',
+          conflicts: [],
+        },
+      }), reportLocale);
+      setGcUsReport((previous) => {
+        const merged = mergeFreshEvidence(previous, derived);
+        const withTemplate = buildGcUsTemplateReport(merged, reportLocale);
+        const keepDoctorReport = previous?.report.status === 'finalized'
+          || previous?.report.doctor_edited
+          || previous?.report.source === 'doctor';
+        return {
+          ...withTemplate,
+          report: keepDoctorReport
+            ? previous!.report
+            : {
+                ...withTemplate.report,
+                status: 'draft',
+                source: 'template',
+              },
+        };
       });
-      setGcUsReport((previous) => mergeFreshEvidence(previous, derived));
     }
   }, []);
 
@@ -771,27 +871,96 @@ export default function Home() {
 
   const handleAgentAnalysis = useCallback((next: AgentAnalysisResponse | null) => {
     setAgentAnalysis(next);
-    const artifacts = asRecord(next?.prediction_artifacts);
+    if (!next) return;
+    const currentPatient = selectedPatientRef.current;
+    if (currentPatient) {
+      const signsRoot = asRecord(next.tool_evidence?.gc_us_signs) || {};
+      const signsMap = asRecord(signsRoot.signs) || signsRoot;
+      const pickSign = (key: string) => {
+        const field = asRecord(signsMap[key]);
+        const value = field?.value;
+        return value == null || value === '' ? null : String(value);
+      };
+      const clinical = {
+        ...(currentPatient.clinical || {}),
+      } as Record<string, unknown>;
+      // Only merge signs Agent actually returned. Empty/null fields must not
+      // wipe live ContactGeom / imaging-assist suggestions via mergeFreshEvidence.
+      const assistSigns: Partial<GcUsSigns> = {};
+      const agentSignKeys = [
+        'layer_structure',
+        'serosa_change',
+        'boundary',
+        'morphology',
+        'growth_pattern',
+        'perigastric_tissue',
+        'lesion_echo',
+      ] as const;
+      for (const key of agentSignKeys) {
+        const value = pickSign(key);
+        if (value == null) continue;
+        assistSigns[key] = createGcUsField(value, {
+          status: 'suggested',
+          source: 'model',
+          note: 'Assist 建议，需医生复核',
+        });
+      }
+      if (Object.keys(assistSigns).length) {
+        // Rebuild doctor-facing template prose from Assist signs (wall layers first).
+        // Omit missing Agent keys so ContactGeom / imaging-assist suggestions stay.
+        setGcUsReport((previous) => {
+          const derivedOnPrevious = createGcUsReportState({
+            ...previous,
+            case_id: currentPatient.patient_id || currentPatient.id,
+            frame_id: currentPatient.id,
+            clinical: { ...(previous?.clinical || {}), ...clinical },
+            signs: {
+              ...(previous?.signs || {}),
+              ...assistSigns,
+            },
+            template_fields: previous?.template_fields,
+          });
+          const merged = mergeFreshEvidence(previous, derivedOnPrevious);
+          const withProse = buildGcUsTemplateReport(merged, reportLocale);
+          const keepDoctorReport = previous?.report.status === 'finalized'
+            || previous?.report.doctor_edited
+            || previous?.report.source === 'doctor';
+          return {
+            ...withProse,
+            report: keepDoctorReport
+              ? previous!.report
+              : {
+                  ...withProse.report,
+                  status: 'draft',
+                  source: 'template',
+                },
+          };
+        });
+      }
+    }
+    const artifacts = asRecord(next.prediction_artifacts);
     if (!artifacts) return;
-    const artifactImages = [
+    const artifactImages = sanitizeReportImages([
       ['agent-wall-analysis', '胃壁层次分析', artifacts.real_wall_analysis_panel_url],
       ['agent-curvature-analysis', '曲率/边界分析', artifacts.wall_penetration_heatmap_url || artifacts.boundary_analysis_panel_url],
       ['agent-dino-analysis', 'DINO 区域特征分析', artifacts.current_image_dino_feature_panel_url],
       ['agent-core-signs', '核心征象分析', artifacts.gc_us_sign_panel_url],
     ]
-      .filter((item): item is [string, string, string] => typeof item[2] === 'string' && item[2].length > 0)
+      .filter((item): item is [string, string, string] => isRenderableReportImageUrl(item[2]))
       .map(([id, label, url]) => ({
         id,
         label,
         url,
         kind: label.includes('曲率') ? 'curvature' as const : 'analysis' as const,
         caption: `${label}, 来自当前病例 Agent 产物`,
-        selected: true,
-      }));
+        // Prefer segmentation overlays; agent panels stay available but not forced-selected when overlays exist.
+        selected: id === 'agent-wall-analysis',
+      })));
     if (artifactImages.length) {
       setReportEvidenceImages((previous) => mergeReportEvidenceImages(previous, artifactImages));
     }
   }, []);
+  handleAgentAnalysisRef.current = handleAgentAnalysis;
 
   const siblingImages = useMemo(() => {
     if (!selectedPatient || !allPatients.length) return [];
@@ -1161,7 +1330,7 @@ export default function Home() {
             onImagingAssist={handleImagingAssist}
             onSystemReport={setSystemReport}
             onDinoFeatures={handleDinoFeatures}
-            onUnifiedAgentRun={isReaderStudyQueue ? handleReaderUnifiedAgent : undefined}
+            onUnifiedAgentRun={isReaderStudyQueue && !researchAiLocked ? handleReaderUnifiedAgent : undefined}
             unifiedAgentBusy={readerUnifiedAgentBusy}
             onWorkflowStep={isReaderStudyQueue ? handleWorkflowStep : undefined}
             onExplainableComplete={handleExplainableComplete}
@@ -1296,34 +1465,44 @@ export default function Home() {
             </div>
           ) : isReaderStudyQueue ? (
             <div className="flex-1 overflow-y-auto p-3">
-              <ReaderEvidencePanel
-                result={readerUnifiedAgentResult}
-                loading={readerUnifiedAgentBusy}
-                zh={language !== 'en'}
-                onOpenFullReport={() => setReaderReportOpen(true)}
-              />
-              <GcUsEvidencePanel
-                caseId={selectedPatient.patient_id || selectedPatient.id}
-                frameId={selectedPatient.id}
-                frameTime={maskOverride?.video_time_sec ?? 0}
-                clinical={readerClinical}
-                lesionPolygon={imagingAssist?.lesionPolygon || maskOverride?.mask_polygon || EMPTY_POLYGON}
-                wallPolygon={imagingAssist?.wallPolygon || maskOverride?.wall_polygon || EMPTY_POLYGON}
-                lumenPolygon={imagingAssist?.lumenPolygon || EMPTY_POLYGON}
-                lumenBBox={imagingAssist?.lumenBBox || null}
-                frameSize={imagingAssist?.frameSize || (maskOverride ? { width: maskOverride.imageWidth, height: maskOverride.imageHeight } : null)}
-                layerResult={imagingAssist?.layerResult || null}
-                // Keep the unified stage display-only here; it must not silently
-                // override the independent GC-US evidence state or doctor edits.
-                productStage={null}
-                assistantStage={readerAssistantStage}
-                assistantConfidence={readerAssistantConfidence}
-                signAnalysis={readerUnifiedAgentResult?.tool_evidence.gc_us_signs || null}
-                initialState={gcUsReport}
-                zh={language !== 'en'}
-                compact
-                onStateChange={handleGcUsEvidenceState}
-              />
+              {researchAiLocked ? (
+                <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/[0.08] p-2.5 text-[10px] leading-relaxed text-sky-100">
+                  {language === 'en'
+                    ? 'Research mode: AI evidence panels and Agent analysis stay hidden until the physician initial judgment is recorded below.'
+                    : '研究模式：请先在下方记录医生初始判断；完成前不展示 AI 证据面板，也不运行 Agent 分析。'}
+                </div>
+              ) : (
+                <>
+                  <ReaderEvidencePanel
+                    result={readerUnifiedAgentResult}
+                    loading={readerUnifiedAgentBusy}
+                    zh={language !== 'en'}
+                    onOpenFullReport={() => setReaderReportOpen(true)}
+                  />
+                  <GcUsEvidencePanel
+                    caseId={selectedPatient.patient_id || selectedPatient.id}
+                    frameId={selectedPatient.id}
+                    frameTime={maskOverride?.video_time_sec ?? 0}
+                    clinical={readerClinical}
+                    lesionPolygon={imagingAssist?.lesionPolygon || maskOverride?.mask_polygon || EMPTY_POLYGON}
+                    wallPolygon={imagingAssist?.wallPolygon || maskOverride?.wall_polygon || EMPTY_POLYGON}
+                    lumenPolygon={imagingAssist?.lumenPolygon || EMPTY_POLYGON}
+                    lumenBBox={imagingAssist?.lumenBBox || null}
+                    frameSize={imagingAssist?.frameSize || (maskOverride ? { width: maskOverride.imageWidth, height: maskOverride.imageHeight } : null)}
+                    layerResult={imagingAssist?.layerResult || null}
+                    // Keep the unified stage display-only here; it must not silently
+                    // override the independent GC-US evidence state or doctor edits.
+                    productStage={null}
+                    assistantStage={readerAssistantStage}
+                    assistantConfidence={readerAssistantConfidence}
+                    signAnalysis={readerUnifiedAgentResult?.tool_evidence?.gc_us_signs || null}
+                    initialState={gcUsReport}
+                    zh={language !== 'en'}
+                    compact
+                    onStateChange={handleGcUsEvidenceState}
+                  />
+                </>
+              )}
               {readerUnifiedAgentError ? (
                 <div className="mt-2 rounded-lg border border-rose-400/20 bg-rose-400/5 px-2.5 py-2 text-[10px] leading-relaxed text-rose-200">
                   {readerUnifiedAgentError}
@@ -1336,8 +1515,9 @@ export default function Home() {
                 studyMode={readerStudyMode}
                 onStudyModeChange={setReaderStudyMode}
                 onSelectPatient={setSelectedPatient}
-                systemReport={systemReport}
+                systemReport={researchAiLocked ? null : systemReport}
                 onSystemReportChange={setSystemReport}
+                onInitialJudgmentChange={setResearchInitialJudgmentReady}
                 hideTaskChrome
                 publicReaderOnly={readerOnly}
               />
@@ -1370,7 +1550,7 @@ export default function Home() {
                     patient={selectedPatient}
                     assist={imagingAssist}
                     zh={language !== 'en'}
-                    signAnalysis={agentAnalysis?.tool_evidence.gc_us_signs || null}
+                    signAnalysis={agentAnalysis?.tool_evidence?.gc_us_signs || null}
                     initialState={gcUsReport}
                     onApplyCtStage={(stage) => {
                       handleExplainableComplete({
@@ -1413,6 +1593,19 @@ export default function Home() {
             : (language === 'en' ? 'Expand evidence panel' : (language === 'zh-HK' ? '展開證據面板' : '展开证据面板'))}
         >
           {isEvidencePanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+        {/* Top-right text entry survives browser translation widgets that cover the mid-right chevron. */}
+        <button
+          type="button"
+          onClick={() => setIsEvidencePanelOpen((value) => !value)}
+          className="absolute top-3 z-[120] inline-flex items-center gap-1.5 rounded-lg border border-sky-300/50 bg-sky-500/25 px-3 py-1.5 text-[11px] font-semibold text-sky-50 shadow-lg backdrop-blur transition hover:bg-sky-500/40"
+          style={{ right: isEvidencePanelOpen ? `calc(${EVIDENCE_PANEL_WIDTH} + 0.75rem)` : '0.75rem' }}
+          title={language === 'en' ? 'Toggle assisted evidence panel' : '打开/收起辅助意见与证据面板'}
+        >
+          <FileText size={13} />
+          {isEvidencePanelOpen
+            ? (language === 'en' ? 'Hide assist' : '收起辅助意见')
+            : (language === 'en' ? 'Show assist' : '打开辅助意见')}
         </button>
 
         {showStatistics && (

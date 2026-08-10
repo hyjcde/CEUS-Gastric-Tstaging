@@ -38,6 +38,7 @@ class GcUsSignTool(BaseTool):
         ToolParameter("image_path", "str", "Absolute path to ultrasound image", required=False),
         ToolParameter("lesion_mask", "ndarray", "Binary lesion mask (H,W)", required=False),
         ToolParameter("lumen_bbox", "dict", "Lumen bounding box {x1,y1,x2,y2}", required=False),
+        ToolParameter("lumen_mask", "ndarray", "Confirmed lumen mask (H,W)", required=False),
         ToolParameter("length_cm", "float", "Clinical lesion length in cm", required=False),
         ToolParameter("thickness_cm", "float", "Clinical lesion thickness in cm", required=False),
         ToolParameter("cea_positive", "bool", "CEA positive flag", required=False),
@@ -65,6 +66,7 @@ class GcUsSignTool(BaseTool):
         image_path: Optional[str] = None,
         lesion_mask: Optional[np.ndarray] = None,
         lumen_bbox: Optional[Dict[str, int]] = None,
+        lumen_mask: Optional[np.ndarray] = None,
         length_cm: Optional[float] = None,
         thickness_cm: Optional[float] = None,
         cea_positive: Optional[bool] = None,
@@ -124,6 +126,7 @@ class GcUsSignTool(BaseTool):
         pack = build_sign_feature_pack(
             lesion_mask=lesion,
             lumen_bbox=lumen_bbox,
+            lumen_mask=lumen_mask,
             length_cm=length_cm,
             thickness_cm=thickness_cm,
             cea_positive=cea_positive,

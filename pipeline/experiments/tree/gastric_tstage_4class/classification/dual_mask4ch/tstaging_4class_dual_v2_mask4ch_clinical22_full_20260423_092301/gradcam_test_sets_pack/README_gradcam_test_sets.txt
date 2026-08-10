@@ -1,6 +1,6 @@
 Grad-CAM 测试集筛图包
 ====================
-生成时间: 2026-05-24T06:24:28.700790+00:00
+生成时间: 2026-05-24T07:35:27.978266+00:00
 
 【医生用法 — 推荐】
   1. 解压对应 zip（外部 / 前瞻 分开筛，标注互不影响）
@@ -20,24 +20,17 @@ Grad-CAM 测试集筛图包
 
 【样本量说明】
   - test_external: 2430 张（含内部前瞻 253 张重复行，纯外部 holdout 2177 张）
-  - test_prospective: 253 张（前瞻，与 external 中 int/prospective 重叠）
-  - 统一 HTML 展示 2430 张不重复测试图
-
-Split: test_external
-  gradcam_results 行数: 2430
-  panel PNG 文件数: 2361
-  打包 panel 数: 2430
-  正确 / 分错: 1166 / 1264
-  pack_mode: slim
+  - test_prospective: 2285 张（2025 前瞻全量 crop_ui，含临床；磁盘共 2430，缺临床 145）
+  - test holdout 253 张仅用于模型 benchmark，临床筛图请用前瞻全量包
+  - 统一 HTML = 外部 holdout 2177 + 前瞻全量 2285（可能有 filename 重叠）
 
 Split: test_prospective
-  gradcam_results 行数: 253
-  panel PNG 文件数: 253
-  打包 panel 数: 253
-  正确 / 分错: 112 / 141
+  gradcam_results 行数: 2285
+  panel PNG 文件数: 2285
+  打包 panel 数: 2285
+  正确 / 分错: 1326 / 959
   pack_mode: slim
 
 ZIP 文件:
-  - gradcam_test_external_slim.zip (4908.1 MB)
   - gradcam_test_prospective_slim.zip (488.3 MB)
   - gradcam_test_clinical_bundle.zip (18559.9 MB) [合并包]

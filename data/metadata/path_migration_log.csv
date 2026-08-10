@@ -7696,3 +7696,19 @@ dataset/external/中核五〇四医院/crop_ui/videos/hbd16-1.mp4,dataset/_quara
 dataset/external/中核五〇四医院/crop_ui/videos/hbd26-1.mp4,dataset/_quarantine/loop_still/dataset/external/中核五〇四医院/crop_ui/videos/hbd26-1.mp4,quarantine_move,2026-07-26T16:33:01Z,yes,loop_still sample_id=图片__hbd26-1
 dataset/external/中核五〇四医院/crop_ui/videos/hbd26-2.mp4,dataset/_quarantine/loop_still/dataset/external/中核五〇四医院/crop_ui/videos/hbd26-2.mp4,quarantine_move,2026-07-26T16:33:01Z,yes,loop_still sample_id=图片__hbd26-2
 dataset/external/中核五〇四医院/crop_ui/videos/hbd26-3.mp4,dataset/_quarantine/loop_still/dataset/external/中核五〇四医院/crop_ui/videos/hbd26-3.mp4,quarantine_move,2026-07-26T16:33:01Z,yes,loop_still sample_id=图片__hbd26-3
+dataset/_quarantine/loop_still/,DELETED,purge_delete,2026-07-27T01:08:00Z,yes,user-requested permanent delete of 7527 previously quarantined loop_still crop MP4s (~517MB); active dataset paths already cleared on quarantine_move
+dataset/internal/**/{original,crop_ui,crop_roi}+dataset/external/*/{original,crop_ui,crop_roi},dataset/static_images/{internal,external}/**,symlink_view,2026-07-27T01:40:58Z,yes,static images aggregate view via scripts/build_static_images_view.py; no file moves
+dataset/internal+external static trees,dataset/static_images/,copy_dataset_package,2026-07-27T01:54:38Z,yes,real copy of original/crop_ui/crop_roi + clinical xlsx; 5 internal years + 9 external centers; audit PASS
+dataset/external/putian,dataset/_quarantine/external_legacy_aliases/putian,quarantine_move,2026-07-27T02:11:04Z,yes,legacy alias / non-hospital leftover; formal centers remain under dataset/external/<医院>
+dataset/external/putian_2024_new,dataset/_quarantine/external_legacy_aliases/putian_2024_new,quarantine_move,2026-07-27T02:11:04Z,yes,legacy alias / non-hospital leftover; formal centers remain under dataset/external/<医院>
+dataset/external/multicenter,dataset/_quarantine/external_legacy_aliases/multicenter,quarantine_move,2026-07-27T02:11:04Z,yes,legacy alias / non-hospital leftover; formal centers remain under dataset/external/<医院>
+dataset/external/crop_ui,dataset/_quarantine/external_legacy_aliases/crop_ui,quarantine_move,2026-07-27T02:11:04Z,yes,legacy alias / non-hospital leftover; formal centers remain under dataset/external/<医院>
+old_path,new_path,action,date,verified,notes
+dataset/_xiehe_smoke,dataset/_quarantine/smoke/xiehe_smoke_20260612,quarantine_move,2026-07-27T02:12:17Z,yes,smoke leftover moved out of dataset root
+dataset/**/crop_ui/videos+raw_patient_videos,dataset/videos/{internal,external}/,copy_dataset_package,2026-07-27T02:28:53Z,yes,video package real copy; include prospective raw; 2018/2019 crop empty OK
+docs/胃癌T分期自进化智能辅助诊断系统.pdf,paper/manuscripts/胃癌T分期自进化智能辅助诊断系统.pdf,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,root paper aggregation; entity retained at docs path
+docs/胃癌T分期自进化智能辅助诊断系统.docx,paper/manuscripts/胃癌T分期自进化智能辅助诊断系统.docx,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,root paper aggregation; entity retained at docs path
+docs/paper/2503.18968v3.pdf,paper/manuscripts/medagent_pro_2503.18968v3.pdf,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,root paper aggregation; entity retained at docs path
+docs/paper_drafts/{current notes and manuscript sources},paper/notes and paper/manuscripts,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,curated symlink aggregation; source tree retained
+docs/mainline/{literature digests},paper/notes,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,curated digest links; source files retained
+docs/references/related_literature/articles/{selected NBE abstracts},paper/literature/nature_biomedical_engineering,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,selected abstract links; source files retained

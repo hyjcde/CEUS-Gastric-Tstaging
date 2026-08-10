@@ -1,3 +1,4 @@
-needs_review
-# YOLO detection runs live under pipeline/experiments/tree/ — fill after next training run.
-# See YOLO11_BASELINE_PIPELINE.md for config and naming convention.
+experiments/detection/detection_yolo11_lesion_holdout_cropui_dataset_v20260409_holdout_cropui_20260409_r001/ultralytics/weights/best.pt
+# YOLO11 lesion holdout crop_ui best weights for clinical-loop auto-discovery.
+# Config: configs/detection/yolo11/baseline_lesion_holdout_cropui.yaml
+# See YOLO11_BASELINE_PIPELINE.md for retraining.

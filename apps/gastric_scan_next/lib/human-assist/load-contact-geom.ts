@@ -72,6 +72,9 @@ export type LayerAnalyzeResult = {
   wallEstimated?: boolean;
   offsetPx?: number;
   geom?: LayerGeometry;
+  /** True only when layer interfaces come from current-frame echo pixels. */
+  pixelBased?: boolean;
+  frameDataUrl?: string | null;
 };
 
 type LayerBridgeApi = {
@@ -137,12 +140,30 @@ declare global {
 
 let loadPromise: Promise<void> | null = null;
 
+const CONTACT_GEOMETRY_CANDIDATES = [
+  '/vendor/human-assist/contact_geometry.js',
+  '/workbench/vendor/human-assist/contact_geometry.js',
+] as const;
+
+const LAYER_BRIDGE_CANDIDATES = [
+  '/vendor/human-assist/interactive_layer_bridge.js',
+  '/workbench/vendor/human-assist/interactive_layer_bridge.js',
+] as const;
+
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[data-human-assist="${src}"]`) as HTMLScriptElement | null;
     if (existing) {
-      if (existing.dataset.loaded === '1') resolve();
-      else existing.addEventListener('load', () => resolve(), { once: true });
+      if (existing.dataset.loaded === '1') {
+        resolve();
+        return;
+      }
+      if (existing.dataset.failed === '1') {
+        reject(new Error(`Failed to load ${src}`));
+        return;
+      }
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
       return;
     }
     const s = document.createElement('script');
@@ -153,9 +174,27 @@ function loadScript(src: string): Promise<void> {
       s.dataset.loaded = '1';
       resolve();
     };
-    s.onerror = () => reject(new Error(`Failed to load ${src}`));
+    s.onerror = () => {
+      s.dataset.failed = '1';
+      reject(new Error(`Failed to load ${src}`));
+    };
     document.head.appendChild(s);
   });
+}
+
+async function loadScriptWithFallback(candidates: readonly string[]): Promise<string> {
+  let lastError: unknown = null;
+  for (const src of candidates) {
+    try {
+      await loadScript(src);
+      return src;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Failed to load ${candidates[0]}`);
 }
 
 export async function ensureHumanAssistGeometry(): Promise<{
@@ -170,9 +209,13 @@ export async function ensureHumanAssistGeometry(): Promise<{
   }
   if (!loadPromise) {
     loadPromise = (async () => {
-      await loadScript('/vendor/human-assist/contact_geometry.js');
-      await loadScript('/vendor/human-assist/interactive_layer_bridge.js');
-    })();
+      await loadScriptWithFallback(CONTACT_GEOMETRY_CANDIDATES);
+      await loadScriptWithFallback(LAYER_BRIDGE_CANDIDATES);
+    })().catch((error) => {
+      // Allow retry after a transient auth/static miss.
+      loadPromise = null;
+      throw error;
+    });
   }
   await loadPromise;
   if (!window.ContactGeom || !window.LayerBridge) {

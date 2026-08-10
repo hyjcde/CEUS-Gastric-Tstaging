@@ -14,6 +14,7 @@
 | 训练 T 分期 / 跑实验 | [pipeline/README.md](pipeline/README.md) + [configs/](configs/) |
 | 查实验与 checkpoint | [experiments/registry.csv](experiments/registry.csv) + [models/README.md](models/README.md) |
 | 开 Web 工作台 / 标注工具 | [apps/README.md](apps/README.md) |
+| 整理论文、原稿和重点文献 | [paper/README.md](paper/README.md) |
 | 维护仓库路径 | [MAINTENANCE.md](MAINTENANCE.md) |
 | 治理执行口径（维护者） | [docs/project_governance.md](docs/project_governance.md) |
 
@@ -30,6 +31,7 @@ docs/          文档（规范 + 主线）
 experiments/   实验记录入口
 external/      第三方本地依赖
 models/        模型索引（实体在 artifacts / pipeline）
+paper/         论文原稿、笔记和重点文献聚合入口
 pipeline/      训练框架 + Agent
 scripts/       CLI 脚本
 _compat/       旧路径兼容 symlink（勿当正式入口）

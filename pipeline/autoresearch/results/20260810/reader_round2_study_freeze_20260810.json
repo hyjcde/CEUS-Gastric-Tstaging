@@ -24,6 +24,12 @@
     },
     "case_order_server_applied": true,
     "case_order_column": "presentation_index",
+    "research_enforcement": {
+      "canonical_versions_required": true,
+      "case_membership_required": true,
+      "initial_judgment_before_final_action": true,
+      "ui_hides_ai_before_initial_judgment": true
+    },
     "structured_evidence_fields": [
       "lesion_extent",
       "wall_invasion_depth",

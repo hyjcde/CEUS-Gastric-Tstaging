@@ -1,110 +1,16 @@
-Use case: methodology-infographic
-Asset type: detailed system architecture diagram for a Nature-style clinical AI methods figure
-Primary request: Draw a highly detailed but readable end-to-end methodology architecture for a gastric ultrasound T-staging multimodal Agent (not a single LLM diagnosis). Show traceable tool chain, frozen model assets, evidence fusion, and clinician-in-the-loop review.
+Use case: results-infographic
+Asset type: comparison table diagram, white background
+Primary request: Three-column infographic comparing data calibers for gastric T-staging project.
 
-Style/medium: clean flat vector infographic, white background, thin consistent strokes, subtle drop shadows, medical blue/teal primary, muted purple for memory/RAG, light gray panels, amber accents only for uncertainty/review nodes. No photorealistic ultrasound, no patient faces, no hospital logos.
+Style: clean medical data viz, white background, 16:9, English headers.
 
-Composition/framing: landscape 16:9, 3840x2160 logical layout. Five horizontal swimlanes (top to bottom) with clear left-to-right main flow and vertical side-feeds:
+Columns:
+1) manifest physical — 13,515 frames, segmentation ROI
+2) T-staging modeling CSV — 12,851 rows, 2,083 patients, primary endpoint
+3) prospective clinical — 46 patients, 234 frames, frozen validation
 
-SWIMLANE A — CLINICIAN & UI (top, ~12% height)
-Boxes left to right, connected:
-[Clinician] -> [Next.js Gastric T-staging Workbench] -> [Patient list / frame viewer / ROI overlay]
-Arrows down to API.
+Rows: image count, patient count, train policy (Xiehe-only), external 11 centers.
 
-SWIMLANE B — API BRIDGE (~8%)
-[POST /api/agent/analyze] and [POST /api/agent/analyze/stream]
-Small note box: "JSON payload: patient_id, frames[], clinical, report_text, image_path, roi_path"
-Arrow down to Python.
+Highlight in amber: "192 external patients still in legacy train — rebuild split"
 
-SWIMLANE C — AGENT ORCHESTRATION (center-left, ~18%)
-Large rounded box: "pipeline/agent/product/analyze_case.py"
-Inside show numbered orchestration ribbon (small badges 1-15):
-1 Case intake
-2 LumenDetectionTool (YOLO)
-3 SegmentationTool
-4 WallEvidenceTool (lumen SDF)
-5 MorphologyTool
-6 ClassificationTool (frozen mask4ch + clinical22)
-7 ClinicalTool
-8 ReportTool
-9 SimilarityTool (FAISS)
-10 DINO feature panel
-11 KnowledgeMemory
-12 Rule-based evidence fusion
-13 Optional LLM synthesis (Poe API)
-14 Dynamic report draft
-15 Runtime verification + trajectory log
-Side annotation: "Multi-frame: up to 3 US frames -> mean probability aggregation"
-
-SWIMLANE D — EVIDENCE TOOLS & FUSION (center-right, ~32%)
-Two columns.
-
-Left column — TOOL OUTPUTS (stacked boxes with icons):
-- Lumen bbox + confidence (YOLO11l lumen locator)
-- Lesion mask + ROI bbox (UNet++ ConvNeXt-Base, primary)
-- Wall penetration risk + SDF heatmap (signed distance from lumen)
-- Morphology: irregularity, area ratio, convexity
-- T-stage classifier: T1/T2/T3/T4+ probabilities + uncertainty
-- Clinical22 vector + risk score + location calibration
-- Report cues from preoperative text
-- Similar cases (17-dim FAISS, gated weight)
-- Knowledge snippets (project rules)
-
-Right column — FUSION ENGINE:
-Box "Evidence Fusion (schema v0.3.0)" containing:
-- Weighted score fusion (classifier highest)
-- RAG Gate (only T2/T3, T3/T4+ boundary, low margin)
-- conflicting_evidence list
-- uncertainty_flags
-- supporting_evidence
-Outputs arrow to:
-[recommended_t_stage] [confidence high/medium/low] [dynamic_report_draft]
-
-SWIMLANE E — MODEL / DATA LAYER (bottom, ~30%)
-Grouped asset tiles (do not add extra model names):
-
-Group 1 IMAGING DATA:
-- Ultrasound frames (internal Xiehe + multi-center external)
-- Doctor ROI crops
-- Predicted lesion masks (4-channel global input)
-- Xiehe-only train manifest (splits/xiehe_single_center_v1)
-
-Group 2 DETECTION & SEGMENTATION:
-- YOLO11l Lumen Locator (cropui combined, best.pt)
-- UNet++ lesion segmentation (ConvNeXt-Base fulldata, primary)
-- DINOv3-Seg candidate (optional, dashed border)
-
-Group 3 T-STAGING (frozen governance):
-- PRIMARY: DualBranch mask4ch + clinical22 (20260423, prospective AUC 0.7455)
-- SECONDARY (dashed): region-aware contrastive (external signal only)
-- FALLBACK: predROI + mask4ch (no doctor ROI)
-
-Group 4 MEMORY & REPRESENTATION:
-- FAISS case index (17-dim, upgrading to DINO regional)
-- DINOv3 frame encoder (visualization panel)
-- Session trajectory JSON
-
-Arrows upward from each group to matching tools in swimlane D.
-
-CRITICAL FLOW ARROWS (must be visible):
-1. US frames -> Lumen YOLO -> lumen bbox
-2. US frames -> Segmentation -> lesion mask
-3. lumen bbox + lesion mask -> Wall SDF evidence
-4. US + mask + ROI + clinical22 -> Classification
-5. mask -> Morphology
-6. All tool outputs -> Evidence Fusion
-7. Fusion -> T recommendation + report draft -> Clinician review -> Memory update (dashed feedback loop)
-
-LEGEND (bottom-right corner):
-Blue solid = primary frozen path
-Purple = memory / similar cases
-Amber dashed = uncertainty / manual review required
-Gray dashed = optional / secondary model
-
-Typography: all labels in English exactly as written above; use 2 hierarchy sizes only (title 14pt equivalent, body 10pt equivalent); no paragraph text inside diagram.
-
-Constraints:
-- Maximum ~45 labeled nodes; use grouping boxes to avoid clutter.
-- Keep arrows orthogonal where possible.
-- Leave 5% margin on all sides.
-- Do not invent software brands other than Next.js, Python, FAISS, Poe API.
+No hospital logos.

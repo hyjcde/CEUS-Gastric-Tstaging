@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -72,6 +72,55 @@ def lumen_mask_from_bbox(bbox: Dict[str, int], height: int, width: int) -> np.nd
     if x2 > x1 and y2 > y1:
         mask[y1:y2, x1:x2] = 255
     return mask
+
+
+def lumen_mask_from_polygon(
+    polygon: Optional[Sequence[Sequence[float]]],
+    height: int,
+    width: int,
+) -> Optional[np.ndarray]:
+    """Rasterize a confirmed lumen polygon into a full-resolution mask."""
+    if not polygon or height <= 0 or width <= 0:
+        return None
+
+    points = []
+    for point in polygon:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(x) or not np.isfinite(y):
+            continue
+        points.append(
+            [
+                int(round(np.clip(x, 0, width - 1))),
+                int(round(np.clip(y, 0, height - 1))),
+            ]
+        )
+
+    if len(points) < 3:
+        return None
+
+    mask = np.zeros((height, width), dtype=np.uint8)
+    cv2.fillPoly(mask, [np.asarray(points, dtype=np.int32)], 255)
+    return mask if np.any(mask) else None
+
+
+def lumen_bbox_from_mask(mask: np.ndarray) -> Optional[Dict[str, int]]:
+    """Return an xyxy box using the same half-open convention as the detector."""
+    binary = np.asarray(mask) > 0
+    ys, xs = np.where(binary)
+    if ys.size == 0 or xs.size == 0:
+        return None
+    return {
+        "x1": int(xs.min()),
+        "y1": int(ys.min()),
+        "x2": int(xs.max()) + 1,
+        "y2": int(ys.max()) + 1,
+    }
 
 
 def lumen_geometry_from_bbox(bbox: Dict[str, int], height: int, width: int) -> Dict[str, float]:
@@ -139,15 +188,15 @@ class LumenDetectionTool(BaseTool):
             "imgsz": self._imgsz,
         }
 
-    def execute(
+    def execute_array(
         self,
-        image_path: str,
+        image_bgr: np.ndarray,
         conf: Optional[float] = None,
         imgsz: Optional[int] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        img = cv2.imread(image_path)
-        if img is None:
+        """Run lumen detection on an in-memory BGR image (preferred warm-service path)."""
+        if image_bgr is None or not hasattr(image_bgr, "shape") or len(image_bgr.shape) < 2:
             return {
                 "available": False,
                 "error": "Could not read image",
@@ -156,7 +205,8 @@ class LumenDetectionTool(BaseTool):
                 "runtime_invocation": self._runtime_invocation(forward_pass=False),
             }
 
-        h, w = img.shape[:2]
+        img = np.asarray(image_bgr)
+        h, w = int(img.shape[0]), int(img.shape[1])
         self._ensure_model()
         if self._model is None:
             return {
@@ -174,7 +224,7 @@ class LumenDetectionTool(BaseTool):
         use_imgsz = int(imgsz if imgsz is not None else self._imgsz)
         try:
             results = self._model.predict(
-                source=image_path,
+                source=img,
                 imgsz=use_imgsz,
                 conf=use_conf,
                 verbose=False,
@@ -227,3 +277,21 @@ class LumenDetectionTool(BaseTool):
             "image_width": w,
             "runtime_invocation": self._runtime_invocation(forward_pass=True),
         }
+
+    def execute(
+        self,
+        image_path: str,
+        conf: Optional[float] = None,
+        imgsz: Optional[int] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        img = cv2.imread(image_path)
+        if img is None:
+            return {
+                "available": False,
+                "error": "Could not read image",
+                "lumen_direction": "not_assessable",
+                "lumen_direction_source": "image_unavailable",
+                "runtime_invocation": self._runtime_invocation(forward_pass=False),
+            }
+        return self.execute_array(img, conf=conf, imgsz=imgsz, **kwargs)

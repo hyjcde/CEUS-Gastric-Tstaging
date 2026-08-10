@@ -17,7 +17,6 @@ import hashlib
 import json
 import random
 from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -224,7 +223,14 @@ def write_early_profiles(out: Path) -> None:
         w.writerows(rows)
 
 
-def write_case_order(readers: list[dict], out: Path, summary_out: Path, seed: int) -> None:
+def write_case_order(
+    readers: list[dict],
+    out: Path,
+    summary_out: Path,
+    seed: int,
+    *,
+    created_at: str | None = None,
+) -> None:
     fields = [
         "reader_id",
         "presentation_index",
@@ -233,7 +239,8 @@ def write_case_order(readers: list[dict], out: Path, summary_out: Path, seed: in
         "freeze_id",
         "created_at",
     ]
-    created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Keep created_at freeze-stable so re-runs with the same seed preserve SHA-256.
+    created = created_at or "2026-08-10T03:43:20Z"
     rows = []
     for r in readers:
         cases = list(dict.fromkeys(r["case_ids"]))  # preserve unique order
@@ -274,15 +281,40 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--manifest", type=Path, default=MANIFEST)
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing expertise template / case-order freeze artifacts",
+    )
+    ap.add_argument(
+        "--skip-expertise",
+        action="store_true",
+        help="Do not rewrite reader_expertise_registry_*.csv",
+    )
+    ap.add_argument(
+        "--skip-order",
+        action="store_true",
+        help="Do not rewrite frozen case-order CSV",
+    )
     args = ap.parse_args()
     readers = load_manifest_readers(args.manifest)
-    write_expertise(readers, EXPERTISE_OUT)
+
+    if not args.skip_expertise:
+        if EXPERTISE_OUT.exists() and not args.force:
+            print(f"SKIP expertise (exists; use --force or import_reader_expertise_registry.py): {EXPERTISE_OUT}")
+        else:
+            write_expertise(readers, EXPERTISE_OUT)
+            print(f"Wrote {EXPERTISE_OUT}")
     write_early_profiles(EARLY_PROFILES)
-    write_case_order(readers, ORDER_OUT, ORDER_SUMMARY, args.seed)
-    print(f"Wrote {EXPERTISE_OUT}")
     print(f"Wrote {EARLY_PROFILES}")
-    print(f"Wrote {ORDER_OUT}")
-    print(f"Wrote {ORDER_SUMMARY}")
+
+    if not args.skip_order:
+        if ORDER_OUT.exists() and not args.force:
+            print(f"SKIP case order (frozen artifact exists; refuse rewrite without --force): {ORDER_OUT}")
+        else:
+            write_case_order(readers, ORDER_OUT, ORDER_SUMMARY, args.seed)
+            print(f"Wrote {ORDER_OUT}")
+            print(f"Wrote {ORDER_SUMMARY}")
 
 
 if __name__ == "__main__":

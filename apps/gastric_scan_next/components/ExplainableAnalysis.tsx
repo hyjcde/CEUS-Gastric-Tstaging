@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Patient } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
 import { 
@@ -107,9 +108,14 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!isOpen) return;
     setResult(null);
     setError(null);
@@ -212,6 +218,20 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
 
   if (!isOpen) return null;
 
+  const confidenceLabel = (confidence?: string) => {
+    const key = String(confidence || '').toLowerCase();
+    if (language === 'en') {
+      if (key === 'high') return 'HIGH CONFIDENCE';
+      if (key === 'medium') return 'MEDIUM CONFIDENCE';
+      if (key === 'low') return 'LOW CONFIDENCE';
+      return confidence ? `${String(confidence).toUpperCase()} CONFIDENCE` : 'CONFIDENCE N/A';
+    }
+    if (key === 'high') return '高置信度';
+    if (key === 'medium') return '中等置信度';
+    if (key === 'low') return '低置信度';
+    return confidence ? `${confidence} 置信度` : '置信度未知';
+  };
+
   const getStageColor = (stage?: string) => {
     if (!stage) return 'text-gray-400';
     if (stage.includes('T4')) return 'text-red-400';
@@ -305,59 +325,72 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
     </div>
   );
 
-  return (
+  const overlay = (
     <div
-      className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm ${isFullscreen ? 'p-0' : 'p-4'}`}
-      style={{ zIndex: 200 }}
+      className={`fixed inset-0 z-[260000] flex items-center justify-center bg-black/80 ${isFullscreen ? 'p-0' : 'p-3 sm:p-5'}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={language !== 'en' ? '可解释性边界分析' : 'Explainable Boundary Analysis'}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <div className={`bg-neutral-900/70 backdrop-blur-xl border border-white/20 rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/50 transition-all duration-300 ${
-        isFullscreen ? 'w-full h-full rounded-none' : 'w-[95vw] max-w-7xl max-h-[95vh]'
-      }`}>
+      <div
+        className={`flex flex-col overflow-hidden border border-white/15 bg-neutral-950 shadow-2xl shadow-black/70 transition-all duration-300 ${
+          isFullscreen
+            ? 'h-full w-full rounded-none'
+            : 'h-[min(92vh,960px)] w-[min(1180px,96vw)] rounded-2xl'
+        }`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         {/* Header - 科研风格 */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-white/15 bg-neutral-800/50">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-600 flex items-center justify-center shadow-lg">
-                <Layers className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-white tracking-wide">
-                  {language !== 'en' ? '可解释性边界分析' : 'Explainable Boundary Analysis'}
-                </h2>
-                <p className="text-[10px] text-gray-500 font-mono">
-                  Normal-Weighted Gradient + Bilinear Correlation + Curvature-Risk
-                </p>
-              </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-neutral-900 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-600 shadow-lg">
+              <Layers className="h-5 w-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-bold tracking-wide text-white">
+                {language !== 'en' ? '可解释性边界分析' : 'Explainable Boundary Analysis'}
+              </h2>
+              <p className="truncate text-[10px] text-gray-500">
+                {language !== 'en'
+                  ? '法向梯度 + 边界相关 + 曲率风险（辅助复核，非病理金标准）'
+                  : 'Normal-weighted gradient + boundary correlation + curvature risk'}
+              </p>
             </div>
             {patient && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-white/5 rounded-lg border border-white/5">
-                <span className="text-[10px] text-gray-500">Patient ID:</span>
-                <span className="text-xs font-mono text-blue-400">{patient.id_short || patient.id}</span>
+              <div className="hidden items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1 md:flex">
+                <span className="text-[10px] text-gray-500">{language !== 'en' ? '病例' : 'Patient'}</span>
+                <span className="font-mono text-xs text-blue-400">{patient.id_short || patient.id}</span>
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             {result && (
-              <>
-                <button
-                  onClick={exportAsImage}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg transition-colors text-xs font-medium border border-blue-500/30"
-                  title={language !== 'en' ? '导出为图片 (论文用)' : 'Export as Image (for paper)'}
-                >
-                  <Camera size={14} />
-                  <span className="hidden sm:inline">{language !== 'en' ? '导出图片' : 'Export'}</span>
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={exportAsImage}
+                className="flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-300 transition-colors hover:bg-blue-600/30"
+                title={language !== 'en' ? '导出为图片' : 'Export as Image'}
+              >
+                <Camera size={14} />
+                <span className="hidden sm:inline">{language !== 'en' ? '导出图片' : 'Export'}</span>
+              </button>
             )}
             <button
+              type="button"
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10"
+              title={language !== 'en' ? '全屏' : 'Fullscreen'}
             >
               <Maximize2 size={16} />
             </button>
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+              title={language !== 'en' ? '关闭' : 'Close'}
             >
               <X size={18} />
             </button>
@@ -376,12 +409,12 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
               </div>
               <div className="text-center max-w-lg">
                 <h3 className="text-2xl font-bold text-white mb-3">
-                  {language !== 'en' ? '边界完整性分析' : 'Boundary Integrity Analysis'}
+                  {language !== 'en' ? '边界复核提示' : 'Boundary review hints'}
                 </h3>
                 <p className="text-gray-400 leading-relaxed">
-                  {language !== 'en' 
-                    ? '基于法向梯度的边界验证算法，通过分析肿瘤边界的梯度强度、内外相关性和曲率特征，评估浆膜层完整性，辅助T分期判断。'
-                    : 'Normal-gradient based boundary verification algorithm analyzes gradient strength, inner-outer correlation, and curvature features to assess serosal integrity and assist T-staging.'}
+                  {language !== 'en'
+                    ? '基于法向梯度、内外相关性和曲率特征，定位可疑边界区，供医生复核壁层与浆膜证据；不单独输出分期结论。'
+                    : 'Normal-gradient, correlation, and curvature cues localize suspicious boundary regions for physician review of wall-layer and serosal evidence; no standalone staging conclusion.'}
                 </p>
               </div>
               <button
@@ -441,70 +474,75 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
           )}
 
           {result && result.success && (
-            <div ref={reportRef} className="p-6 space-y-6">
-              {/* 顶部摘要卡片 */}
-              <div className={`bg-gradient-to-br ${getStageBgColor(result.predicted_stage)} rounded-2xl border border-white/10 p-6 relative overflow-hidden`}>
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-                <div className="relative flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                        result.confidence === 'High' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                        result.confidence === 'Medium' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                        'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+            <div ref={reportRef} className="space-y-5 p-4 sm:p-6">
+              {/* 顶部摘要卡片：固定文档流，避免半透明浮动叠层错位 */}
+              <div className={`rounded-2xl border border-white/10 bg-gradient-to-br ${getStageBgColor(result.predicted_stage)} p-4 sm:p-5`}>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <div className={`rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${
+                        String(result.confidence).toLowerCase() === 'high' ? 'border-emerald-500/30 bg-emerald-500/20 text-emerald-300' :
+                        String(result.confidence).toLowerCase() === 'medium' ? 'border-amber-500/30 bg-amber-500/20 text-amber-300' :
+                        'border-gray-500/30 bg-gray-500/20 text-gray-300'
                       }`}>
-                        {result.confidence} Confidence
+                        {confidenceLabel(result.confidence)}
                       </div>
-                      {result.total_danger_regions && result.total_danger_regions > 0 && (
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold">
+                      {result.total_danger_regions != null && result.total_danger_regions > 0 && (
+                        <div className="flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/20 px-3 py-1 text-xs font-bold text-red-300">
                           <AlertTriangle size={12} />
                           {result.total_danger_regions} {language !== 'en' ? '危险区域' : 'Danger Zones'}
                         </div>
                       )}
                     </div>
-                    <div className="flex items-baseline gap-3 mb-4">
-                      <span className={`text-6xl font-black tracking-tight ${getStageColor(result.predicted_stage)}`}>
-                        {result.predicted_stage}
+                    <div className="mb-3 flex flex-wrap items-end gap-x-3 gap-y-1">
+                      <span className={`text-2xl font-bold tracking-tight sm:text-3xl ${getStageColor(result.predicted_stage)}`}>
+                        {result.predicted_stage || '—'}
                       </span>
-                      <span className="text-xl text-gray-400 font-medium">
-                        {language !== 'en' ? '预测分期' : 'Predicted Stage'}
+                      <span className="pb-1 text-sm font-medium text-gray-400 sm:text-base">
+                        {language !== 'en' ? '边界复核提示（非分期结论）' : 'Boundary review hint (not a staging conclusion)'}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed max-w-2xl">
+                    <p className="max-w-3xl text-sm leading-relaxed text-gray-200">
                       {result.explanation}
                     </p>
+                    <div className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100">
+                      {language !== 'en'
+                        ? '本结果仅基于当前帧边界几何，用于定位复核；不能单独决定 T 分期，也不等同于病理分期。正式 cT 需由医生结合壁层与浆膜证据确认。'
+                        : 'Current-frame boundary geometry only, for localization and review. It cannot alone decide T stage and does not equal pathology. Formal cT requires physician confirmation from wall-layer and serosal evidence.'}
+                    </div>
                   </div>
-                  
-                  {/* 综合评分仪表盘 */}
-                  <div className="hidden lg:flex flex-col items-center ml-8">
-                    <div className="relative w-32 h-32">
-                      <svg className="w-32 h-32 transform -rotate-90">
-                        <circle cx="64" cy="64" r="54" stroke="currentColor" strokeWidth="8" fill="none" className="text-white/5" />
+
+                  <div className="flex shrink-0 flex-col items-center self-center lg:ml-6 lg:self-start">
+                    <div className="relative h-28 w-28">
+                      <svg className="h-28 w-28 -rotate-90 transform">
+                        <circle cx="56" cy="56" r="46" stroke="currentColor" strokeWidth="8" fill="none" className="text-white/5" />
                         <circle
-                          cx="64" cy="64" r="54"
+                          cx="56" cy="56" r="46"
                           strokeWidth="8" fill="none" strokeLinecap="round"
                           className={`${
                             (result.composite_score || 0) >= 0.5 ? 'stroke-emerald-500' :
                             (result.composite_score || 0) >= 0.3 ? 'stroke-amber-500' : 'stroke-red-500'
-                          } transition-all duration-1000`}
+                          }`}
                           style={{
-                            strokeDasharray: 2 * Math.PI * 54,
-                            strokeDashoffset: 2 * Math.PI * 54 * (1 - (result.composite_score || 0))
+                            strokeDasharray: 2 * Math.PI * 46,
+                            strokeDashoffset: 2 * Math.PI * 46 * (1 - (result.composite_score || 0))
                           }}
                         />
                       </svg>
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className={`text-3xl font-black font-mono ${
+                        <span className={`font-mono text-2xl font-black ${
                           (result.composite_score || 0) >= 0.5 ? 'text-emerald-400' :
                           (result.composite_score || 0) >= 0.3 ? 'text-amber-400' : 'text-red-400'
                         }`}>
                           {((result.composite_score || 0) * 100).toFixed(0)}
                         </span>
-                        <span className="text-[10px] text-gray-500 uppercase tracking-wider">Score</span>
+                        <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                          {language !== 'en' ? '评分' : 'Score'}
+                        </span>
                       </div>
                     </div>
-                    <span className="text-xs text-gray-400 mt-2">
-                      {language !== 'en' ? '边界完整性评分' : 'Boundary Integrity'}
+                    <span className="mt-1 text-xs text-gray-400">
+                      {language !== 'en' ? '边界完整性评分' : 'Boundary integrity'}
                     </span>
                   </div>
                 </div>
@@ -767,7 +805,7 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
                   bilinear boundary correlation (BCI: {(result.bci || 0).toFixed(3)}), 
                   and curvature-risk index (CRI: {(result.cri || 0).toFixed(3)}). 
                   Composite score: {(result.composite_score || 0).toFixed(3)}. 
-                  Predicted stage: {result.predicted_stage} ({result.confidence} confidence).
+                  Boundary review hint: {result.predicted_stage} ({result.confidence} confidence).
                 </p>
               </div>
             </div>
@@ -776,4 +814,7 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
       </div>
     </div>
   );
+
+  if (!mounted) return null;
+  return createPortal(overlay, document.body);
 };

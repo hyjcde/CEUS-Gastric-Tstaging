@@ -11,6 +11,7 @@ import type { GcUsReportState } from '@/lib/gc-us-report-template';
 import type { Language } from '@/lib/i18n';
 import { GcUsSignModelMap } from '@/components/GcUsSignModelMap';
 import { computeLesionLumenGeometry } from '@/lib/lesion-lumen-geometry';
+import { getAssistDisplayStage, getResearchPredictionStage } from '@/lib/reader/assist-display-stage';
 
 interface AgentWorkbenchPanelProps {
   patient: Patient | null;
@@ -139,7 +140,13 @@ function getStepOutputSummary(step: AgentStep): string {
     const source = outputs.lumen_source || outputs.override_source || outputs.roi_source;
     return `lumen=${formatUnknown(source)} bbox=${formatUnknown(outputs.lumen_bbox)} polygon=${Array.isArray(outputs.lumen_polygon) ? outputs.lumen_polygon.length : 0}pt`;
   }
-  if (outputs.recommended_t_stage) return `${outputs.recommended_t_stage} / ${outputs.confidence ?? 'unknown'}`;
+  if (outputs.assist_display_stage || outputs.recommended_t_stage) {
+    const display = outputs.assist_display_stage || 'cTx';
+    const research = outputs.recommended_t_stage || outputs.provisional_stage;
+    return research && research !== display
+      ? `display=${display} tendency=${research} / ${outputs.confidence ?? 'unknown'}`
+      : `${display} / ${outputs.confidence ?? 'unknown'}`;
+  }
   if (outputs.top1_stage) return `${outputs.top1_stage} ${outputs.top1_prob ?? ''}`.trim();
   if (outputs.current_image_dino_feature_panel_url) return 'DINO feature panel ready';
   if (outputs.roi_source) return `roi=${outputs.roi_source}`;
@@ -222,7 +229,7 @@ function ImageLightboxModal({
 
   return (
     <div
-      className="fixed inset-0 z-[300000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[400000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
@@ -230,7 +237,7 @@ function ImageLightboxModal({
       <button
         type="button"
         onClick={onClose}
-        className="fixed top-[72px] right-4 z-[300001] flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-neutral-900/95 text-gray-100 shadow-2xl hover:border-red-400/60 hover:bg-red-500/20"
+        className="fixed top-[72px] right-4 z-[400001] flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-neutral-900/95 text-gray-100 shadow-2xl hover:border-red-400/60 hover:bg-red-500/20"
         aria-label={language !== 'en' ? '关闭' : 'Close'}
       >
         <X size={22} />
@@ -319,6 +326,8 @@ export function AgentWorkbenchPanel({
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [result, setResult] = useState<AgentAnalysisResponse | null>(null);
+  const assistDisplayStage = useMemo(() => getAssistDisplayStage(result), [result]);
+  const researchPredictionStage = useMemo(() => getResearchPredictionStage(result), [result]);
   const [modalOpen, setModalOpen] = useState(false);
   const [workbenchOpen, setWorkbenchOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
@@ -1468,9 +1477,13 @@ export function AgentWorkbenchPanel({
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.8fr_1.2fr]">
           <div className="space-y-4">
             <div className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-5">
-              <div className="text-xs uppercase tracking-[0.18em] text-emerald-100/70">{language !== 'en' ? '综合推荐' : 'Integrated recommendation'}</div>
-              <div className="mt-3 text-6xl font-black text-emerald-100">{formatUnknown(outputs.recommended_t_stage ?? result?.report.recommended_t_stage)}</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-emerald-100/70">{language !== 'en' ? '辅助显示分期（门控）' : 'Gated assist display'}</div>
+              <div className="mt-3 text-6xl font-black text-emerald-100">{formatUnknown(outputs.assist_display_stage ?? result?.report.assist_display_stage ?? assistDisplayStage ?? 'cTx')}</div>
               <div className="mt-2 text-sm text-emerald-100/80">{formatUnknown(outputs.confidence ?? result?.report.confidence)}</div>
+              <div className="mt-1 text-[11px] text-amber-100/80">
+                {language !== 'en' ? '融合倾向' : 'Fusion tendency'}:{' '}
+                {formatUnknown(outputs.recommended_t_stage ?? researchPredictionStage ?? result?.report.recommended_t_stage)}
+              </div>
             </div>
             <VisualFrame title={language !== 'en' ? '胃壁穿透风险图' : 'Wall penetration risk'} subtitle={language !== 'en' ? '综合推理使用的胃壁局部风险代理证据' : 'wall proxy evidence used during synthesis'} src={typeof refs.wall_penetration_heatmap_url === 'string' ? refs.wall_penetration_heatmap_url : undefined} />
             <VisualFrame
@@ -1561,7 +1574,7 @@ export function AgentWorkbenchPanel({
       <>
       <div className="pointer-events-none absolute inset-0 z-[100]">
       {workbenchOpen && (loading || result || liveSteps.length > 0 || error) && (
-      <div className="pointer-events-auto fixed inset-0 z-[120] overflow-y-auto border border-cyan-500/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_36%),linear-gradient(135deg,rgba(0,0,0,0.98),rgba(8,13,24,0.98))] p-5 shadow-2xl shadow-black/70 backdrop-blur-xl md:p-6 custom-scrollbar">
+      <div className="pointer-events-auto fixed inset-0 z-[270000] overflow-y-auto border border-cyan-500/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_36%),linear-gradient(135deg,rgba(0,0,0,0.98),rgba(8,13,24,0.98))] p-5 shadow-2xl shadow-black/70 backdrop-blur-xl md:p-6 custom-scrollbar">
         <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(59,130,246,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.12)_1px,transparent_1px)] [background-size:18px_18px]" />
         <div className="relative space-y-4">
           <div className="flex items-start justify-between gap-3">
@@ -1613,9 +1626,10 @@ export function AgentWorkbenchPanel({
             <div className="flex shrink-0 items-start gap-3">
               {result && (
                 <div className={`rounded-xl border px-3 py-2 text-right ${confidenceTone(result.report.confidence)}`}>
-                  <div className="text-[10px] uppercase tracking-wider opacity-70">{language !== 'en' ? '推荐' : 'Stage'}</div>
-                  <div className="text-2xl font-black">{result.report.recommended_t_stage}</div>
+                  <div className="text-[10px] uppercase tracking-wider opacity-70">{language !== 'en' ? '显示分期' : 'Display'}</div>
+                  <div className="text-2xl font-black">{assistDisplayStage || 'cTx'}</div>
                   <div className="text-[10px] opacity-80">{result.report.confidence}</div>
+                  <div className="text-[9px] opacity-60">{language !== 'en' ? '倾向' : 'Tendency'} {researchPredictionStage || result.report.recommended_t_stage}</div>
                 </div>
               )}
               <button
@@ -1889,8 +1903,8 @@ export function AgentWorkbenchPanel({
                           <div className="font-mono text-emerald-100">{liveSteps.length || result?.agent_steps?.length || 0}</div>
                         </div>
                         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2">
-                          <span className="text-slate-500">stage</span>
-                          <div className="font-mono text-emerald-100">{result?.report.recommended_t_stage || 'waiting'}</div>
+                          <span className="text-slate-500">display</span>
+                          <div className="font-mono text-emerald-100">{assistDisplayStage || result?.report.assist_display_stage || 'cTx'}</div>
                         </div>
                       </div>
                     </div>
@@ -2051,8 +2065,9 @@ export function AgentWorkbenchPanel({
                               </button>
                             )}
                             <div className={`rounded-xl border px-4 py-2 text-right ${confidenceTone(result.report.confidence)}`}>
-                              <div className="text-3xl font-black">{result.report.recommended_t_stage}</div>
+                              <div className="text-3xl font-black">{assistDisplayStage || 'cTx'}</div>
                               <div className="text-[10px] uppercase">{result.report.confidence}</div>
+                              <div className="text-[9px] opacity-70">{language !== 'en' ? '倾向' : 'Tendency'} {researchPredictionStage || result.report.recommended_t_stage}</div>
                             </div>
                           </div>
                         </div>
@@ -2623,7 +2638,8 @@ export function AgentWorkbenchPanel({
 
                         {!currentBackendStep && activeStep === 6 && (
                           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                            <div className="text-4xl font-black text-emerald-200">{result.report.recommended_t_stage}</div>
+                            <div className="text-4xl font-black text-emerald-200">{assistDisplayStage || 'cTx'}</div>
+                            <div className="mt-1 text-xs text-amber-100/80">{language !== 'en' ? '融合倾向' : 'Fusion tendency'}: {researchPredictionStage || result.report.recommended_t_stage}</div>
                             <div className="mt-2 text-sm leading-relaxed text-slate-300">{result.report.reasoning}</div>
                             <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                               {evidenceStreams.map((stream) => (
@@ -2822,8 +2838,12 @@ export function AgentWorkbenchPanel({
                           6. {language !== 'en' ? '综合推理：报告草稿与人工复核点' : 'Synthesis: draft and review points'}
                         </div>
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                          <div className="text-4xl font-black text-emerald-200">{result.report.recommended_t_stage}</div>
-                          <div className="mt-1 text-xs text-slate-500">{language !== 'en' ? '最终综合推荐，不等同于单模型 top-1' : 'Final integrated recommendation, not a single-model top-1'}</div>
+                          <div className="text-4xl font-black text-emerald-200">{assistDisplayStage || 'cTx'}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {language !== 'en'
+                              ? `门控显示分期；融合倾向 ${researchPredictionStage || result.report.recommended_t_stage}（非正式 cT）`
+                              : `Gated display; fusion tendency ${researchPredictionStage || result.report.recommended_t_stage} (not formal cT)`}
+                          </div>
                           <div className="mt-3 space-y-2">
                             {result.report.rag_gate && (
                               <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100/85">
@@ -2902,8 +2922,9 @@ export function AgentWorkbenchPanel({
                       <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{language !== 'en' ? '综合结论' : 'Synthesis'}</div>
                       <div className="mt-3 flex flex-wrap items-end gap-4">
                         <div>
-                          <div className="text-5xl font-black text-emerald-200">{result.report.recommended_t_stage}</div>
-                          <div className="mt-1 text-xs text-slate-500">{language !== 'en' ? '推荐 T 分期' : 'Recommended T stage'}</div>
+                          <div className="text-5xl font-black text-emerald-200">{assistDisplayStage || 'cTx'}</div>
+                          <div className="mt-1 text-xs text-slate-500">{language !== 'en' ? '门控显示分期' : 'Gated display stage'}</div>
+                          <div className="mt-1 text-[11px] text-amber-100/80">{language !== 'en' ? '融合倾向' : 'Fusion tendency'}: {researchPredictionStage || result.report.recommended_t_stage}</div>
                         </div>
                         <div className={`rounded-xl border px-3 py-2 text-sm ${confidenceTone(result.report.confidence)}`}>
                           {language !== 'en' ? '置信度' : 'Confidence'}: {result.report.confidence}

@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { LumenOverride, MaskBoundaryOverride, MaskHistoryEntry } from '@/types';
 import { bboxFromPolygon, isValidMaskOverride } from '@/lib/mask-override';
 import { legacyAppDataFile, runtimeDataFile } from '@/lib/runtime-data';
+import { resolveDoctorSession } from '@/lib/reader/doctor-account-store';
+import { normalizeReaderId, resolveAuthenticatedReader } from '@/lib/reader/study-auth';
 
 const OVERRIDES_FILE = runtimeDataFile('mask_overrides.json');
 const LEGACY_OVERRIDES_FILE = legacyAppDataFile('mask_overrides.json');
@@ -13,8 +15,18 @@ const HISTORY_LIMIT = 40;
 type OverrideStore = Record<string, MaskBoundaryOverride>;
 type HistoryStore = Record<string, MaskHistoryEntry[]>;
 
-function storeKey(patientId: string, frameId?: string | null): string {
-  return frameId ? `${patientId}::${frameId}` : patientId;
+function storeKey(patientId: string, frameId?: string | null, readerId?: string | null): string {
+  const base = frameId ? `${patientId}::${frameId}` : patientId;
+  const reader = normalizeReaderId(readerId);
+  return reader ? `${reader}::${base}` : base;
+}
+
+function resolveReaderId(request: NextRequest, explicit?: string | null): string {
+  const doctor = resolveDoctorSession(request.headers);
+  if (doctor.ok) return doctor.account.account_id;
+  const research = resolveAuthenticatedReader(request.headers);
+  if (research.ok) return research.readerId;
+  return normalizeReaderId(explicit || request.nextUrl.searchParams.get('readerId'));
 }
 
 function readStore(): OverrideStore {
@@ -80,32 +92,51 @@ function normalizeOverride(override: MaskBoundaryOverride): MaskBoundaryOverride
   };
 }
 
-function findOverride(store: OverrideStore, patientId: string, frameId?: string | null): MaskBoundaryOverride | null {
-  if (frameId) {
-    const keyed = store[storeKey(patientId, frameId)];
-    if (keyed) return keyed;
+function findOverride(
+  store: OverrideStore,
+  patientId: string,
+  frameId?: string | null,
+  readerId?: string | null,
+): MaskBoundaryOverride | null {
+  if (readerId) {
+    if (frameId) {
+      const keyed = store[storeKey(patientId, frameId, readerId)];
+      if (keyed) return keyed;
+    }
+    const patientKeyed = store[storeKey(patientId, null, readerId)];
+    if (patientKeyed) return patientKeyed;
   }
-  return store[patientId] ?? store[storeKey(patientId)] ?? null;
+  // Legacy shared fallback only when the caller has no account yet.
+  if (!readerId) {
+    if (frameId) {
+      const keyed = store[storeKey(patientId, frameId)];
+      if (keyed) return keyed;
+    }
+    return store[patientId] ?? store[storeKey(patientId)] ?? null;
+  }
+  return null;
 }
 
 export async function GET(request: NextRequest) {
   const patientId = request.nextUrl.searchParams.get('patientId');
   const frameId = request.nextUrl.searchParams.get('frameId');
+  const readerId = resolveReaderId(request);
   if (!patientId) {
     return NextResponse.json({ error: 'patientId is required' }, { status: 400 });
   }
   if (request.nextUrl.searchParams.get('history') === '1') {
-    const key = storeKey(patientId, frameId);
+    const key = storeKey(patientId, frameId, readerId || undefined);
     const history = (readHistory()[key] || [])
-      .filter((entry) => entry && isValidMaskOverride(entry.override))
+      .filter((entry) => entry && isValidMaskOverride(entry.override) && !entry.deleted_at)
       .map((entry) => ({ ...entry, override: normalizeOverride(entry.override) }));
-    return NextResponse.json({ patientId, frameId, history });
+    return NextResponse.json({ patientId, frameId, readerId: readerId || null, history });
   }
   const store = readStore();
-  const override = findOverride(store, patientId, frameId);
+  const override = findOverride(store, patientId, frameId, readerId || undefined);
   return NextResponse.json({
     patientId,
     frameId,
+    readerId: readerId || null,
     override: override ? normalizeOverride(override) : null,
   });
 }
@@ -116,11 +147,13 @@ export async function POST(request: NextRequest) {
       override?: MaskBoundaryOverride;
       lumen_override?: LumenOverride;
       action?: string;
+      reader_id?: string;
     };
     const override = body.override ? normalizeOverride(body.override) : undefined;
     if (!override || !isValidMaskOverride(override)) {
       return NextResponse.json({ error: 'Invalid mask override payload' }, { status: 400 });
     }
+    const readerId = resolveReaderId(request, body.reader_id);
 
     const savedAt = new Date().toISOString();
     const next: MaskBoundaryOverride = {
@@ -129,17 +162,21 @@ export async function POST(request: NextRequest) {
       updated_at: savedAt,
       source: override.source || 'manual',
       roi_mode: override.roi_mode || 'predicted',
+      reviewer_id: readerId || override.reviewer_id,
     };
 
     const store = readStore();
-    const key = storeKey(next.patientId, next.frameId);
+    const key = storeKey(next.patientId, next.frameId, readerId || undefined);
     store[key] = next;
-    // Also index by patientId for analyze when frame id is omitted.
-    store[next.patientId] = next;
+    // Also index by account+patient for analyze when frame id is omitted.
+    store[storeKey(next.patientId, null, readerId || undefined)] = next;
+    if (!readerId) {
+      store[next.patientId] = next;
+    }
     writeStore(store);
 
     const historyStore = readHistory();
-    const history = historyStore[key] || [];
+    const history = (historyStore[key] || []).filter((entry) => !entry.deleted_at);
     const action = String(body.action || 'manual_save').slice(0, 80);
     const lumenOverride = body.lumen_override
       && typeof body.lumen_override === 'object'
@@ -159,6 +196,7 @@ export async function POST(request: NextRequest) {
         action,
         override: next,
         lumen_override: lumenOverride,
+        owner_account_id: readerId || undefined,
       };
       historyStore[key] = [historyEntry, ...history].slice(0, HISTORY_LIMIT);
       writeHistory(historyStore);
@@ -167,6 +205,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       patientId: next.patientId,
+      readerId: readerId || null,
       key,
       override: next,
       lumen_override: lumenOverride,
@@ -181,15 +220,47 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const patientId = request.nextUrl.searchParams.get('patientId');
   const frameId = request.nextUrl.searchParams.get('frameId');
+  const historyId = request.nextUrl.searchParams.get('historyId');
+  const readerId = resolveReaderId(request);
   if (!patientId) {
     return NextResponse.json({ error: 'patientId is required' }, { status: 400 });
   }
 
-  const store = readStore();
-  if (frameId) {
-    delete store[storeKey(patientId, frameId)];
+  if (historyId) {
+    if (!readerId) {
+      return NextResponse.json({ error: 'Login required to delete personal history' }, { status: 401 });
+    }
+    const key = storeKey(patientId, frameId, readerId);
+    const historyStore = readHistory();
+    const history = historyStore[key] || [];
+    const idx = history.findIndex((entry) => entry.id === historyId);
+    if (idx < 0) {
+      return NextResponse.json({ error: 'History entry not found' }, { status: 404 });
+    }
+    history[idx] = {
+      ...history[idx],
+      deleted_at: new Date().toISOString(),
+    };
+    historyStore[key] = history;
+    writeHistory(historyStore);
+    return NextResponse.json({
+      ok: true,
+      patientId,
+      frameId,
+      readerId,
+      historyId,
+      deleted: true,
+    });
   }
-  delete store[patientId];
+
+  const store = readStore();
+  if (readerId) {
+    if (frameId) delete store[storeKey(patientId, frameId, readerId)];
+    delete store[storeKey(patientId, null, readerId)];
+  } else {
+    if (frameId) delete store[storeKey(patientId, frameId)];
+    delete store[patientId];
+  }
   writeStore(store);
-  return NextResponse.json({ ok: true, patientId, frameId });
+  return NextResponse.json({ ok: true, patientId, frameId, readerId: readerId || null });
 }

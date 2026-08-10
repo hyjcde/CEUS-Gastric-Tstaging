@@ -39,6 +39,7 @@ def save_wall_panel(
     out_path: Path,
     *,
     lumen_bbox: Optional[Dict[str, int]] = None,
+    lumen_mask: Optional[np.ndarray] = None,
     lesion_mask: Optional[np.ndarray] = None,
 ) -> Optional[Path]:
     """Save SDF heatmap + layer profile from wall_evidence observation."""
@@ -46,19 +47,29 @@ def save_wall_panel(
     overlay = visuals.get("wall_overlay_bgr")
     profile = visuals.get("wall_profile")
 
-    if overlay is None and lesion_mask is not None and lumen_bbox:
+    if overlay is None and lesion_mask is not None and (lumen_bbox or lumen_mask is not None):
         from ..tools.wall_evidence_tool import render_wall_visuals, signed_distance_from_lumen
 
         image = cv2.imread(image_path)
         if image is None:
             return None
         h, w = image.shape[:2]
-        x1, y1, x2, y2 = lumen_bbox["x1"], lumen_bbox["y1"], lumen_bbox["x2"], lumen_bbox["y2"]
-        lumen_mask = np.zeros((h, w), dtype=np.uint8)
-        lumen_mask[y1:y2, x1:x2] = 255
+        if lumen_mask is not None:
+            lumen_geometry = np.asarray(lumen_mask)
+            if lumen_geometry.shape[:2] != (h, w):
+                lumen_geometry = cv2.resize(
+                    lumen_geometry.astype(np.uint8),
+                    (w, h),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            lumen_geometry = (lumen_geometry > 0).astype(np.uint8) * 255
+        else:
+            x1, y1, x2, y2 = lumen_bbox["x1"], lumen_bbox["y1"], lumen_bbox["x2"], lumen_bbox["y2"]
+            lumen_geometry = np.zeros((h, w), dtype=np.uint8)
+            lumen_geometry[y1:y2, x1:x2] = 255
         lesion = (lesion_mask > 127).astype(np.uint8) if lesion_mask is not None else np.zeros((h, w), np.uint8)
-        sdf = signed_distance_from_lumen((lumen_mask > 127).astype(np.uint8))
-        visuals = render_wall_visuals(image, lesion, lumen_mask, sdf, lumen_bbox)
+        sdf = signed_distance_from_lumen((lumen_geometry > 127).astype(np.uint8))
+        visuals = render_wall_visuals(image, lesion, lumen_geometry, sdf, lumen_bbox)
         overlay = visuals.get("wall_overlay_bgr")
         profile = visuals.get("wall_profile")
 
@@ -72,7 +83,7 @@ def save_wall_panel(
     fig.patch.set_facecolor(FIGURE_FACECOLOR)
     axes[0].imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
     axes[0].set_title(
-        f"Wall SDF · risk={wall_obs.get('penetration_risk', '?')}",
+        f"Wall SDF / risk={wall_obs.get('penetration_risk', '?')}",
         color=TEXT_COLOR,
         loc="left",
     )

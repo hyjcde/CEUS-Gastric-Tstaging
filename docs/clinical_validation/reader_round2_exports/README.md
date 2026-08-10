@@ -32,6 +32,9 @@ python3 scripts/build_autoresearch_results_summary.py
 | `round1_case_level.csv` | No-AI baseline from frozen Round2 manifest |
 | `round1_doctor_level.csv` | Per-doctor Round1 accuracy / time |
 | `paired_round1_round2_skeleton.csv` | Paired keys with Round2 fields empty / not_started |
+| `reader_case_level_from_audit.csv` | Research audit case rows (`completed`, finals, timing) |
+| `reader_case_level.csv` | Alias of the audit case export |
+| `reader_safety_events.csv` | Reject / insufficient-evidence safety flags |
 | `report_quality_scores_template.csv` | Blinded 1-5 score sheet template |
 | `export_status.json` | Machine-readable completion gate |
 | `audit_events_summary.json` | Research-filtered audit event counts |

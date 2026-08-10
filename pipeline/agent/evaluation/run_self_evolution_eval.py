@@ -143,7 +143,14 @@ def run_eval(
     store = JsonlMemoryStore(store_root=store_root)
 
     write_stats = reflect_batch_from_feedback_csv(store, feedback_csv)
-    promote_stats = promote_candidates(store, min_support=min_support)
+    # Default: do NOT auto-promote to active memory. Support counts may update,
+    # but active promotion requires offline gate + doctor approval.
+    promote_stats = promote_candidates(
+        store,
+        min_support=min_support,
+        allow_active_promotion=False,
+        doctor_review_status="pending",
+    )
 
     held_out_rows = _load_eval_rows(held_out_csv)
     metrics_off = _eval_split(held_out_rows, memory_on=False)
@@ -163,6 +170,7 @@ def run_eval(
         "notes": [
             "Classifier backend frozen; memory_on applies soft_prior review heuristic on borderline T2/T3.",
             "Full agent path uses pipeline/agent/memory/store retriever at analyze time.",
+            "Active memory promotion is blocked by default; candidates remain shadow until evolution gate + doctor approval.",
         ],
     }
 
@@ -196,6 +204,7 @@ def run_eval(
             f"- Episodes written: {write_stats.get('episodes', 0)}",
             f"- Candidates: {write_stats.get('candidates', 0)}",
             f"- Promoted: {promote_stats.get('promoted', 0)}",
+            f"- Promotion blocked: {promote_stats.get('blocked', 0)} (active promotion requires gate + doctor approval)",
             "",
             "## Held-out comparison",
             f"| Mode | N | Patient ACC | T2/T3 cases | T2↔T3 errors | T2↔T3 error rate |",

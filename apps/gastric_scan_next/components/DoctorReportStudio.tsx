@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -19,7 +18,6 @@ import {
   TableProperties,
 } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
-import type { GcUsReportImage, GcUsReportState } from '@/lib/gc-us-report-template';
 import type {
   AgentAnalysisResponse,
   AgentReportPack,
@@ -30,7 +28,14 @@ import type { SamReport } from '@/lib/reader/types';
 import { CaseQuestioner } from '@/components/CaseQuestioner';
 import { SpectralFeaturePanel } from '@/components/SpectralFeaturePanel';
 import { TemplateReportEditor } from '@/components/TemplateReportEditor';
-import { createGcUsReportState } from '@/lib/gc-us-report-template';
+import {
+  buildGcUsTemplateReportText,
+  createGcUsReportState,
+  gcUsOptionLabel,
+  resolveGcUsReportLocale,
+  type GcUsReportImage,
+  type GcUsReportState,
+} from '@/lib/gc-us-report-template';
 
 type StudioTab = 'template' | 'overview' | 'evidence' | 'report' | 'review';
 type ReviewAction = 'accept' | 'modify' | 'reject' | 'request_more_evidence';
@@ -65,15 +70,16 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function displayValue(value: unknown, digits = 2): string {
-  if (value === null || value === undefined || value === '') return '未评估';
+function displayValue(value: unknown, digits = 2, zh = true): string {
+  const empty = zh ? '待复核' : 'Pending review';
+  if (value === null || value === undefined || value === '') return empty;
   if (typeof value === 'number' && Number.isFinite(value)) return value.toFixed(digits);
-  if (Array.isArray(value)) return value.map((item) => displayValue(item)).join(', ');
+  if (Array.isArray(value)) return value.map((item) => displayValue(item, digits, zh)).join(', ');
   if (typeof value === 'object') {
     const record = asRecord(value);
-    return record ? displayValue(record.label ?? record.value ?? record.status) : '未评估';
+    return record ? displayValue(record.label ?? record.value ?? record.status, digits, zh) : empty;
   }
-  return String(value);
+  return gcUsOptionLabel(String(value), zh);
 }
 
 function percentValue(value: unknown): number {
@@ -85,7 +91,7 @@ function percentValue(value: unknown): number {
 function normalizeStage(value: unknown): string {
   const raw = String(value || '').trim();
   if (/^T4[ab]?$/i.test(raw)) return 'T4+';
-  return raw || '未输出';
+  return raw || 'N/A';
 }
 
 function statusTone(status: unknown): string {
@@ -132,7 +138,25 @@ function statusLabel(status: unknown, zh: boolean): string {
       uncertain: '不确定',
     }[value] || String(status || '未评估');
   }
-  return String(status || 'Not assessed');
+  return {
+    available: 'Available',
+    confirmed: 'Confirmed',
+    active: 'Accepted',
+    partial: 'Partial',
+    fallback: 'Fallback',
+    suggested: 'Suggested',
+    candidate: 'Pending review',
+    accepted_pending_qa: 'Logged, pending QA',
+    deferred: 'Deferred',
+    unavailable: 'Unavailable',
+    missing: 'Missing',
+    rejected: 'Rejected',
+    conflict: 'Conflict',
+    not_assessed: 'Not assessed',
+    present: 'Possibly present',
+    absent: 'Not seen in text',
+    uncertain: 'Uncertain',
+  }[value] || String(status || 'Not assessed');
 }
 
 function tool(result: AgentAnalysisResponse | null, key: string): AgentToolResult {
@@ -240,23 +264,58 @@ function SectionTitle({
   );
 }
 
-function ArtifactStrip({ patient, analysis, zh }: { patient: Patient; analysis: AgentAnalysisResponse | null; zh: boolean }) {
+function ArtifactStrip({
+  patient,
+  analysis,
+  extraImages = [],
+  zh,
+}: {
+  patient: Patient;
+  analysis: AgentAnalysisResponse | null;
+  extraImages?: GcUsReportImage[];
+  zh: boolean;
+}) {
+  const [failed, setFailed] = React.useState<Set<string>>(() => new Set());
   const artifacts = asRecord(analysis?.prediction_artifacts);
   const candidates = [
+    ...extraImages.map((image) => ({ key: image.id, label: image.label, src: image.url })),
     { key: 'image', label: zh ? '原始影像' : 'Original', src: patient.image_url },
-    { key: 'overlay', label: zh ? '分割叠加' : 'Overlay', src: patient.overlay_url },
     { key: 'wall', label: zh ? '壁层分析' : 'Wall analysis', src: artifacts?.real_wall_analysis_panel_url },
     { key: 'signs', label: zh ? '核心征象' : 'Core signs', src: artifacts?.gc_us_sign_panel_url },
     { key: 'dino', label: zh ? 'DINO 区域特征' : 'DINO region features', src: artifacts?.current_image_dino_feature_panel_url },
-  ].filter((item): item is { key: string; label: string; src: string } => typeof item.src === 'string' && item.src.length > 0);
+  ].filter((item): item is { key: string; label: string; src: string } => (
+    typeof item.src === 'string'
+    && item.src.length > 0
+    && (item.src.startsWith('data:image/')
+      || item.src.startsWith('blob:')
+      || item.src.startsWith('/api/')
+      || item.src.startsWith('/_next/')
+      || item.src.startsWith('/images/')
+      || /^https?:\/\//i.test(item.src))
+    && !failed.has(item.key)
+  ));
 
   if (!candidates.length) return null;
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
       {candidates.map((item) => (
         <div key={item.key} className="overflow-hidden rounded-lg border border-white/10 bg-slate-900">
-          <div className="relative h-28 bg-black">
-            <Image src={item.src} alt={item.label} fill sizes="(max-width: 1024px) 50vw, 25vw" className="object-contain" unoptimized />
+          <div className="relative flex h-28 items-center justify-center bg-black">
+            {/* Prefer plain img so data URLs and /api/agent/artifacts load without next/image CORS traps. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.src}
+              alt={item.label}
+              className="max-h-full max-w-full object-contain"
+              onError={() => {
+                setFailed((previous) => {
+                  if (previous.has(item.key)) return previous;
+                  const next = new Set(previous);
+                  next.add(item.key);
+                  return next;
+                });
+              }}
+            />
           </div>
           <div className="border-t border-white/10 px-2 py-1.5 text-[10px] text-slate-300">{item.label}</div>
         </div>
@@ -302,8 +361,21 @@ export function DoctorReportStudio({
   const wall = tool(analysis, 'wall_evidence');
   const reportTool = tool(analysis, 'report');
   const clinicalDecision = tool(analysis, 'clinical_decision');
-  const recommendedStage = normalizeStage(report?.recommended_t_stage);
-  const selectedDoctorStage = doctorStage || recommendedStage;
+  const researchStage = normalizeStage(
+    classification.top1_stage || report?.recommended_t_stage,
+  );
+  const assistDisplayStage = normalizeStage(
+    report?.assist_display_stage
+    || report?.contour_diagnosis?.display_stage
+    || 'cTx',
+  );
+  // Doctor-facing suggestion follows ContourEvidenceGate; conflicts downgrade display to cTx.
+  const recommendedStage = (gcUsReport?.conflicts?.length || 0) > 0 ? 'cTx' : assistDisplayStage;
+  const selectedDoctorStage = doctorStage || (
+    !recommendedStage || recommendedStage === 'cTx' || recommendedStage === 'N/A'
+      ? ''
+      : recommendedStage
+  );
 
   const stageProbabilities = useMemo(() => {
     const fromPack = pack?.charts?.stage_probability || pack?.stage?.probabilities;
@@ -320,26 +392,26 @@ export function DoctorReportStudio({
     const fromPack = pack?.charts?.boundary_geometry || [];
     if (fromPack.length) return fromPack;
     return [
-      { id: 'boundary_irregularity', label: '边界不规则度', value: asNumber(morphology.boundary_irregularity) ?? 0, scale: 1, note: '轮廓几何代理，不等同于病理浸润深度' },
-      { id: 'smoothness_index', label: '轮廓平滑度', value: asNumber(morphology.smoothness_index) ?? 0, scale: 1 },
-      { id: 'roughness_index', label: '轮廓粗糙度', value: asNumber(morphology.roughness_index) ?? 0, scale: 1 },
-      { id: 'solidity', label: '实心度', value: asNumber(morphology.solidity) ?? 0, scale: 1 },
-      { id: 'lesion_area_ratio', label: '病灶面积占比', value: asNumber(morphology.lesion_area_ratio) ?? 0, scale: 1 },
+      { id: 'boundary_irregularity', label: zh ? '边界不规则度' : 'Boundary irregularity', value: asNumber(morphology.boundary_irregularity) ?? 0, scale: 1, note: zh ? '轮廓几何代理，不等同于病理浸润深度' : 'Contour geometry proxy, not pathologic invasion depth' },
+      { id: 'smoothness_index', label: zh ? '轮廓平滑度' : 'Contour smoothness', value: asNumber(morphology.smoothness_index) ?? 0, scale: 1 },
+      { id: 'roughness_index', label: zh ? '轮廓粗糙度' : 'Contour roughness', value: asNumber(morphology.roughness_index) ?? 0, scale: 1 },
+      { id: 'solidity', label: zh ? '实心度' : 'Solidity', value: asNumber(morphology.solidity) ?? 0, scale: 1 },
+      { id: 'lesion_area_ratio', label: zh ? '病灶面积占比' : 'Lesion area ratio', value: asNumber(morphology.lesion_area_ratio) ?? 0, scale: 1 },
     ].filter((metric) => metric.value > 0);
-  }, [morphology, pack]);
+  }, [morphology, pack, zh]);
 
   const wallMetrics = useMemo<Metric[]>(() => {
     const fromPack = pack?.charts?.wall_geometry || [];
     if (fromPack.length) return fromPack;
     const features = asRecord(wall.wall_features) || {};
     return [
-      { id: 'fraction_outside_lumen', label: '胃腔外比例', value: asNumber(features.fraction_outside_lumen) ?? 0, scale: 1, note: 'SDF 几何代理，不是病理壁层结论' },
-      { id: 'fraction_inside_lumen', label: '胃腔内比例', value: asNumber(features.fraction_inside_lumen) ?? 0, scale: 1 },
-      { id: 'contact_arc_ratio', label: '胃腔接触弧比例', value: asNumber(features.contact_arc_ratio) ?? 0, scale: 1, note: '接触弧过低时代理质量下降' },
-      { id: 'max_outward_depth', label: '最大向外距离', value: asNumber(features.max_outward_depth) ?? 0, unit: 'px' },
-      { id: 'proxy_quality_score', label: '代理质量', value: asNumber(wall.proxy_quality_score) ?? 0, scale: 1 },
+      { id: 'fraction_outside_lumen', label: zh ? '胃腔外比例' : 'Outside-lumen fraction', value: asNumber(features.fraction_outside_lumen) ?? 0, scale: 1, note: zh ? 'SDF 几何代理，不是病理壁层结论' : 'SDF geometry proxy, not pathologic wall-layer conclusion' },
+      { id: 'fraction_inside_lumen', label: zh ? '胃腔内比例' : 'Inside-lumen fraction', value: asNumber(features.fraction_inside_lumen) ?? 0, scale: 1 },
+      { id: 'contact_arc_ratio', label: zh ? '胃腔接触弧比例' : 'Contact-arc ratio', value: asNumber(features.contact_arc_ratio) ?? 0, scale: 1, note: zh ? '接触弧过低时代理质量下降' : 'Low contact arc reduces proxy quality' },
+      { id: 'max_outward_depth', label: zh ? '最大向外距离' : 'Max outward distance', value: asNumber(features.max_outward_depth) ?? 0, unit: 'px' },
+      { id: 'proxy_quality_score', label: zh ? '代理质量' : 'Proxy quality', value: asNumber(wall.proxy_quality_score) ?? 0, scale: 1 },
     ].filter((metric) => metric.value > 0);
-  }, [pack, wall]);
+  }, [pack, wall, zh]);
 
   const modalityStatus = pack?.charts?.modality_status || [];
   const review = pack?.review || {
@@ -352,15 +424,15 @@ export function DoctorReportStudio({
   const coreSigns = pack?.core_signs?.length
     ? pack.core_signs
     : gcUsReport
-      ? [
-          ['length', '肿瘤长径', gcUsReport.signs.size.length],
-          ['thickness', '肿瘤厚度', gcUsReport.signs.size.thickness],
-          ['layer_structure', '胃壁层次结构', gcUsReport.signs.layer_structure],
-          ['morphology', '肿瘤形态', gcUsReport.signs.morphology],
-          ['boundary', '肿瘤边界', gcUsReport.signs.boundary],
-          ['growth_pattern', '生长方式', gcUsReport.signs.growth_pattern],
-          ['serosa_change', '浆膜改变', gcUsReport.signs.serosa_change],
-        ].map(([id, label, field]) => {
+      ? ([
+          ['length', zh ? '肿瘤长径' : 'Tumor length', gcUsReport.signs.size.length],
+          ['thickness', zh ? '肿瘤厚度' : 'Tumor thickness', gcUsReport.signs.size.thickness],
+          ['layer_structure', zh ? '胃壁层次结构' : 'Wall layer structure', gcUsReport.signs.layer_structure],
+          ['morphology', zh ? '肿瘤形态' : 'Morphology', gcUsReport.signs.morphology],
+          ['boundary', zh ? '肿瘤边界' : 'Boundary', gcUsReport.signs.boundary],
+          ['growth_pattern', zh ? '生长方式' : 'Growth pattern', gcUsReport.signs.growth_pattern],
+          ['serosa_change', zh ? '浆膜改变' : 'Serosa change', gcUsReport.signs.serosa_change],
+        ] as const).map(([id, label, field]) => {
           const record = asRecord(field) || {};
           return { id: String(id), label: String(label), value: record.value, status: record.status, confidence: record.confidence, evidence_role: record.source };
         })
@@ -368,7 +440,15 @@ export function DoctorReportStudio({
   const evidenceMatrix = pack?.evidence_matrix || [];
   const candidates = report?.memory_update_candidates || [];
   const dynamicDraft = report?.dynamic_report_draft;
-  const reportText = dynamicDraft?.full_text || gcUsReport?.report.prose || systemReport?.summary || '';
+  // Formal doctor-facing text is the boss wall-layer template; regenerate by UI language
+  // from structured fields (bilingual DOCX example, 2026-08-10). Agent draft is assist-only.
+  const locale = resolveGcUsReportLocale(zh);
+  const templateProse = gcUsReport
+    ? buildGcUsTemplateReportText(gcUsReport, locale)
+    : '';
+  const agentDraftText = dynamicDraft?.full_text || '';
+  const reportText = templateProse || agentDraftText || systemReport?.summary || '';
+  const copyText = templateProse || agentDraftText || systemReport?.summary || '';
   const llmInvocation = analysis?.runtime_verification?.invocations?.find((item) => item.component === 'llm_report_synthesis');
   const llmNotes = pack?.llm_guardrail?.quality_notes || report?.llm_quality_notes || [];
   const managementAdvice = report?.management_advice || [];
@@ -384,22 +464,25 @@ export function DoctorReportStudio({
   ].filter((item): item is { label: string; value: string } => Boolean(item.value?.trim()));
   const spectralRoughness = asNumber(morphology.boundary_roughness);
   const tumorSize = patient?.clinical?.tumorSize;
+  const na = zh ? '未评估' : 'Not assessed';
+  const noSource = zh ? '暂无来源' : 'No source';
+  const notProvided = zh ? '未提供' : 'Not provided';
   const clinicalRows = [
-    { label: zh ? '病灶部位' : 'Lesion location', value: patient?.clinical?.location || '暂无来源' },
+    { label: zh ? '病灶部位' : 'Lesion location', value: patient?.clinical?.location || noSource },
     {
       label: zh ? '长径 x 厚度' : 'Length x thickness',
       value: tumorSize
-        ? `${tumorSize.length ?? '未评估'} x ${tumorSize.thickness ?? '未评估'} cm`
-        : '未评估',
+        ? `${tumorSize.length ?? na} x ${tumorSize.thickness ?? na} cm`
+        : na,
     },
-    { label: 'CEA', value: patient?.clinical?.biomarkers.cea ?? '未提供' },
-    { label: 'CA19-9', value: patient?.clinical?.biomarkers.ca199 ?? '未提供' },
+    { label: 'CEA', value: patient?.clinical?.biomarkers.cea ?? notProvided },
+    { label: 'CA19-9', value: patient?.clinical?.biomarkers.ca199 ?? notProvided },
   ];
 
   const copyReport = async () => {
-    if (!reportText) return;
+    if (!copyText) return;
     try {
-      await navigator.clipboard.writeText(reportText);
+      await navigator.clipboard.writeText(copyText);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -624,14 +707,23 @@ export function DoctorReportStudio({
                 {zh ? '病例级 T 分期辅助结论' : 'Case-level T-staging support'}
               </div>
               <div className="flex items-end gap-4">
-                <div className="text-6xl font-black tracking-tight text-white">{recommendedStage}</div>
+                <div className="text-6xl font-black tracking-tight text-white">{assistDisplayStage}</div>
                 <div className="pb-2">
-                  <div className={`rounded-full border px-2.5 py-1 text-[11px] ${statusTone(review.required ? 'partial' : 'available')}`}>
-                    {review.required ? (zh ? '证据不足或存在冲突' : 'Conflict or incomplete evidence') : (zh ? '证据链可复核' : 'Evidence chain reviewable')}
+                  <div className={`rounded-full border px-2.5 py-1 text-[11px] ${statusTone(assistDisplayStage === 'cTx' || review.required ? 'partial' : 'available')}`}>
+                    {assistDisplayStage === 'cTx'
+                      ? (zh ? '壁层未确认，保持 cTx' : 'Wall unconfirmed, keep cTx')
+                      : review.required
+                        ? (zh ? '证据不足或存在冲突' : 'Conflict or incomplete evidence')
+                        : (zh ? '证据链可复核' : 'Evidence chain reviewable')}
                   </div>
                   <div className="mt-2 text-[11px] text-slate-400">
                     {zh ? '置信度' : 'Confidence'}: <span className="font-semibold text-white">{report.confidence}</span>
                     {pack?.stage?.top_gap != null ? `, top gap ${pack.stage.top_gap.toFixed(2)}` : ''}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {zh ? '分类器/融合倾向' : 'Classifier/fusion tendency'}:{' '}
+                    <span className="font-semibold text-amber-100/90">{researchStage}</span>
+                    <span className="text-slate-600"> ({zh ? '非正式 cT' : 'not formal cT'})</span>
                   </div>
                 </div>
               </div>
@@ -645,7 +737,7 @@ export function DoctorReportStudio({
             </div>
           </div>
 
-          <ArtifactStrip patient={patient} analysis={analysis} zh={zh} />
+          <ArtifactStrip patient={patient} analysis={analysis} extraImages={extraImages} zh={zh} />
 
           <section className="rounded-2xl border border-cyan-300/20 bg-[linear-gradient(135deg,rgba(8,37,53,0.42),rgba(6,10,15,0.94))] p-5">
             <SectionTitle
@@ -775,22 +867,61 @@ export function DoctorReportStudio({
 
       {tab === 'evidence' ? (
         <div className="space-y-4">
+          <div className="rounded-xl border border-emerald-300/30 bg-[linear-gradient(120deg,rgba(8,75,63,0.22),rgba(8,14,20,0.95))] p-4">
+            <SectionTitle
+              icon={<Layers3 size={15} />}
+              title={zh ? '主看点: 胃壁层次证据' : 'Primary: wall-layer evidence'}
+              detail={zh ? '老板模板重心' : 'Boss template focus'}
+            />
+            <div className="mb-2 rounded border border-emerald-300/20 bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-emerald-50/85">
+              {zh
+                ? '请先看胃壁五层与浆膜是否经确认。胃腔 SDF、接触弧、外凸深度只是定位/复核代理，不能单独决定 cT。'
+                : 'Confirm the five wall layers and serosa first. Lumen SDF, contact arc, and outward depth are localization/review proxies and cannot decide cT alone.'}
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {(['layer_structure', 'serosa_change', 'boundary'] as const).map((signId) => {
+                const item = coreSigns.find((entry) => String(entry.id) === signId);
+                return (
+                  <div key={signId} className="rounded-lg border border-white/10 bg-slate-900/80 p-2.5">
+                    <div className="text-[9px] uppercase tracking-wide text-slate-500">
+                      {signId === 'layer_structure'
+                        ? (zh ? '胃壁层次' : 'Wall layers')
+                        : signId === 'serosa_change'
+                          ? (zh ? '浆膜改变' : 'Serosa')
+                          : (zh ? '边界（并入层次）' : 'Boundary (in layers)')}
+                    </div>
+                    <div className="mt-1 text-[12px] font-semibold text-slate-100">
+                      {item ? displayValue(item.value) : (zh ? '待复核' : 'Pending review')}
+                    </div>
+                    {item ? (
+                      <div className="mt-1 text-[9px] text-slate-500">
+                        {statusLabel(item.status, zh)}
+                        {item.confidence == null ? '' : ` / ${Math.round(percentValue(item.confidence))}%`}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <MetricBars metrics={wallMetrics} accent="amber" zh={zh} />
+            {Array.isArray(wall.quality_flags) && wall.quality_flags.length ? (
+              <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/5 p-2 text-[10px] leading-relaxed text-amber-100">{wall.quality_flags.join('，')}</div>
+            ) : null}
+          </div>
+
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
-              <SectionTitle icon={<TableProperties size={15} />} title={zh ? '边界和形态统计' : 'Boundary and morphology'} detail={zh ? 'mask-derived proxy' : 'mask-derived proxy'} />
+              <SectionTitle icon={<TableProperties size={15} />} title={zh ? '边界和形态统计（并入模板）' : 'Boundary and morphology (in template)'} detail={zh ? 'mask-derived proxy' : 'mask-derived proxy'} />
               <MetricBars metrics={boundaryMetrics} accent="cyan" zh={zh} />
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
-              <SectionTitle icon={<Layers3 size={15} />} title={zh ? '胃腔和壁层统计' : 'Lumen and wall geometry'} detail={String(wall.penetration_risk || 'unknown')} />
+              <SectionTitle icon={<Layers3 size={15} />} title={zh ? '胃腔几何代理（非独立分期）' : 'Lumen geometry proxy (not standalone staging)'} detail={String(wall.penetration_risk || 'unknown')} />
               <div className="mb-2 rounded border border-fuchsia-300/15 bg-fuchsia-400/[0.04] px-2.5 py-2 text-[10px] leading-relaxed text-fuchsia-50/85">
                 {zh
-                  ? '胃腔关系、SDF 与外凸深度属于定位/复核代理，不能独立决定 cT；确定分期仍需经确认的壁层、浆膜或邻近器官证据。'
-                  : 'Lumen relation, SDF, and outward depth are localization/review proxies and cannot decide cT alone; definite staging still needs confirmed wall, serosa, or adjacent-organ evidence.'}
+                  ? '接触带用于定位突破分析区；SDF/外凸深度不能独立抬升 T3/T4。'
+                  : 'The contact band localizes breakthrough analysis; SDF/outward depth cannot alone uplift T3/T4.'}
               </div>
               <MetricBars metrics={wallMetrics} accent="amber" zh={zh} />
-              {Array.isArray(wall.quality_flags) && wall.quality_flags.length ? (
-                <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/5 p-2 text-[10px] leading-relaxed text-amber-100">{wall.quality_flags.join('，')}</div>
-              ) : null}
             </div>
           </div>
 
@@ -846,17 +977,31 @@ export function DoctorReportStudio({
 
       {tab === 'report' ? (
         <div className="space-y-4">
+          <div className="rounded-2xl border border-emerald-300/20 bg-[linear-gradient(135deg,rgba(6,40,30,0.55),rgba(6,10,15,0.95))] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/70">{zh ? '正式模板报告（老板壁层模板）' : 'Formal template report'}</div>
+                <h3 className="mt-1 text-xl font-bold text-white">{zh ? '胃充盈超声报告' : 'Gastric filling US report'}</h3>
+                <div className="mt-1 text-[10px] text-slate-500">{zh ? '复制与 PDF 均以模板正文为准；下方 Agent 叙述仅作辅助。' : 'Copy/PDF use template prose; Agent narrative below is assist-only.'}</div>
+              </div>
+              <button type="button" onClick={() => void copyReport()} className="flex items-center gap-1.5 rounded-lg border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[11px] text-emerald-100 hover:bg-emerald-300/20">
+                {copied ? <Check size={13} /> : <Clipboard size={13} />}
+                {copied ? (zh ? '已复制模板' : 'Copied template') : (zh ? '复制模板正文' : 'Copy template')}
+              </button>
+            </div>
+            <div className="mt-5 rounded-xl border border-white/10 bg-slate-900 p-4">
+              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-slate-200">{templateProse || (zh ? '暂无模板正文：请先完成病灶与胃腔勾画并生成壁层证据。' : 'No template prose yet: finish lesion+lumen contours and wall evidence.')}</pre>
+            </div>
+          </div>
+
+          {(dynamicDraft?.sections?.length || agentDraftText) ? (
           <div className="rounded-2xl border border-cyan-300/20 bg-[linear-gradient(135deg,rgba(8,37,53,0.5),rgba(6,10,15,0.95))] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300/70">{zh ? '医生复核报告草稿' : 'Clinician review draft'}</div>
-                <h3 className="mt-1 text-xl font-bold text-white">{dynamicDraft?.title || (zh ? '胃癌超声多模态辅助诊断报告' : 'Multimodal gastric ultrasound report')}</h3>
-                <div className="mt-1 text-[10px] text-slate-500">{zh ? '结构化证据生成，保留草稿状态，未经医生签发。' : 'Evidence-bound draft, not finalized until physician sign-off.'}</div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300/70">{zh ? 'Assist 辅助叙述（非正式）' : 'Assist narrative (non-formal)'}</div>
+                <h3 className="mt-1 text-lg font-bold text-white">{dynamicDraft?.title || (zh ? 'Agent 动态草稿' : 'Agent dynamic draft')}</h3>
+                <div className="mt-1 text-[10px] text-slate-500">{zh ? '不作为正式签发正文；正式输出见上方模板报告页。' : 'Not for formal sign-off; use the Template report tab.'}</div>
               </div>
-              <button type="button" onClick={() => void copyReport()} className="flex items-center gap-1.5 rounded-lg border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-[11px] text-cyan-100 hover:bg-cyan-300/20">
-                {copied ? <Check size={13} /> : <Clipboard size={13} />}
-                {copied ? (zh ? '已复制' : 'Copied') : (zh ? '复制正文' : 'Copy text')}
-              </button>
             </div>
             <div className="mt-5 rounded-xl border border-white/10 bg-slate-900 p-4">
               {dynamicDraft?.sections?.length ? (
@@ -872,10 +1017,11 @@ export function DoctorReportStudio({
                   ))}
                 </div>
               ) : (
-                <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-slate-200">{reportText || (zh ? '暂无报告正文。' : 'No report text yet.')}</pre>
+                <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-slate-200">{agentDraftText}</pre>
               )}
             </div>
           </div>
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-white/10 bg-slate-800 p-4">
@@ -927,19 +1073,40 @@ export function DoctorReportStudio({
                 <textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} className="mt-1.5 min-h-28 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[12px] leading-relaxed text-white outline-none focus:border-cyan-300/40" placeholder={zh ? '说明采纳、修改、拒绝或证据不足的原因' : 'Explain acceptance, modification, rejection, or missing evidence'} />
               </label>
               <div className="mt-3 flex flex-wrap gap-2">
-                {['图像质量不足', '边界不清', '壁层代理不可靠', '分期证据冲突', '缺少多切面', '缺少增强 CT'].map((flag) => (
+                {(zh
+                  ? ['图像质量不足', '边界不清', '壁层代理不可靠', '分期证据冲突', '缺少多切面', '缺少增强 CT']
+                  : ['Poor image quality', 'Unclear boundary', 'Unreliable wall proxy', 'Stage evidence conflict', 'Missing multi-plane views', 'Missing contrast CT']
+                ).map((flag) => (
                   <button key={flag} type="button" onClick={() => toggleQualityFlag(flag)} className={`rounded-full border px-2.5 py-1 text-[10px] transition ${qualityFlags.includes(flag) ? 'border-amber-300/40 bg-amber-300/15 text-amber-100' : 'border-white/10 text-slate-500 hover:text-slate-200'}`}>{flag}</button>
                 ))}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {([
-                  ['accept', '采纳 AI', 'border-emerald-300/30 text-emerald-100'],
-                  ['modify', '修改确认', 'border-cyan-300/30 text-cyan-100'],
-                  ['reject', '拒绝 AI', 'border-rose-300/30 text-rose-100'],
-                  ['request_more_evidence', '证据不足', 'border-amber-300/30 text-amber-100'],
-                ] as Array<[ReviewAction, string, string]>).map(([action, label, style]) => (
-                  <button key={action} type="button" onClick={() => { setReviewAction(action); void submitReview(action); }} disabled={submitState === 'submitting'} className={`rounded-lg border bg-slate-900 px-2 py-2.5 text-[11px] font-semibold hover:bg-white/5 disabled:opacity-50 ${style}`}>{label}</button>
-                ))}
+                  ['accept', zh ? '采纳 AI' : 'Accept AI', 'border-emerald-300/30 text-emerald-100'],
+                  ['modify', zh ? '修改确认' : 'Modify & confirm', 'border-cyan-300/30 text-cyan-100'],
+                  ['reject', zh ? '拒绝 AI' : 'Reject AI', 'border-rose-300/30 text-rose-100'],
+                  ['request_more_evidence', zh ? '证据不足' : 'Need more evidence', 'border-amber-300/30 text-amber-100'],
+                ] as Array<[ReviewAction, string, string]>).map(([action, label, style]) => {
+                  const acceptBlocked = action === 'accept' && (
+                    !doctorStage
+                    || /^c?tx$/i.test(String(doctorStage))
+                    || (gcUsReport?.conflicts?.length || 0) > 0
+                  );
+                  return (
+                    <button
+                      key={action}
+                      type="button"
+                      onClick={() => { setReviewAction(action); void submitReview(action); }}
+                      disabled={submitState === 'submitting' || acceptBlocked}
+                      title={acceptBlocked
+                        ? (zh ? '证据不足或 cTx/冲突时不能直接采纳；请先确认 cT 或改为修改/证据不足' : 'Cannot accept with cTx or conflicts; confirm cT or use modify / need more evidence')
+                        : undefined}
+                      className={`rounded-lg border bg-slate-900 px-2 py-2.5 text-[11px] font-semibold hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40 ${style}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
               {submitState !== 'idle' ? <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] ${submitState === 'error' ? 'border-rose-300/25 bg-rose-300/5 text-rose-100' : 'border-emerald-300/25 bg-emerald-300/5 text-emerald-100'}`}>{submitState === 'submitting' ? (zh ? '正在记录复核...' : 'Recording review...') : submitMessage}</div> : null}
               <div className="mt-2 text-[9px] text-slate-600">{zh ? `当前动作：${reviewAction}` : `Current action: ${reviewAction}`}</div>

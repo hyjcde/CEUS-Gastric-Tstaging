@@ -14,9 +14,14 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
+function readUiLanguage(): 'zh' | 'en' {
+  if (typeof window === 'undefined') return 'zh';
+  const stored = window.localStorage.getItem('gastric_language');
+  return stored === 'en' ? 'en' : 'zh';
+}
+
 /**
- * 错误边界组件
- * 捕获子组件树中的 JavaScript 错误，记录错误并显示降级 UI
+ * Error boundary: catch JS errors in the child tree and show a recovery UI.
  */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -37,18 +42,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // 记录错误到控制台（生产环境可以发送到错误监控服务）
     console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
     this.setState({
       error,
       errorInfo,
     });
-
-    // 在生产环境中，可以发送错误到监控服务
-    // if (process.env.NODE_ENV === 'production') {
-    //   // Sentry.captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack } } });
-    // }
   }
 
   handleReset = () => {
@@ -69,12 +67,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      // 如果提供了自定义 fallback，使用它
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      // 默认错误 UI
+      const zh = readUiLanguage() !== 'en';
+
       return (
         <div className="flex items-center justify-center min-h-screen bg-black text-gray-200 p-8">
           <div className="max-w-2xl w-full bg-[#0b0b0d] border border-red-500/30 rounded-xl p-8 shadow-2xl">
@@ -83,38 +81,42 @@ export class ErrorBoundary extends Component<Props, State> {
                 <AlertTriangle className="text-red-400" size={32} />
               </div>
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-red-400 mb-2">Something went wrong</h1>
+                <h1 className="text-2xl font-bold text-red-400 mb-2">
+                  {zh ? '页面出错' : 'Something went wrong'}
+                </h1>
                 <p className="text-gray-400 text-sm">
-                  An unexpected error occurred. Please try refreshing the page or contact support if the problem persists.
+                  {zh
+                    ? '发生未预期错误。可先点「重试」恢复；若仍失败请刷新页面。'
+                    : 'An unexpected error occurred. Try Retry first; if it persists, refresh the page.'}
                 </p>
               </div>
             </div>
 
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {this.state.error ? (
               <div className="mb-6 p-4 bg-black/50 rounded-lg border border-white/10">
-                <details className="text-xs font-mono">
+                <details className="text-xs font-mono" open>
                   <summary className="cursor-pointer text-gray-400 hover:text-gray-200 mb-2">
-                    Error Details (Development Only)
+                    {zh ? '错误详情（便于排查）' : 'Error details'}
                   </summary>
                   <div className="mt-2 space-y-2">
                     <div>
                       <span className="text-red-400">Error:</span>
-                      <pre className="text-gray-300 mt-1 overflow-auto">
+                      <pre className="text-gray-300 mt-1 overflow-auto whitespace-pre-wrap">
                         {this.state.error.toString()}
                       </pre>
                     </div>
-                    {this.state.errorInfo && (
+                    {this.state.errorInfo?.componentStack ? (
                       <div>
-                        <span className="text-red-400">Stack Trace:</span>
+                        <span className="text-red-400">Component stack:</span>
                         <pre className="text-gray-300 mt-1 overflow-auto max-h-40">
                           {this.state.errorInfo.componentStack}
                         </pre>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </details>
               </div>
-            )}
+            ) : null}
 
             <div className="flex gap-3">
               <button
@@ -122,21 +124,21 @@ export class ErrorBoundary extends Component<Props, State> {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
               >
                 <RefreshCw size={16} />
-                Try Again
+                {zh ? '重试' : 'Retry'}
               </button>
               <button
                 onClick={this.handleReload}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors font-medium"
               >
                 <RefreshCw size={16} />
-                Reload Page
+                {zh ? '刷新页面' : 'Refresh'}
               </button>
               <button
                 onClick={this.handleGoHome}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors font-medium"
               >
                 <Home size={16} />
-                Go Home
+                {zh ? '回首页' : 'Home'}
               </button>
             </div>
           </div>
@@ -147,4 +149,3 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
-

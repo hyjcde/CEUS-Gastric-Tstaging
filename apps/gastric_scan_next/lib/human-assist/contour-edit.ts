@@ -86,11 +86,25 @@ export function resampleClosed(pts: number[][], targetN: number): number[][] {
   return out;
 }
 
-/** After SAM: keep dense editable mesh (HTML keeps 64–512; we target ~96). */
-export function prepareEditableContour(pts: number[][], target = 96): number[][] {
+/** Cap for editable lesion / wall / lumen contours (keep dense; edit via sparse handles). */
+export const LESION_CONTOUR_MAX_POINTS = 2048;
+export const WALL_CONTOUR_MAX_POINTS = 1536;
+export const LUMEN_CONTOUR_MAX_POINTS = 1024;
+/** Explicit “resample” action: still dense enough for irregular lesion borders. */
+export const LESION_SIMPLIFY_TARGET = 768;
+export const WALL_SIMPLIFY_TARGET = 512;
+
+/**
+ * After SAM / load: keep the original dense mesh.
+ * Only arc-length resample when point count exceeds maxPoints.
+ */
+export function prepareEditableContour(
+  pts: number[][],
+  maxPoints = LESION_CONTOUR_MAX_POINTS,
+): number[][] {
   if (pts.length < 3) return clonePoly(pts);
-  if (pts.length <= target) return clonePoly(pts);
-  return resampleClosed(pts, target);
+  if (pts.length <= maxPoints) return clonePoly(pts);
+  return resampleClosed(pts, maxPoints);
 }
 
 /** Draw closed Catmull-Rom-smoothed path in canvas image space (mapped by caller). */
@@ -130,7 +144,8 @@ export function strokeSmoothClosed(
   ctx.closePath();
 }
 
-export const LESION_CTRL_COUNT = 18;
-export const WALL_CTRL_COUNT = 24;
+/** Denser sparse handles so small lesions stay editable without huge grabbers. */
+export const LESION_CTRL_COUNT = 28;
+export const WALL_CTRL_COUNT = 36;
 export const LESION_SOFT_SIGMA = 22;
 export const WALL_SOFT_SIGMA = 30;

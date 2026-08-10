@@ -19,6 +19,8 @@ MANIFEST = ROOT / "data/registry/reader_round2_ai_assisted_manifest.csv"
 ORDER = ROOT / "data/registry/reader_round2_case_order_20260810.csv"
 EXPORT_STATUS = ROOT / "docs/clinical_validation/reader_round2_exports/export_status.json"
 AUDIT_SUMMARY = ROOT / "docs/clinical_validation/reader_round2_exports/audit_events_summary.json"
+CASE_AUDIT = ROOT / "docs/clinical_validation/reader_round2_exports/reader_case_level_from_audit.csv"
+EXCLUSIONS = ROOT / "docs/reader_audit_exclusions_20260801.json"
 
 
 def sha256(path: Path) -> str:
@@ -83,13 +85,47 @@ def main() -> int:
         st = json.loads(EXPORT_STATUS.read_text(encoding="utf-8"))
         r2_done = int(st.get("round2_completed_rows") or 0)
         add("export_status_readable", True, st.get("execution_status", ""))
-    add("round2_completed_rows_gt0", r2_done > 0, f"round2_completed_rows={r2_done}")
+
+    completed_from_audit = 0
+    completed_with_initial = 0
+    if CASE_AUDIT.exists():
+        for row in csv.DictReader(CASE_AUDIT.open(encoding="utf-8")):
+            valid = str(row.get("research_valid_completion")).lower() in {"1", "true", "yes"}
+            completed = str(row.get("completed")).lower() in {"1", "true", "yes"}
+            if not (valid or (
+                completed
+                and str(row.get("environment") or "") == "research"
+                and str(row.get("authenticated_reader_id") or "").strip()
+                and str(row.get("has_initial_judgment")).lower() in {"1", "true", "yes"}
+            )):
+                continue
+            completed_from_audit += 1
+            if str(row.get("has_initial_judgment")).lower() in {"1", "true", "yes"}:
+                completed_with_initial += 1
+    effective_completed = max(r2_done, completed_from_audit)
+    add(
+        "round2_completed_rows_gt0",
+        effective_completed > 0,
+        f"export_status={r2_done}, research_valid_completed={completed_from_audit}",
+    )
+    add(
+        "round2_completed_with_initial_judgment",
+        effective_completed == 0 or completed_with_initial == effective_completed,
+        f"completed_with_initial={completed_with_initial}, research_valid_completed={completed_from_audit}",
+    )
 
     research_events = 0
+    research_completed_summary = 0
     if AUDIT_SUMMARY.exists():
         summary = json.loads(AUDIT_SUMMARY.read_text(encoding="utf-8"))
         research_events = int(summary.get("event_count") or 0)
-    add("research_audit_events_gt0", research_events > 0, f"event_count={research_events}")
+        research_completed_summary = int(summary.get("completed_case_count") or 0)
+    add(
+        "research_completed_cases_gt0",
+        max(research_completed_summary, completed_from_audit) > 0,
+        f"summary_completed={research_completed_summary}, audit_completed={completed_from_audit}, events={research_events}",
+    )
+    add("exclusions_file_exists", EXCLUSIONS.exists(), str(EXCLUSIONS))
 
     clinical_ready = all(
         c["ok"]
@@ -104,7 +140,9 @@ def main() -> int:
             "case_order_sha256",
             "expertise_primary_registered",
             "round2_completed_rows_gt0",
-            "research_audit_events_gt0",
+            "round2_completed_with_initial_judgment",
+            "research_completed_cases_gt0",
+            "exclusions_file_exists",
         }
     )
     scaffold_ready = all(

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-28 03:34 UTC",
+  "generated_at": "2026-06-12 08:20 UTC",
   "project_root": "/data/research/gastric/GastricTstaging",
   "dataset_root": "/data/research/gastric/GastricTstaging/dataset",
   "summary": {
@@ -180,6 +180,37 @@
     },
     "newzip_by_center": {},
     "centers": [
+      {
+        "folder": "crop_ui",
+        "views": {}
+      },
+      {
+        "folder": "multicenter",
+        "views": {}
+      },
+      {
+        "folder": "putian",
+        "views": {}
+      },
+      {
+        "folder": "putian_2024_new",
+        "views": {}
+      },
+      {
+        "folder": "statistics",
+        "views": {}
+      },
+      {
+        "folder": "{center}",
+        "views": {
+          "crop_ui": {
+            "images": 0,
+            "annotations": 0,
+            "roi_masks": 0,
+            "overlays": 0
+          }
+        }
+      },
       {
         "folder": "三明市第二医院",
         "views": {
@@ -781,5 +812,23 @@
       "title": "tables/README.md",
       "path": "dataset/tables/README.md"
     }
-  ]
+  ],
+  "patient_stats": {
+    "manifest_internal_patients": 2108,
+    "manifest_external_patients": 550,
+    "manifest_total_patients": 2658,
+    "manifest_total_frames": 13763,
+    "clinical_master_total": 2558,
+    "clinical_master_internal": 1883,
+    "clinical_master_external": 675,
+    "modeling_unique_patients": 2083,
+    "modeling_total_rows": 12851,
+    "modeling_split_patients": {
+      "test_external_clinical": 381,
+      "test_external_newzip_clinical": 136,
+      "test_prospective_clinical": 46,
+      "train_clinical": 1405,
+      "val_clinical": 161
+    }
+  }
 }

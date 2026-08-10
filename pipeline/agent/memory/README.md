@@ -6,12 +6,14 @@ JSONL-backed **episodic**, **procedural**, and **tool governance** memory for th
 
 ```
 pipeline/agent/memory/
+  index/
+    phase0_train_only_v1/   # versioned Case-RAG memory (train-only, no prospective/external)
   store/
     paths.py           # store_data/<run_id>/ layout
     schema_validate.py # JSON Schema 0.1.0
     jsonl_store.py     # append / load / filter
     retriever.py       # episodic + procedural + governance read
-  evolver.py           # reflect / promote / quality_score CLI
+  evolver.py           # reflect / promote / quality_score CLI (active promotion gated)
   memory_apply.py      # soft_prior fusion into report
   schemas/self_evolving_multimodal_memory.schema.json
   store_data/<run_id>/
@@ -21,6 +23,15 @@ pipeline/agent/memory/
     candidates.jsonl
     audit.jsonl
 ```
+
+## Case-RAG memory rebuild
+
+```bash
+python3 scripts/build_phase0_case_rag_memory.py
+```
+
+Default output: `pipeline/agent/memory/index/phase0_train_only_v1/`.  
+`SimilarityTool` prefers this version when present (override with `AGENT_CASE_MEMORY_INDEX`).
 
 ## Quick start
 
@@ -57,11 +68,22 @@ python -m agent.memory.evolver \
   --feedback-csv path/to/memory_write_feedback.csv \
   --out-store pipeline/agent/memory/store_data/self_evolution_eval
 
+# Default promote only refreshes support counts; does NOT activate memory.
 python -m agent.memory.evolver \
   --action promote \
   --min-support 3 \
   --out-store pipeline/agent/memory/store_data/self_evolution_eval
+
+# Opt-in active promotion still requires doctor_review_status=approved
+python -m agent.memory.evolver \
+  --action promote \
+  --allow-active-promotion \
+  --doctor-review-status approved \
+  --min-support 3 \
+  --out-store pipeline/agent/memory/store_data/self_evolution_eval
 ```
+
+Workbench / product `accept` remains candidate (`defer`) until offline gate + doctor approval.
 
 ### 4. P0-4 evaluation (memory off vs on)
 

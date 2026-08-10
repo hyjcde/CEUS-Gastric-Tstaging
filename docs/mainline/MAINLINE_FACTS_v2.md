@@ -1,6 +1,7 @@
 # MAINLINE_FACTS_v2 — 主线证据 L1 入口（2026-06-04 升级）
 
-> 状态：v2 (2026-06-04 14:00 CST)，所有数字直接从 `test_results.json` / `experiment_index_v2.csv` re-read 后写入，未做外推。
+> 状态：v2 (2026-06-10)，§2.1 新增 patient-disjoint external 重估。
+> **2026-08-09 执行冻结**：[`asset_freeze_decision_20260809.md`](asset_freeze_decision_20260809.md)（acc_boost2 为 Agent final T；Phase 0 分表；SAM3.1 交互候选未升为 Agent primary）。
 > 配套：`docs/LAYERS.md`（4 层定义）· `docs/paper_governance/PAPER_INDEX.md`（SSOT 入口）· `docs/mainline/experiment_index_v2.csv`（211 行 L1/L2/L3 索引）
 > 数据 contract 未变（见 §1）。v2 相比 v1 主要差异：①加入「6 版本对比表」（§6）②明确标注 P0.1/P0.2/P0.3 三条探索线状态（§7–§9）③诚实列出 per-center 短板（§5）。
 
@@ -60,6 +61,60 @@
 | T2/T3 over-stage rate | 0.1608 |
 
 > 已 cross-check 6 个数字 vs v1 MAINLINE_FACTS.md：全部一致。rounding 走 4 位有效。
+
+### 2.1 External patient-disjoint 重估（2026-06-10 审计）
+
+**问题**：`screened_eval_20260531` 的 train 含 `ext/putian`、`ext/putian_2024_new`、`ext/multicenter` 共 **1,264 rows / 207 patient**；按当前脚本与 CSV 重跑，与 latest screened external 的 **86 个** `clinical_patient_uid` 重叠（帧级 `image_path` 不重复，但 patient 级评估会记忆训练集见过的人）。因此本节是 legacy contaminated-train 模型的 overlap-corrected audit，不是 no-external-train 主泛化结果。
+
+| Split | n patient | acc_boost2 patient ACC | fused_calibrated patient ACC | acc_boost2 AUC |
+|-------|-----------|------------------------|------------------------------|----------------|
+| 全 external | 485 | **0.629** (JSON) / 0.633 (hybrid agg) | **0.666** | 0.826 |
+| **held-out disjoint audit** | **399** | **0.556** | **0.594** | 0.768 |
+| train-seen overlap | 86 | **0.988** | **1.000** | ~1.0 |
+
+**解读**：
+- 论文/汇报不能再把 legacy 59.4% 当作 no-external-train 主 external 泛化；它只能作为 overlap-corrected audit。合规训练入口应使用 Phase 0 split：`pipeline/data/tstaging_4class_screened_eval_phase0_xiehe_20260610/`。
+- 「66.6% no-leak fusion ACC」相对 held-out **59.4%** 仅比早期 fusion held-out **55.6%** 高约 3.8pp，不是表观 +4.7pp。
+- overlap 子集 ACC≈100% 说明当前 external 指标 **混入了 in-distribution 外部中心 patient**，不能称为严格独立多中心验证。
+
+**held-out 分中心（acc_boost2 hybrid，399 子集）** — 域偏移极大：
+
+| Source | n | Patient ACC |
+|--------|---|-------------|
+| ext/putian | 145 | 0.545 |
+| ext/福建省立医院 | 24 | 0.958 |
+| ext/zhongliu | 82 | 0.817 |
+| ext/中核五〇四医院 | 67 | 0.328 |
+| ext/北京友谊医院 | 22 | 0.318 |
+| ext/佛山市第一人民医院 | 31 | 0.290 |
+
+**held-out 分中心（fused_calibrated，399 子集）**：
+
+| Source | n | Patient ACC | T2 recall |
+|--------|---|-------------|-----------|
+| ext/putian | 145 | 0.566 | 0.143 |
+| ext/福建省立医院 | 24 | 0.958 | 1.000 |
+| ext/zhongliu | 82 | 0.829 | 0.250 |
+| ext/中核五〇四医院 | 67 | 0.418 | 0.087 |
+| ext/北京友谊医院 | 22 | 0.455 | 0.000 |
+| ext/佛山市第一人民医院 | 31 | 0.355 | 0.000 |
+
+**held-out 每类 recall（399 patient）**：
+
+| Model | T1 | T2 | T3 | T4+ |
+|-------|-----|-----|-----|-----|
+| acc_boost2 | 0.523 | **0.113** | 0.462 | 0.757 |
+| fused_calibrated | 0.538 | **0.132** | 0.558 | 0.774 |
+
+**重算脚本**：`pipeline/scripts/report_screened_external_patient_disjoint_metrics.py`
+**产物目录**：`pipeline/experiments/reports/gastric_us_multimodal_agent/screened_external_disjoint_v1/`（含 README、JSON、CSV）
+**Phase 0 诚实重训（B1，已完成 2026-06-11）**：
+- Split：`pipeline/data/tstaging_4class_screened_eval_phase0_xiehe_20260610`（`overlap=0`）
+- 主 run：`…/phase0_20260610_225852`（early-stop epoch **37**，best val macro AUC **0.666**）
+- External：frame AUC **0.651**，patient ACC **46.4%**（456 有效 UID，overlap=0）
+- Prospective：frame AUC **0.845**，patient ACC **66.6%**
+- 实现与代码地图：[`phase0_acc_boost2_implementation_20260610.html`](phase0_acc_boost2_implementation_20260610.html)
+- 评估脚本：`pipeline/scripts/run_phase0_post_train_eval.py`（已跑）
 
 ## 3. Baseline（frozen primary 2026-04-23）
 

@@ -1,9 +1,9 @@
 {
-  "date": "2026-07-31",
+  "date": "2026-08-03",
   "sample_rows": 13763,
   "patient_rows": 2593,
   "training_linked_samples": 11514,
-  "real_video_samples": 6236,
+  "real_video_samples": 2605,
   "loop_still_samples": 0,
   "by_cohort": {
     "internal": 8229,
@@ -17,8 +17,8 @@
     "test_external_newzip": 495
   },
   "quality_flags": {
+    "missing_crop_video": 11158,
     "no_training_row": 2249,
-    "missing_crop_video": 7493,
     "clinical_missing": 26,
     "clinical_sheet_label": 9
   },

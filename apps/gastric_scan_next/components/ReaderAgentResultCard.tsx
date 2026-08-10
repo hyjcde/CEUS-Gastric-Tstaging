@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Compass, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import type { Patient } from '@/types';
-import { buildHumanAssistUrl, buildReaderAppUrl } from '@/lib/reading-agent-url';
+import { buildReaderAppUrl } from '@/lib/reading-agent-url';
 import { navigateTo } from '@/lib/navigation';
+import { useSettings } from '@/contexts/SettingsContext';
 
 type ReaderAgentResult = {
   key?: string;
@@ -46,6 +47,8 @@ export function ReaderAgentResultCard({
   onImportMaskPolygon,
   onImportWallPolygon,
 }: ReaderAgentResultCardProps) {
+  const { language } = useSettings();
+  const zh = language !== 'en';
   const [result, setResult] = useState<ReaderAgentResult | null>(null);
 
   useEffect(() => {
@@ -84,10 +87,6 @@ export function ReaderAgentResultCard({
     navigateTo(buildReaderAppUrl(patient));
   };
 
-  const openHumanAssist = () => {
-    window.open(buildHumanAssistUrl(patient), '_blank', 'noopener,noreferrer');
-  };
-
   if (!result) {
     return (
       <div
@@ -95,26 +94,21 @@ export function ReaderAgentResultCard({
         style={{ top: '7rem' }}
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="text-gray-400">阅片 / 分层回写</span>
+          <span className="text-gray-400">{zh ? '阅片 / 分层回写' : 'Reader / layer write-back'}</span>
           <button
             type="button"
             onClick={openAgent}
             className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300"
-            title="打开 /reader：SAM + 胃壁分层"
+            title={zh ? '打开 /reader：SAM + 胃壁分层' : 'Open /reader: SAM + wall layers'}
           >
-            打开 <ExternalLink size={11} />
+            {zh ? '打开' : 'Open'} <ExternalLink size={11} />
           </button>
         </div>
         <div className="mt-1 text-[10px] text-gray-500">
-          尚无回写。可用「阅片Agent」或人机互助 HTML（带 callback）对当前帧分割分层，结果会回到此处。
+          {zh
+            ? '尚无回写。可从当前 Next 阅片工作台完成分割、分层与报告，结果会回到此处。'
+            : 'No write-back yet. Finish segmentation, layers, and report in the Next reader workbench; results return here.'}
         </div>
-        <button
-          type="button"
-          onClick={openHumanAssist}
-          className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded border border-orange-500/30 bg-orange-500/10 px-2 py-1 text-[10px] text-orange-200 hover:bg-orange-500/20"
-        >
-          <Compass size={11} /> 人机互助 HTML（可回写）
-        </button>
       </div>
     );
   }
@@ -129,10 +123,10 @@ export function ReaderAgentResultCard({
   const wallPts = wallPoly?.length || 0;
   const sourceHint = result.source
     ? String(result.source).includes('direction')
-      ? '来源：人机互助'
+      ? (zh ? '来源：方向标注' : 'Source: direction annotator')
       : String(result.source).includes('interactive')
-        ? '来源：HTML 阅片 Agent'
-        : `来源：${result.source}`
+        ? (zh ? '来源：阅片工作台' : 'Source: reader workbench')
+        : (zh ? `来源：${result.source}` : `Source: ${result.source}`)
     : null;
 
   return (
@@ -141,24 +135,26 @@ export function ReaderAgentResultCard({
       style={{ top: '7rem' }}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="font-semibold text-emerald-300">辅助回写</div>
+        <div className="font-semibold text-emerald-300">{zh ? '辅助回写' : 'Assist write-back'}</div>
         <button
           type="button"
           onClick={openAgent}
           className="inline-flex items-center gap-1 text-emerald-400/90 hover:text-emerald-300"
-          title="再次打开 /reader"
+          title={zh ? '再次打开 /reader' : 'Open /reader again'}
         >
-          再开 <ExternalLink size={11} />
+          {zh ? '再开' : 'Reopen'} <ExternalLink size={11} />
         </button>
       </div>
       <div className="mt-1 text-gray-200">
-        分层：{label}{hint ? ` · ${hint}` : ''}
+        {zh ? '分层：' : 'Layer: '}{label}{hint ? ` / ${hint}` : ''}
       </div>
       <div className="mt-0.5 text-gray-400">
-        {result.in_contact ? '已接触胃壁' : '未接触 / 待确认'}
-        {pts ? ` · 灶 ${pts} 点` : ''}
-        {wallPts ? ` · 壁 ${wallPts} 点` : ''}
-        {result.case_id ? ` · ${result.case_id}` : ''}
+        {result.in_contact
+          ? (zh ? '已接触胃壁' : 'In contact with wall')
+          : (zh ? '未接触 / 待确认' : 'No contact / pending')}
+        {pts ? (zh ? ` / 灶 ${pts} 点` : ` / lesion ${pts} pts`) : ''}
+        {wallPts ? (zh ? ` / 壁 ${wallPts} 点` : ` / wall ${wallPts} pts`) : ''}
+        {result.case_id ? ` / ${result.case_id}` : ''}
       </div>
       {sourceHint ? <div className="mt-0.5 text-[10px] text-gray-500">{sourceHint}</div> : null}
       {when ? <div className="mt-0.5 text-[10px] text-gray-500">{when}</div> : null}
@@ -169,7 +165,7 @@ export function ReaderAgentResultCard({
           onClick={() => onApplyStage(stage, { t_hint: hint, layer_label: label })}
           className="mt-2 w-full rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20"
         >
-          应用 {stage} 到 CBM
+          {zh ? `应用 ${stage} 到 CBM` : `Apply ${stage} to CBM`}
         </button>
       ) : null}
       {maskPoly && onImportMaskPolygon ? (
@@ -178,7 +174,7 @@ export function ReaderAgentResultCard({
           onClick={() => onImportMaskPolygon(maskPoly)}
           className="mt-1.5 w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/20"
         >
-          导入病灶边界到编辑
+          {zh ? '导入病灶边界到编辑' : 'Import lesion contour'}
         </button>
       ) : null}
       {wallPoly && onImportWallPolygon ? (
@@ -187,16 +183,9 @@ export function ReaderAgentResultCard({
           onClick={() => onImportWallPolygon(wallPoly)}
           className="mt-1.5 w-full rounded border border-orange-500/40 bg-orange-500/10 px-2 py-1 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/20"
         >
-          导入胃壁边界到编辑
+          {zh ? '导入胃壁边界到编辑' : 'Import wall contour'}
         </button>
       ) : null}
-      <button
-        type="button"
-        onClick={openHumanAssist}
-        className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-gray-300 hover:bg-white/10"
-      >
-        <Compass size={11} /> 人机互助 HTML
-      </button>
     </div>
   );
 }

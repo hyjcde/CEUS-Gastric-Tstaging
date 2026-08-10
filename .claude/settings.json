@@ -1,0 +1,26 @@
+{
+  "autoMemoryEnabled": true,
+  "autoDreamEnabled": true,
+  "claudeMdExcludes": [
+    "**/archive/**",
+    "**/docs/references/**"
+  ],
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Edit(./data/raw/**)"
+    ],
+    "ask": [
+      "Edit(docs/clinical_validation/**)",
+      "Edit(./2025_Patient_Videos/**)",
+      "Edit(./临床资料_前瞻外部分析_20260609/**)",
+      "Edit(dataset/internal/**)",
+      "Edit(dataset/external/**)",
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(git clean *)",
+      "Bash(git rm *)"
+    ]
+  }
+}

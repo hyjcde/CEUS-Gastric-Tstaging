@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_DIR = PROJECT_ROOT / "pipeline"
 
+# Process-level cache so batch acceptance / LangGraph rebuilds do not reload
+# multi-GB checkpoints on every case inside the same Python process.
+_CLASSIFIER_CACHE: Dict[str, Any] = {}
+
 # Frozen mainline (2026-06-03 L1): acc_boost2 screened eval — dual ConvNeXt + mask4ch + clinical22.
 _ACC_BOOST2_RUN = (
     PIPELINE_DIR / "experiments" / "tree" / "gastric_tstage_4class"
@@ -481,14 +485,20 @@ class ClassificationTool(BaseTool):
         self._l_transform = None
 
     def _ensure_model(self):
-        if self._model is None:
-            try:
-                self._model, self._cfg, self._g_transform, self._l_transform = (
-                    _load_classifier(self._exp_dir, self._device)
-                )
-            except Exception as exc:
-                self._load_error = str(exc)
-                logger.warning("Classification model unavailable: %s", exc)
+        if self._model is not None:
+            return
+        cache_key = f"{self._exp_dir.resolve()}::{self._device}"
+        cached = _CLASSIFIER_CACHE.get(cache_key)
+        if cached is not None:
+            self._model, self._cfg, self._g_transform, self._l_transform = cached
+            return
+        try:
+            loaded = _load_classifier(self._exp_dir, self._device)
+            self._model, self._cfg, self._g_transform, self._l_transform = loaded
+            _CLASSIFIER_CACHE[cache_key] = loaded
+        except Exception as exc:
+            self._load_error = str(exc)
+            logger.warning("Classification model unavailable: %s", exc)
 
     def execute(self, image_path: str,
                 mask_path: Optional[str] = None,
@@ -580,6 +590,9 @@ class ClassificationTool(BaseTool):
 
             return {
                 "available": True,
+                "backend_id": "tstage_acc_boost2_screened_20260603",
+                "trust_label": "trusted",
+                "checkpoint": str(self._exp_dir / "best_model.pth"),
                 "runtime_invocation": {
                     "api_kind": "local_torch_inference",
                     "forward_pass": True,

@@ -1,33 +1,57 @@
-# Gastric T-staging 论文支撑包
+# Gastric T-staging 论文写作入口
 
-本目录由 `scripts/build_gastric_paper_assets.py` 生成，**单文件 ≤ 1MB**，便于 GitHub 同步与写稿引用。
+写 **4-class 主线** 论文时，按下列顺序查 SSOT（不要从 `experiments/tree/` 盲搜）。
 
-## 目录
+## 1. 实验与消融
+
+| 用途 | 路径 |
+|------|------|
+| **总入口** | [pipeline/experiments/paper_assets/tstaging_4class/README.md](../../pipeline/experiments/paper_assets/tstaging_4class/README.md) |
+| 消融矩阵 | [ablation_matrix.csv](../../pipeline/experiments/paper_assets/tstaging_4class/ablation_matrix.csv) |
+| 主线指标 | [tstaging_4class_mainline_scoreboard.csv](../../pipeline/experiments/tables/tstaging_4class_mainline_scoreboard.csv) |
+| 链路审计 | [eval_chain_status.md](../../pipeline/experiments/paper_assets/tstaging_4class/eval_chain_status.md) |
+
+## 2. 数据
+
+| 用途 | 路径 |
+|------|------|
+| Split 指针 | [data/registry/SPLIT_POINTERS.md](../../data/registry/SPLIT_POINTERS.md) |
+| 数据集登记 | [data/registry/dataset_registry.csv](../../data/registry/dataset_registry.csv) |
+
+## 3. 配置与模型
+
+| 用途 | 路径 |
+|------|------|
+| T 分期配置策略 | [pipeline/configs/TSTAGE_CONFIG_POLICY.md](../../pipeline/configs/TSTAGE_CONFIG_POLICY.md) |
+| 模型 inventory | [model_inventory.csv](../../pipeline/experiments/paper_assets/tstaging_4class/model_inventory.csv) |
+| 审计摘要 | [models/inventory_status.json](../../models/inventory_status.json) |
+
+## 4. 报告与图表
+
+| 用途 | 路径 |
+|------|------|
+| 报告索引 | [report_index.csv](../../pipeline/experiments/paper_assets/tstaging_4class/report_index.csv) |
+| 图表指针 | [figure_table_index.csv](../../pipeline/experiments/paper_assets/tstaging_4class/figure_table_index.csv) |
+
+## 5. 本目录轻量快照
 
 | 子目录 | 内容 |
 |--------|------|
-| `methods/` | 方法学主文档副本（架构、Agent、DINOv3、T2/T3 指标） |
-| `metrics/` | 实验 `experiment_summary.json`、融合指标、checkpoint 推荐 |
-| `figures/` | 论文用结果图（AUC、混淆矩阵、Grad-CAM 单病例/预览） |
+| `methods/` | 方法学副本 |
+| `metrics/` | 指标与 checkpoint 推荐 |
+| `figures/` | 结果图（≤1MB，便于同步） |
 
-## 主要模型结果（外部 test）
-
-| 模型 | AUC | T2+T3→T4+ |
-|------|-----|-----------|
-| baseline mask4ch full | 0.733 | 28.0% |
-| antioverstage v2 | 0.705 | 18.0% |
-| **antioverstage v3（推荐）** | 0.698 | 18.6% |
-| ensemble 30% baseline + 70% v3 | 0.723 | 19.3% |
-
-详见 `metrics/CHECKPOINT_RECOMMENDATIONS_T2T3.md`。
-
-## 复现对比
+重建快照：
 
 ```bash
-python pipeline/scripts/compare_t2t3_model_variants.py --split test_external
-python scripts/build_gastric_paper_assets.py   # 重建本目录
+python scripts/build_gastric_paper_assets.py
+python scripts/build_paper_ablation_matrix.py
+python scripts/build_model_inventory.py
+python scripts/build_report_index.py
+python scripts/audit_mainline_eval_chain.py
 ```
 
-## 完整文档
+## 治理
 
-仓库内 `docs/mainline/` 含更完整的方法与图表索引；本包为**写 gastric paper 的轻量快照**。
+- [docs/experiment_governance/INDEX.md](../experiment_governance/INDEX.md)
+- 完整方法文档：[docs/mainline/](../mainline/)

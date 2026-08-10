@@ -475,3 +475,4 @@ watch_sam31_full_components_run2.sh,utility,shell,7,scripts,scripts/analysis,rev
 yolo_detection_runtime.py,runtime,detection,1,scripts,scripts/runtime,import_only,true,
 build_phase0_case_rag_memory.py,runtime,module,,scripts,scripts/runtime,cli,true,Build Phase0 train-only Case-RAG memory
 run_case_rag_frozen_validation.py,runtime,module,,scripts,scripts/runtime,cli,true,Frozen R0/R1/R2 Case-RAG validation pack
+precompute_reader_similar_cases.py,runtime,module,,scripts,scripts/runtime,import_only,true,

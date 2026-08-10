@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { exportReportToPDF, exportSinglePatientToCSV } from '@/lib/export-utils';
 import toast from 'react-hot-toast';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import type { GcUsReportImage } from '@/lib/gc-us-report-template';
 import type { SamReport } from '@/lib/reader/types';
 import type { DinoFeatureResult, DinoLayerResult } from '@/components/InteractiveSegPanel';
 import { DoctorReportStudio } from '@/components/DoctorReportStudio';
@@ -20,6 +21,7 @@ interface DiagnosisPanelProps {
   systemReport?: SamReport | null;
   dinoFeature?: DinoFeatureResult | null;
   gcUsReport?: GcUsReportState | null;
+  extraImages?: GcUsReportImage[];
   onGcUsReportChange?: (state: GcUsReportState) => void;
   onExpandedChange?: (expanded: boolean) => void;
   /** GC-US imaging paragraph from SAM + wall features */
@@ -39,6 +41,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
   systemReport = null,
   dinoFeature = null,
   gcUsReport = null,
+  extraImages = [],
   onGcUsReportChange,
   onExpandedChange,
   imagingNarrative = null,
@@ -570,6 +573,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                           analysis={agentAnalysis}
                           gcUsReport={gcUsReport}
                           systemReport={systemReport}
+                          extraImages={extraImages}
                           onGcUsReportChange={onGcUsReportChange}
                         />
                         <details className="rounded-xl border border-white/10 bg-black/20">

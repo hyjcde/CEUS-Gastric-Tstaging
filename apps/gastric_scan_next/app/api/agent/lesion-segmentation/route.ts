@@ -1,6 +1,4 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
@@ -126,8 +124,8 @@ def polygon_from_mask(mask):
         return []
     contour = max(contours, key=cv2.contourArea).reshape(-1, 2)
     height, width = mask.shape[:2]
-    if len(contour) > 512:
-        contour = cv2.approxPolyDP(contour.astype(np.float32), 1.5, True).reshape(-1, 2)
+    if len(contour) > 2048:
+        contour = cv2.approxPolyDP(contour.astype(np.float32), 0.5, True).reshape(-1, 2)
     return [[round(float(x) / width, 6), round(float(y) / height, 6)] for x, y in contour]
 
 
@@ -246,6 +244,17 @@ export async function POST(request: NextRequest) {
           payload = JSON.parse(text);
         } catch {
           payload = { ok: false, error: text.slice(0, 500) };
+        }
+        if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+          const enriched = payload as Record<string, unknown>;
+          if (!enriched.backend_id) {
+            enriched.backend_id = 'sam31_gastric_lora_full_components_5epoch_run2';
+          }
+          if (!enriched.trust_label) {
+            enriched.trust_label = 'caution';
+          }
+          enriched.agent_primary_remains = 'lesion_segmentation_unet_fulldata_convnext_base';
+          payload = enriched;
         }
         return NextResponse.json(payload, { status: response.ok ? 200 : 502 });
       } catch (error) {

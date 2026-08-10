@@ -227,6 +227,35 @@ def _save_lumen_detection_visual(
     conf = float(lumen_detection.get("lumen_confidence", 0.0) or 0.0)
     area_ratio = lumen_detection.get("lumen_area_ratio")
 
+    polygon = lumen_detection.get("lumen_polygon")
+    if isinstance(polygon, list) and len(polygon) >= 3:
+        points = []
+        for point in polygon:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            try:
+                points.append([float(point[0]), float(point[1])])
+            except (TypeError, ValueError):
+                continue
+        if len(points) >= 3:
+            poly = np.asarray(points, dtype=np.float32)
+            poly[:, 0] = np.clip(poly[:, 0], 0, image.shape[1] - 1)
+            poly[:, 1] = np.clip(poly[:, 1], 0, image.shape[0] - 1)
+            cv2.fillPoly(
+                overlay,
+                [np.round(poly).astype(np.int32)],
+                (40, 160, 120),
+            )
+            overlay = cv2.addWeighted(image, 0.72, overlay, 0.28, 0)
+            cv2.polylines(
+                overlay,
+                [np.round(poly).astype(np.int32)],
+                isClosed=True,
+                color=(40, 255, 190),
+                thickness=3,
+                lineType=cv2.LINE_AA,
+            )
+
     if bbox:
         x1 = max(0, int(bbox.get("x1", 0)))
         y1 = max(0, int(bbox.get("y1", 0)))
@@ -838,7 +867,6 @@ def _save_current_image_dino_feature_panel(
             layer_index=11,
             device=device,
         )
-        bml_valid = bool(maps.get("boundary_minus_lesion_valid"))
         token_h = int(maps.get("token_grid_h", 0) or 0)
         token_w = int(maps.get("token_grid_w", 0) or 0)
 
@@ -850,51 +878,56 @@ def _save_current_image_dino_feature_panel(
             overlay = cv2.cvtColor(cv2.resize(overlay, (512, 512), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
 
         plt.rcParams["font.family"] = "Times New Roman"
-        fig, axes = plt.subplots(2, 4, figsize=(16, 7), facecolor="black")
+        artifact_dir: Path = artifact_info["dir"]
+        relative_dir: Path = artifact_info["relative_dir"]
+
+        def _save_single_dino_map(content, title, cmap, name):
+            fig, ax = plt.subplots(figsize=(5, 4.4), facecolor="black")
+            ax.set_facecolor("black")
+            ax.imshow(content, cmap=cmap)
+            ax.set_title(title, color="white", fontsize=11)
+            ax.axis("off")
+            fig.tight_layout()
+            path = artifact_dir / name
+            fig.savefig(str(path), dpi=170, facecolor=fig.get_facecolor())
+            plt.close(fig)
+            return str(path), _artifact_url(relative_dir / name)
+
+        # Single-map DINO panels: green wall evidence + red/blue affinity + red/blue PCA.
+        single_specs = []
+        if maps.get("wall_evidence") is not None:
+            single_specs.append((maps["wall_evidence"], "DINO Wall Evidence", "Greens", "dino_wall_evidence_map.png", "dino_wall_evidence_map"))
+        if maps.get("lesion_affinity") is not None:
+            single_specs.append((maps["lesion_affinity"], "DINO Lesion Affinity", "RdBu_r", "dino_lesion_affinity_map.png", "dino_lesion_affinity_map"))
+        if maps.get("pca") is not None:
+            single_specs.append((maps["pca"], "DINO PCA-1", "RdBu_r", "dino_pca_map.png", "dino_pca_map"))
+        for content, title, cmap, filename, key in single_specs:
+            try:
+                path, url = _save_single_dino_map(content, title, cmap, filename)
+                artifacts[f"{key}_path"] = path
+                artifacts[f"{key}_url"] = url
+            except Exception as exc:
+                logger.warning("DINO single map %s failed: %s", key, exc)
+
+        # Compact composite kept for the workbench (not the report).
+        fig, axes = plt.subplots(1, 4, figsize=(16, 4), facecolor="black")
         axes = axes.reshape(-1)
         panels = [
             (image_rgb, "Current ultrasound", None),
             (overlay if overlay is not None else image_rgb, "Predicted mask overlay", None),
-            (maps["token_norm"], "DINO token norm", "viridis"),
-            (maps["pca"], "DINO PCA-1", "coolwarm"),
-            (maps["lesion_affinity"], "Lesion affinity", "magma"),
-            (maps["wall_evidence"], "Wall evidence", "coolwarm"),
-            (maps["boundary_minus_lesion"], "Boundary minus lesion", "viridis"),
+            (maps.get("wall_evidence"), "Wall evidence", "Greens"),
+            (maps.get("lesion_affinity"), "Lesion affinity", "RdBu_r"),
         ]
         for ax, (content, title, cmap) in zip(axes, panels):
             ax.set_facecolor("black")
+            if content is None:
+                ax.axis("off")
+                continue
             ax.imshow(content, cmap=cmap)
             ax.set_title(title, color="white", fontsize=10)
             ax.axis("off")
-        if not bml_valid:
-            axes[6].clear()
-            axes[6].set_facecolor("black")
-            axes[6].text(
-                0.5,
-                0.5,
-                "Boundary minus lesion\n(unavailable: lesion mask missing\nor boundary ring empty)",
-                ha="center",
-                va="center",
-                color="#cdb89a",
-                fontsize=9,
-                wrap=True,
-            )
-            axes[6].axis("off")
-        axes[-1].set_facecolor("black")
-        axes[-1].text(
-            0.5,
-            0.5,
-            f"Model: {hub_model}\nSource script:\ngenerate_external_source_dino_token_panels.py",
-            ha="center",
-            va="center",
-            color="white",
-            fontsize=10,
-        )
-        axes[-1].axis("off")
-        fig.suptitle("Current-Image DINO Feature Evidence", color="white", fontsize=14, fontweight="bold")
-        fig.tight_layout(rect=[0, 0, 1, 0.94])
-        artifact_dir: Path = artifact_info["dir"]
-        relative_dir: Path = artifact_info["relative_dir"]
+        fig.suptitle("Current-Image DINO Evidence", color="white", fontsize=13, fontweight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
         output_name = "current_image_dino_feature_panel.png"
         output_path = artifact_dir / output_name
         fig.savefig(str(output_path), dpi=170, facecolor=fig.get_facecolor())
@@ -910,8 +943,8 @@ def _save_current_image_dino_feature_panel(
             "dino_token_grid": f"{token_h}x{token_w}" if token_h and token_w else "unknown",
             "dino_region_pooling": "predicted_lesion_mask_on_token_grid",
             "dino_note": (
-                "Whole ultrasound frame is resized to 512x512 and forwarded through DINOv3 once; "
-                "heatmaps are token-grid features upsampled. This is not ROI patch cropping or sliding-window."
+                "Whole ultrasound frame resized to 512x512 and forwarded through DINOv3 once; "
+                "heatmaps are token-grid features upsampled. Report uses single maps (wall/affinity/PCA)."
             ),
         })
     except Exception as exc:
@@ -1499,23 +1532,53 @@ def _build_rule_based_report(
 
     if lumen_detection.get("lumen_detected"):
         supporting_evidence.append(
-            f"Lumen detected (conf {float(lumen_detection.get('lumen_confidence', 0.0)):.2f})."
+            f"Lumen detected (conf {float(lumen_detection.get('lumen_confidence') or 0.0):.2f})."
         )
     elif lumen_detection.get("available") is False:
         uncertainty_flags.append("Lumen detector unavailable; wall evidence may be proxy-only.")
 
+    contour_context = payload.get("contour_context") if isinstance(payload.get("contour_context"), dict) else {}
+    lumen_mask_type = str(
+        wall_evidence.get("lumen_mask_type")
+        or contour_context.get("lumen_mask_type")
+        or ""
+    )
+    wall_is_proxy = (
+        str(wall_evidence.get("evidence_role") or "") == "proxy_geometry"
+        or not bool(wall_evidence.get("wall_layer_estimate"))
+        or lumen_mask_type in {"bbox_proxy", "missing", ""}
+    )
+    layer_confirmed = bool(
+        contour_context.get("layer_pixel_based")
+        and contour_context.get("layer_label")
+        and contour_context.get("in_contact") is not False
+    )
+
     if wall_evidence.get("available"):
         wf = wall_evidence.get("wall_features") or {}
         risk = wall_evidence.get("penetration_risk", "low")
-        if risk == "high":
-            scores["T3"] += 0.2
-            scores["T4+"] += 0.15
-        elif risk == "medium":
-            scores["T3"] += 0.1
-        supporting_evidence.append(
-            f"Wall evidence ({wall_evidence.get('evidence_source')}): penetration_risk={risk}, "
-            f"fraction_outside_lumen={float(wf.get('fraction_outside_lumen', 0.0)):.2f}."
-        )
+        # ContourEvidenceGate: SDF / bbox wall proxy must not alone lift T3/T4+.
+        if wall_is_proxy and not layer_confirmed:
+            uncertainty_flags.append(
+                "ContourEvidenceGate: wall SDF/box geometry is proxy-only; "
+                "it cannot alone upgrade the stage to T3/T4+ without confirmed layer/serosa evidence."
+            )
+            supporting_evidence.append(
+                f"Wall geometry proxy ({wall_evidence.get('evidence_source')}): "
+                f"penetration_risk={risk}, "
+                f"fraction_outside_lumen={float(wf.get('fraction_outside_lumen') or 0.0):.2f} "
+                f"(not used as pathological breakthrough)."
+            )
+        else:
+            if risk == "high":
+                scores["T3"] += 0.2
+                scores["T4+"] += 0.15
+            elif risk == "medium":
+                scores["T3"] += 0.1
+            supporting_evidence.append(
+                f"Wall evidence ({wall_evidence.get('evidence_source')}): penetration_risk={risk}, "
+                f"fraction_outside_lumen={float(wf.get('fraction_outside_lumen') or 0.0):.2f}."
+            )
     else:
         uncertainty_flags.append("Live wall evidence unavailable; using lesion-centered proxy visuals only.")
 
@@ -1569,13 +1632,79 @@ def _build_rule_based_report(
     gap = top_score - second_score
     confidence = "high" if gap >= 0.35 else "medium" if gap >= 0.18 else "low"
 
+    cls_top = str(classification.get("top1_stage") or "") if classification.get("available") else ""
+    lesion_ready = bool(contour_context.get("lesion_confirmed")) or bool(
+        (payload.get("mask_override") or {}).get("mask_polygon")
+    )
+    lumen_ready = lumen_mask_type in {"sam31_polygon", "confirmed_mask"} or bool(
+        (payload.get("lumen_override") or {}).get("lumen_polygon")
+        or (payload.get("lumen_override") or {}).get("lumen_bbox")
+        or lumen_detection.get("lumen_detected")
+    )
+    # ContourEvidenceGate: definite cT only with confirmed layer/serosa evidence.
+    # wall_proxy / incomplete contours / T1–T4+ fusion tops must not become doctor-facing cT.
+    if wall_is_proxy or not layer_confirmed:
+        diagnosis_status = (
+            "contour_ready_layer_indeterminate"
+            if (lesion_ready and lumen_ready)
+            else "wall_proxy_or_unconfirmed"
+        )
+        display_stage = "cTx"
+        diagnosis_summary = (
+            "Assist display stays cTx until physician-confirmed wall-layer / serosa / adjacent-organ "
+            f"evidence is available (provisional fusion={top_stage}, classifier={cls_top or 'n/a'}, "
+            f"wall_proxy={bool(wall_is_proxy)}, layer_confirmed={bool(layer_confirmed)})."
+        )
+        uncertainty_flags.append(
+            "ContourEvidenceGate: assist_display_stage=cTx; "
+            "recommended_t_stage retains fusion/classifier tendency for research review only."
+        )
+    elif lesion_ready and lumen_ready:
+        diagnosis_status = "contour_ready_provisional"
+        display_stage = top_stage
+        diagnosis_summary = (
+            f"Contour-anchored provisional assist stage {top_stage} "
+            f"(classifier={cls_top or 'n/a'}; layer/serosa evidence confirmed)."
+        )
+    else:
+        diagnosis_status = "geometry_incomplete"
+        display_stage = "cTx"
+        diagnosis_summary = (
+            "Lesion and/or lumen contours are incomplete; assist display stays cTx "
+            f"(provisional fusion={top_stage})."
+        )
+
+    contour_diagnosis = {
+        "status": diagnosis_status,
+        "display_stage": display_stage,
+        "provisional_stage": top_stage,
+        "classifier_stage": cls_top or None,
+        "lesion_confirmed": lesion_ready,
+        "lumen_mask_type": lumen_mask_type or (
+            "sam31_polygon"
+            if (payload.get("lumen_override") or {}).get("lumen_polygon")
+            else ("bbox_proxy" if (payload.get("lumen_override") or {}).get("lumen_bbox") else "missing")
+        ),
+        "wall_is_proxy": wall_is_proxy,
+        "layer_confirmed": layer_confirmed,
+        "penetration_risk": wall_evidence.get("penetration_risk") if wall_evidence.get("available") else None,
+        "fraction_outside_lumen": (wall_evidence.get("wall_features") or {}).get("fraction_outside_lumen")
+        if wall_evidence.get("available")
+        else None,
+        "geometry_relation": contour_context.get("geometry_relation"),
+        "prepared_actions": contour_context.get("prepared_actions") or [],
+        "summary": diagnosis_summary,
+        "gate": "ContourEvidenceGate_v1",
+    }
+
     base_report = {
         "schema_version": "0.3.0",
         "status": "ready",
         "recommended_t_stage": top_stage,
+        "assist_display_stage": display_stage,
         "confidence": confidence,
         "reasoning": (
-            f"Recommended {top_stage} based on tool evidence, current clinical risk, and similar-case distribution. "
+            f"{diagnosis_summary} "
             f"Top evidence: {' '.join(supporting_evidence[:3])}"
         ),
         "supporting_evidence": supporting_evidence,
@@ -1583,6 +1712,7 @@ def _build_rule_based_report(
         "uncertainty_flags": uncertainty_flags,
         "similar_case_summary": similarity_summary,
         "rag_gate": rag_gate,
+        "contour_diagnosis": contour_diagnosis,
         "knowledge_highlights": [item.get("title", "") for item in knowledge],
         "tool_status": {
             "lumen_detection": "available" if lumen_detection.get("lumen_detected") else (
@@ -1596,6 +1726,7 @@ def _build_rule_based_report(
             "clinical": "available" if clinical.get("factors_available") else "partial",
             "report": "available" if report_text.get("available") else "missing",
             "memory": "available" if similar_cases else "partial",
+            "contour_gate": diagnosis_status,
         },
     }
     return _finalize_report_with_memory(base_report, memory_context, fusion_mode=memory_fusion_mode)
@@ -1615,12 +1746,40 @@ def _finalize_report_with_memory(
 def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
     from agent.core.llm_client import DEFAULT_BASE_URL, DEFAULT_MODEL
 
+    mode = os.getenv("AGENT_LLM_MODE", "").strip().lower()
+    if mode in {"heuristic", "offline", "none"}:
+        return base_report, {
+            "api_kind": "http_openai_compatible",
+            "called": False,
+            "status": "skipped",
+            "base_url": DEFAULT_BASE_URL,
+            "model": DEFAULT_MODEL,
+            "skip_reason": "offline_mode",
+            "total_tokens": 0,
+        }
+
+    assist_flash = mode in {"assist_deepseek", "assist_flash", "synthesis_only"}
+    flash_model = (
+        os.getenv("ASSIST_LLM_MODEL")
+        or os.getenv("DEEPSEEK_MODEL")
+        or os.getenv("AGENT_LLM_MODEL")
+        or "deepseek-v4-flash"
+    )
+    flash_base = (
+        os.getenv("ASSIST_LLM_BASE_URL")
+        or os.getenv("DEEPSEEK_BASE_URL")
+        or os.getenv("AGENT_LLM_BASE_URL")
+        or DEFAULT_BASE_URL
+    )
+    active_base = flash_base if assist_flash else DEFAULT_BASE_URL
+    active_model = flash_model if assist_flash else DEFAULT_MODEL
+
     invocation: Dict[str, Any] = {
         "api_kind": "http_openai_compatible",
         "called": False,
         "status": "skipped",
-        "base_url": DEFAULT_BASE_URL,
-        "model": DEFAULT_MODEL,
+        "base_url": active_base,
+        "model": active_model,
         "skip_reason": "missing_api_key",
         "total_tokens": 0,
     }
@@ -1650,12 +1809,18 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
     try:
         from agent.core.llm_client import AgentLLMClient
 
-        llm = AgentLLMClient(
-            max_tokens=500,
-            temperature=0.1,
-            retries=2,
-            disable_thinking=True,
-        )
+        llm_kwargs: Dict[str, Any] = {
+            "max_tokens": 500,
+            "temperature": 0.1,
+            "retries": 2,
+            "disable_thinking": True,
+        }
+        if assist_flash:
+            llm_kwargs["model"] = flash_model
+            llm_kwargs["base_url"] = flash_base
+            if os.getenv("DEEPSEEK_API_KEY") and "deepseek" in str(flash_base).lower():
+                llm_kwargs["api_key"] = os.getenv("DEEPSEEK_API_KEY")
+        llm = AgentLLMClient(**llm_kwargs)
         response = llm.chat([
             {"role": "system", "content": "You are a careful medical AI orchestrator. Return JSON only."},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
@@ -1682,19 +1847,21 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
             "api_kind": "http_openai_compatible",
             "called": True,
             "status": "ok",
-            "base_url": DEFAULT_BASE_URL,
+            "base_url": getattr(llm, "base_url", active_base) or active_base,
             "model": llm.model,
             "total_tokens": llm.total_tokens,
             "request_prompt": prompt,
             "response_text": response[:8000] if isinstance(response, str) else str(response)[:8000],
             "role": "language_only",
+            "assist_mode": mode or "default",
             "locked_fields": ["recommended_t_stage", "confidence", "supporting_evidence", "uncertainty_flags"],
             "ignored_output_fields": ignored_fields,
         }
         logger.info(
-            "LLM synthesis API call completed: model=%s tokens=%s",
+            "LLM synthesis API call completed: model=%s tokens=%s mode=%s",
             llm.model,
             llm.total_tokens,
+            mode or "default",
         )
         return merged, invocation
     except Exception as exc:
@@ -1703,10 +1870,11 @@ def _maybe_llm_synthesis(base_report: Dict[str, Any], payload: Dict[str, Any]) -
             "api_kind": "http_openai_compatible",
             "called": True,
             "status": "error",
-            "base_url": DEFAULT_BASE_URL,
-            "model": DEFAULT_MODEL,
+            "base_url": active_base,
+            "model": active_model,
             "error": str(exc),
             "total_tokens": 0,
+            "assist_mode": mode or "default",
         }
         return base_report, invocation
 

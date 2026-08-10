@@ -173,8 +173,13 @@ def build_paired_skeleton(
         mode = r.get("study_mode") or ""
         r1_t = norm_t(r.get("round1_t_stage") or "")
         r1_n = r.get("round1_nature") or ""
-        r2_t = norm_t(r2.get("doctor_final_t_stage") or r2.get("final_value") or "")
-        r2_n = r2.get("doctor_final_nature") or ""
+        r2_final = r2.get("doctor_final_t_stage") or r2.get("doctor_final_nature") or r2.get("final_value") or ""
+        if mode == "benign_malignancy":
+            r2_n = r2.get("doctor_final_nature") or r2_final
+            r2_t = norm_t(r2.get("doctor_final_t_stage") or "")
+        else:
+            r2_n = r2.get("doctor_final_nature") or ""
+            r2_t = norm_t(r2.get("doctor_final_t_stage") or r2_final)
         ref_t = norm_t(r.get("reference_pt_secure") or "")
         ref_n = r.get("reference_nature_secure") or ""
         pairable = boolish(r.get("baseline_pairable"))
@@ -216,7 +221,17 @@ def build_paired_skeleton(
                 "round1_t_correct": r1_t_ok,
                 "round1_reading_time_sec": r.get("round1_reading_time_sec") or "",
                 "round2_status": r2.get("round2_status") or r.get("round2_status") or "not_started",
-                "round2_completed": boolish(r2.get("completed")) if r2 else False,
+                "round2_completed": (
+                    boolish(r2.get("research_valid_completion"))
+                    or (
+                        boolish(r2.get("completed"))
+                        and str(r2.get("environment") or "") == "research"
+                        and bool(str(r2.get("authenticated_reader_id") or "").strip())
+                        and boolish(r2.get("has_initial_judgment"))
+                        and str(r2.get("doctor_action") or "") in {"accept", "modify", "reject"}
+                        and bool(r2_t or r2_n)
+                    )
+                ) if r2 else False,
                 "round2_nature": r2_n,
                 "round2_t_stage": r2_t,
                 "round2_nature_correct": r2_n_ok,

@@ -161,7 +161,15 @@ class StepNarrativeLLM:
 def resolve_pipeline_llm() -> tuple[ChatLLM, str, str]:
     """Default remains heuristic / API. Local Qwen is opt-in only."""
     mode = os.getenv("AGENT_LLM_MODE", "").strip().lower()
-    if mode in {"heuristic", "offline", "none"}:
+    # Assist fast path: keep per-step narratives local; final synthesis may still call DeepSeek.
+    if mode in {
+        "heuristic",
+        "offline",
+        "none",
+        "assist_deepseek",
+        "assist_flash",
+        "synthesis_only",
+    }:
         return StepNarrativeLLM(), "step_narrative_heuristic", StepNarrativeLLM.model
 
     if mode in {"local_qwen", "qwen_local", "local_mllm"}:
@@ -176,7 +184,7 @@ def resolve_pipeline_llm() -> tuple[ChatLLM, str, str]:
         client = AgentLLMClient(
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url=os.getenv("DEEPSEEK_BASE_URL") or None,
-            model=os.getenv("DEEPSEEK_MODEL") or "deepseek-chat",
+            model=os.getenv("DEEPSEEK_MODEL") or os.getenv("AGENT_LLM_MODEL") or "deepseek-v4-flash",
             max_tokens=800,
             temperature=0.15,
             retries=2,

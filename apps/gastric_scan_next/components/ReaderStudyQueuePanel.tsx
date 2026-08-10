@@ -24,6 +24,7 @@ type Props = {
   onSelectPatient?: (patient: Patient) => void;
   systemReport?: SamReport | null;
   onSystemReportChange?: (report: SamReport) => void;
+  onInitialJudgmentChange?: (recorded: boolean) => void;
   hideTaskChrome?: boolean;
   publicReaderOnly?: boolean;
 };
@@ -82,6 +83,7 @@ export function ReaderStudyQueuePanel({
   onSelectPatient,
   systemReport = null,
   onSystemReportChange,
+  onInitialJudgmentChange,
   hideTaskChrome = false,
   publicReaderOnly = false,
 }: Props) {
@@ -102,18 +104,24 @@ export function ReaderStudyQueuePanel({
   const firstInteractionAtRef = useRef<number | null>(null);
   const reportFirstShownAtRef = useRef<number | null>(null);
 
+  const studyEnvironment = readerEnvironmentFromSearchParams(searchParams);
+  const researchAiLocked = studyEnvironment === 'research' && !initialRecorded;
+
   useEffect(() => {
+    if (researchAiLocked) {
+      setEditableReport(null);
+      return;
+    }
     setEditableReport(systemReport);
     if (systemReport && reportFirstShownAtRef.current == null) {
       reportFirstShownAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
     }
-  }, [systemReport]);
+  }, [systemReport, researchAiLocked]);
 
   const taskPatients = useMemo(
     () => patients.filter((item) => item.study_mode === studyMode),
     [patients, studyMode],
   );
-  const studyEnvironment = readerEnvironmentFromSearchParams(searchParams);
   const progressReaderKey = studyEnvironment === 'research'
     ? 'authenticated_reader'
     : (searchParams.get('reader_id') || 'staging_reader');
@@ -138,9 +146,10 @@ export function ReaderStudyQueuePanel({
     setInitialStage('');
     setInitialNature('');
     setInitialRecorded(false);
+    onInitialJudgmentChange?.(false);
     setReason('');
     setActionStatus(null);
-  }, [patient?.id, studyMode]);
+  }, [patient?.id, studyMode, onInitialJudgmentChange]);
 
   if (!patient) return null;
 
@@ -153,12 +162,13 @@ export function ReaderStudyQueuePanel({
   const taskLabel = isNatureTask
     ? (zh ? '良恶性判断' : 'benign-versus-malignant classification')
     : (zh ? 'T 分期判断' : 'T-staging classification');
-  const activeReport = editableReport || systemReport;
+  const activeReport = researchAiLocked ? null : (editableReport || systemReport);
   const conflicts = activeReport?.conflicts || [];
   const highConflict = conflicts.some((item) => item.severity === 'high');
-  const recommendationBlocked = !isNatureTask && (
+  const recommendationBlocked = researchAiLocked || (!isNatureTask && (
     !activeReport || highConflict || activeReport.recommended_stage === 'uncertain'
-  );
+  ));
+  const finalActionsLocked = studyEnvironment === 'research' && !initialRecorded;
 
   const updateReportSign = (fieldPath: string, value: string) => {
     if (!activeReport) return;
@@ -241,14 +251,23 @@ export function ReaderStudyQueuePanel({
             doctor_initial_nature: isNatureTask ? initialNature : null,
             doctor_initial_t_stage: isNatureTask ? null : initialStage,
             initial_recorded_at: recordedAt,
-            ai_visible_before_initial: reportFirstShownAtRef.current != null,
-            structured_signs_visible: Boolean(activeReport),
+            ai_visible_before_initial: false,
+            structured_signs_visible: false,
+            research_ai_locked_until_initial: studyEnvironment === 'research',
           },
           client_recorded_at: recordedAt,
         }),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(detail.error || `HTTP ${response.status}`);
+      }
       setInitialRecorded(true);
+      onInitialJudgmentChange?.(true);
+      if (systemReport) {
+        setEditableReport(systemReport);
+        reportFirstShownAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+      }
       setActionStatus(zh ? '初始判断已记录，请继续核对 AI 证据并提交最终判断。' : 'Initial judgment recorded. Review the AI evidence and submit the final judgment.');
     } catch (error) {
       setActionStatus(error instanceof Error
@@ -259,8 +278,8 @@ export function ReaderStudyQueuePanel({
 
   const writeDoctorAction = async (actionType: DoctorAction) => {
     if (!patient) return;
-    if (studyEnvironment === 'research' && !initialRecorded) {
-      setActionStatus(zh ? '请先记录初始判断，再提交最终判断。' : 'Record the initial judgment before submitting the final judgment.');
+    if (finalActionsLocked) {
+      setActionStatus(zh ? '请先记录初始判断，再查看 AI 证据并提交最终判断。' : 'Record the initial judgment before reviewing AI evidence and submitting the final judgment.');
       return;
     }
     if (actionType === 'accept' && recommendationBlocked) {
@@ -349,7 +368,36 @@ export function ReaderStudyQueuePanel({
           client_recorded_at: new Date().toISOString(),
         }),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(detail.error || `HTTP ${response.status}`);
+      }
+      if (actionType !== 'request_more_evidence') {
+        await fetch('/api/reader-audit/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...READER_ROUND2_VERSION_FIELDS,
+            event_type: 'case_completed',
+            session_id: sessionRef.current,
+            case_id: patient.id,
+            ...(readerId ? { reader_id: readerId } : {}),
+            condition: 'ai_assisted',
+            study_mode: studyMode,
+            round: searchParams.get('round') || 'round2',
+            environment,
+            patient_id: patient.patient_id,
+            payload: {
+              doctor_action: actionType,
+              after_value: selectedValue || null,
+              doctor_final_nature: isNatureTask ? selectedValue || null : null,
+              doctor_final_t_stage: isNatureTask ? null : selectedValue || null,
+              completed: true,
+            },
+            client_recorded_at: new Date().toISOString(),
+          }),
+        });
+      }
       try {
         await fetch('/api/agent/feedback', {
           method: 'POST',
@@ -396,7 +444,7 @@ export function ReaderStudyQueuePanel({
           <div className="mt-1 font-mono text-[11px] text-gray-400">
             {publicReaderOnly
               ? (patient.id_short || patient.id)
-              : `${patient.id_short || patient.id} · ${frameCount} ${zh ? '个视频/帧' : 'videos/frames'}`}
+              : `${patient.id_short || patient.id}, ${frameCount} ${zh ? '个视频/帧' : 'videos/frames'}`}
           </div>
           {!publicReaderOnly && patient.video_urls?.length ? (
             <div className="mt-1 truncate text-[10px] text-amber-300/80" title={patient.video_urls.map((video) => video.filename).join(', ')}>
@@ -428,7 +476,7 @@ export function ReaderStudyQueuePanel({
                 {zh ? '当前任务进度：' : 'Task progress: '}
                 {completedCount}/{taskPatients.length || (isNatureTask ? 50 : 100)}
               </span>
-              <span>{zh ? 'AI 辅助 · 医生最终确认' : 'AI-assisted · physician final confirmation'}</span>
+              <span>{zh ? 'AI 辅助, 医生最终确认' : 'AI-assisted, physician final confirmation'}</span>
             </div>
           ) : null}
 
@@ -449,7 +497,13 @@ export function ReaderStudyQueuePanel({
         <div className={`flex items-center gap-2 text-[10px] font-semibold ${highConflict ? 'text-rose-300' : 'text-amber-300'}`}>
           <Sparkles size={12} /> {zh ? '结构化辅助证据' : 'Structured assistive evidence'}
         </div>
-        {activeReport ? (
+        {researchAiLocked ? (
+          <div className="mt-2 rounded border border-sky-500/30 bg-sky-500/[0.08] p-2 text-[10px] leading-relaxed text-sky-100">
+            {zh
+              ? '研究模式下，AI 建议与结构化证据在记录医生初始判断后才会显示，避免先见 AI 再补初始答案。'
+              : 'In research mode, AI recommendations and structured evidence stay hidden until the physician initial judgment is recorded.'}
+          </div>
+        ) : activeReport ? (
           <>
             <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-slate-300">
               <span>{zh ? '建议' : 'Recommendation'}: {stageLabel(activeReport.recommended_stage, zh)}</span>
@@ -465,7 +519,7 @@ export function ReaderStudyQueuePanel({
               <div className="mt-2 space-y-1 rounded border border-rose-500/25 bg-rose-500/[0.06] p-2 text-[10px] leading-relaxed text-rose-200">
                 {conflicts.map((item, index) => (
                   <div key={`${item.code || 'conflict'}-${index}`}>
-                    • {item.message || (zh ? '证据与阶段建议不一致' : 'Evidence conflicts with the stage recommendation')}
+                    - {item.message || (zh ? '证据与阶段建议不一致' : 'Evidence conflicts with the stage recommendation')}
                   </div>
                 ))}
               </div>
@@ -479,23 +533,14 @@ export function ReaderStudyQueuePanel({
                 return (
                   <div key={path} className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
                     <div className="text-[9px] text-gray-500">{zh ? labelZh : labelEn}</div>
-                    {path === 'size.length' || path === 'size.thickness' ? (
-                      <input
-                        value={value}
-                        onChange={(event) => updateReportSign(path, event.target.value)}
-                        className="mt-0.5 w-full rounded border border-white/10 bg-black/30 px-1 py-0.5 text-[10px] text-gray-200 outline-none focus:border-emerald-300/50"
-                        aria-label={zh ? labelZh : labelEn}
-                      />
-                    ) : (
-                      <input
-                        value={value}
-                        onChange={(event) => updateReportSign(path, event.target.value)}
-                        className="mt-0.5 w-full rounded border border-white/10 bg-black/30 px-1 py-0.5 text-[10px] text-gray-200 outline-none focus:border-emerald-300/50"
-                        aria-label={zh ? labelZh : labelEn}
-                      />
-                    )}
+                    <input
+                      value={value}
+                      onChange={(event) => updateReportSign(path, event.target.value)}
+                      className="mt-0.5 w-full rounded border border-white/10 bg-black/30 px-1 py-0.5 text-[10px] text-gray-200 outline-none focus:border-emerald-300/50"
+                      aria-label={zh ? labelZh : labelEn}
+                    />
                     <div className={`mt-0.5 text-[8px] ${field?.status === 'conflict' ? 'text-rose-300' : 'text-gray-500'}`}>
-                      {signStatus(field?.status, zh)} · {field?.source || 'not_available'}
+                      {signStatus(field?.status, zh)} / {field?.source || 'not_available'}
                     </div>
                   </div>
                 );
@@ -568,19 +613,25 @@ export function ReaderStudyQueuePanel({
         <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-300">
           <CheckCircle2 size={12} /> {zh ? '医生最终判断：' : 'Physician final decision: '}{taskLabel}
         </div>
+        {finalActionsLocked ? (
+          <div className="mt-2 rounded border border-sky-500/25 bg-sky-500/[0.06] p-2 text-[10px] text-sky-100">
+            {zh ? '请先完成并记录上方初始判断。' : 'Complete and record the initial judgment above first.'}
+          </div>
+        ) : null}
         {isNatureTask ? (
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             {NATURES.slice(1).map((value) => (
               <button
                 key={value}
                 type="button"
+                disabled={finalActionsLocked}
                 onClick={() => {
                   if (firstInteractionAtRef.current == null) {
                     firstInteractionAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
                   }
                   setFinalNature(value);
                 }}
-                className={`rounded border px-2 py-2 text-[11px] ${finalNature === value ? 'border-emerald-300 bg-emerald-400/20 text-emerald-100' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}
+                className={`rounded border px-2 py-2 text-[11px] ${finalNature === value ? 'border-emerald-300 bg-emerald-400/20 text-emerald-100' : 'border-white/10 text-gray-400 hover:bg-white/5'} disabled:cursor-not-allowed disabled:opacity-40`}
               >
                 {value === 'benign' ? (zh ? '良性' : 'Benign') : (zh ? '恶性' : 'Malignant')}
               </button>
@@ -589,28 +640,30 @@ export function ReaderStudyQueuePanel({
         ) : (
           <select
             value={finalStage}
+            disabled={finalActionsLocked}
             onChange={(event) => {
               if (firstInteractionAtRef.current == null) {
                 firstInteractionAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
               }
               setFinalStage(event.target.value);
             }}
-            className="mt-2 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-gray-200"
+            className="mt-2 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-gray-200 disabled:opacity-50"
           >
             {STAGES.map((stage) => <option key={stage} value={stage}>{stage || (zh ? '暂不确定' : 'Uncertain')}</option>)}
           </select>
         )}
         <textarea
           value={reason}
+          disabled={finalActionsLocked}
           onChange={(event) => setReason(event.target.value)}
           placeholder={zh ? '记录证据、修改或证据不足原因' : 'Record evidence, changes, or why evidence is insufficient'}
-          className="mt-2 min-h-12 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-gray-200 placeholder:text-gray-600"
+          className="mt-2 min-h-12 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-gray-200 placeholder:text-gray-600 disabled:opacity-50"
         />
         <div className="mt-2 grid grid-cols-2 gap-1.5">
-          <button type="button" disabled={recommendationBlocked} onClick={() => void writeDoctorAction('accept')} className="reader-btn justify-center border-emerald-500/30 text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">{zh ? '采纳系统建议' : 'Accept recommendation'}</button>
-          <button type="button" onClick={() => void writeDoctorAction('modify')} className="reader-btn justify-center border-amber-500/30 text-amber-300">{zh ? '修改后确认' : 'Modify and confirm'}</button>
-          <button type="button" onClick={() => void writeDoctorAction('reject')} className="reader-btn justify-center border-rose-500/30 text-rose-300">{zh ? '拒绝系统建议' : 'Reject recommendation'}</button>
-          <button type="button" onClick={() => void writeDoctorAction('request_more_evidence')} className="reader-btn justify-center border-slate-500/30 text-slate-300">{zh ? '证据不足' : 'Insufficient evidence'}</button>
+          <button type="button" disabled={finalActionsLocked || recommendationBlocked} onClick={() => void writeDoctorAction('accept')} className="reader-btn justify-center border-emerald-500/30 text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">{zh ? '采纳系统建议' : 'Accept recommendation'}</button>
+          <button type="button" disabled={finalActionsLocked} onClick={() => void writeDoctorAction('modify')} className="reader-btn justify-center border-amber-500/30 text-amber-300 disabled:cursor-not-allowed disabled:opacity-40">{zh ? '修改后确认' : 'Modify and confirm'}</button>
+          <button type="button" disabled={finalActionsLocked} onClick={() => void writeDoctorAction('reject')} className="reader-btn justify-center border-rose-500/30 text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">{zh ? '拒绝系统建议' : 'Reject recommendation'}</button>
+          <button type="button" disabled={finalActionsLocked} onClick={() => void writeDoctorAction('request_more_evidence')} className="reader-btn justify-center border-slate-500/30 text-slate-300 disabled:cursor-not-allowed disabled:opacity-40">{zh ? '证据不足' : 'Insufficient evidence'}</button>
         </div>
         {recommendationBlocked && activeReport
           ? <div className="mt-2 text-[10px] text-rose-300">

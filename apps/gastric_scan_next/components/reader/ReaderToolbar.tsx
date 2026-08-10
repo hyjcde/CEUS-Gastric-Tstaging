@@ -5,6 +5,7 @@ import {
   Eraser, FileText, Loader2, Pause, Play, RotateCcw, Route, Sparkles, Undo2,
 } from 'lucide-react';
 import type { InteractionMode } from '@/lib/reader/types';
+import { useSettings } from '@/contexts/SettingsContext';
 
 type Props = {
   caseTitle: string;
@@ -38,15 +39,6 @@ type Props = {
   onAnalyzeKeyframe: () => void;
 };
 
-const MODES: { id: InteractionMode; label: string; hint: string }[] = [
-  { id: 'box', label: '框选病灶', hint: '1' },
-  { id: 'inspect', label: '检视轮廓', hint: '2' },
-  { id: 'positive', label: '正点', hint: '3' },
-  { id: 'negative', label: '负点', hint: '4' },
-  { id: 'scribble', label: '自由涂鸦', hint: '5' },
-  { id: 'lasso', label: '套索', hint: '6' },
-];
-
 export function ReaderToolbar({
   caseTitle,
   frameTitle,
@@ -78,6 +70,17 @@ export function ReaderToolbar({
   onUndoPoint,
   onAnalyzeKeyframe,
 }: Props) {
+  const { language } = useSettings();
+  const zh = language !== 'en';
+  const modes: { id: InteractionMode; label: string; hint: string }[] = [
+    { id: 'box', label: zh ? '框选病灶' : 'Box lesion', hint: '1' },
+    { id: 'inspect', label: zh ? '检视轮廓' : 'Inspect', hint: '2' },
+    { id: 'positive', label: zh ? '正点' : 'Positive', hint: '3' },
+    { id: 'negative', label: zh ? '负点' : 'Negative', hint: '4' },
+    { id: 'scribble', label: zh ? '自由涂鸦' : 'Scribble', hint: '5' },
+    { id: 'lasso', label: zh ? '套索' : 'Lasso', hint: '6' },
+  ];
+
   return (
     <div className="space-y-2 border-b border-white/10 bg-[#0e1012] px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -86,7 +89,7 @@ export function ReaderToolbar({
           <div className="truncate text-[10px] text-gray-500">{frameTitle}</div>
         </div>
         <span className="rounded border border-white/10 bg-black/40 px-2 py-0.5 text-[10px] text-gray-400">
-          {promptSummary || '未标注'}
+          {promptSummary || (zh ? '未标注' : 'No prompt')}
         </span>
         <span
           className={`rounded border px-2 py-0.5 text-[10px] ${
@@ -96,27 +99,32 @@ export function ReaderToolbar({
                 ? 'border-amber-400/30 bg-amber-500/10 text-amber-200'
                 : 'border-white/10 bg-black/40 text-gray-500'
           }`}
-          title={nnInteractiveAvailable === false ? '请启动官方 nnInteractive 服务' : undefined}
+          title={nnInteractiveAvailable === false
+            ? (zh ? '请启动官方 nnInteractive 服务' : 'Start the official nnInteractive service')
+            : undefined}
         >
           {nnInteractiveBusy
-            ? 'nnInteractive 推理中'
+            ? (zh ? 'nnInteractive 推理中' : 'nnInteractive running')
             : nnInteractiveAvailable
-              ? 'nnInteractive 已连接'
+              ? (zh ? 'nnInteractive 已连接' : 'nnInteractive connected')
               : nnInteractiveAvailable === false
-                ? 'nnInteractive 未连接'
-                : 'nnInteractive 检查中'}
+                ? (zh ? 'nnInteractive 未连接' : 'nnInteractive offline')
+                : (zh ? 'nnInteractive 检查中' : 'nnInteractive checking')}
         </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
         <button type="button" onClick={onTogglePlay} className="reader-btn">
           {isPlaying ? <Pause size={12} /> : <Play size={12} />}
-          {isPlaying ? '暂停' : '播放'}
+          {isPlaying ? (zh ? '暂停' : 'Pause') : (zh ? '播放' : 'Play')}
         </button>
-        <label className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400" title="播放倍速（与阅片1一致）">
-          倍速
+        <label
+          className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-400"
+          title={zh ? '播放倍速（与阅片1一致）' : 'Playback speed'}
+        >
+          {zh ? '倍速' : 'Speed'}
           <select
-            aria-label="播放倍速"
+            aria-label={zh ? '播放倍速' : 'Playback speed'}
             value={String(playbackRate)}
             onChange={(event) => onPlaybackRateChange(Number(event.target.value))}
             className="bg-transparent text-gray-200 outline-none"
@@ -131,44 +139,52 @@ export function ReaderToolbar({
           onClick={onToggleTrack}
           className={`reader-btn ${trackOnPlay ? 'reader-btn-primary' : ''}`}
         >
-          自动单帧跟踪 / {trackOnPlay ? '开' : '关'}
+          {zh ? '自动单帧跟踪' : 'Auto frame track'} / {trackOnPlay ? (zh ? '开' : 'On') : (zh ? '关' : 'Off')}
         </button>
         <button
           type="button"
           onClick={onPropagateVideo}
           className="reader-btn"
           disabled={videoTrackBusy || !hasPrompt}
-          title={!hasPrompt ? '请先框选病灶' : '跟踪扩散到整个视频'}
+          title={!hasPrompt
+            ? (zh ? '请先框选病灶' : 'Draw a lesion box first')
+            : (zh ? '跟踪扩散到整个视频' : 'Propagate tracking across the video')}
         >
           {videoTrackBusy ? <Loader2 size={12} className="animate-spin" /> : <Route size={12} />}
-          {videoTrackBusy ? '跟踪扩散中' : '跟踪扩散'}
+          {videoTrackBusy
+            ? (zh ? '跟踪扩散中' : 'Propagating')
+            : (zh ? '跟踪扩散' : 'Propagate')}
         </button>
         {videoTrackStatus ? <span className="text-[10px] text-gray-500">{videoTrackStatus}</span> : null}
         <button type="button" onClick={onAnalyzeKeyframe} className="reader-btn" disabled={samBusy}>
           {samBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-          关键帧分析
+          {zh ? '关键帧分析' : 'Analyze frame'}
         </button>
         <button
           type="button"
           onClick={onGenerateReport}
           className="reader-btn reader-btn-primary"
           disabled={reportBusy || !llmReady || !hasPrompt}
-          title={!llmReady ? '未配置 DeepSeek / MiniMax' : !hasPrompt ? '请先框选病灶' : ''}
+          title={!llmReady
+            ? (zh ? '未配置 DeepSeek / MiniMax' : 'DeepSeek / MiniMax not configured')
+            : !hasPrompt
+              ? (zh ? '请先框选病灶' : 'Draw a lesion box first')
+              : ''}
         >
           {reportBusy ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-          生成文字报告
+          {zh ? '生成文字报告' : 'Generate report'}
         </button>
         <button type="button" onClick={onClearPrompt} className="reader-btn">
-          <Eraser size={12} /> 清除
+          <Eraser size={12} /> {zh ? '清除' : 'Clear'}
         </button>
         <button type="button" onClick={onUndoPoint} className="reader-btn">
-          <Undo2 size={12} /> 撤销轮廓
+          <Undo2 size={12} /> {zh ? '撤销轮廓' : 'Undo contour'}
         </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] text-gray-500">交互</span>
-        {MODES.map((m) => (
+        <span className="text-[10px] text-gray-500">{zh ? '交互' : 'Interact'}</span>
+        {modes.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -178,7 +194,7 @@ export function ReaderToolbar({
                 ? 'bg-cyan-600/80 text-white'
                 : 'bg-white/5 text-gray-400 hover:bg-white/10'
             }`}
-            title={`快捷键 ${m.hint}`}
+            title={zh ? `快捷键 ${m.hint}` : `Shortcut ${m.hint}`}
           >
             {m.label}
           </button>
@@ -189,10 +205,10 @@ export function ReaderToolbar({
         <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-400">
           <label className="inline-flex items-center gap-1.5">
             <input type="checkbox" checked={showMask} onChange={onToggleShowMask} />
-            显示分割轮廓
+            {zh ? '显示分割轮廓' : 'Show mask'}
           </label>
           <label className="inline-flex items-center gap-1.5">
-            填充
+            {zh ? '填充' : 'Fill'}
             <input
               type="range"
               min={8}
@@ -202,7 +218,7 @@ export function ReaderToolbar({
             />
           </label>
           <button type="button" onClick={onClearPrompt} className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-300">
-            <RotateCcw size={10} /> 重置 mask
+            <RotateCcw size={10} /> {zh ? '重置 mask' : 'Reset mask'}
           </button>
         </div>
       ) : null}

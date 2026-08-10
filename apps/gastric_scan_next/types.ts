@@ -108,6 +108,7 @@ export interface SegmentationEvidence {
 export interface VideoMaskFrameOverride {
   /** Source video frame index when the tracker provides it. */
   frame_index?: number;
+  frame_id?: string | null;
   timestamp_sec: number;
   imageWidth: number;
   imageHeight: number;
@@ -196,6 +197,10 @@ export interface MaskHistoryEntry {
   override: MaskBoundaryOverride;
   /** Optional lumen snapshot saved with the same doctor operation. */
   lumen_override?: LumenOverride;
+  /** Doctor account that owns this history version. */
+  owner_account_id?: string;
+  /** Soft-delete timestamp; deleted entries are hidden from the doctor's list. */
+  deleted_at?: string;
 }
 
 export interface AgentReport {
@@ -374,10 +379,30 @@ export interface AgentReportPack {
   };
 }
 
+export interface ContourDiagnosis {
+  status?: string;
+  display_stage?: string | null;
+  provisional_stage?: string | null;
+  classifier_stage?: string | null;
+  lesion_confirmed?: boolean;
+  lumen_mask_type?: string;
+  wall_is_proxy?: boolean;
+  layer_confirmed?: boolean;
+  penetration_risk?: string | null;
+  fraction_outside_lumen?: number | null;
+  geometry_relation?: string;
+  prepared_actions?: string[];
+  summary?: string;
+  gate?: string;
+}
+
 export interface AgentWorkbenchReport {
   schema_version: string;
   status: string;
   recommended_t_stage: string;
+  /** ContourEvidenceGate display stage (may be cTx when T2/T3 indeterminate). */
+  assist_display_stage?: string;
+  contour_diagnosis?: ContourDiagnosis;
   confidence: 'high' | 'medium' | 'low' | string;
   reasoning: string;
   /** Optional language-only refinement; never owns the stage or confidence. */
@@ -558,6 +583,26 @@ export interface AgentBeliefState {
   updated_at: string;
 }
 
+export interface UnifiedEvidencePack {
+  schema_version: 'evidence_pack_v1' | string;
+  created_at?: string;
+  case?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  assessments?: Array<Record<string, unknown>>;
+  evidence?: Array<Record<string, unknown>>;
+  artifacts?: Array<{
+    artifact_id?: string;
+    kind?: string;
+    uri?: string;
+    frame_refs?: unknown;
+    evidence_ids?: string[];
+    selected_for_report?: boolean;
+    caption?: string;
+  }>;
+  report?: Record<string, unknown>;
+  provenance?: Record<string, unknown>;
+}
+
 export interface AgentAnalysisResponse {
   schema_version?: string;
   session_id: string;
@@ -598,8 +643,14 @@ export interface AgentAnalysisResponse {
   belief_state?: AgentBeliefState;
   agent_steps?: AgentStep[];
   prediction_artifacts?: Record<string, unknown>;
+  evidence_pack?: UnifiedEvidencePack;
+  evidence_pack_refs?: {
+    evidence_pack_path?: string;
+    evidence_pack_url?: string;
+  };
   runtime_verification?: RuntimeVerification;
   traces: Array<Record<string, unknown>>;
+  workflow_trace?: Array<Record<string, unknown>>;
   trajectory_ref?: {
     path: string;
     schema_version: string;

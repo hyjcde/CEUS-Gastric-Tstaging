@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import type { AgentToolResult } from '@/types';
 import type { GcUsField, GcUsSigns } from '@/lib/gc-us-report-template';
+import { gcUsOptionLabel } from '@/lib/gc-us-report-template';
 import { GC_US_SIGN_MODEL_SPECS, type GcUsSignModelSpec } from '@/lib/gc-us-sign-models';
 
 type UnknownRecord = Record<string, unknown>;
@@ -95,17 +96,25 @@ function kindLabel(kind: GcUsSignModelSpec['evidenceKind'], zh: boolean): string
   return zh ? '代理' : 'Proxy';
 }
 
-function fieldValue(snapshot: FieldSnapshot | null, local: GcUsField<unknown> | null): string {
+function fieldValue(
+  snapshot: FieldSnapshot | null,
+  local: GcUsField<unknown> | null,
+  zh = true,
+): string {
+  let raw = '';
   if (snapshot?.grade !== undefined && snapshot.grade !== null) {
     const max = asFiniteNumber(asRecord(snapshot)?.grade_max);
-    return max != null ? `${snapshot.grade}/${max}` : String(snapshot.grade);
+    raw = max != null ? `${snapshot.grade}/${max}` : String(snapshot.grade);
+  } else if (snapshot?.value !== undefined && snapshot.value !== null && snapshot.value !== '') {
+    raw = String(snapshot.value);
+  } else if (snapshot?.detail) {
+    raw = snapshot.detail;
+  } else if (local?.value !== undefined && local.value !== null && local.value !== '') {
+    raw = String(local.value);
+  } else {
+    return '—';
   }
-  if (snapshot?.value !== undefined && snapshot.value !== null && snapshot.value !== '') {
-    return String(snapshot.value);
-  }
-  if (snapshot?.detail) return snapshot.detail;
-  if (local?.value !== undefined && local.value !== null && local.value !== '') return String(local.value);
-  return '—';
+  return gcUsOptionLabel(raw, zh);
 }
 
 function confidenceValue(snapshot: FieldSnapshot | null, local: GcUsField<unknown> | null): number | null {
@@ -169,18 +178,19 @@ function GeometryPreview({
   const contact = asFiniteNumber(geometry.audit.contact_arc_ratio);
   const sectors = asRecord(geometry.audit.sector_frac);
 
+  const metaCls = compact ? 'text-[11px]' : 'text-xs';
   return (
-    <div className={`mt-2 rounded border border-fuchsia-300/20 bg-fuchsia-400/[0.04] ${compact ? 'p-1.5' : 'p-2'}`}>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} font-semibold text-fuchsia-100`}>
+    <div className={`mt-3 rounded border border-fuchsia-300/20 bg-fuchsia-400/[0.04] ${compact ? 'p-2' : 'p-3'}`}>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className={`${compact ? 'text-xs' : 'text-sm'} font-semibold text-fuchsia-100`}>
           {zh ? '方向几何可视化' : 'Directional geometry preview'}
         </span>
-        <span className="text-[9px] text-slate-500">{direction}</span>
+        <span className={`${metaCls} text-slate-400`}>{direction}</span>
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_7rem] items-stretch gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_8rem] items-stretch gap-2">
         <svg
           viewBox={viewBox}
-          className="h-24 w-full rounded border border-white/10 bg-black/35"
+          className="h-28 w-full rounded border border-white/10 bg-black/35"
           role="img"
           aria-label={zh ? '病灶轮廓和胃腔方向代理' : 'Lesion contour and lumen direction proxy'}
         >
@@ -195,7 +205,7 @@ function GeometryPreview({
             <line x1={arrow[0]} y1={arrow[1]} x2={arrow[2]} y2={arrow[3]} stroke="#bef264" strokeWidth="2.5" />
           )}
         </svg>
-        <div className="space-y-1 text-[9px] text-slate-400">
+        <div className={`space-y-1.5 ${metaCls} text-slate-300`}>
           <div>
             {zh ? '接触弧' : 'Contact arc'}:{' '}
             <span className="font-mono text-fuchsia-100">{contact == null ? '—' : `${Math.round(contact * 100)}%`}</span>
@@ -210,7 +220,7 @@ function GeometryPreview({
           </div>
         </div>
       </div>
-      <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
+      <div className={`mt-1.5 ${metaCls} leading-relaxed text-slate-400`}>
         {zh
           ? '轮廓、胃腔中心和向外方向用于解释几何代理，不代表真实病理浸润。'
           : 'Contour, lumen center, and outward direction explain the geometry proxy; they are not pathological invasion.'}
@@ -236,77 +246,109 @@ export function GcUsSignModelMap({
     ? signAnalysis.backend_id
     : 'gc_us_sign_scorer_v1';
 
+  const titleCls = compact ? 'text-sm' : 'text-base';
+  const bodyCls = compact ? 'text-xs' : 'text-sm';
+  const metaCls = compact ? 'text-[11px]' : 'text-xs';
+  const chipCls = compact ? 'text-[10px]' : 'text-[11px]';
+
   return (
-    <section className={`rounded-xl border border-violet-300/20 bg-violet-400/[0.04] ${compact ? 'p-2' : 'p-3'}`}>
+    <section className={`rounded-xl border border-violet-300/20 bg-violet-400/[0.04] ${compact ? 'p-2.5' : 'p-4'}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className={`${compact ? 'text-[11px]' : 'text-xs'} font-semibold text-violet-100`}>
-            {zh ? '核心征象算法链' : 'Core sign model chain'}
+          <div className={`${titleCls} font-semibold text-violet-100`}>
+            {zh ? '核心征象评估与算法链' : 'Core sign assessment and model chain'}
           </div>
-          <div className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
+          <div className={`mt-1 ${metaCls} leading-relaxed text-slate-400`}>
             {zh
               ? '逐项显示算法、上游网络和证据性质；代理项不会自动升级为确定 cT。'
               : 'Each row shows the algorithm, upstream network, and evidence type; proxies never auto-promote to definite cT.'}
           </div>
         </div>
-        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] ${statusClass(overallStatus)}`}>
+        <span className={`shrink-0 rounded border px-2 py-1 ${chipCls} ${statusClass(overallStatus)}`}>
           {statusLabel(overallStatus, zh)}
         </span>
       </div>
 
-      <div className="mt-2 space-y-1.5">
+      <div className="mt-3 space-y-2">
         {GC_US_SIGN_MODEL_SPECS.map((spec) => {
           const local = getLocalField(signs, spec.id);
           const agent = getAgentField(signAnalysis, spec.id);
           const status = agent?.status || local?.status || spec.evidenceKind;
           const confidence = confidenceValue(agent, local);
-          const value = fieldValue(agent, local);
+          const value = fieldValue(agent, local, zh);
+          const observedBasis = gcUsOptionLabel(
+            String(agent?.detail || local?.note || (local?.evidence_ref?.length ? local.evidence_ref.join(', ') : '') || ''),
+            zh,
+          ) || (zh ? '当前没有额外证据说明' : 'No additional evidence detail');
           return (
-            <div key={spec.id} className="rounded border border-white/10 bg-black/25 px-2 py-1.5">
+            <div key={spec.id} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-medium text-slate-200`}>
+                <span className={`${bodyCls} font-semibold text-slate-100`}>
                   {zh ? spec.labelZh : spec.labelEn}
                 </span>
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="rounded border border-white/10 px-1 text-[8px] text-slate-400">
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className={`rounded border border-white/10 px-1.5 py-0.5 ${chipCls} text-slate-300`}>
                     {kindLabel(spec.evidenceKind, zh)}
                   </span>
-                  <span className={`rounded border px-1 text-[8px] ${statusClass(status)}`}>
+                  <span className={`rounded border px-1.5 py-0.5 ${chipCls} ${statusClass(status)}`}>
                     {statusLabel(status, zh)}
                   </span>
                 </div>
               </div>
-              <div className="mt-1 grid grid-cols-1 gap-0.5 text-[9px] leading-relaxed text-slate-500 xl:grid-cols-2 xl:gap-x-2">
+              <div className={`mt-1.5 grid grid-cols-1 gap-1 ${metaCls} leading-relaxed text-slate-400 xl:grid-cols-2 xl:gap-x-3`}>
                 <div>
-                  <span className="text-slate-600">{zh ? '算法' : 'Algorithm'}: </span>
+                  <span className="text-slate-500">{zh ? '算法' : 'Algorithm'}: </span>
                   {zh ? spec.algorithmZh : spec.algorithmEn}
                 </div>
                 <div>
-                  <span className="text-slate-600">{zh ? '网络/实现' : 'Network / implementation'}: </span>
+                  <span className="text-slate-500">{zh ? '网络/实现' : 'Network / implementation'}: </span>
                   {zh ? spec.networkZh : spec.networkEn}
                 </div>
               </div>
-              <div className="mt-1 flex items-center gap-2">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-900">
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-900">
                   <div
                     className={`h-full rounded-full ${status === 'available' || status === 'confirmed' ? 'bg-emerald-300' : 'bg-amber-300'}`}
                     style={{ width: `${confidence == null ? 0 : Math.round(confidence * 100)}%` }}
                   />
                 </div>
-                <span className="max-w-[10rem] truncate font-mono text-[9px] text-violet-100" title={value}>
+                <span className={`min-w-0 flex-1 break-words ${bodyCls} font-medium text-violet-100`} title={value}>
                   {value}
                 </span>
-                <span className="w-8 shrink-0 text-right font-mono text-[9px] text-slate-500">
+                <span className={`w-10 shrink-0 text-right font-mono ${metaCls} text-slate-400`}>
                   {confidence == null ? '—' : `${Math.round(confidence * 100)}%`}
                 </span>
               </div>
+              <details className={`mt-1.5 border-t border-white/5 pt-1.5 ${metaCls} text-slate-400`}>
+                <summary className="cursor-pointer select-none text-cyan-200/90 hover:text-cyan-100">
+                  {zh ? '展开评估方式和证据边界' : 'Expand method and evidence limits'}
+                </summary>
+                <div className="mt-1.5 space-y-1 leading-relaxed">
+                  <div>
+                    <span className="text-slate-500">{zh ? '评估方式' : 'Method'}: </span>
+                    {zh ? spec.algorithmZh : spec.algorithmEn}
+                  </div>
+                  <div>
+                    <span className="text-slate-500">{zh ? '实际依据' : 'Observed basis'}: </span>
+                    {observedBasis}
+                  </div>
+                  <div>
+                    <span className="text-slate-500">{zh ? '证据边界' : 'Evidence limit'}: </span>
+                    {spec.evidenceKind === 'clinical'
+                      ? (zh ? '来自病例资料，不是当前帧像素测量。' : 'From case data, not calibrated current-frame pixels.')
+                      : spec.evidenceKind === 'derived'
+                        ? (zh ? '由病灶轮廓派生，不能单独等同于病理真值。' : 'Derived from the lesion contour; not pathological truth by itself.')
+                        : (zh ? '几何或文本代理，需医生结合多切面确认。' : 'Geometry or text proxy; confirm across views as a physician.')}
+                  </div>
+                </div>
+              </details>
             </div>
           );
         })}
       </div>
 
       {signAnalysis ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-slate-500">
+        <div className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 ${metaCls} text-slate-400`}>
           <span>{zh ? '后端' : 'Backend'}: <span className="font-mono text-violet-200">{backendId}</span></span>
           {normalized != null ? <span>{zh ? '归一化软评分' : 'Normalized soft score'}: <span className="font-mono text-violet-200">{normalized.toFixed(3)}</span></span> : null}
           <span>{zh ? '信任' : 'Trust'}: <span className="font-mono text-amber-200">{String(signAnalysis.trust_label || 'caution')}</span></span>

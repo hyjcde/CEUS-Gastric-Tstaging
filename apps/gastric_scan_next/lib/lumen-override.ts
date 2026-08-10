@@ -11,6 +11,48 @@ export function normalizeLumenBBox(box: LumenBBox): LumenBBox {
   };
 }
 
+/**
+ * Clinical definition: lumen ROI must cover gastric wall and the mass, not only the fluid cavity.
+ * Expand the detector box and optionally union with an existing lesion box.
+ */
+export function expandLumenBBoxForWallAndMass(
+  box: LumenBBox,
+  options?: {
+    imageWidth?: number;
+    imageHeight?: number;
+    padRatio?: number;
+    includeBox?: LumenBBox | null;
+  },
+): LumenBBox {
+  const normalized = normalizeLumenBBox(box);
+  const padRatio = Math.max(0, options?.padRatio ?? 0.18);
+  const width = Math.max(1, normalized.x2 - normalized.x1);
+  const height = Math.max(1, normalized.y2 - normalized.y1);
+  let next: LumenBBox = {
+    x1: normalized.x1 - width * padRatio,
+    y1: normalized.y1 - height * padRatio,
+    x2: normalized.x2 + width * padRatio,
+    y2: normalized.y2 + height * padRatio,
+  };
+  if (options?.includeBox) {
+    const include = normalizeLumenBBox(options.includeBox);
+    next = {
+      x1: Math.min(next.x1, include.x1),
+      y1: Math.min(next.y1, include.y1),
+      x2: Math.max(next.x2, include.x2),
+      y2: Math.max(next.y2, include.y2),
+    };
+  }
+  const maxX = options?.imageWidth && options.imageWidth > 0 ? options.imageWidth : Number.POSITIVE_INFINITY;
+  const maxY = options?.imageHeight && options.imageHeight > 0 ? options.imageHeight : Number.POSITIVE_INFINITY;
+  return normalizeLumenBBox({
+    x1: Math.max(0, next.x1),
+    y1: Math.max(0, next.y1),
+    x2: Math.min(maxX, next.x2),
+    y2: Math.min(maxY, next.y2),
+  });
+}
+
 export function isValidLumenBBox(value: unknown): value is LumenBBox {
   if (!value || typeof value !== 'object') return false;
   const box = value as Record<string, unknown>;

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft, Loader2, RefreshCw, ScanSearch,
+  ArrowLeft, BookOpen, History, KeyRound, Loader2, RefreshCw, ScanSearch,
 } from 'lucide-react';
 import { ReaderCaseSidebar, type CaseSummary } from '@/components/reader/ReaderCaseSidebar';
 import { ReaderToolbar } from '@/components/reader/ReaderToolbar';
@@ -12,6 +12,11 @@ import { ReaderViewer } from '@/components/reader/ReaderViewer';
 import { ReaderReportPanel } from '@/components/reader/ReaderReportPanel';
 import { ReaderTimeline } from '@/components/reader/ReaderTimeline';
 import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
+import { ReaderHelpModal } from '@/components/reader/ReaderHelpModal';
+import { DoctorAccountModal } from '@/components/DoctorAccountModal';
+import { DoctorHistoryPanel } from '@/components/DoctorHistoryPanel';
+import { useDoctorAccount } from '@/contexts/DoctorAccountContext';
+import { useSettings } from '@/contexts/SettingsContext';
 import { readerMediaUrl } from '@/lib/reader/media-url';
 import {
   captureVideoFrameB64,
@@ -27,6 +32,7 @@ import {
 import type {
   InteractionMode,
   NnInteractiveStatus,
+  PrecomputedSimilarCases,
   ReaderCase,
   ReaderCohort,
   SamBackendStatus,
@@ -57,6 +63,7 @@ const VIDEO_SPEED_STORAGE_KEY = 'gastric-next-reader-video-speed';
 type AuditEventType =
   | 'session_start'
   | 'session_end'
+  | 'initial_judgment'
   | 'ai_suggestion'
   | 'report_generated'
   | 'doctor_action'
@@ -167,29 +174,32 @@ function resolvePersistedReaderGeometry(
   };
 }
 
-async function writeReaderAuditEvent(event: {
-  event_type: AuditEventType;
-  session_id: string;
-  case_id: string;
-  reader_id?: string;
-  condition?: string;
-  study_mode?: string;
-  environment?: string;
-  freeze_id?: string;
-  software_version?: string;
-  agent_version?: string;
-  model_version?: string;
-  rule_version?: string;
-  prompt_version?: string;
-  manifest_version?: string;
-  round?: string;
-  patient_id?: string;
-  payload?: Record<string, unknown>;
-}) {
+async function writeReaderAuditEvent(
+  event: {
+    event_type: AuditEventType;
+    session_id: string;
+    case_id: string;
+    reader_id?: string;
+    condition?: string;
+    study_mode?: string;
+    environment?: string;
+    freeze_id?: string;
+    software_version?: string;
+    agent_version?: string;
+    model_version?: string;
+    rule_version?: string;
+    prompt_version?: string;
+    manifest_version?: string;
+    round?: string;
+    patient_id?: string;
+    payload?: Record<string, unknown>;
+  },
+  headers: HeadersInit = { 'Content-Type': 'application/json' },
+) {
   try {
     await fetch('/api/reader-audit/events', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         ...event,
         client_recorded_at: new Date().toISOString(),
@@ -203,6 +213,14 @@ async function writeReaderAuditEvent(event: {
 
 export function ReaderWorkbench() {
   const searchParams = useSearchParams();
+  const { language } = useSettings();
+  const zh = language !== 'en';
+  const tx = (zhText: string, enText: string) => (zh ? zhText : enText);
+  const { account, readerId: accountReaderId, authHeaders } = useDoctorAccount();
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [precomputedSimilar, setPrecomputedSimilar] = useState<PrecomputedSimilarCases | null>(null);
 
   const [cohort, setCohort] = useState<ReaderCohort>(
     (searchParams.get('cohort') as ReaderCohort) || 'all',
@@ -224,6 +242,10 @@ export function ReaderWorkbench() {
   const [report, setReport] = useState<SamReport | null>(null);
   const [unifiedAgentResult, setUnifiedAgentResult] = useState<AgentAnalysisResponse | null>(null);
   const [unifiedAgentBusy, setUnifiedAgentBusy] = useState(false);
+  const [researchInitialReady, setResearchInitialReady] = useState(false);
+  const [researchInitialStage, setResearchInitialStage] = useState('');
+  const studyEnvironment = readerEnvironmentFromSearchParams(searchParams);
+  const researchAiLocked = studyEnvironment === 'research' && !researchInitialReady;
   const [unifiedAgentError, setUnifiedAgentError] = useState<string | null>(null);
   const [gcUsReport, setGcUsReport] = useState<GcUsReportState | null>(null);
   const [lumenOverride, setLumenOverride] = useState<LumenOverride | null>(null);
@@ -311,7 +333,9 @@ export function ReaderWorkbench() {
       const caseId = overrides.caseId || auditCaseRef.current || activeCaseId;
       if (!sessionId || !caseId) return;
       const environment = readerEnvironmentFromSearchParams(searchParams);
-      const readerId = environment === 'research' ? undefined : readerIdParam;
+      const readerId = environment === 'research'
+        ? undefined
+        : (accountReaderId || readerIdParam);
       const versionFields = READER_ROUND2_VERSION_FIELDS;
       void writeReaderAuditEvent({
         ...versionFields,
@@ -331,10 +355,12 @@ export function ReaderWorkbench() {
           condition: 'ai_assisted',
           study_mode: selectedCase?.study_mode || undefined,
         },
-      });
+      }, authHeaders({ 'Content-Type': 'application/json' }));
     },
     [
+      accountReaderId,
       activeCaseId,
+      authHeaders,
       patientIdParam,
       readerIdParam,
       roundParam,
@@ -390,21 +416,21 @@ export function ReaderWorkbench() {
     const pos = clicks.filter((c) => c.label !== 'negative').length;
     const neg = clicks.filter((c) => c.label === 'negative').length;
     const parts: string[] = [];
-    if (box) parts.push('1 框');
-    if (pos || neg) parts.push(`${pos} 正 / ${neg} 负`);
+    if (box) parts.push(zh ? '1 框' : '1 box');
+    if (pos || neg) parts.push(zh ? `${pos} 正 / ${neg} 负` : `${pos} pos / ${neg} neg`);
     const scribbleCount = promptStrokes.filter((stroke) => stroke.kind === 'scribble').length;
     const lassoCount = promptStrokes.filter((stroke) => stroke.kind === 'lasso').length;
-    if (scribbleCount) parts.push(`${scribbleCount} 涂鸦`);
-    if (lassoCount) parts.push(`${lassoCount} 套索`);
+    if (scribbleCount) parts.push(zh ? `${scribbleCount} 涂鸦` : `${scribbleCount} scribble`);
+    if (lassoCount) parts.push(zh ? `${lassoCount} 套索` : `${lassoCount} lasso`);
     if (maskPolygon?.length) {
       parts.push(samScore != null && samScore > 0
-        ? `Mask 已生成 · ${Math.round(samScore * 100)}%`
-        : 'Mask 已生成 · 分数不可用');
+        ? (zh ? `Mask 已生成, ${Math.round(samScore * 100)}%` : `Mask ready, ${Math.round(samScore * 100)}%`)
+        : (zh ? 'Mask 已生成, 分数不可用' : 'Mask ready, score unavailable'));
     } else if (samScore != null) {
-      parts.push(`分割 ${Math.round(samScore * 100)}%`);
+      parts.push(zh ? `分割 ${Math.round(samScore * 100)}%` : `Seg ${Math.round(samScore * 100)}%`);
     }
-    return parts.join(' · ');
-  }, [box, clicks, maskPolygon, promptStrokes, samScore]);
+    return parts.join(', ');
+  }, [box, clicks, maskPolygon, promptStrokes, samScore, zh]);
 
   const loadCases = useCallback(async (c: ReaderCohort) => {
     const requestId = ++caseLoadRequestRef.current;
@@ -419,7 +445,7 @@ export function ReaderWorkbench() {
       setBundleVersion(data.created_at);
     } catch (err) {
       if (requestId !== caseLoadRequestRef.current) return;
-      toast.error(err instanceof Error ? err.message : '病例库加载失败');
+      toast.error(err instanceof Error ? err.message : tx('病例库加载失败', 'Failed to load case library'));
     } finally {
       if (requestId === caseLoadRequestRef.current) {
         loadedCohortRef.current = c;
@@ -503,6 +529,10 @@ export function ReaderWorkbench() {
       auditStartedAtRef.current = Date.now();
       lastAuditFrameRef.current = 0;
       setSelectedCase(readerCase);
+      setResearchInitialReady(false);
+      setResearchInitialStage('');
+      setUnifiedAgentResult(null);
+      setUnifiedAgentError(null);
       setFrameIndex(0);
       resetInteraction();
       if (persistedGeometry.maskPolygon) {
@@ -524,9 +554,37 @@ export function ReaderWorkbench() {
         { sessionId, caseId, patientId: data.case.patient_id },
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '病例加载失败');
+      toast.error(err instanceof Error ? err.message : tx('病例加载失败', 'Failed to load case'));
     }
   }, [cohort, readPersistedGeometry, readerIdParam, recordAudit, roundParam, searchParams]);
+
+  const selectedCaseId = selectedCase?.case_id || null;
+  useEffect(() => {
+    setPrecomputedSimilar(null);
+    if (!selectedCaseId) return;
+    let cancelled = false;
+    fetch(`/api/reader/similar-cases?case_id=${encodeURIComponent(selectedCaseId)}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.ok) return;
+        setPrecomputedSimilar({
+          available: Boolean(data.available),
+          reason: data.reason,
+          basis: data.basis,
+          clinical_summary: data.clinical_summary,
+          similar_cases: data.similar_cases,
+          stage_distribution: data.stage_distribution,
+          memory_version: data.memory_version,
+          query_mode: data.query_mode,
+        });
+      })
+      .catch(() => {
+        // Precomputed similar cases are optional enrichment.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCaseId]);
 
   const resetInteraction = () => {
     setClicks([]);
@@ -626,7 +684,7 @@ export function ReaderWorkbench() {
     } else if (hasExternalDeepLink) {
       // Never silently load BM-001 when an unmapped patient link is supplied.
       initialCaseSelectionRef.current = true;
-      toast.error('深链未映射到阅片病例；未自动加载其他病例');
+      toast.error(tx('深链未映射到阅片病例；未自动加载其他病例', 'Deep link did not map to a reader case; no other case was auto-loaded'));
     }
   }, [
     activeCaseId,
@@ -778,8 +836,8 @@ export function ReaderWorkbench() {
       model: result.report?.llm_report?.model || null,
     });
     setBadge(result.mask_polygon?.length
-      ? `Mask 已生成${result.sam_score && result.sam_score > 0 ? ` · ${Math.round(result.sam_score * 100)}%` : ' · 分数不可用'}`
-      : '未生成 Mask');
+      ? `Mask 已生成${result.sam_score && result.sam_score > 0 ? `, ${Math.round(result.sam_score * 100)}%` : ', 分数不可用'}`
+      : tx('未生成 Mask', 'No mask yet'));
   }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, recordAudit]);
 
   const runSam = useCallback(
@@ -794,7 +852,7 @@ export function ReaderWorkbench() {
       const effectiveBox = opts.box !== undefined ? opts.box : box;
       const hasLocalPrompt = Boolean(effectiveBox) || effectiveClicks.length > 0;
       if (!hasLocalPrompt && !opts.llmReport) {
-        if (!opts.silent) toast.error('请先框选区域或添加标注点');
+        if (!opts.silent) toast.error(tx('请先框选区域或添加标注点', 'Draw a box or add prompt points first'));
         return;
       }
       setSamBusy(true);
@@ -808,8 +866,8 @@ export function ReaderWorkbench() {
         );
         const wrapped = await runSamAnalyze(payload);
         applySamResult(wrapped, Boolean(opts.llmReport));
-        if (!opts.silent) toast.success(`分割完成 · ${Math.round((wrapped.sam_score || 0) * 100)}%`);
-        if (opts.llmReport) toast.success('文字报告已生成');
+        if (!opts.silent) toast.success(tx(`分割完成, ${Math.round((wrapped.sam_score || 0) * 100)}%`, `Segmentation done, ${Math.round((wrapped.sam_score || 0) * 100)}%`));
+        if (opts.llmReport) toast.success(tx('文字报告已生成', 'Text report generated'));
         else if (llmReady && hasLocalPrompt) {
           if (llmDebounceRef.current) clearTimeout(llmDebounceRef.current);
           llmDebounceRef.current = setTimeout(() => {
@@ -838,11 +896,11 @@ export function ReaderWorkbench() {
     const video = videoRef.current;
     const videoRel = currentFrame?.video_rel;
     if (!video || !videoRel) {
-      toast.error('当前病例没有可跟踪的视频');
+      toast.error(tx('当前病例没有可跟踪的视频', 'No trackable video for this case'));
       return;
     }
     if (!hasPrompt) {
-      toast.error('请先框选或添加标注点');
+      toast.error(tx('请先框选或添加标注点', 'Draw a box or add prompt points first'));
       return;
     }
     const requestId = ++videoTrackRequestRef.current;
@@ -884,12 +942,12 @@ export function ReaderWorkbench() {
         elapsed_ms: result.elapsed_ms,
         direction_reports: result.direction_reports,
       });
-      if (result.needs_reanchor) toast.error('跟踪扩散已在质量门处停止，请重新框选或点击重锚定');
-      else toast.success(`跟踪扩散完成, ${result.accepted_frames}/${result.num_frames} 帧`);
+      if (result.needs_reanchor) toast.error(tx('跟踪扩散已在质量门处停止，请重新框选或点击重锚定', 'Propagation stopped at the quality gate; re-box or re-anchor'));
+      else toast.success(tx(`跟踪扩散完成, ${result.accepted_frames}/${result.num_frames} 帧`, `Propagation done, ${result.accepted_frames}/${result.num_frames} frames`));
     } catch (error) {
       if (requestId !== videoTrackRequestRef.current) return;
       setVideoTrackStatus('跟踪扩散失败');
-      toast.error(error instanceof Error ? error.message : '跟踪扩散失败');
+      toast.error(error instanceof Error ? error.message : tx('跟踪扩散失败', 'Propagation failed'));
     } finally {
       if (requestId === videoTrackRequestRef.current) {
         setVideoTrackBusy(false);
@@ -903,7 +961,11 @@ export function ReaderWorkbench() {
   const runUnifiedAgent = useCallback(async () => {
     const video = videoRef.current;
     if (!selectedCase || !video?.videoWidth || !video.videoHeight) {
-      toast.error('当前视频帧尚未准备好');
+      toast.error(tx('当前视频帧尚未准备好', 'Current video frame is not ready'));
+      return;
+    }
+    if (readerEnvironmentFromSearchParams(searchParams) === 'research' && !researchInitialReady) {
+      toast.error(tx('研究模式请先记录初始判断，再运行 AI 分析', 'In research mode, record the initial judgment before AI analysis'));
       return;
     }
     setUnifiedAgentBusy(true);
@@ -996,7 +1058,7 @@ export function ReaderWorkbench() {
         belief_state_schema_version: data.result.belief_state?.schema_version || null,
         next_action: data.result.belief_state?.next_actions?.[0]?.action_type || null,
       });
-      toast.success('辅助诊断意见已更新');
+      toast.success(tx('辅助诊断意见已更新', 'Assisted diagnosis updated'));
     } catch (error) {
       const message = error instanceof Error ? error.message : '统一 Agent 分析失败';
       setUnifiedAgentError(message);
@@ -1016,6 +1078,7 @@ export function ReaderWorkbench() {
     maskPolygon,
     readerIdParam,
     recordAudit,
+    researchInitialReady,
     roundParam,
     searchParams,
     selectedCase,
@@ -1046,7 +1109,7 @@ export function ReaderWorkbench() {
     if (!frame || videoTrackBusy || samBusy || lastVideoTrackFrameRef.current === frame.frame_index) return;
     lastVideoTrackFrameRef.current = frame.frame_index;
     if (frame.mask_polygon?.length) setMaskPolygon(frame.mask_polygon);
-    setBadge(`视频传播 · ${Math.round(frame.quality_score * 100)}% · ${frame.frame_index + 1}/${videoTrack?.num_frames || 0}`);
+    setBadge(`视频传播, ${Math.round(frame.quality_score * 100)}%, ${frame.frame_index + 1}/${videoTrack?.num_frames || 0}`);
   }, [nearestVideoTrackFrame, samBusy, videoTrack?.num_frames, videoTrackBusy]);
 
   const postCallbackIfNeeded = useCallback(async (result: Awaited<ReturnType<typeof runSamAnalyze>>) => {
@@ -1086,12 +1149,12 @@ export function ReaderWorkbench() {
     stroke?: ReaderPromptStroke,
   ) => {
     if (nnInteractiveStatus?.available !== true) {
-      toast.error('nnInteractive 未连接，未切换到 SAM3.1');
+      toast.error(tx('nnInteractive 未连接，未切换到 SAM3.1', 'nnInteractive offline; did not fall back to SAM3.1'));
       return;
     }
     const video = videoRef.current;
     if (!video?.videoWidth || !video.videoHeight) {
-      toast.error('当前视频帧尚未就绪');
+      toast.error(tx('当前视频帧尚未就绪', 'Current video frame is not ready'));
       return;
     }
     const initialPolygon = maskPolygon && maskPolygon.length >= 3
@@ -1105,7 +1168,7 @@ export function ReaderWorkbench() {
         ]
         : null;
     if (!initialPolygon) {
-      toast.error('请先框选病灶并生成初始轮廓');
+      toast.error(tx('请先框选病灶并生成初始轮廓', 'Box the lesion and create an initial contour first'));
       return;
     }
     if (!point && !stroke) return;
@@ -1159,7 +1222,7 @@ export function ReaderWorkbench() {
       }
     } catch (error) {
       session.initialized = false;
-      toast.error(error instanceof Error ? error.message : 'nnInteractive 推理失败');
+      toast.error(error instanceof Error ? error.message : tx('nnInteractive 推理失败', 'nnInteractive inference failed'));
     } finally {
       setNnInteractiveBusy(false);
     }
@@ -1182,7 +1245,7 @@ export function ReaderWorkbench() {
     lastVideoTrackFrameRef.current = null;
     if (interactionMode === 'positive' || interactionMode === 'negative') {
       if (nnInteractiveStatus?.available !== true) {
-        toast.error('nnInteractive 未连接，正点和负点不会改走 SAM3.1');
+        toast.error(tx('nnInteractive 未连接，正点和负点不会改走 SAM3.1', 'nnInteractive offline; positive/negative points will not switch to SAM3.1'));
         return;
       }
       setClicks((prev) => [...prev, click]);
@@ -1211,11 +1274,11 @@ export function ReaderWorkbench() {
     setVideoTrackStatus(null);
     lastVideoTrackFrameRef.current = null;
     if (nnInteractiveStatus?.available !== true) {
-      toast.error('nnInteractive 未连接，自由涂鸦和套索不会改走 SAM3.1');
+      toast.error(tx('nnInteractive 未连接，自由涂鸦和套索不会改走 SAM3.1', 'nnInteractive offline; scribble/lasso will not switch to SAM3.1'));
       return;
     }
     if (!maskPolygon?.length && !box) {
-      toast.error('请先框选病灶并生成初始轮廓');
+      toast.error(tx('请先框选病灶并生成初始轮廓', 'Box the lesion and create an initial contour first'));
       return;
     }
     setPromptStrokes((prev) => [...prev, stroke]);
@@ -1268,6 +1331,8 @@ export function ReaderWorkbench() {
     return () => window.clearInterval(timer);
   }, [hasPrompt, isPlaying, runSam, trackOnPlay, videoTrack?.frames.length, videoTrackBusy]);
 
+  const lastUiTimeAtRef = useRef(0);
+
   const onSeek = (time: number) => {
     const video = videoRef.current;
     if (!video) return;
@@ -1276,8 +1341,13 @@ export function ReaderWorkbench() {
   };
 
   const onVideoTimeUpdate = useCallback((time: number, videoDuration: number) => {
-    setCurrentTime(time);
-    setDuration(videoDuration);
+    const now = performance.now();
+    // Throttle React timeline updates; the range input paints itself while scrubbing.
+    if (now - lastUiTimeAtRef.current >= 80) {
+      lastUiTimeAtRef.current = now;
+      setCurrentTime(time);
+    }
+    setDuration((prev) => (Math.abs(prev - videoDuration) > 0.01 ? videoDuration : prev));
     if (Math.abs(time - lastAuditFrameRef.current) >= 0.5) {
       lastAuditFrameRef.current = time;
       recordAudit('frame_viewed', {
@@ -1289,7 +1359,7 @@ export function ReaderWorkbench() {
   }, [currentFrame?.media_token, currentFrame?.video_rel, recordAudit]);
 
   const onDoctorAction = useCallback((action: ReaderDoctorAction) => {
-    const recommendedStage = unifiedAgentResult?.report.recommended_t_stage || report?.recommended_stage || (
+    const recommendedStage = unifiedAgentResult?.report?.recommended_t_stage || report?.recommended_stage || (
       report?.stage_distribution
         ? Object.entries(report.stage_distribution).sort((a, b) => b[1] - a[1])[0]?.[0]
         : undefined
@@ -1306,48 +1376,51 @@ export function ReaderWorkbench() {
       frame_time: currentTime,
       elapsed_ms: auditStartedAtRef.current ? Date.now() - auditStartedAtRef.current : null,
       ai_confidence: report?.calibrated_confidence
-        ?? (unifiedAgentResult?.report.confidence === 'high'
+        ?? (unifiedAgentResult?.report?.confidence === 'high'
           ? 0.85
-          : unifiedAgentResult?.report.confidence === 'low' ? 0.35 : 0.6),
+          : unifiedAgentResult?.report?.confidence === 'low' ? 0.35 : 0.6),
     });
     toast.success(
       action.action_type === 'accept'
-        ? '已记录采纳'
+        ? tx('已记录采纳', 'Acceptance recorded')
         : action.action_type === 'modify'
-          ? '已记录修改'
+          ? tx('已记录修改', 'Modification recorded')
           : action.action_type === 'reject'
-            ? '已记录拒绝'
-            : '已记录证据不足',
+            ? tx('已记录拒绝', 'Rejection recorded')
+            : tx('已记录证据不足', 'Insufficient evidence recorded'),
     );
-  }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, readerIdParam, recordAudit, report, unifiedAgentResult]);
+  }, [currentFrame?.media_token, currentFrame?.video_rel, currentTime, readerIdParam, recordAudit, report, tx, unifiedAgentResult]);
 
   const caseTitle = selectedCase
-    ? `${selectedCase.case_id}${selectedCase.patient_id ? ` · ${selectedCase.patient_id}` : ''}`
+    ? `${selectedCase.case_id}${selectedCase.patient_id ? `, ${selectedCase.patient_id}` : ''}`
     : effectiveDeepCaseId || effectivePatientIdParam || '—';
-  const frameTitle = currentFrame?.axis_label || (externalVideo ? '外部视频' : '—');
+  const frameTitle = currentFrame?.axis_label || (externalVideo ? tx('外部视频', 'External video') : '—');
 
   const samBadge = samStatus?.available
-    ? `${samStatus.status?.model || 'SAM'}${samStatus.status?.cuda ? ' · GPU' : ' · CPU'}${llmReady ? ' · 报告' : ''}`
-    : '分割离线';
+    ? (samStatus.status?.model ? `SAM ${samStatus.status.model}` : 'SAM online')
+    : tx('分割离线', 'Seg offline')
 
   return (
     <div className="flex h-full flex-col bg-[#08090a] text-gray-100">
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2.5">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => navigateTo('/')} className="reader-btn">
-            <ArrowLeft size={14} /> 工作台
+            <ArrowLeft size={14} /> {tx('工作台', 'Workbench')}
           </button>
           <div>
             <div className="flex items-center gap-2">
               <ScanSearch size={16} className="text-emerald-400" />
-              <h1 className="text-sm font-bold">胃充盈超声智能诊断系统</h1>
-              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-300">临床智能工作台</span>
+              <h1 className="text-sm font-bold">{tx('胃充盈超声智能诊断系统', 'Gastric Filling Ultrasound Intelligent Diagnosis')}</h1>
+              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-300">{tx('临床智能工作台', 'Clinical intelligence')}</span>
             </div>
             <div className="text-[10px] text-gray-500">
-              福建协和医院超声 · 交互式视频 T 分期 · 人机协作阅片 · SAM 分割 + 分层 + 文字报告
+              {tx(
+                '福建协和医院超声, 交互式视频 T 分期, 人机协作阅片, SAM 分割 + 分层 + 文字报告',
+                'Fujian Xiehe Ultrasound, interactive video T-staging, human-AI reading, SAM + layers + report',
+              )}
               {callbackUrl || searchParams.get('frame_id')
-                ? ' · 结果会回写主工作台右上角'
-                : ' · 从工作台选例进入可自动回写'}
+                ? tx(', 结果会回写主工作台右上角', ', results sync back to the workbench')
+                : tx(', 从工作台选例进入可自动回写', ', open from the workbench to auto-sync results')}
             </div>
           </div>
         </div>
@@ -1356,6 +1429,35 @@ export function ReaderWorkbench() {
           <span className="text-[10px] text-gray-500">
             {selectedCase ? `${caseSummaries.findIndex((c) => c.case_id === selectedCase.case_id) + 1}/${caseSummaries.length}` : '—'}
           </span>
+          <button
+            type="button"
+            className="reader-btn"
+            onClick={() => setAccountModalOpen(true)}
+            title={tx('医生账号', 'Doctor account')}
+          >
+            <KeyRound size={12} />
+            <span className="hidden sm:inline">
+              {account ? account.display_name : tx('登录账号', 'Sign in')}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="reader-btn"
+            onClick={() => setHelpOpen(true)}
+            title={tx('使用说明（中英文）', 'User guide (Chinese and English)')}
+          >
+            <BookOpen size={12} />
+            <span className="hidden sm:inline">{tx('使用说明', 'Guide')}</span>
+          </button>
+          <button
+            type="button"
+            className="reader-btn"
+            onClick={() => setHistoryOpen(true)}
+            title={tx('我的操作历史', 'My history')}
+          >
+            <History size={12} />
+            <span className="hidden sm:inline">{tx('历史', 'History')}</span>
+          </button>
           <button
             type="button"
             className="reader-btn"
@@ -1368,6 +1470,9 @@ export function ReaderWorkbench() {
           </button>
         </div>
       </header>
+      <DoctorAccountModal open={accountModalOpen} onClose={() => setAccountModalOpen(false)} />
+      <DoctorHistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <ReaderHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <div className="flex min-h-0 flex-1">
         <ReaderCaseSidebar
@@ -1455,7 +1560,7 @@ export function ReaderWorkbench() {
               onSetBox={setBox}
               onPointerUpAfterBox={onPointerUpAfterBox}
               badge={badge}
-              hint="先框选病灶，再用 nnInteractive 正点、负点、自由涂鸦或套索修正"
+              hint={tx('先框选病灶，再用 nnInteractive 正点、负点、自由涂鸦或套索修正', 'Box the lesion first, then refine with nnInteractive positive/negative points, scribble, or lasso')}
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
@@ -1463,16 +1568,16 @@ export function ReaderWorkbench() {
                 <Loader2 className="animate-spin" />
               ) : (
                 <>
-                  <div>请从左侧选病例，或从主工作台 Header「阅片Agent」/ 辅助中心进入。</div>
+                  <div>{tx('请从左侧选病例，或从主工作台 Header「阅片Agent」/ 辅助中心进入。', 'Select a case on the left, or open Reader Agent / Assist hub from the workbench header.')}</div>
                   <div className="max-w-md text-[11px] leading-relaxed text-gray-600">
-                    分割完成后结果会 POST 回主工作台右上角「辅助回写」卡。
+                    {tx('分割完成后结果会 POST 回主工作台右上角「辅助回写」卡。', 'After segmentation, results POST back to the workbench Assist sync card.')}
                   </div>
                   <button
                     type="button"
                     className="reader-btn"
                     onClick={() => navigateTo('/')}
                   >
-                    返回工作台选例
+                    {tx('返回工作台选例', 'Back to workbench')}
                   </button>
                 </>
               )}
@@ -1480,13 +1585,59 @@ export function ReaderWorkbench() {
           )}
 
           <ReaderTimeline currentTime={currentTime} duration={duration} onSeek={onSeek} />
-          <div className="max-h-[280px] shrink-0 overflow-hidden border-t border-white/10">
-            <ReaderEvidencePanel
-              result={unifiedAgentResult}
-              loading={unifiedAgentBusy}
-              onRun={() => void runUnifiedAgent()}
-              onNextAction={(actionType) => runNextAgentAction(actionType)}
-            />
+          <div className="max-h-[320px] shrink-0 overflow-hidden border-t border-white/10">
+            {studyEnvironment === 'research' ? (
+              <div className="border-b border-sky-500/20 bg-sky-500/[0.06] px-3 py-2">
+                <div className="text-[10px] font-semibold text-sky-200">
+                  研究模式初始判断 {researchInitialReady ? '(已记录)' : '(必填，先于 AI)'}
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <select
+                    value={researchInitialStage}
+                    disabled={researchInitialReady}
+                    onChange={(event) => setResearchInitialStage(event.target.value)}
+                    className="rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-gray-200 disabled:opacity-60"
+                  >
+                    {['', 'T1', 'T2', 'T3', 'T4+', 'benign', 'malignant'].map((value) => (
+                      <option key={value || 'empty'} value={value}>{value || '初始判断待定'}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={researchInitialReady || !researchInitialStage}
+                    className="reader-btn disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => {
+                      if (!selectedCase || !researchInitialStage) return;
+                      const isNature = selectedCase.study_mode === 'benign_malignancy'
+                        || researchInitialStage === 'benign'
+                        || researchInitialStage === 'malignant';
+                      recordAudit('initial_judgment', {
+                        doctor_initial_nature: isNature ? researchInitialStage : null,
+                        doctor_initial_t_stage: isNature ? null : researchInitialStage,
+                        research_ai_locked_until_initial: true,
+                      });
+                      setResearchInitialReady(true);
+                      toast.success(tx('初始判断已记录', 'Initial judgment recorded'));
+                    }}
+                  >
+                    {researchInitialReady ? '已记录' : '记录初始判断'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {researchAiLocked ? (
+              <div className="px-3 py-3 text-[10px] leading-relaxed text-sky-100">
+                研究模式下，记录初始判断后才会显示 AI 证据并允许运行 Agent。
+              </div>
+            ) : (
+              <ReaderEvidencePanel
+                result={unifiedAgentResult}
+                loading={unifiedAgentBusy}
+                zh={zh}
+                onRun={() => void runUnifiedAgent()}
+                onNextAction={(actionType) => runNextAgentAction(actionType)}
+              />
+            )}
             {unifiedAgentError ? (
               <div className="border-t border-rose-400/20 bg-rose-400/5 px-3 py-2 text-[10px] text-rose-200">
                 {unifiedAgentError}
@@ -1513,6 +1664,7 @@ export function ReaderWorkbench() {
           onEvidenceStateChange={handleGcUsEvidenceState}
           onDoctorAction={onDoctorAction}
           unifiedResult={unifiedAgentResult}
+          precomputedSimilar={precomputedSimilar}
           onCopy={async () => {
             const text = unifiedAgentResult?.report.dynamic_report_draft?.full_text
               || gcUsReport?.report.prose
@@ -1521,13 +1673,13 @@ export function ReaderWorkbench() {
               || report?.summary
               || '';
             if (!text) {
-              toast.error('暂无可复制报告');
+              toast.error(tx('暂无可复制报告', 'No report available to copy'));
               return;
             }
             if (await copyReaderText(text)) {
-              toast.success('已复制报告');
+              toast.success(tx('已复制报告', 'Report copied'));
             } else {
-              toast.error('浏览器暂未授权剪贴板，请先点击页面后重试');
+              toast.error(tx('浏览器暂未授权剪贴板，请先点击页面后重试', 'Clipboard permission denied; click the page and retry'));
             }
           }}
         />

@@ -72,6 +72,7 @@ class CasePipelineState:
     triage_path: Optional[str] = None  # skip_t | run_t
     gate_decision: Optional[str] = None
     lumen_bbox: Optional[Dict[str, int]] = None
+    lumen_mask: Optional[np.ndarray] = None
     lesion_mask: Optional[np.ndarray] = None
     lesion_roi_bbox: Optional[Dict[str, int]] = None
     primary_classification: Optional[Dict[str, Any]] = None

@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "NEXT_DISABLE_TURBOPACK=1 next dev",
-    "dev:video-annotator": "bash scripts/run_video_annotator.sh",
     "dev:all": "bash scripts/dev_all.sh",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:report-workflow": "node scripts/test_template_report_workflow.mjs"
   },
   "dependencies": {
     "@types/react-window": "^1.8.8",
@@ -17,6 +17,7 @@
     "jspdf": "^3.0.4",
     "lucide-react": "^0.554.0",
     "next": "16.0.3",
+    "opencc-js": "^1.0.5",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-hot-toast": "^2.6.0",

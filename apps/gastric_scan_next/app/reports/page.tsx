@@ -1,47 +1,125 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Header } from '@/components/Header';
 import { FileText, Download, Search, Filter } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
 import {
   reportData,
   statusFilters,
-  statusCounts,
   stageBadgeClass,
   statusDotClass,
   getStatusLabel,
+  type Report,
   StatusFilter
 } from '@/app/reports/report-data';
-import { downloadReportPdf } from '@/lib/report-download';
+import { downloadReportPdf, downloadSavedTemplateReportPdf } from '@/lib/report-download';
 import { navigateTo } from '@/lib/navigation';
+
+type TemplateReportMetadata = {
+  report_id: string;
+  patient_id: string;
+  patient_label: string;
+  status: 'draft' | 'reviewed' | 'finalized';
+  revision: number;
+  case_id: string;
+  signed_by?: string | null;
+  updated_at: string;
+  template_stage?: string;
+  changed_fields?: string[];
+};
 
 export default function ReportsPage() {
   const { t, language } = useSettings();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<StatusFilter>('All');
+  const [templateReports, setTemplateReports] = useState<Report[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/reports/template', { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) return null;
+        return await response.json() as { ok?: boolean; reports?: TemplateReportMetadata[] };
+      })
+      .then(payload => {
+        if (controller.signal.aborted || !payload?.ok || !Array.isArray(payload.reports)) return;
+        setTemplateReports(payload.reports.map(item => ({
+          id: item.report_id,
+          patient: item.patient_label || item.patient_id,
+          date: item.updated_at.slice(0, 10),
+          stage: item.template_stage || 'uTx',
+          status: item.status === 'finalized'
+            ? 'Finalized'
+            : item.status === 'reviewed'
+              ? 'Reviewed'
+              : 'Draft',
+          source: 'template',
+          caseId: item.case_id,
+          revision: item.revision,
+          signedBy: item.signed_by,
+          changedFields: item.changed_fields,
+        })));
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        // The static report list remains available if persistence is offline.
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  const reports = useMemo(() => {
+    const liveIds = new Set(templateReports.map(report => report.id));
+    return [...templateReports, ...reportData.filter(report => !liveIds.has(report.id))];
+  }, [templateReports]);
+
+  const reportCounts = useMemo(() => reports.reduce(
+    (counts, report) => {
+      counts[report.status] += 1;
+      return counts;
+    },
+    { All: reports.length, Finalized: 0, Reviewed: 0, Draft: 0 } as Record<StatusFilter, number>,
+  ), [reports]);
 
   const summaryCards = useMemo(() => ([
-    { key: 'total', label: language !== 'en' ? '总报告数' : 'Total Reports', value: statusCounts.All, gradient: 'from-blue-900/30 to-blue-800/10' },
-    { key: 'Finalized', label: language !== 'en' ? '已完成' : 'Finalized', value: statusCounts.Finalized, gradient: 'from-emerald-900/30 to-emerald-800/10' },
-    { key: 'Reviewed', label: language !== 'en' ? '待审核' : 'Reviewed', value: statusCounts.Reviewed, gradient: 'from-amber-900/30 to-amber-800/10' },
-    { key: 'Draft', label: language !== 'en' ? '草稿' : 'Draft', value: statusCounts.Draft, gradient: 'from-gray-900/30 to-gray-800/10' }
-  ]), [language]);
+    { key: 'total', label: language !== 'en' ? '总报告数' : 'Total Reports', value: reportCounts.All, gradient: 'from-blue-900/30 to-blue-800/10' },
+    { key: 'Finalized', label: language !== 'en' ? '已完成' : 'Finalized', value: reportCounts.Finalized, gradient: 'from-emerald-900/30 to-emerald-800/10' },
+    { key: 'Reviewed', label: language !== 'en' ? '待审核' : 'Reviewed', value: reportCounts.Reviewed, gradient: 'from-amber-900/30 to-amber-800/10' },
+    { key: 'Draft', label: language !== 'en' ? '草稿' : 'Draft', value: reportCounts.Draft, gradient: 'from-gray-900/30 to-gray-800/10' }
+  ]), [language, reportCounts]);
 
   const filteredReports = useMemo(() => {
     const normalized = searchTerm.trim().toLowerCase();
-    return reportData.filter(report => {
+    return reports.filter(report => {
       const matchesStatus = activeStatusFilter === 'All' || report.status === activeStatusFilter;
       if (!matchesStatus) return false;
       if (!normalized) return true;
       return report.id.toLowerCase().includes(normalized) ||
         report.patient.toLowerCase().includes(normalized);
     });
-  }, [searchTerm, activeStatusFilter]);
+  }, [activeStatusFilter, reports, searchTerm]);
 
   const handleRowNavigation = (reportId: string) => {
     navigateTo(`/reports/${reportId}`);
+  };
+
+  const handleReportDownload = (report: Report) => {
+    if (report.source === 'template') {
+      const locale = language === 'en' ? 'en' : 'zh';
+      void downloadSavedTemplateReportPdf(
+        report.id,
+        locale === 'en'
+          ? `gastric_us_report_${report.patient.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`
+          : `胃癌超声报告_${report.patient.replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, '_')}.pdf`,
+        undefined,
+        locale,
+      );
+      return;
+    }
+    downloadReportPdf(report);
   };
 
   return (
@@ -111,7 +189,7 @@ export default function ReportsPage() {
                 >
                   <span className={`w-2 h-2 rounded-full ${statusDotClass(filter)}`}></span>
                   {getStatusLabel(filter, language)}
-                  <span className="text-[10px] text-gray-400">({statusCounts[filter] ?? 0})</span>
+                  <span className="text-[10px] text-gray-400">({reportCounts[filter] ?? 0})</span>
                 </button>
               ))}
             </div>
@@ -123,8 +201,8 @@ export default function ReportsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span>
                   {language !== 'en'
-                    ? `显示 ${filteredReports.length}/${reportData.length} 条报告`
-                    : `Showing ${filteredReports.length}/${reportData.length} reports`
+                    ? `显示 ${filteredReports.length}/${reports.length} 条报告`
+                    : `Showing ${filteredReports.length}/${reports.length} reports`
                   }
                 </span>
                 <span className="text-gray-500">•</span>
@@ -183,7 +261,10 @@ export default function ReportsPage() {
                           }
                         }}
                       >
-                        <td className="px-6 py-4 font-mono text-gray-300 group-hover:text-white transition-colors">{report.id}</td>
+                        <td className="px-6 py-4 font-mono text-gray-300 group-hover:text-white transition-colors">
+                          {report.id}
+                          {report.revision ? <span className="ml-2 text-[10px] text-gray-500">v{report.revision}</span> : null}
+                        </td>
                         <td className="px-6 py-4 font-mono text-blue-400 group-hover:text-blue-300 transition-colors">{report.patient}</td>
                         <td className="px-6 py-4 text-gray-400">{report.date}</td>
                         <td className="px-6 py-4">
@@ -204,7 +285,7 @@ export default function ReportsPage() {
                             className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all group-hover:bg-white/5"
                             onClick={event => {
                               event.stopPropagation();
-                              downloadReportPdf(report);
+                              handleReportDownload(report);
                             }}
                           >
                             <Download size={18} />

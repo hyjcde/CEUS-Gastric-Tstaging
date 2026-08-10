@@ -9,6 +9,11 @@ import cv2
 import numpy as np
 
 from ..tools.base import ToolRegistry
+from ..tools.lumen_detection_tool import (
+    lumen_bbox_from_mask,
+    lumen_geometry_from_bbox,
+    lumen_mask_from_polygon,
+)
 from ..tools.segmentation_tool import SegmentationTool
 from ..pipeline.base_step import BasePipelineStep, StepResult
 from ..pipeline.case_input import InputMode
@@ -466,16 +471,27 @@ class LumenDetectAgent(BasePipelineStep):
                 explanation="良恶性闸门 skip_t，跳过胃腔检测。",
             )
         path = state.case_input.primary_image_path
-        obs = registry.execute("detect_lumen", image_path=path)
-        yolo_bbox = dict(obs["lumen_bbox"]) if obs.get("lumen_detected") and obs.get("lumen_bbox") else None
-        if yolo_bbox:
-            state.lumen_bbox = yolo_bbox
-            obs = dict(obs)
-            obs["yolo_lumen_bbox"] = yolo_bbox
-            obs["lumen_source"] = "yolo"
-
         override_bbox = getattr(options, "override_lumen_bbox", None)
-        if getattr(options, "use_lumen_override", False) and isinstance(override_bbox, dict):
+        override_polygon = getattr(options, "lumen_override_polygon", None)
+        image = cv2.imread(path)
+        exact_mask = (
+            lumen_mask_from_polygon(
+                override_polygon,
+                image.shape[0],
+                image.shape[1],
+            )
+            if image is not None
+            else None
+        )
+        if exact_mask is not None:
+            mask_bbox = lumen_bbox_from_mask(exact_mask)
+            if mask_bbox is not None:
+                override_bbox = mask_bbox
+
+        # Doctor-confirmed lumen: skip YOLO cold-path entirely.
+        if getattr(options, "use_lumen_override", False) and (
+            isinstance(override_bbox, dict) or exact_mask is not None
+        ):
             doctor_bbox = {
                 "x1": int(round(float(override_bbox["x1"]))),
                 "y1": int(round(float(override_bbox["y1"]))),
@@ -483,29 +499,69 @@ class LumenDetectAgent(BasePipelineStep):
                 "y2": int(round(float(override_bbox["y2"]))),
             }
             state.lumen_bbox = doctor_bbox
+            state.lumen_mask = exact_mask
             meta = getattr(options, "lumen_override_meta", None) or {}
-            obs = dict(obs) if isinstance(obs, dict) else {}
-            obs.update({
+            obs = {
                 "available": True,
                 "lumen_detected": True,
                 "lumen_bbox": doctor_bbox,
+                "roi_source": "doctor_override",
                 "lumen_source": "doctor_override",
                 "override_source": getattr(options, "lumen_override_source", "manual"),
-                "yolo_lumen_bbox": yolo_bbox,
-                "lumen_polygon": getattr(options, "lumen_override_polygon", None),
-                "lumen_confidence": meta.get("lumen_confidence", obs.get("lumen_confidence")),
-                "lumen_mask_type": meta.get("lumen_mask_type") or (
-                    "sam31_polygon" if getattr(options, "lumen_override_polygon", None) else "bbox_proxy"
+                "yolo_lumen_bbox": None,
+                "yolo_skipped": True,
+                "lumen_polygon": override_polygon,
+                "lumen_mask_available": exact_mask is not None,
+                "lumen_mask_source": (
+                    "confirmed_polygon"
+                    if exact_mask is not None
+                    else "bbox_proxy"
                 ),
-                "detector_backend_id": meta.get("detector_backend_id") or obs.get("backend_id"),
+                "lumen_confidence": meta.get("lumen_confidence"),
+                "lumen_mask_type": meta.get("lumen_mask_type") or (
+                    "confirmed_polygon" if exact_mask is not None else "bbox_proxy"
+                ),
+                "detector_backend_id": meta.get("detector_backend_id"),
                 "sam_backend_id": meta.get("sam_backend_id"),
                 "sam_score": meta.get("sam_score"),
-            })
+            }
+            if exact_mask is not None:
+                obs["lumen_mask_area_ratio"] = round(
+                    float(np.count_nonzero(exact_mask)) / float(exact_mask.size or 1),
+                    6,
+                )
+                obs["lumen_area_ratio"] = obs["lumen_mask_area_ratio"]
+                obs["lumen_geometry"] = lumen_geometry_from_bbox(
+                    doctor_bbox,
+                    exact_mask.shape[0],
+                    exact_mask.shape[1],
+                )
+                obs["lumen_direction"] = "not_assessed"
+                obs["lumen_direction_source"] = "confirmed_mask_centroid"
+                state.figures_dir.mkdir(parents=True, exist_ok=True)
+                mask_png = state.figures_dir / "step-05-lumen-mask.png"
+                cv2.imwrite(str(mask_png), exact_mask)
+                obs["lumen_mask_png"] = str(mask_png)
+            elif image is not None:
+                obs["lumen_geometry"] = lumen_geometry_from_bbox(
+                    doctor_bbox,
+                    image.shape[0],
+                    image.shape[1],
+                )
             expl = (
-                f"医生确认胃腔框覆盖 YOLO："
-                f"source={obs.get('override_source')} bbox={doctor_bbox}。"
+                f"使用医生确认的胃腔几何（跳过 YOLO）：source={obs.get('override_source')} "
+                f"mask={obs.get('lumen_mask_source')} bbox={doctor_bbox}。"
             )
             return StepResult(observation=obs, explanation=expl, inputs={"image_path": path})
+
+        obs = registry.execute("detect_lumen", image_path=path)
+        yolo_bbox = dict(obs["lumen_bbox"]) if obs.get("lumen_detected") and obs.get("lumen_bbox") else None
+        state.lumen_mask = None
+        if yolo_bbox:
+            state.lumen_bbox = yolo_bbox
+            obs = dict(obs)
+            obs["yolo_lumen_bbox"] = yolo_bbox
+            obs["lumen_source"] = "yolo"
 
         expl = (
             f"YOLO 胃腔检测：detected={obs.get('lumen_detected')} "
@@ -797,23 +853,30 @@ class WallEvidenceAgent(BasePipelineStep):
             return StepResult(status="skipped", observation={"skipped": True}, explanation="跳过壁层证据。")
 
         path = state.case_input.primary_image_path
-        if state.lumen_bbox is None or state.lesion_mask is None:
+        if (state.lumen_bbox is None and state.lumen_mask is None) or state.lesion_mask is None:
             obs = {
                 "available": False,
-                "error": "missing lumen_bbox or lesion_mask",
+                "error": "missing lumen geometry or lesion_mask",
                 "has_lumen_bbox": state.lumen_bbox is not None,
+                "has_lumen_mask": state.lumen_mask is not None,
                 "has_lesion_mask": state.lesion_mask is not None,
             }
             return StepResult(
                 status="partial",
                 observation=obs,
-                explanation="壁层证据不可用：缺少 lumen bbox 或分割 mask。",
+                explanation="壁层证据不可用：缺少 lumen 几何或分割 mask。",
             )
 
         obs = registry.execute(
             "wall_evidence",
             image_path=path,
             lumen_bbox=state.lumen_bbox,
+            lumen_mask=state.lumen_mask,
+            lumen_mask_source=(
+                _step_obs(state, "lumen_detect").get("lumen_mask_source")
+                if state.lumen_mask is not None
+                else None
+            ),
             lesion_mask=state.lesion_mask,
         )
         expl = f"壁层 SDF：available={obs.get('available')} risk={obs.get('penetration_risk', '?')}。"
@@ -831,6 +894,7 @@ class WallEvidenceAgent(BasePipelineStep):
             state.case_input.primary_image_path,
             out,
             lumen_bbox=state.lumen_bbox,
+            lumen_mask=state.lumen_mask,
             lesion_mask=state.lesion_mask,
         )
         return [str(saved)] if saved else []
@@ -906,6 +970,7 @@ class GcUsSignAgent(BasePipelineStep):
             image_path=state.case_input.primary_image_path,
             lesion_mask=state.lesion_mask,
             lumen_bbox=state.lumen_bbox,
+            lumen_mask=state.lumen_mask,
             length_cm=length_cm,
             thickness_cm=thickness_cm,
             cea_positive=cea_positive,
@@ -925,6 +990,11 @@ class GcUsSignAgent(BasePipelineStep):
         obs["input_provenance"] = {
             "lesion_mask": "state.lesion_mask",
             "lumen_bbox": "state.lumen_bbox",
+            "lumen_mask": (
+                "state.lumen_mask"
+                if state.lumen_mask is not None
+                else "bbox_proxy"
+            ),
             "wall_evidence": "wall_evidence.wall_features" if wall_features else "unavailable",
             "structural_evidence": structural_evidence,
         }
@@ -996,7 +1066,7 @@ class DinoSignFusionAgent(BasePipelineStep):
         sign_status = {
             "morphology": "available" if morphology.get("valid") else "partial",
             "wall": "available" if wall.get("available") else "partial",
-            "lumen": "available" if state.lumen_bbox else "missing",
+            "lumen": "available" if (state.lumen_bbox or state.lumen_mask is not None) else "missing",
             "gc_us_signs": "available" if gc_signs.get("available") else "partial",
         }
         supporting = []
@@ -1020,7 +1090,7 @@ class DinoSignFusionAgent(BasePipelineStep):
             )
         else:
             uncertainty.append("Wall evidence is proxy-only or unavailable.")
-        if not state.lumen_bbox:
+        if not state.lumen_bbox and state.lumen_mask is None:
             uncertainty.append("Lumen geometry is unavailable for sign alignment.")
         if gc_signs.get("available"):
             supporting.append(
@@ -1104,14 +1174,33 @@ class CaseRAGAgent(BasePipelineStep):
             )
 
         case_context = _build_rag_case_context(state)
-        obs = registry.execute(
-            "retrieve_similar",
-            case_context=case_context,
-            patient_id=state.case_input.patient_id,
-            top_k=5,
-        )
+        adapter_feature = _adapter_patient_feature_from_state(state)
+        kwargs = {
+            "case_context": case_context,
+            "patient_id": state.case_input.patient_id,
+            "top_k": 5,
+        }
+        if adapter_feature is not None:
+            kwargs["adapter_patient_feature"] = adapter_feature
+        obs = registry.execute("retrieve_similar", **kwargs)
+        if not isinstance(obs, dict):
+            obs = {"available": False, "reason": "retrieve_similar returned non-dict", "similar_cases": []}
+        runtime = obs.get("runtime_invocation") or {}
+        backend = runtime.get("backend") or ("adapter_dino" if obs.get("available") and adapter_feature else "unknown")
         sd = obs.get("stage_distribution") or {}
-        expl = f"FAISS Case-RAG：hits={len(obs.get('similar_cases', []))} 分布={sd}。"
+        hits = len(obs.get("similar_cases") or [])
+        if obs.get("available"):
+            expl = f"Case-RAG ({backend}): hits={hits} 分布={sd}。"
+        else:
+            reason = obs.get("reason") or "unavailable"
+            expl = f"Case-RAG unavailable: {reason}."
+            obs.setdefault("runtime_invocation", {
+                "api_kind": "case_similarity",
+                "called": True,
+                "backend": backend,
+                "available": False,
+                "reason": reason,
+            })
         return StepResult(observation=obs, explanation=expl)
 
     def render(self, state, result, options):
@@ -1153,10 +1242,35 @@ class ReportSynthAgent(BasePipelineStep):
         )
 
         similar_cases = rag_obs.get("similar_cases") or []
+        contour_context = getattr(options, "contour_context", None) or {}
+        if not isinstance(contour_context, dict):
+            contour_context = {}
+        if not contour_context.get("lumen_mask_type") and getattr(options, "lumen_override_meta", None):
+            meta = options.lumen_override_meta or {}
+            if meta.get("lumen_mask_type"):
+                contour_context = {
+                    **contour_context,
+                    "lumen_mask_type": meta.get("lumen_mask_type"),
+                }
         payload = {
             "patient_id": ci.patient_id,
             "case_token": ci.case_id,
             "data_source": ci.data_source,
+            "contour_context": contour_context,
+            "use_mask_override": bool(getattr(options, "use_mask_override", False)),
+            "mask_override": {
+                "mask_polygon": getattr(options, "mask_polygon", None),
+                "wall_polygon": getattr(options, "wall_polygon", None),
+                "roi_bbox": getattr(options, "override_roi_bbox", None),
+                "source": getattr(options, "mask_override_source", "manual"),
+            },
+            "use_lumen_override": bool(getattr(options, "use_lumen_override", False)),
+            "lumen_override": {
+                "lumen_bbox": getattr(options, "override_lumen_bbox", None),
+                "lumen_polygon": getattr(options, "lumen_override_polygon", None),
+                "lumen_mask_type": (getattr(options, "lumen_override_meta", None) or {}).get("lumen_mask_type"),
+                "source": getattr(options, "lumen_override_source", "manual"),
+            },
         }
 
         memory_context = state.memory_context
@@ -1195,9 +1309,13 @@ class ReportSynthAgent(BasePipelineStep):
 
         if state.gate_decision == "skip_t" and state.per_frame_binary:
             primary_bin = _step_obs(state, "binary_gate").get("primary_frame") or state.per_frame_binary[0]
+            benign_confidence = (
+                "high" if primary_bin.get("top1_prob", 0) >= options.skip_t_threshold else "medium"
+            )
             fusion = {
                 "recommended_t_stage": "benign",
-                "confidence": "high" if primary_bin.get("top1_prob", 0) >= options.skip_t_threshold else "medium",
+                "assist_display_stage": "benign",
+                "confidence": benign_confidence,
                 "supporting_evidence": [
                     f"L0 binary gate skip_t: {primary_bin.get('top1_label')} "
                     f"p={primary_bin.get('top1_prob')}",
@@ -1205,6 +1323,15 @@ class ReportSynthAgent(BasePipelineStep):
                 "conflicting_evidence": [],
                 "uncertainty_flags": [],
                 "triage_path": "benign_skip",
+                "contour_diagnosis": {
+                    "display_stage": "benign",
+                    "diagnosis_status": "benign_skip_t",
+                    "diagnosis_summary": (
+                        f"L0 良恶性闸门判定良性（{primary_bin.get('top1_label')} "
+                        f"p={primary_bin.get('top1_prob')}），跳过 T 分期链；"
+                        "良性病变不做 cT 分期。"
+                    ),
+                },
             }
         else:
             fusion = _build_rule_based_report(
@@ -1331,55 +1458,92 @@ def _clinical_kwargs(clinical: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_rag_case_context(state: CasePipelineState) -> Dict[str, Any]:
-    from ..memory.multimodal_case_vector import extract_multimodal_case_vector
+def _adapter_patient_feature_from_state(state: CasePipelineState) -> Optional[List[float]]:
+    """Return cached Adapter-DINO patient feature when present on DINO step outputs."""
+    dino_obs = _step_obs(state, "dinov3_seg")
+    for key in (
+        "adapter_patient_feature",
+        "patient_feature",
+        "adapter_mean_feature",
+        "region_embedding_mean",
+    ):
+        raw = dino_obs.get(key)
+        if isinstance(raw, (list, tuple)) and len(raw) > 0:
+            try:
+                return [float(x) for x in raw]
+            except (TypeError, ValueError):
+                continue
+    cached = dino_obs.get("cached_features") or {}
+    if isinstance(cached, dict):
+        raw = cached.get("patient_feature") or cached.get("adapter_patient_feature")
+        if isinstance(raw, (list, tuple)) and len(raw) > 0:
+            try:
+                return [float(x) for x in raw]
+            except (TypeError, ValueError):
+                return None
+    return None
 
-    cls_results = []
-    morph_results = []
-    for cls in state.per_frame_classifications or [{}]:
+
+def _build_rag_case_context(state: CasePipelineState) -> Dict[str, Any]:
+    """Build SimilarityTool case_context from real tool outputs (no hardcoded morph)."""
+    cls_results: List[Dict[str, Any]] = []
+    frames = state.per_frame_classifications or []
+    if not frames:
+        primary = state.primary_classification or _step_obs(state, "t_staging").get("primary") or {}
+        if primary:
+            frames = [primary]
+    for cls in frames:
         p = cls.get("probabilities") or {}
+        top1 = float(cls.get("top1_prob", 0) or 0)
+        top2 = float(cls.get("top2_prob", 0) or 0)
+        if top1 <= 0 and p:
+            ordered = sorted((float(v or 0) for v in p.values()), reverse=True)
+            top1 = ordered[0] if ordered else 0.0
+            top2 = ordered[1] if len(ordered) > 1 else 0.0
         cls_results.append(
             {
-                "T1": float(p.get("T1", 0)),
-                "T2": float(p.get("T2", 0)),
-                "T3": float(p.get("T3", 0)),
-                "T4+": float(p.get("T4+", 0)),
+                "available": True,
+                "probabilities": {
+                    "T1": float(p.get("T1", 0) or 0),
+                    "T2": float(p.get("T2", 0) or 0),
+                    "T3": float(p.get("T3", 0) or 0),
+                    "T4+": float(p.get("T4+", 0) or 0),
+                },
                 "top1_stage": cls.get("top1_stage", "?"),
-                "uncertainty": float(cls.get("uncertainty", 0)),
+                "top1_prob": top1,
+                "top2_prob": top2,
+                "uncertainty": float(cls.get("uncertainty", 0) or 0),
             }
         )
+
+    morph_obs = _step_obs(state, "morphology")
+    morph_results: List[Dict[str, Any]] = []
+    if morph_obs:
         morph_results.append(
             {
-                "convexity": 0.85,
-                "solidity": 0.85,
-                "irregularity": 0.5,
-                "compactness": 0.7,
+                "valid": bool(morph_obs.get("valid")),
+                "convexity": float(morph_obs.get("convexity", 0) or 0),
+                "solidity": float(morph_obs.get("solidity", 0) or 0),
+                "boundary_irregularity": float(
+                    morph_obs.get("boundary_irregularity", morph_obs.get("irregularity", 0)) or 0
+                ),
+                "compactness": float(morph_obs.get("compactness", 0) or 0),
+                "lesion_area_ratio": float(morph_obs.get("lesion_area_ratio", 0) or 0),
             }
         )
 
     wall_obs = _step_obs(state, "wall_evidence")
-    wf = wall_obs.get("wall_features") or {} if wall_obs.get("available") else {}
-    pr_raw = wall_obs.get("penetration_risk", 0) if wall_obs.get("available") else 0
-    if isinstance(pr_raw, str):
-        pr_map = {"low": 0.2, "medium": 0.5, "high": 0.85}
-        pr_val = pr_map.get(pr_raw.lower(), 0.0)
-    else:
-        pr_val = float(pr_raw or 0)
-    wall_ev = {
-        "penetration_risk": pr_val,
-        "thickness_cm": float(wf.get("thickness_cm", 0) or 0),
-        "irregularity_score": float(wf.get("irregularity_score", 0) or 0),
+    wall_ev: Dict[str, Any] = {
+        "available": bool(wall_obs.get("available")),
+        "penetration_risk": wall_obs.get("penetration_risk"),
+        "wall_features": wall_obs.get("wall_features") or {},
     }
 
-    bundle = extract_multimodal_case_vector(
-        cls_results=cls_results,
-        morph_results=morph_results,
-        clinical_info=_norm_clinical(state.case_input.clinical),
-        wall_evidence=wall_ev,
-    )
     return {
-        "query_vector": bundle.legacy.tolist() if hasattr(bundle.legacy, "tolist") else list(bundle.legacy),
-        "penetration_risk": wall_obs.get("penetration_risk"),
+        "cls_results": cls_results,
+        "morph_results": morph_results,
+        "clinical_info": _norm_clinical(state.case_input.clinical),
+        "wall_evidence": wall_ev,
     }
 
 

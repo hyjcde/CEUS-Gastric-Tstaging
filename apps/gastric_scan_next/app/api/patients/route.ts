@@ -674,7 +674,26 @@ function buildLegacyGistPatients(dataset: DatasetType): Patient[] {
   });
 }
 
-function buildReaderStudyV150Patients(readerId?: string): Patient[] {
+function redactResearchPatient(patient: Patient): Patient {
+  return {
+    ...patient,
+    clinical: patient.clinical
+      ? {
+          ...patient.clinical,
+          differentiation: '',
+          lauren: '',
+        }
+      : undefined,
+    report: patient.report
+      ? {
+          ...patient.report,
+          pathology_report: undefined,
+        }
+      : undefined,
+  };
+}
+
+function buildReaderStudyV150Patients(readerId?: string): { patients: Patient[]; orderApplied: boolean } {
   const bundle = loadReaderCasesBundle();
   const patients: Patient[] = (bundle.cases || [])
     .filter((item) => item.has_video !== false)
@@ -726,7 +745,8 @@ function buildReaderStudyV150Patients(readerId?: string): Patient[] {
         clinical,
       };
     });
-  return sortReaderRound2Patients(patients, readerId).patients;
+  const sorted = sortReaderRound2Patients(patients, readerId);
+  return { patients: sorted.patients, orderApplied: sorted.orderApplied };
 }
 
 function mergeUniquePatients(patients: Patient[]): Patient[] {
@@ -822,14 +842,21 @@ function buildQueuePatientsPage(
   offset: number,
   limit: number,
   readerId?: string,
-): { items: Patient[]; total: number } {
+): { items: Patient[]; total: number; orderApplied: boolean } {
   if (queueId === 'reader:reader_v150') {
-    const all = treatmentType === 'surgery' ? buildReaderStudyV150Patients(readerId) : [];
-    return { items: all.slice(offset, offset + limit), total: all.length };
+    if (treatmentType !== 'surgery') {
+      return { items: [], total: 0, orderApplied: false };
+    }
+    const built = buildReaderStudyV150Patients(readerId);
+    return {
+      items: built.patients.slice(offset, offset + limit),
+      total: built.patients.length,
+      orderApplied: built.orderApplied,
+    };
   }
   if (queueId === 'legacy:gist') {
     const all = treatmentType === 'surgery' ? buildLegacyGistPatients(dataset) : [];
-    return { items: all.slice(offset, offset + limit), total: all.length };
+    return { items: all.slice(offset, offset + limit), total: all.length, orderApplied: false };
   }
 
   const sources = getQueueSources(queueId, treatmentType, dataset);
@@ -850,7 +877,7 @@ function buildQueuePatientsPage(
     if (remaining <= 0) break;
   }
 
-  return { items: mergeUniquePatients(items), total };
+  return { items: mergeUniquePatients(items), total, orderApplied: false };
 }
 
 export async function GET(request: NextRequest) {
@@ -876,6 +903,58 @@ export async function GET(request: NextRequest) {
         );
       }
       readerId = auth.readerId;
+      const queueId = 'reader:reader_v150';
+      if (queueParam && parseWorkbenchQueueId(queueParam) !== queueId) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'research environment only allows queue=reader:reader_v150',
+            code: 'research_queue_locked',
+          },
+          { status: 422 },
+        );
+      }
+      if (treatmentType !== 'surgery') {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'research environment only allows surgery treatment queue',
+            code: 'research_treatment_locked',
+          },
+          { status: 422 },
+        );
+      }
+      const rawOffset = Number.parseInt(searchParams.get('offset') || '0', 10);
+      const rawLimit = Number.parseInt(searchParams.get('limit') || '80', 10);
+      const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
+      const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, rawLimit)) : 80;
+      const page = buildQueuePatientsPage(queueId, treatmentType, dataset, offset, limit, readerId);
+      if (!page.orderApplied) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `No frozen Round2 case order for reader ${readerId}`,
+            code: 'research_order_missing',
+          },
+          { status: 422 },
+        );
+      }
+      return NextResponse.json({
+        items: page.items.map(redactResearchPatient),
+        total: page.total,
+        offset,
+        limit,
+        has_more: offset + page.items.length < page.total,
+        study_contract: {
+          freeze_id: READER_ROUND2_FREEZE_ID,
+          order_seed: READER_ROUND2_ORDER_SEED,
+          order_applied: true,
+          environment: 'research',
+          pathology_hidden: true,
+          queue_id: queueId,
+          authenticated_reader_id: readerId,
+        },
+      });
     }
 
     if (queueParam || publicReaderOnly) {
@@ -897,7 +976,7 @@ export async function GET(request: NextRequest) {
           ? {
               freeze_id: READER_ROUND2_FREEZE_ID,
               order_seed: READER_ROUND2_ORDER_SEED,
-              order_applied: Boolean(readerId),
+              order_applied: page.orderApplied,
               environment,
             }
           : undefined,
@@ -905,7 +984,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (publicReaderOnly || cohortYearParam === 'reader_v150' || cohortYearParam === 'reader-v150') {
-      return NextResponse.json(buildReaderStudyV150Patients(readerId));
+      return NextResponse.json(buildReaderStudyV150Patients(readerId).patients);
     }
     const cohortYear = parseCohortYear(cohortYearParam);
 

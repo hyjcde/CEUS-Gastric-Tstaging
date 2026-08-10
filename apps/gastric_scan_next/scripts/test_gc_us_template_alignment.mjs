@@ -8,6 +8,8 @@ import {
   createEmptyGcUsTemplateFields,
   createGcUsField,
   createGcUsReportState,
+  deriveGcUsSigns,
+  deriveGcUsTemplateFields,
   deepestInvolvedWallLayer,
   normalizeGcUsStage,
   syncSignsFromTemplateFields,
@@ -24,6 +26,33 @@ assert.equal(normalizeGcUsStage('uT4a').band, 'T4a');
 assert.equal(normalizeGcUsStage('T4b').band, 'T4b');
 assert.equal(normalizeGcUsStage('uT4').band, 'T4');
 assert.equal(normalizeGcUsStage('T4+').band, 'uncertain');
+
+const clinicalPriority = deriveGcUsSigns({
+  clinical: {
+    tumorSize: { length: 2.3, thickness: 0.9 },
+  },
+  layer: { label: '达固有肌层（L4）', tHint: 'T2', inContact: true },
+  lesion: {
+    lengthMm: 99,
+    thicknessMm: 88,
+  },
+  pixel: { irregularity: 3.7 },
+});
+assert.equal(clinicalPriority.size.length.value, 23);
+assert.equal(clinicalPriority.size.thickness.value, 9);
+assert.equal(clinicalPriority.size.thickness.unit, 'mm');
+assert.equal(clinicalPriority.boundary.value, '边界不规则');
+assert.equal(clinicalPriority.morphology.value, '溃疡浸润型');
+assert.equal(clinicalPriority.growth_pattern.value, '明显浸润性');
+
+const clinicalTemplateFields = deriveGcUsTemplateFields({
+  clinical: { tumorSize: { length: 2.3, thickness: 0.9 }, location: '胃窦' },
+  signs: clinicalPriority,
+});
+assert.equal(clinicalTemplateFields.maximum_diameter_cm.value, 2.3);
+assert.equal(clinicalTemplateFields.maximum_thickness_cm.value, 0.9);
+assert.equal(clinicalTemplateFields.layer_4_subserosa.value, '模糊/变薄');
+assert.equal(clinicalTemplateFields.layer_5_serosa.value, '存在');
 
 const fields = createEmptyGcUsTemplateFields();
 fields.layer_1_mucosa = createGcUsField('消失');
@@ -75,5 +104,17 @@ assert.match(prose, /第一层（黏膜浅层）/);
 assert.match(prose, /第四层（固有肌层）/);
 assert.match(prose, /uT4b/);
 assert.match(prose, /形态、生长方式并入大体分型/);
+
+const proseEn = buildGcUsTemplateReportText(state, 'en');
+assert.match(proseEn, /Gastric Cancer Ultrasound Report/);
+assert.match(proseEn, /Ultrasound description:/);
+assert.match(proseEn, /Layer 1 \(superficial mucosa\)/);
+assert.match(proseEn, /Layer 4 \(muscularis propria\)/);
+assert.match(proseEn, /uT4b/);
+assert.match(proseEn, /Antrum \(posterior wall\)/);
+assert.match(proseEn, /Consider gastric cancer/);
+assert.match(proseEn, /Five-layer anatomy/);
+assert.equal(proseEn.includes('第一层'), false);
+assert.equal(proseEn.includes('超声描述'), false);
 
 console.log('gc_us_template_alignment: passed');

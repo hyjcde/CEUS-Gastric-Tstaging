@@ -6,8 +6,10 @@ import {
   GC_US_REPORT_SCHEMA_VERSION,
   applyGcUsDoctorOverride,
   buildGcUsReport,
+  buildGcUsTemplateReport,
   createGcUsReportState,
   deriveGcUsSigns,
+  gcUsOptionLabel,
   normalizeGcUsStage,
   type GcUsField,
   type GcUsDoctorAction,
@@ -105,6 +107,32 @@ function asClinicalRecord(value: unknown): Record<string, unknown> | null {
 function clinicalPositiveNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function clinicalMeasurementMm(
+  clinical: Record<string, unknown>,
+  mmKeys: string[],
+  cmKeys: string[],
+  nestedKey: 'length' | 'thickness',
+): number | null {
+  const records = [
+    clinical,
+    asClinicalRecord(clinical.measurements),
+    asClinicalRecord(clinical.measurement),
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
+  for (const record of records) {
+    for (const key of mmKeys) {
+      const value = clinicalPositiveNumber(record[key]);
+      if (value != null) return value;
+    }
+    for (const key of cmKeys) {
+      const value = clinicalPositiveNumber(record[key]);
+      if (value != null) return value * 10;
+    }
+  }
+  const nested = asClinicalRecord(clinical.tumorSize);
+  const value = clinicalPositiveNumber(nested?.[nestedKey]);
+  return value == null ? null : value * 10;
 }
 
 function clinicalFlag(value: unknown): boolean {
@@ -221,8 +249,18 @@ export function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUs
   let signs = fresh.signs;
   const template_fields = { ...fresh.template_fields };
   let changed = false;
+  const clinicalSizeField = (id: string, field: GcUsField<unknown>): boolean => (
+    (id === 'length' || id === 'thickness')
+    && field.source === 'clinical'
+    && field.value != null
+    && field.unit === 'mm'
+  );
   for (const id of ['length', 'thickness', 'layer_structure', 'morphology', 'boundary', 'growth_pattern', 'serosa_change', 'perigastric_tissue']) {
     const old = fieldFor(previous.signs, id);
+    const freshField = fieldFor(fresh.signs, id);
+    // Calibrated clinical-table size values supersede stale local edits or
+    // pixel-derived values. The old value remains in doctor_actions history.
+    if (clinicalSizeField(id, freshField)) continue;
     if (old.status !== 'doctor_edited' && old.doctor_override == null) continue;
     changed = true;
     if (id === 'length') signs = { ...signs, size: { ...signs.size, length: old as GcUsField<number> } };
@@ -233,6 +271,11 @@ export function mergeFreshEvidence(previous: GcUsReportState | null, fresh: GcUs
     const old = previous.template_fields[id];
     const next = fresh.template_fields[id];
     if (!old) continue;
+    if (
+      (id === 'maximum_diameter_cm' || id === 'maximum_thickness_cm')
+      && next.source === 'clinical'
+      && next.value != null
+    ) continue;
     if (next.status === 'doctor_edited' || next.doctor_override != null) {
       (template_fields as unknown as Record<string, GcUsField<unknown>>)[id] = next;
     } else if (old.status === 'doctor_edited' || old.doctor_override != null || next.value == null) {
@@ -334,7 +377,8 @@ function displayStageLabel(value: unknown): string | null {
 function displayStageText(value: string | null, zh: boolean): string {
   if (value === 'benign') return zh ? '良性' : 'Benign';
   if (value === 'malignant') return zh ? '恶性' : 'Malignant';
-  return value || (zh ? '待生成' : 'Pending');
+  // Always show a clinical display stage after analysis; cTx means evidence-limited, not blank.
+  return value || 'cTx';
 }
 
 export function GcUsEvidencePanel({
@@ -434,13 +478,13 @@ export function GcUsEvidencePanel({
         note: '当前帧几何/界面代理，需医生结合多切面核对',
       });
       if (derivedState.signs.layer_structure.value == null) {
-        derivedState.signs.layer_structure = proxyField('当前帧层次显示有限，需多切面复核', 'layer.multiplanar_review');
+        derivedState.signs.layer_structure = proxyField('层次显示欠清', 'layer.multiplanar_review');
       }
       if (derivedState.signs.serosa_change.value == null) {
-        derivedState.signs.serosa_change = proxyField('当前帧浆膜连续性需多切面核对', 'serosa.multiplanar_review');
+        derivedState.signs.serosa_change = proxyField('浆膜连续性欠清', 'serosa.multiplanar_review');
       }
       if (derivedState.signs.perigastric_tissue.value == null) {
-        derivedState.signs.perigastric_tissue = proxyField('当前帧胃周组织需多切面核对', 'perigastric.multiplanar_review');
+        derivedState.signs.perigastric_tissue = proxyField('胃周组织显示欠清', 'perigastric.multiplanar_review');
       }
     }
     return derivedState;
@@ -486,6 +530,13 @@ export function GcUsEvidencePanel({
             ? seedField
             : (fresh.value != null ? fresh : seedField)
         );
+        const templateFields = { ...derivedBase.template_fields };
+        for (const id of Object.keys(templateFields) as Array<keyof GcUsReportState['template_fields']>) {
+          const seedField = seeded.template_fields[id];
+          if (seedField.status === 'doctor_edited' || seedField.doctor_override != null) {
+            (templateFields as unknown as Record<string, GcUsField<unknown>>)[id] = seedField as GcUsField<unknown>;
+          }
+        }
         next = {
           ...derivedBase,
           ...seeded,
@@ -507,6 +558,7 @@ export function GcUsEvidencePanel({
             perigastric_tissue: chooseField(derivedBase.signs.perigastric_tissue, seeded.signs.perigastric_tissue),
             lesion_echo: chooseField(derivedBase.signs.lesion_echo, seeded.signs.lesion_echo),
           },
+          template_fields: templateFields,
           reference_stage: seeded.reference_stage.source === 'doctor'
             ? seeded.reference_stage
             : derivedBase.reference_stage,
@@ -543,8 +595,12 @@ export function GcUsEvidencePanel({
   }, [caseId, derivedBase, storageKey]);
 
   const report = useMemo(
-    () => buildGcUsReport(state, state.reference_stage.requested_band || state.reference_stage.band),
-    [state],
+    () => buildGcUsReport(
+      state,
+      state.reference_stage.requested_band || state.reference_stage.band,
+      zh ? 'zh' : 'en',
+    ),
+    [state, zh],
   );
   const doctorStage = state.reference_stage.source === 'doctor'
     ? displayStageLabel(state.reference_stage.requested_band || state.reference_stage.band)
@@ -561,12 +617,19 @@ export function GcUsEvidencePanel({
       ? (zh
         ? `当前二分类辅助判断倾向${displayStageText(referenceStageLabel, true)}，置信度${confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : '待生成'}；T分期不适用，仍需医生复核。`
         : `The malignancy gate favors ${displayStageText(referenceStageLabel, false).toLowerCase()}, with ${confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : 'pending'} confidence; T staging is not applicable and physician review remains required.`)
-      : report.prose.replace(
-        '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。',
-        `胃癌可能，超声评估c${referenceStageLabel}期，当前置信度${
-          confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : '待生成'
-        }，存在征象冲突，需医生复核。`,
-      )
+      : (zh
+        ? report.prose.replace(
+          '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。',
+          `胃癌可能，超声评估c${referenceStageLabel}期，当前置信度${
+            confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : '待生成'
+          }，存在征象冲突，需医生复核。`,
+        )
+        : report.prose.replace(
+          'Gastric cancer is possible; ultrasound-assessed cTx. Invasion depth remains uncertain. Do not output a definite cT without confirmed wall-layer, serosal, or adjacent-organ evidence.',
+          `Gastric cancer is possible; ultrasound-assessed c${referenceStageLabel}. Current confidence ${
+            confidenceScore != null ? `${Math.round(confidenceScore * 100)}%` : 'pending'
+          }. Sign conflicts remain; physician review is required.`,
+        ))
     : report.prose;
   const geometryProse = contourGeometry.available
     ? (zh
@@ -576,19 +639,37 @@ export function GcUsEvidencePanel({
   const visibleProse = [stageProse, geometryProse].filter(Boolean).join('\n');
 
   useEffect(() => {
-    let next = report.structured;
+    // Local panel may show buildGcUsReport narrative; parent/formal export must stay on boss template.
+    let next = buildGcUsTemplateReport(report.structured);
     if (storageKey && typeof window !== 'undefined') {
       try {
         const saved = window.localStorage.getItem(storageKey);
         if (saved) {
-          next = mergeFreshEvidence(createGcUsReportState(JSON.parse(saved)), next);
+          next = buildGcUsTemplateReport(
+            mergeFreshEvidence(createGcUsReportState(JSON.parse(saved)), next),
+          );
         }
       } catch {
         // Ignore malformed browser state and keep the live evidence state.
       }
     }
-    if (initialStateRef.current?.case_id === caseId) {
-      next = mergeFreshEvidence(initialStateRef.current, next);
+    const initialSnapshot = initialStateRef.current;
+    if (initialSnapshot && initialSnapshot.case_id === caseId) {
+      const merged = mergeFreshEvidence(initialSnapshot, next);
+      const templated = buildGcUsTemplateReport(merged);
+      const keepDoctorReport = initialSnapshot.report.status === 'finalized'
+        || initialSnapshot.report.doctor_edited
+        || initialSnapshot.report.source === 'doctor';
+      next = {
+        ...templated,
+        report: keepDoctorReport
+          ? initialSnapshot.report
+          : {
+              ...templated.report,
+              status: 'draft',
+              source: 'template',
+            },
+      };
     }
     let serialized = '';
     try {
@@ -705,32 +786,39 @@ export function GcUsEvidencePanel({
   };
 
   const fields = [...PRIMARY_SIGN_FIELDS, ...MERGED_SIGN_FIELDS];
-  const tumorSize = asClinicalRecord(clinical.tumorSize);
   const biomarkers = asClinicalRecord(clinical.biomarkers);
-  const tumorLengthMm = clinicalPositiveNumber(clinical.tumor_size_mm)
-    ?? ((clinicalPositiveNumber(tumorSize?.length) ?? 0) * 10 || null);
-  const tumorThicknessMm = clinicalPositiveNumber(clinical.tumor_thickness_mm)
-    ?? ((clinicalPositiveNumber(tumorSize?.thickness) ?? 0) * 10 || null);
+  const tumorLengthMm = clinicalMeasurementMm(
+    clinical,
+    ['tumor_size_mm', 'length_mm', 'tumorSizeMm', 'tumor_length_mm', 'long_diameter_mm', 'maximum_diameter_mm'],
+    ['length_cm', 'tumor_size_cm', 'tumor_length_cm', 'long_diameter_cm', 'maximum_diameter_cm'],
+    'length',
+  );
+  const tumorThicknessMm = clinicalMeasurementMm(
+    clinical,
+    ['tumor_thickness_mm', 'thickness_mm', 'tumorThicknessMm', 'tumor_depth_mm', 'maximum_thickness_mm'],
+    ['thickness_cm', 'tumor_thickness_cm', 'tumor_depth_cm', 'maximum_thickness_cm'],
+    'thickness',
+  );
   const clinicalLocation = typeof clinical.location === 'string' && clinical.location.trim()
-    ? clinical.location.trim()
-    : 'No source yet';
+    ? gcUsOptionLabel(clinical.location.trim(), zh)
+    : (zh ? '暂无来源' : 'No source yet');
 
   return (
-    <section className={`rounded-xl border border-white/10 bg-black/30 text-[11px] text-gray-200 ${compact ? 'p-2.5' : 'p-3.5'}`}>
+    <section className={`rounded-xl border border-white/10 bg-black/30 text-sm text-gray-200 ${compact ? 'p-2.5' : 'p-3.5'}`}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-100">
-          <FileText size={14} />
-          {zh ? '核心影像征象（可快速编辑）' : 'Core imaging signs (quick edit)'}
+        <div className="flex items-center gap-1.5 text-base font-semibold text-gray-100">
+          <FileText size={16} />
+          {zh ? '核心影像征象评估（可快速编辑）' : 'Core imaging sign assessment (quick edit)'}
         </div>
       </div>
-      <div className="mb-2.5 rounded border border-white/10 bg-black/30 px-2.5 py-2 text-[11px] text-gray-400">
+      <div className="mb-2.5 rounded border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-gray-300">
         <div className="flex items-center justify-between gap-2">
           <span>{zh ? '当前参考分期' : 'Current reference stage'}</span>
           <strong className={report.conflicts.length ? 'text-amber-300' : 'text-emerald-300'}>
             {displayStageText(referenceStageLabel, zh)}
           </strong>
         </div>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
           <span>
             {confidenceScore != null
               ? `${zh ? '置信度' : 'Confidence'} ${Math.round(confidenceScore * 100)}%`
@@ -741,61 +829,61 @@ export function GcUsEvidencePanel({
           ) : null}
         </div>
       </div>
-      <section className="mb-2.5 rounded border border-cyan-400/20 bg-cyan-400/[0.04] px-2.5 py-2 text-[10px]">
+      <section className="mb-2.5 rounded border border-cyan-400/20 bg-cyan-400/[0.04] px-3 py-2.5 text-sm">
         <div className="flex items-center justify-between gap-2">
           <span className="font-semibold text-cyan-100">{zh ? '临床辅助资料' : 'Clinical auxiliary data'}</span>
-          <span className="text-[9px] text-cyan-200/70">
+          <span className="text-xs text-cyan-200/70">
             {zh ? '仅供医生参考，不参与自动分期' : 'Reference only; not used for automatic staging'}
           </span>
         </div>
         <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-            <div className="text-[8px] text-slate-500">{zh ? '病灶部位' : 'Location'}</div>
-            <div className="mt-0.5 truncate text-gray-200">{clinicalLocation}</div>
+          <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+            <div className="text-xs text-slate-400">{zh ? '病灶部位' : 'Location'}</div>
+            <div className="mt-0.5 truncate text-gray-100">{clinicalLocation}</div>
           </div>
-          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-            <div className="text-[8px] text-slate-500">{zh ? '肿瘤长径' : 'Tumor length'}</div>
-            <div className="mt-0.5 font-mono text-gray-200">
+          <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+            <div className="text-xs text-slate-400">{zh ? '肿瘤长径' : 'Tumor length'}</div>
+            <div className="mt-0.5 font-mono text-gray-100">
               {tumorLengthMm != null ? `${tumorLengthMm} mm` : (zh ? '未评估' : 'Not assessed')}
             </div>
           </div>
-          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-            <div className="text-[8px] text-slate-500">{zh ? '肿瘤厚度' : 'Tumor thickness'}</div>
-            <div className="mt-0.5 font-mono text-gray-200">
+          <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+            <div className="text-xs text-slate-400">{zh ? '肿瘤厚度' : 'Tumor thickness'}</div>
+            <div className="mt-0.5 font-mono text-gray-100">
               {tumorThicknessMm != null ? `${tumorThicknessMm} mm` : (zh ? '未评估' : 'Not assessed')}
             </div>
           </div>
-          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-            <div className="text-[8px] text-slate-500">CEA</div>
-            <div className="mt-0.5 font-mono text-gray-200">
+          <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+            <div className="text-xs text-slate-400">CEA</div>
+            <div className="mt-0.5 font-mono text-gray-100">
               {clinicalLabDisplay(clinical.cea, biomarkers?.cea_positive)}
             </div>
           </div>
-          <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-            <div className="text-[8px] text-slate-500">CA19-9</div>
-            <div className="mt-0.5 font-mono text-gray-200">
+          <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+            <div className="text-xs text-slate-400">CA19-9</div>
+            <div className="mt-0.5 font-mono text-gray-100">
               {clinicalLabDisplay(clinical.ca199, biomarkers?.ca199_positive)}
             </div>
           </div>
         </div>
       </section>
       {contourGeometry.available ? (
-        <div className="mb-2.5 rounded border border-fuchsia-300/20 bg-fuchsia-400/[0.04] px-2.5 py-2 text-[10px]">
+        <div className="mb-2.5 rounded border border-fuchsia-300/20 bg-fuchsia-400/[0.04] px-3 py-2.5 text-sm">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold text-fuchsia-100">
               {zh ? '胃腔关系（定位/复核代理）' : 'Lumen relation (localization/review proxy)'}
             </span>
-            <span className="text-[9px] uppercase text-slate-500">{contourGeometry.quality}</span>
+            <span className="text-xs uppercase text-slate-400">{contourGeometry.quality}</span>
           </div>
-          <div className="mt-1 grid grid-cols-3 gap-1.5">
-            <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-              <div className="text-[8px] text-slate-500">{zh ? '间距' : 'Gap'}</div>
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-xs text-slate-400">{zh ? '间距' : 'Gap'}</div>
               <div className="font-mono text-fuchsia-100">
                 {contourGeometry.distancePx != null ? `${Math.round(contourGeometry.distancePx)} px` : '—'}
               </div>
             </div>
-            <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-              <div className="text-[8px] text-slate-500">{zh ? '状态' : 'Status'}</div>
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-xs text-slate-400">{zh ? '状态' : 'Status'}</div>
               <div className="font-mono text-lime-100">
                 {contourGeometry.relation === 'overlap'
                   ? (zh ? '重叠' : 'overlap')
@@ -806,8 +894,8 @@ export function GcUsEvidencePanel({
                       : (zh ? '未评估' : 'unknown')}
               </div>
             </div>
-            <div className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
-              <div className="text-[8px] text-slate-500">{zh ? '向外扩张' : 'Outward'}</div>
+            <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5">
+              <div className="text-xs text-slate-400">{zh ? '向外扩张' : 'Outward'}</div>
               <div className="font-mono text-lime-100">
                 {contourGeometry.outwardExpansionRatio != null
                   ? `${contourGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(contourGeometry.outwardExpansionRatio * 100)}%`
@@ -815,11 +903,18 @@ export function GcUsEvidencePanel({
               </div>
             </div>
           </div>
-          <div className="mt-1 text-[9px] leading-relaxed text-amber-100/80">
+          <div className="mt-1.5 text-xs leading-relaxed text-amber-100/80">
             {zh
               ? '当前帧定位与复核代理，不能独立决定 cT；矩形胃腔框更只是框代理，不等于真实胃壁或胃腔边界。'
               : 'Current-frame localization/review proxy only; it cannot decide cT alone. A rectangular lumen box is a box proxy, not true wall or lumen boundary.'}
           </div>
+          {contourGeometry.relation === 'overlap' ? (
+            <div className="mt-1.5 rounded border border-amber-300/40 bg-amber-400/10 px-2.5 py-2 text-xs leading-relaxed text-amber-100">
+              {zh
+                ? '胃腔与病灶轮廓存在重叠：黄色斜线区仅表示空间投影重叠，不等于病灶侵犯胃腔。先复核两条轮廓，再运行 Agent。'
+                : 'The lumen and lesion contours overlap. Yellow hatching marks projected overlap only; it does not mean invasion into the lumen. Review both contours before running the Agent.'}
+            </div>
+          ) : null}
         </div>
       ) : null}
       <GcUsSignModelMap
@@ -828,7 +923,7 @@ export function GcUsEvidencePanel({
         zh={zh}
         compact={compact}
       />
-      <div className="mb-1.5 rounded border border-cyan-300/15 bg-cyan-400/[0.04] px-2 py-1.5 text-[9px] leading-relaxed text-slate-300">
+      <div className="mb-2 rounded border border-cyan-300/15 bg-cyan-400/[0.04] px-3 py-2 text-xs leading-relaxed text-slate-300">
         {zh
           ? 'cT 阶梯：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。正式报告以大体分型 + 五层勾选为准；形态/边界/生长方式并入上述字段。无经确认壁层/浆膜/邻近器官证据时保持 cTx。'
           : 'cT ladder: T1 mucosa/submucosa; T2 muscularis propria; T3 subserosa; T4a serosa; T4b adjacent organs. Formal report uses gross type + 5-layer ticks; morphology/margin/growth fold into those. Keep cTx without confirmed wall/serosa/adjacent-organ evidence.'}
@@ -839,7 +934,7 @@ export function GcUsEvidencePanel({
             key={stage}
             type="button"
             onClick={() => chooseStage(stage)}
-            className={`rounded border px-2 py-1.5 font-mono text-[11px] ${
+            className={`rounded border px-2 py-2 font-mono text-sm ${
               state.reference_stage.requested_band === stage
                 ? 'border-orange-400/60 bg-orange-500/15 text-orange-100'
                 : 'border-white/10 text-gray-400 hover:bg-white/5'
@@ -859,19 +954,19 @@ export function GcUsEvidencePanel({
           return (
             <div
               key={id}
-              className={`grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2 rounded border p-2 ${
+              className={`grid grid-cols-[8.5rem_minmax(0,1fr)] gap-2 rounded border p-2.5 ${
                 isMerged
                   ? 'border-white/5 bg-black/10 opacity-90'
                   : 'border-white/10 bg-black/20'
               }`}
             >
-              <div className="text-[11px] text-gray-300">
+              <div className="text-sm text-gray-200">
                 {pickLabel(LABELS[id], Boolean(zh), id)}
-                <span className="mt-0.5 block text-[10px] text-gray-500">
+                <span className="mt-0.5 block text-xs text-gray-400">
                   {pickLabel(STATUS_LABELS[field.status], Boolean(zh), field.status)}
                 </span>
                 {isMerged ? (
-                  <span className="mt-0.5 block text-[9px] text-amber-200/70">
+                  <span className="mt-0.5 block text-xs text-amber-200/70">
                     {zh ? '正式签发以大体分型/五层勾选为准' : 'Formal report uses gross type / 5-layer ticks'}
                   </span>
                 ) : null}
@@ -884,23 +979,23 @@ export function GcUsEvidencePanel({
                       type="number"
                       step="any"
                       onChange={(event) => doctorEdit(id, event.target.value)}
-                      className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] text-gray-100 outline-none focus:border-orange-400/60"
+                      className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-2 text-sm text-gray-100 outline-none focus:border-orange-400/60"
                       placeholder={zh ? '未评估' : 'Not assessed'}
                     />
-                    <span className="rounded border border-white/10 px-2 py-1.5 font-mono text-[11px] text-gray-500">{field.unit || 'mm'}</span>
+                    <span className="rounded border border-white/10 px-2 py-2 font-mono text-sm text-gray-400">{field.unit || 'mm'}</span>
                   </div>
                 ) : (
                   <select
                     value={display}
                     onChange={(event) => doctorEdit(id, event.target.value)}
-                    className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] text-gray-100 outline-none focus:border-orange-400/60"
+                    className="w-full rounded border border-white/10 bg-black/40 px-2 py-2 text-sm text-gray-100 outline-none focus:border-orange-400/60"
                   >
                     <option value="">{zh ? '未评估' : 'Not assessed'}</option>
                     {(
                       options.some((item) => item.zh === display)
                         ? options
                         : display
-                          ? [{ zh: display, en: display }, ...options]
+                          ? [{ zh: display, en: gcUsOptionLabel(display, false) }, ...options]
                           : options
                     ).map((option) => (
                       <option key={option.zh} value={option.zh}>
@@ -909,12 +1004,12 @@ export function GcUsEvidencePanel({
                     ))}
                   </select>
                 )}
-                <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-gray-500">
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-400">
                   <span>{pickLabel(SOURCE_LABELS[field.source], Boolean(zh), field.source)}</span>
                   {field.doctor_override != null ? (
                     <span className="text-orange-300">{zh ? '原始建议已修正' : 'Suggestion overridden'}</span>
                   ) : null}
-                  {field.note ? <span className="text-cyan-200/70">{field.note}</span> : null}
+                  {field.note ? <span className="text-cyan-200/70">{gcUsOptionLabel(field.note, zh)}</span> : null}
                 </div>
               </div>
             </div>

@@ -5,12 +5,22 @@ const READER_ONLY_MODE = process.env.NEXT_PUBLIC_READER_ONLY === '1';
 const READER_API_PREFIXES = [
   '/api/agent/nninteractive',
   '/api/agent/sam-interactive',
+  '/api/agent/lesion-segmentation',
+  '/api/agent/lumen-detection',
   '/api/agent/video/propagate',
+  '/api/agent/video/keyframes',
+  '/api/agent/dino/features',
+  '/api/agent/artifacts',
+  '/api/explainable/analyze',
   '/api/reader-agent/result',
   '/api/reader-audit/events',
+  '/api/reader/account',
+  '/api/reader/history',
   '/api/reader/agent/analyze',
   '/api/reader/cases',
   '/api/reader/media',
+  '/api/patients/mask-overrides',
+  '/api/patients/lumen-overrides',
 ] as const;
 
 function isExactOrChild(pathname: string, prefix: string): boolean {
@@ -27,7 +37,20 @@ function isAllowedReaderPath(pathname: string): boolean {
   if (pathname.startsWith('/api/')) {
     return READER_API_PREFIXES.some((prefix) => isExactOrChild(pathname, prefix));
   }
-  if (pathname === '/reader' || pathname.startsWith('/reader/')) return true;
+  // Public auth mount strips `/workbench` → `/`. Keep root + main app pages allowed.
+  if (
+    pathname === '/'
+    || pathname === '/reader'
+    || pathname.startsWith('/reader/')
+    || pathname === '/workbench'
+    || pathname.startsWith('/workbench/')
+    || pathname === '/profile'
+    || pathname.startsWith('/profile/')
+    || pathname === '/reports'
+    || pathname.startsWith('/reports/')
+    || pathname === '/annotate'
+    || pathname.startsWith('/annotate/')
+  ) return true;
   if (isPublicAsset(pathname)) return true;
   return false;
 }

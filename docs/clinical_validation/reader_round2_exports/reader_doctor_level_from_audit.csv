@@ -1,1 +1,1 @@
-reader_id,cases_touched,events,ai_suggestions,reports,doctor_actions
+reader_id,cases_touched,cases_completed,events,ai_suggestions,reports,doctor_actions,initial_judgments

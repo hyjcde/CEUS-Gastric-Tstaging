@@ -12,5 +12,6 @@
 | 资产清单 | [data/metadata/asset_manifest.csv](../../data/metadata/asset_manifest.csv) |
 | 路径迁移 | [data/metadata/path_migration_log.csv](../../data/metadata/path_migration_log.csv) |
 | 整理脚本 | [scripts/README.md](../../scripts/README.md) §3 |
+| 工作区盘点 | [data/metadata/workspace_inventory.csv](../../data/metadata/workspace_inventory.csv) |
 
 维护规则：[MAINTENANCE.md](../../MAINTENANCE.md)

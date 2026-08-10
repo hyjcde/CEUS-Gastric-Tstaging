@@ -1,0 +1,21 @@
+---
+description: Never use middle-dot (·) as a separator in text or figures
+alwaysApply: true
+---
+
+# No middle-dot separator
+
+Never use the character `·` (U+00B7) in:
+
+- chat replies
+- figure titles / axis labels / legends
+- Markdown tables, README, SUMMARY
+- CSV rationale fields meant for humans
+- commit messages
+
+Prefer instead: comma `,`, slash `/`, `x`, semicolon `;`, or plain spaces.
+
+Examples:
+
+- Bad: `长径 · 厚度 · 短轴`
+- Good: `长径, 厚度, 短轴` or `length x thickness x short-axis`

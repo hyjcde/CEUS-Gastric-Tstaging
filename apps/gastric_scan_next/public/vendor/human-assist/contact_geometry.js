@@ -1547,16 +1547,23 @@
 
     const thick = Math.max(rem, thickPx || rem);
     const occFrac = Math.max(0, Math.min(1.35, (thick - rem) / Math.max(thick, 1e-6)));
-    const ratioHint = edgeFracs.length
-      ? Math.min(1.05, edgeFracs[Math.min(edgeFracs.length - 1, Math.floor(edgeFracs.length * 0.65))])
-      : 0.5;
+    // Depth cue from real interfaces only: how many measured edges the lesion front has crossed.
+    let ratioHint = null;
+    if (!imaginary && edgeFracs.length) {
+      let crossed = 0;
+      for (let i = 0; i < edgeFracs.length; i += 1) {
+        if (occFrac + 1e-6 >= edgeFracs[i]) crossed += 1;
+      }
+      // Map crossed interfaces onto a penetration fraction for layerJudgment thresholds.
+      ratioHint = Math.min(1.05, Math.max(occFrac, crossed / Math.max(1, CFG.TARGET_LAYERS)));
+    }
     return {
       values,
       raw,
       labels: km.labels,
       cents: km.cents,
-      edgeFracs,
-      pixelEdges,
+      edgeFracs: imaginary ? [] : edgeFracs,
+      pixelEdges: imaginary ? [] : pixelEdges,
       gradFracs,
       runFracs,
       dpFracs: dp.fracs,
@@ -1571,13 +1578,13 @@
       remain: rem,
       occFrac,
       frontIdx: n - 1,
-      reached: edgeFracs.length,
+      reached: imaginary ? 0 : edgeFracs.length,
       ratioHint,
-      nLayers: edgeFracs.length,
+      nLayers: imaginary ? 0 : edgeFracs.length,
       imaginary,
-      stable,
+      stable: imaginary ? false : stable,
       source: imaginary ? 'imaginary' : 'echo_dp',
-      realPeakCount: pixelEdges.length,
+      realPeakCount: imaginary ? 0 : pixelEdges.length,
     };
   }
 
@@ -1771,28 +1778,35 @@
         }
       }
     }
+    // Never invent equal-split interfaces when echo edges are missing.
+    // Empty edgeFracs + imaginary=true means "no pixel layer readout".
     if (!edgeFracs.length) {
-      const nEq = Math.max(1, Math.min(CFG.TARGET_LAYERS, maxEdgesForRemain(Math.max(rem0, 8))));
-      edgeFracs = equalFracs(nEq).map((f) => Math.max(0.15, Math.min(0.85, f)));
       imaginary = true;
       source = 'imaginary';
+      stable = false;
     }
     // Critical: thin remain at infiltrate cannot host 4–5 interfaces from fused/adjacent profiles
     const adaptRem =
       fromIdx === center
         ? Math.max(1, rem0)
         : Math.max(1, g.wall_dists[fromIdx] || rem0);
-    edgeFracs = adaptEdgeFracsToRemain(edgeFracs, adaptRem);
-    if (!edgeFracs.length) {
-      edgeFracs = adaptEdgeFracsToRemain(
-        equalFracs(Math.max(1, maxEdgesForRemain(adaptRem))),
-        adaptRem
-      );
-      imaginary = true;
-      source = source || 'imaginary';
+    if (edgeFracs.length) {
+      edgeFracs = adaptEdgeFracsToRemain(edgeFracs, adaptRem);
     }
-    centerAnalysis.edgeFracs = edgeFracs;
-    centerAnalysis.pixelEdges = edgeFracs.slice();
+    if (!edgeFracs.length) {
+      imaginary = true;
+      source = source === 'echo_fused' || source === 'echo_dp' || source === 'echo'
+        ? 'imaginary'
+        : (source || 'imaginary');
+      stable = false;
+    }
+    // Do not treat channel_extend / imaginary borrowed guides as measured pixel edges.
+    if (source === 'channel_extend' || source === 'imaginary') {
+      imaginary = true;
+      stable = false;
+    }
+    centerAnalysis.edgeFracs = edgeFracs.slice();
+    centerAnalysis.pixelEdges = imaginary ? [] : edgeFracs.slice();
     centerAnalysis.imaginary = imaginary;
     centerAnalysis.source = source;
     centerAnalysis.alignedCount = idxs.length;

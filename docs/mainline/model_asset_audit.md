@@ -1,8 +1,22 @@
 # 模型资产审计（Agent 选型）
 
-> **目的**：在仓库内已训练模型中，锁定 Agent 应使用的 T 分期 / 分割 / YOLO 等 checkpoint，避免 `ClassificationTool` 继续指向过期的 `20260302` 小样本 run。  
-> **机器可读注册表**：[`pipeline/agent/config/agent_backend_registry.yaml`](../../pipeline/agent/config/agent_backend_registry.yaml)  
+> **目的**：在仓库内已训练模型中，锁定 Agent 应使用的 T 分期 / 分割 / YOLO 等 checkpoint，避免 `ClassificationTool` 继续指向过期的 `20260302` 小样本 run。
+> **机器可读注册表**：[`pipeline/agent/config/agent_backend_registry.yaml`](../../pipeline/agent/config/agent_backend_registry.yaml)
+> **2026-08-09 冻结决策**：[`asset_freeze_decision_20260809.md`](asset_freeze_decision_20260809.md)
 > **治理源**：[`baseline_registry.yaml`](../../pipeline/experiments/mainlines/tstaging_4class/baseline_registry.yaml)、[`tstaging_4class_mainline_scoreboard.csv`](../../pipeline/experiments/tables/tstaging_4class_mainline_scoreboard.csv)
+
+---
+
+## 0. 2026-08-09 冻结快照
+
+| 角色 | backend_id | 状态 |
+|------|------------|------|
+| Agent final T | `tstage_acc_boost2_screened_20260603` | **保留**；外部必须并列 held-out 399 |
+| Paper / audit T | `tstage_acc_boost2_phase0_20260610` | 严格无外部训练线；分表报告 |
+| Agent segmentation_primary | UNet ConvNeXt fulldata | **保留**，暂不静默替换 |
+| Interactive / candidate seg | `sam31_gastric_lora_full_components_5epoch_run2` | 8768 已加载；Agent 批量晋升待 20+20 验收 |
+
+**禁止**：把 SAM3.1 patient Dice 提升直接写成 T 分期改善；禁止混报 legacy 与 Phase 0 ACC。
 
 ---
 
@@ -99,9 +113,10 @@
 |------------|------|-------|------|
 | `lesion_segmentation_unet_fulldata_convnext_base` | `.../segmentation_fulldata/checkpoints/best_model.pth` | **SegmentationTool 默认** | fulldata ConvNeXt-Base UNet |
 | `lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512` | `experiments/segmentation/segmentation_dinov3_.../best.pt` | DINOv3SegmentationTool | external Dice +0.038 vs UNet；前瞻接近 |
+| `sam31_gastric_lora_full_components_5epoch_run2` | `artifacts/sam31_training/.../best_lora_weights.pt` | 8768 interactive service | oracle-box Dice external 0.8544；未升为 Agent primary |
 | nnU-Net（训练主线） | `nnUNet` Dataset001 等 | 离线产 predicted mask | Agent 未直接加载 nnU-Net |
 
-**结论**：在线 Agent 继续 **UNet fulldata**；DINOv3 作 **candidate / T2-T3 复核**，待患者级 T 面板后再 promote。
+**结论**：在线 Agent 批量链路继续 **UNet fulldata**；SAM3.1 作 **交互分割 / 视频缓存候选**，待 20+20 病例验收后再决定是否 promote；DINOv3 仍作 research candidate。
 
 ---
 
@@ -121,16 +136,20 @@
 | 阶段 | 任务 | 状态 |
 |------|------|------|
 | **A** | 本文 + `agent_backend_registry.yaml` | ✅ |
-| **A** | `ClassificationTool` 默认 → 20260423 冻结 checkpoint | ✅ |
+| **A** | `ClassificationTool` 默认 → 20260423 冻结 checkpoint | ✅（后于 2026-06-10 切到 acc_boost2） |
+| **A+** | 2026-08-09 资产冻结：acc_boost2 主线 + Phase 0 分表 + SAM3.1 candidate | ✅ |
 | **B** | 实现 `ContrastiveTStagingTool` → region-aware 进 `tool_evidence` | 待做 |
-| **B** | `analyze_case` 从 registry 读 backend_id，写入 `runtime_verification` | 待做 |
+| **B** | `analyze_case` 从 registry 读 backend_id，写入 `runtime_verification` | 进行中 |
 | **B** | 无医生 ROI 时 fallback `predroi_mask4ch` | 待做 |
+| **B** | SAM3.1 vs UNet Agent 对照 + 20+20 JSON 验收后再 promote | 进行中 |
 | **B+** | YOLO lumen tool | 待做 |
 
 ---
 
 ## 6. 相关文档
 
+- [`asset_freeze_decision_20260809.md`](asset_freeze_decision_20260809.md)
+- [`sam31_gastric_lora_training_and_evaluation.md`](sam31_gastric_lora_training_and_evaluation.md)
 - [`gastric_tstaging_project_framework_zh.md`](gastric_tstaging_project_framework_zh.md) §2.2  
 - [`tstaging_current_mainline.md`](tstaging_current_mainline.md) Phase A/B  
 - [`pipeline/agent/configs/model_tool_backends.yaml`](../../pipeline/agent/configs/model_tool_backends.yaml)（研究/ caution 后端）

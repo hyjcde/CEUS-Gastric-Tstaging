@@ -2,6 +2,15 @@
 
 本目录是**索引入口**，权重实体在 `artifacts/model_weights/` 与 `pipeline/experiments/tree/`。
 
+## 论文 / 消融模型清单
+
+| 文件 | 用途 |
+|------|------|
+| [model_inventory.csv](../pipeline/experiments/paper_assets/tstaging_4class/model_inventory.csv) | checkpoint/config 存在性、大小、sha256（论文相关） |
+| [inventory_status.json](inventory_status.json) | 缺失权重、config 无 checkpoint、deprecated 仍 trusted |
+
+刷新：`python scripts/build_model_inventory.py`
+
 ## 快速查找
 
 | 任务 | 登记位置 |

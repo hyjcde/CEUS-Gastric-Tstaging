@@ -28,6 +28,25 @@ from ..memory.multimodal_case_vector import VECTOR_DIM, extract_multimodal_case_
 logger = logging.getLogger(__name__)
 
 DEFAULT_INDEX_DIR = PROJECT_ROOT / "pipeline" / "agent" / "memory" / "index"
+PHASE0_INDEX_DIR = (
+    PROJECT_ROOT / "pipeline" / "agent" / "memory" / "index" / "phase0_train_only_v1"
+)
+
+
+def resolve_case_memory_index_dir(explicit: Optional[Path] = None) -> Path:
+    """Prefer explicit path, then AGENT_CASE_MEMORY_INDEX, then Phase0 v1, then legacy."""
+    import os
+
+    if explicit is not None:
+        return Path(explicit)
+    env = os.environ.get("AGENT_CASE_MEMORY_INDEX", "").strip()
+    if env:
+        return Path(env)
+    if (PHASE0_INDEX_DIR / "case_matrix_extended.npy").exists() and (
+        PHASE0_INDEX_DIR / "case_metadata_extended.json"
+    ).exists():
+        return PHASE0_INDEX_DIR
+    return DEFAULT_INDEX_DIR
 
 
 class SimilarityTool(BaseTool):
@@ -44,17 +63,32 @@ class SimilarityTool(BaseTool):
         ToolParameter("adapter_patient_feature", "list", "Raw 39936-d adapter mean vector if cached", required=False),
     ]
 
-    def __init__(self, index_dir: Path = DEFAULT_INDEX_DIR):
-        self._index_dir = Path(index_dir)
+    def __init__(self, index_dir: Optional[Path] = None):
+        self._index_dir = resolve_case_memory_index_dir(index_dir)
         self._index = None
         self._metadata: List[Dict] = []
         self._memory_matrix: Optional[np.ndarray] = None
         self._loaded = False
         self._dino = AdapterDINORetriever()
+        self._memory_version: Optional[str] = None
+        self._build_manifest: Dict[str, Any] = {}
 
     def _ensure_loaded(self):
         if self._loaded:
             return
+
+        manifest_path = self._index_dir / "build_manifest.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path) as f:
+                    self._build_manifest = json.load(f)
+                self._memory_version = str(
+                    self._build_manifest.get("memory_version")
+                    or self._build_manifest.get("version")
+                    or self._index_dir.name
+                )
+            except Exception as exc:
+                logger.warning("Failed to read case memory manifest: %s", exc)
 
         ext_matrix_path = self._index_dir / "case_matrix_extended.npy"
         ext_meta_path = self._index_dir / "case_metadata_extended.json"
@@ -79,6 +113,23 @@ class SimilarityTool(BaseTool):
                 logger.warning("Failed to load case memory: %s", exc)
 
         self._loaded = True
+
+    def _runtime_base(self, *, called: bool, backend: str, **extra: Any) -> Dict[str, Any]:
+        payload = {
+            "api_kind": "case_similarity",
+            "called": called,
+            "backend": backend,
+            "index_path": str(self._index_dir),
+            "memory_version": self._memory_version or self._index_dir.name,
+            "memory_policy": self._build_manifest.get("memory_policy"),
+            "case_count": (
+                int(self._memory_matrix.shape[0])
+                if self._memory_matrix is not None
+                else (int(self._index.ntotal) if self._index is not None else 0)
+            ),
+        }
+        payload.update(extra)
+        return payload
 
     def _resolve_query_vector(
         self,
@@ -202,6 +253,14 @@ class SimilarityTool(BaseTool):
                     stage_counts[st] = stage_counts.get(st, 0) + 1
                 dino_payload["stage_distribution"] = stage_counts
                 dino_payload["total_in_memory"] = len(self._dino._memory_meta) if self._dino._memory_meta else 0
+                dino_payload["memory_version"] = "adapter_dinov3_v1"
+                dino_payload["runtime_invocation"] = self._runtime_base(
+                    called=True,
+                    backend="adapter_dino_nca",
+                    available=True,
+                    hits=len(dino_payload.get("similar_cases") or []),
+                    top_k=top_k,
+                )
                 return dino_payload
 
         query, query_meta = self._resolve_query_vector(query_vector, case_context)
@@ -217,16 +276,19 @@ class SimilarityTool(BaseTool):
             backend = "faiss_l2_legacy"
 
         if not similar_cases:
+            reason = "Case memory index not built yet"
             return {
                 "available": False,
-                "reason": "Case memory index not built yet",
+                "reason": reason,
                 "similar_cases": [],
                 "stage_distribution": {},
-                "runtime_invocation": {
-                    "api_kind": "case_similarity",
-                    "called": False,
-                    "index_path": str(self._index_dir),
-                },
+                "memory_version": self._memory_version or self._index_dir.name,
+                "runtime_invocation": self._runtime_base(
+                    called=False,
+                    backend="none",
+                    available=False,
+                    reason=reason,
+                ),
             }
 
         stage_counts: Dict[str, int] = {}
@@ -245,13 +307,13 @@ class SimilarityTool(BaseTool):
             ),
             "query_meta": query_meta,
             "boundary_boost": boundary_boost,
-            "runtime_invocation": {
-                "api_kind": "case_similarity",
-                "called": True,
-                "backend": backend,
-                "index_path": str(self._index_dir),
-                "query_dim": int(query.shape[0]),
-                "top_k": top_k,
-                "hits": len(similar_cases),
-            },
+            "memory_version": self._memory_version or self._index_dir.name,
+            "runtime_invocation": self._runtime_base(
+                called=True,
+                backend=backend,
+                available=True,
+                query_dim=int(query.shape[0]),
+                top_k=top_k,
+                hits=len(similar_cases),
+            ),
         }

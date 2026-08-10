@@ -33,7 +33,7 @@ tools:
     enabled: true
   similarity:
     enabled: true
-    index_dir: pipeline/agent/memory/index
+    index_dir: pipeline/agent/memory/index/phase0_train_only_v1
     top_k: 5
 
 # Data paths

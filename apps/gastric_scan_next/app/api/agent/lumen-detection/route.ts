@@ -17,14 +17,13 @@ type LumenDetectionRequest = {
 };
 
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python3';
+const LUMEN_UPSTREAM = String(process.env.LUMEN_UPSTREAM || 'http://127.0.0.1:8771').replace(/\/+$/, '');
 
 const PYTHON_SCRIPT = String.raw`
 import base64
 import json
 import sys
-import tempfile
 import time
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -47,39 +46,33 @@ def main():
     height, width = image.shape[:2]
     conf = request.get("conf")
     imgsz = request.get("imgsz")
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
-        temp_path = Path(handle.name)
-    try:
-        cv2.imwrite(str(temp_path), image)
-        from agent.tools.lumen_detection_tool import LumenDetectionTool
+    from agent.tools.lumen_detection_tool import LumenDetectionTool
 
-        tool = LumenDetectionTool()
-        kwargs = {"image_path": str(temp_path)}
-        if conf is not None:
-            kwargs["conf"] = float(conf)
-        if imgsz is not None:
-            kwargs["imgsz"] = int(imgsz)
-        result = tool.execute(**kwargs)
-        response = {
-            "ok": True,
-            "available": bool(result.get("available")),
-            "lumen_detected": bool(result.get("lumen_detected")),
-            "lumen_bbox": result.get("lumen_bbox"),
-            "lumen_mask_type": result.get("lumen_mask_type") or "bbox_proxy",
-            "lumen_confidence": result.get("lumen_confidence"),
-            "lumen_area_ratio": result.get("lumen_area_ratio"),
-            "lumen_geometry": result.get("lumen_geometry"),
-            "roi_source": result.get("roi_source"),
-            "image_width": int(result.get("image_width") or width),
-            "image_height": int(result.get("image_height") or height),
-            "backend_id": "yolo_lumen_locator_cropui_combined_plus_zip2_20260417",
-            "runtime_invocation": result.get("runtime_invocation"),
-            "error": result.get("error"),
-            "elapsed_ms": int((time.time() - started) * 1000),
-        }
-        print(json.dumps(response, ensure_ascii=False))
-    finally:
-        temp_path.unlink(missing_ok=True)
+    tool = LumenDetectionTool()
+    kwargs = {}
+    if conf is not None:
+        kwargs["conf"] = float(conf)
+    if imgsz is not None:
+        kwargs["imgsz"] = int(imgsz)
+    result = tool.execute_array(image, **kwargs)
+    response = {
+        "ok": True,
+        "available": bool(result.get("available")),
+        "lumen_detected": bool(result.get("lumen_detected")),
+        "lumen_bbox": result.get("lumen_bbox"),
+        "lumen_mask_type": result.get("lumen_mask_type") or "bbox_proxy",
+        "lumen_confidence": result.get("lumen_confidence"),
+        "lumen_area_ratio": result.get("lumen_area_ratio"),
+        "lumen_geometry": result.get("lumen_geometry"),
+        "roi_source": result.get("roi_source"),
+        "image_width": int(result.get("image_width") or width),
+        "image_height": int(result.get("image_height") or height),
+        "backend_id": "yolo_lumen_locator_spawn_fallback",
+        "runtime_invocation": result.get("runtime_invocation"),
+        "error": result.get("error"),
+        "elapsed_ms": int((time.time() - started) * 1000),
+    }
+    print(json.dumps(response, ensure_ascii=False))
 
 
 if __name__ == "__main__":
@@ -107,6 +100,28 @@ function runPython(payload: LumenDetectionRequest): Promise<{ code: number; stdo
   });
 }
 
+async function tryWarmService(body: LumenDetectionRequest): Promise<NextResponse | null> {
+  if (!LUMEN_UPSTREAM || process.env.LUMEN_UPSTREAM_DISABLE === '1') {
+    return null;
+  }
+  try {
+    const response = await fetch(`${LUMEN_UPSTREAM}/api/lumen/detect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json() as Record<string, unknown>;
+    return NextResponse.json(payload, { status: response.status });
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const forwarded = await proxyAgentRequest(request);
   if (forwarded) return forwarded;
@@ -116,6 +131,10 @@ export async function POST(request: NextRequest) {
     if (!body.frame_png_b64) {
       return NextResponse.json({ ok: false, error: 'frame_png_b64 is required' }, { status: 400 });
     }
+
+    const warmed = await tryWarmService(body);
+    if (warmed) return warmed;
+
     const result = await runPython(body);
     if (result.code !== 0) {
       return NextResponse.json(

@@ -15,7 +15,14 @@ export interface ExplainableAnalysisResult {
     area_mm2?: number;
     circularity?: number;
     irregularity?: number;
+    aspect_ratio?: number;
+    solidity?: number;
+    smoothness_index?: number;
+    boundary_roughness?: number;
+    shape_complexity?: number;
   };
+  geometry?: unknown;
+  visualization_base64?: string;
   error?: string;
 }
 

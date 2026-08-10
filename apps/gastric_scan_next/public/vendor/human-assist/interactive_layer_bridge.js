@@ -115,6 +115,16 @@
     return out;
   }
 
+  function isPixelLayerAnalysis(analysis) {
+    if (!analysis || analysis.imaginary) return false;
+    const source = String(analysis.source || '');
+    if (source !== 'echo_dp' && source !== 'echo_fused' && source !== 'echo') return false;
+    const edges = analysis.pixelEdges?.length
+      ? analysis.pixelEdges
+      : analysis.edgeFracs;
+    return Array.isArray(edges) && edges.length >= 2;
+  }
+
   async function analyzeLayersFromMask(opts) {
     const G = global.ContactGeom;
     if (!G) return { ok: false, message: 'ContactGeom 未加载' };
@@ -163,10 +173,23 @@
     });
     const inContact = G.isContactPoint(geom, pickIdx);
 
+    let frameDataUrl = opts.frameDataUrl || null;
+    if (!frameDataUrl && opts.video) {
+      frameDataUrl = captureVideoFrameDataUrl(opts.video);
+    }
+
     let analysis = null;
-    if (opts.frameDataUrl) {
-      const echo = await G.loadImageData(opts.frameDataUrl);
-      if (echo?.data) {
+    let pixelBased = false;
+    let layer = null;
+    let message = '';
+
+    if (!frameDataUrl) {
+      message = '需要当前帧像素才能给出层界；请先暂停/冻结当前帧后重算';
+    } else {
+      const echo = await G.loadImageData(frameDataUrl);
+      if (!echo?.data) {
+        message = '当前帧像素解码失败，无法做回声层界分析';
+      } else {
         analysis = G.analyzeChannelNeighborhood(
           echo.data,
           echo.w,
@@ -174,20 +197,41 @@
           geom,
           pickIdx,
           opts.halfWidth ?? 8,
-          { maxLayers: 5 },
+          { maxLayers: 5, skipExtend: true },
         );
-        if (analysis && inContact) {
-          analysis.ratioHint = analysis.imaginary
+        pixelBased = isPixelLayerAnalysis(analysis);
+        if (pixelBased && inContact) {
+          // Depth = measured channel occupation; bands come only from pixel edges.
+          const occ = Number.isFinite(pen.ratio)
             ? pen.ratio
-            : (0.55 * pen.ratio + 0.45 * (analysis.ratioHint || pen.ratio));
+            : (Number.isFinite(analysis.occFrac) ? analysis.occFrac : null);
+          const hint = Number.isFinite(analysis.ratioHint) ? analysis.ratioHint : occ;
+          if (Number.isFinite(hint)) {
+            analysis.ratioHint = hint;
+            layer = G.layerJudgment(hint);
+          }
+        } else if (analysis) {
+          // Keep echo profile for review, but strip invented interfaces / layer labels.
+          analysis.imaginary = true;
+          analysis.edgeFracs = [];
+          analysis.pixelEdges = [];
+          analysis.ratioHint = null;
+          analysis.nLayers = 0;
+          message = '当前取样通道未见稳定回声层界，已按像素实测不输出层次读数';
         }
       }
     }
 
-    const ratio = analysis?.ratioHint ?? pen.ratio;
-    const layer = inContact ? G.layerJudgment(ratio) : null;
-    const source = analysis ? G.layerSourceInfo(analysis) : null;
-    const plan = G.buildLayerPlan(geom, pickIdx, analysis || undefined);
+    const source = analysis
+      ? G.layerSourceInfo(analysis)
+      : { badge: '缺少当前帧像素', dashed: true, detail: message, confidence: '需抓取当前帧' };
+    if (source && !pixelBased) {
+      source.badge = source.badge || '像素未确认';
+      source.dashed = true;
+    }
+    const plan = pixelBased
+      ? G.buildLayerPlan(geom, pickIdx, analysis || undefined)
+      : { edgeFracs: [], imaginary: true, source: 'no_pixel_layer' };
     const wallPt = geom.wall_pts[pickIdx];
     const lesPt = geom.wall_lesion_pts?.[pickIdx] || wallPt;
     const dir = geom.wall_dirs?.[pickIdx] || [0, -1];
@@ -213,6 +257,9 @@
       plan,
       wallEstimated,
       offsetPx,
+      pixelBased,
+      frameDataUrl: frameDataUrl || null,
+      message: message || undefined,
     };
   }
 

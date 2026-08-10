@@ -8,7 +8,7 @@ keeps the official model and interaction implementation, but defaults the
 runtime patch to 128^3 and disables cuDNN benchmark workspace selection.
 
 Usage:
-  python3 scripts/serve_nninteractive_server.py \
+  .venv-nninteractive/bin/python scripts/serve_nninteractive_server.py \
     --model nnInteractive_v1.0 --host 127.0.0.1 --port 1527 --device cuda:0
 
 Set NNINTERACTIVE_PATCH_SIZE=192 to restore the checkpoint patch size when
@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT / "external" / "nnInteractive"
 CLIENT_ROOT = SOURCE_ROOT / "client"
+DEFAULT_ENV_PYTHON = ROOT / ".venv-nninteractive" / "bin" / "python"
 PATCH_SIZE = int(os.getenv("NNINTERACTIVE_PATCH_SIZE", "128"))
 
 if not (SOURCE_ROOT / "nnInteractive").is_dir():
@@ -43,12 +44,12 @@ try:
 except (PackageNotFoundError, ValueError) as error:
     raise SystemExit(
         "nnunetv2>=2.7.0 is required. Use the dedicated "
-        "/tmp/gastric-nninteractive-venv environment."
+        f"{DEFAULT_ENV_PYTHON} environment."
     ) from error
 if nnunet_version < (2, 7):
     raise SystemExit(
         f"nnunetv2 {version('nnunetv2')} is too old for the official source. "
-        "Use /tmp/gastric-nninteractive-venv/bin/python."
+        f"Use {DEFAULT_ENV_PYTHON}."
     )
 
 os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")

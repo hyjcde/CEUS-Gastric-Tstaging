@@ -1,20 +1,14 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  Brain, ChevronDown, ChevronUp, Clapperboard, Compass, ExternalLink,
-  LayoutGrid, ScanSearch, Sparkles,
+  Brain, ChevronDown, ChevronUp, LayoutGrid, ScanSearch, Sparkles,
 } from 'lucide-react';
 import type { Patient } from '@/types';
 import { getDirectionAnnotatorPath } from '@/lib/annotator-url';
-import { getVideoAnnotatorUrl } from '@/lib/video-annotator-url';
 import { navigateTo } from '@/lib/navigation';
-import {
-  buildHumanAssistUrl,
-  buildReaderAppUrl,
-  buildReadingAgentUrl,
-  getReadingAgentBaseUrl,
-} from '@/lib/reading-agent-url';
+import { buildReaderAppUrl } from '@/lib/reading-agent-url';
+import { useSettings } from '@/contexts/SettingsContext';
 
 interface AssistHubProps {
   patient: Patient | null;
@@ -22,18 +16,14 @@ interface AssistHubProps {
 
 /** Additive discovery panel — does not replace Header buttons. */
 export function AssistHub({ patient }: AssistHubProps) {
+  const { language } = useSettings();
+  const zh = language !== 'en';
   const [open, setOpen] = useState(false);
-  const [showResearch, setShowResearch] = useState(false);
 
-  const base8767 = useMemo(() => getReadingAgentBaseUrl(), []);
   const hasPatient = Boolean(patient?.id);
 
   const focusAgent = () => {
     window.dispatchEvent(new CustomEvent('gastric:open-full-report'));
-  };
-
-  const openExternal = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -46,11 +36,11 @@ export function AssistHub({ patient }: AssistHubProps) {
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-          title="辅助中心（新增入口；顶栏按钮仍可用）"
+          title={zh ? '辅助中心（新增入口；顶栏按钮仍可用）' : 'Assist hub (extra entry; header buttons still work)'}
         >
           <span className="inline-flex items-center gap-2 text-[11px] font-semibold text-cyan-200">
             <LayoutGrid size={13} />
-            辅助中心
+            {zh ? '辅助中心' : 'Assist hub'}
           </span>
           {open ? <ChevronUp size={13} className="text-gray-500" /> : <ChevronDown size={13} className="text-gray-500" />}
         </button>
@@ -59,92 +49,39 @@ export function AssistHub({ patient }: AssistHubProps) {
           <div className="space-y-1 border-t border-white/5 px-2 pb-2 pt-1">
             {!hasPatient ? (
               <div className="px-1 py-1.5 text-[10px] text-gray-500">
-                先选左侧病例，再使用当前例辅助；顶栏按钮仍可随时打开各工具。
+                {zh
+                  ? '先选左侧病例，再使用当前例辅助；顶栏按钮仍可随时打开各工具。'
+                  : 'Select a case on the left first. Header buttons remain available anytime.'}
               </div>
             ) : (
               <div className="px-1 pb-1 text-[10px] text-gray-500 truncate" title={patient?.id_short || patient?.id}>
-                当前：{patient?.id_short || patient?.patient_id || patient?.id}
+                {zh ? '当前：' : 'Current: '}{patient?.id_short || patient?.patient_id || patient?.id}
               </div>
             )}
 
             <HubBtn
               icon={<ScanSearch size={12} />}
-              label="阅片辅助 /reader"
-              hint="系统分析 + 分层 + 报告"
+              label={zh ? '阅片辅助 /reader' : 'Reader assist /reader'}
+              hint={zh ? '系统分析 + 分层 + 报告' : 'Analysis + layers + report'}
               tone="emerald"
               disabled={!hasPatient}
               onClick={() => navigateTo(buildReaderAppUrl(patient))}
             />
             <HubBtn
               icon={<Sparkles size={12} />}
-              label="辅助分析"
-              hint="打开完整报告中的分析"
+              label={zh ? '辅助分析' : 'Assisted analysis'}
+              hint={zh ? '打开完整报告中的分析' : 'Open analysis in the full report'}
               tone="sky"
               disabled={!hasPatient}
               onClick={focusAgent}
             />
             <HubBtn
-              icon={<Compass size={12} />}
-              label="人机互助 HTML"
-              hint="direction_demo, 可回写"
-              tone="orange"
-              onClick={() => openExternal(buildHumanAssistUrl(patient))}
-            />
-            <HubBtn
               icon={<Brain size={12} />}
-              label="方向标注"
+              label={zh ? '方向标注' : 'Direction annotation'}
               hint="/annotate"
               tone="amber"
               onClick={() => navigateTo(getDirectionAnnotatorPath())}
             />
-            <HubBtn
-              icon={<Clapperboard size={12} />}
-              label="视频平台"
-              hint="需 :3100"
-              tone="violet"
-              onClick={() => openExternal(getVideoAnnotatorUrl())}
-            />
-            <HubBtn
-              icon={<ExternalLink size={12} />}
-              label="HTML 阅片 Agent"
-              hint="经典页回退"
-              tone="emerald"
-              onClick={() => openExternal(buildReadingAgentUrl(patient))}
-            />
-
-            <button
-              type="button"
-              onClick={() => setShowResearch((v) => !v)}
-              className="mt-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] text-gray-400 hover:bg-white/5 hover:text-gray-200"
-            >
-              <span>更多工具入口</span>
-              {showResearch ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-            </button>
-            {showResearch ? (
-              <div className="space-y-1 pb-1">
-                <HubBtn
-                  icon={<ExternalLink size={12} />}
-                  label="ai_assist 合并入口"
-                  hint=":8767 hub"
-                  tone="slate"
-                  onClick={() => openExternal(`${base8767}/ai_assist.html`)}
-                />
-                <HubBtn
-                  icon={<ExternalLink size={12} />}
-                  label="task1 盲法"
-                  hint="研究用"
-                  tone="slate"
-                  onClick={() => openExternal(`${base8767}/task1.html`)}
-                />
-                <HubBtn
-                  icon={<ExternalLink size={12} />}
-                  label="video_mask_demo"
-                  hint="视频分层 demo"
-                  tone="slate"
-                  onClick={() => openExternal(`${base8767}/video_mask_demo.html`)}
-                />
-              </div>
-            ) : null}
           </div>
         ) : null}
       </div>
@@ -186,7 +123,7 @@ function HubBtn({
       <span className="shrink-0 opacity-90">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block text-[11px] font-semibold leading-tight">{label}</span>
-        <span className="block text-[9px] text-gray-500">{hint}</span>
+        <span className="block text-[9px] opacity-70">{hint}</span>
       </span>
     </button>
   );

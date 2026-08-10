@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Serve interactive video Agent UI with real SAM2 click segmentation.
+"""Serve the SAM2 inference API used by the Next workbench.
 
 Usage:
-  python3 scripts/serve_interactive_sam_agent.py --host 0.0.0.0 --port 8767
+  python3 scripts/serve_interactive_sam_agent.py --host 127.0.0.1 --port 8767
 
-Open:
-  http://<workstation-lan-ip>:8767/interactive_video_agent.html
+The legacy HTML frontend is disabled by default. Set SERVE_LEGACY_HTML=1 only
+for an explicitly isolated compatibility run.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from urllib.request import Request as UrlRequest, urlopen
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_ROOT = REPO_ROOT / "pipeline"
 STATIC_ROOT = REPO_ROOT / "docs/clinical_validation/reader_study_v150"
+SERVE_LEGACY_HTML = os.getenv("SERVE_LEGACY_HTML", "").strip().lower() in {"1", "true", "yes", "on"}
 STAGES = ["T1", "T2", "T3", "T4+"]
 
 load_dotenv(REPO_ROOT / ".env", override=False)
@@ -739,7 +740,7 @@ def resample_contour_uniform(points: np.ndarray, target: int) -> np.ndarray:
     return out
 
 
-def largest_contour_polygon(mask: np.ndarray, max_points: int = 512) -> list[list[float]]:
+def largest_contour_polygon(mask: np.ndarray, max_points: int = 2048) -> list[list[float]]:
     mask_u8 = (mask > 0).astype(np.uint8) * 255
     contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not contours:
@@ -2008,15 +2009,16 @@ def warm_model() -> None:
     threading.Thread(target=warm_all, daemon=True).start()
 
 
-app.mount("/", StaticFiles(directory=str(STATIC_ROOT), html=True), name="static")
+if SERVE_LEGACY_HTML:
+    app.mount("/", StaticFiles(directory=str(STATIC_ROOT), html=True), name="static")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--host",
-        default=os.getenv("SAM_HOST", "0.0.0.0"),
-        help="Bind address, defaulting to SAM_HOST or 0.0.0.0 for LAN access",
+        default=os.getenv("SAM_HOST", "127.0.0.1"),
+        help="Bind address, defaulting to SAM_HOST or 127.0.0.1",
     )
     parser.add_argument(
         "--port",
@@ -2048,7 +2050,11 @@ def main() -> None:
             "LLM report: disabled — set DEEPSEEK_API_KEY (or deepseek_api_key.txt) "
             "or MINIMAX_API_KEY"
         )
-    print(f"Serving {STATIC_ROOT} with SAM2 at http://{args.host}:{args.port}/interactive_video_agent.html")
+    print(f"Serving SAM2 API at http://{args.host}:{args.port}/api/sam/status")
+    if SERVE_LEGACY_HTML:
+        print(f"Legacy HTML frontend enabled from {STATIC_ROOT}")
+    else:
+        print("Legacy HTML frontend disabled; use the Next workbench")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 

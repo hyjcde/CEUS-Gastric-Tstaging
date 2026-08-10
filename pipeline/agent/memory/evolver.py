@@ -270,9 +270,79 @@ def promote_candidates(
     min_support: int = 3,
     correct_delta: float = 0.05,
     wrong_delta: float = -0.08,
-) -> Dict[str, int]:
-    """Promote candidate rules when rule_signature support >= threshold."""
-    stats = {"promoted": 0, "updated": 0, "rejected": 0}
+    allow_active_promotion: bool = False,
+    doctor_review_status: str = "pending",
+    gate_manifest: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Promote candidate rules only with offline gate + doctor approval.
+
+    Default keeps candidates non-active and only refreshes support counts.
+    """
+    stats: Dict[str, Any] = {
+        "promoted": 0,
+        "updated": 0,
+        "rejected": 0,
+        "blocked": 0,
+        "active_promotion": False,
+    }
+    if not allow_active_promotion:
+        for record_type in ("procedural_rule", "tool_governance"):
+            path = store._file_for_type(record_type)
+            entries = store.load_file(path)
+            by_sig: Dict[str, List[StoreEntry]] = {}
+            for entry in entries:
+                if entry.status == "rejected":
+                    continue
+                by_sig.setdefault(entry.rule_signature, []).append(entry)
+            changed = False
+            for entry in entries:
+                if entry.status != "candidate":
+                    continue
+                support = sum(max(1, g.support_count) for g in by_sig.get(entry.rule_signature, [entry]))
+                if entry.support_count != support:
+                    entry.support_count = support
+                    entry.updated_at = _utc_now()
+                    changed = True
+                    stats["updated"] += 1
+            if changed:
+                store.rewrite_file(path, entries)
+        stats["blocked"] = 1
+        store.append_audit(
+            "promote_blocked",
+            {
+                "reason": "allow_active_promotion=False; requires offline gate + doctor approval",
+                "min_support": min_support,
+            },
+        )
+        return stats
+
+    if str(doctor_review_status).lower() != "approved":
+        stats["blocked"] = 1
+        store.append_audit(
+            "promote_blocked",
+            {"reason": "doctor_review_not_approved", "doctor_review_status": doctor_review_status},
+        )
+        return stats
+
+    from agent.safety.evolution_gate import evaluate_candidate_manifest
+
+    manifest = dict(gate_manifest or {})
+    manifest.setdefault("candidate_id", f"promote_{store.paths.root.name}")
+    manifest.setdefault("evolution_objects", ["evidence_navigation", "uncertainty_abstention"])
+    manifest.setdefault("online_weight_update", False)
+    manifest.setdefault("promotes_active_memory", False)
+    manifest["doctor_review"] = {
+        "status": "approved",
+        "reviewer": (gate_manifest or {}).get("reviewer", "offline_gate"),
+        "notes": (gate_manifest or {}).get("notes", "gated promote_candidates"),
+    }
+    gate = evaluate_candidate_manifest(manifest)
+    if not gate.get("ok"):
+        stats["blocked"] = 1
+        stats["gate"] = gate
+        store.append_audit("promote_blocked", {"reason": "evolution_gate_failed", "gate": gate})
+        return stats
+
     for record_type in ("procedural_rule", "tool_governance"):
         path = store._file_for_type(record_type)
         entries = store.load_file(path)
@@ -307,6 +377,7 @@ def promote_candidates(
                     tg["n_total"] = int(tg.get("n_total", 0)) + support
                 new_entries.append(best)
                 stats["promoted"] += 1
+                stats["active_promotion"] = True
                 seen_sigs.add(sig)
             else:
                 entry.support_count = support
@@ -316,7 +387,6 @@ def promote_candidates(
 
         store.rewrite_file(path, new_entries)
 
-    # Drop promoted signatures from candidates file
     active_sigs = {
         e.rule_signature
         for rt in ("procedural_rule", "tool_governance")
@@ -326,6 +396,7 @@ def promote_candidates(
     cand_entries = store.load_file(store.paths.candidates)
     filtered = [e for e in cand_entries if e.rule_signature not in active_sigs or e.status == "candidate"]
     store.rewrite_file(store.paths.candidates, filtered)
+    store.append_audit("promote_gated", {"stats": stats, "gate": gate})
     return stats
 
 
@@ -365,7 +436,7 @@ def reflect_batch_from_feedback_csv(
                 origin="pathology_feedback",
                 path_or_uri=str(feedback_csv),
             )
-            store.append_entry(record, status="active", patient_id=patient_id, validate=True)
+            store.append_entry(record, status="candidate", patient_id=patient_id, validate=True)
             stats["episodes"] += 1
 
             for cand in reflect_error_to_candidates(
@@ -396,11 +467,20 @@ def apply_feedback_action(
     record_id: str,
     action: str,
     reviewer: str = "workbench",
+    allow_active_promotion: bool = False,
 ) -> Optional[StoreEntry]:
-    """Accept / reject / defer a candidate by record_id."""
+    """Accept / reject / defer a candidate by record_id.
+
+    Accept defaults to QA-defer (status stays candidate) unless
+    allow_active_promotion=True for an offline gated CLI path.
+    """
     action = action.lower()
     if action not in {"accept", "reject", "defer"}:
         raise ValueError(f"Unknown action: {action}")
+
+    effective = action
+    if action == "accept" and not allow_active_promotion:
+        effective = "defer"
 
     for record_type in ("procedural_rule", "tool_governance", "case_episode"):
         path = store._file_for_type(record_type)
@@ -409,7 +489,7 @@ def apply_feedback_action(
         for idx, entry in enumerate(entries):
             if entry.record.get("record_id") != record_id:
                 continue
-            if action == "accept":
+            if effective == "accept" and allow_active_promotion:
                 entry.status = "active"
                 entry.support_count = max(entry.support_count, 3)
                 entry.quality_score = _update_quality(entry.quality_score, 0.05)
@@ -424,25 +504,44 @@ def apply_feedback_action(
             break
         if updated:
             store.rewrite_file(path, entries)
-            store.append_audit("feedback_action", {"record_id": record_id, "action": action, "reviewer": reviewer})
+            store.append_audit(
+                "feedback_action",
+                {
+                    "record_id": record_id,
+                    "action": action,
+                    "applied_action": effective,
+                    "active_promotion": bool(effective == "accept" and allow_active_promotion),
+                    "reviewer": reviewer,
+                },
+            )
             return updated
 
-    # Also search candidates file only entries
     cand_path = store.paths.candidates
     entries = store.load_file(cand_path)
     for idx, entry in enumerate(entries):
         if entry.record.get("record_id") != record_id:
             continue
-        if action == "accept":
+        if effective == "accept" and allow_active_promotion:
             entry.status = "active"
             rt = entry.record.get("record_type")
             if rt in {"procedural_rule", "tool_governance"}:
                 store.upsert_by_signature(str(rt), entry)
         elif action == "reject":
             entry.status = "rejected"
+        else:
+            entry.status = "candidate"
         entries[idx] = entry
         store.rewrite_file(cand_path, entries)
-        store.append_audit("feedback_action", {"record_id": record_id, "action": action, "reviewer": reviewer})
+        store.append_audit(
+            "feedback_action",
+            {
+                "record_id": record_id,
+                "action": action,
+                "applied_action": effective,
+                "active_promotion": bool(effective == "accept" and allow_active_promotion),
+                "reviewer": reviewer,
+            },
+        )
         return entry
     return None
 
@@ -456,6 +555,16 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--record-id", default=None)
     p.add_argument("--feedback-action", choices=("accept", "reject", "defer"), default=None)
     p.add_argument("--backend-id", default="tstage_acc_boost2_screened_20260603")
+    p.add_argument(
+        "--allow-active-promotion",
+        action="store_true",
+        help="Opt-in active promotion; still requires doctor_review_status=approved for promote",
+    )
+    p.add_argument(
+        "--doctor-review-status",
+        default="pending",
+        choices=("pending", "approved", "rejected", "needs_revision"),
+    )
     return p.parse_args()
 
 
@@ -472,13 +581,23 @@ def main() -> None:
         logger.info("reflect-batch done: %s", stats)
         print(json.dumps(stats, indent=2))
     elif args.action == "promote":
-        stats = promote_candidates(store, min_support=args.min_support)
+        stats = promote_candidates(
+            store,
+            min_support=args.min_support,
+            allow_active_promotion=bool(args.allow_active_promotion),
+            doctor_review_status=args.doctor_review_status,
+        )
         logger.info("promote done: %s", stats)
         print(json.dumps(stats, indent=2))
     elif args.action == "feedback":
         if not args.record_id or not args.feedback_action:
             raise SystemExit("--record-id and --feedback-action required for feedback")
-        entry = apply_feedback_action(store, record_id=args.record_id, action=args.feedback_action)
+        entry = apply_feedback_action(
+            store,
+            record_id=args.record_id,
+            action=args.feedback_action,
+            allow_active_promotion=bool(args.allow_active_promotion),
+        )
         print(json.dumps(entry.to_line() if entry else {"status": "not_found"}, indent=2, default=str))
 
 

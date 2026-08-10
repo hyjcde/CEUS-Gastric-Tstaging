@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Nature 系相关论文速览 · 胃癌分期 / 超声 / 内镜 AI</title>
+<title>Nature 系相关论文速览 , 胃癌分期 / 超声 / 内镜 AI</title>
 <style>
   :root {
     --bg: #0b0d10;
@@ -55,7 +55,10 @@
   .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
   .meta { color: var(--muted); font-size: 0.88rem; margin-bottom: 8px; }
   .meta a { color: var(--accent); }
+  .accent-link { color: var(--accent); }
   .why { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); color: #c5cad3; font-size: 0.95rem; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 12px 0; }
   th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
   th { background: #1a2030; color: var(--muted); }
@@ -65,11 +68,11 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Nature Portfolio 相关论文速览</h1>
+  <h1>Nature Portfolio 论文与胃癌超声 Agent 主线</h1>
   <p class="sub">
-    范围：Nature Biomedical Engineering · Nature Medicine · npj Digital Medicine · Nature Communications ·
-    npj Precision Oncology · Scientific Reports（Nature 旗下）· 时间以 2025–2026 为主 ·
-    对齐本仓库主线：胃癌 T 分期 / 胃超声·EUS / 真视频·阅片 Agent
+    入口页：Nature Biomedical Engineering, Nature Medicine, npj Digital Medicine,
+    Nature Communications, TMI/MIA 方法补充, arXiv 最新 Agent 与超声 foundation。
+    当前主线：胃癌 T 分期 / 胃超声,EUS / 真视频 / 证据 Agent。
   </p>
 
   <div class="callout hot">
@@ -77,7 +80,14 @@
     ① <b>GTRNet</b>（npj Digit. Med.）— CT 上直接做 T1–T4，多中心、可解释，文中明确拿 EUS 作对照语境。<br />
     ② <b>GRAPE</b>（Nat. Med.）— 平扫 CT 大规模筛胃癌，按 T 分期亚组分析检测率。<br />
     ③ <b>Sonomate / BUSGen / Pathology-CoT</b>（Nat. Biomed. Eng.）— 见 NBE 专页
-    <a href="./nbe_ultrasound_agent_papers.html" style="color:var(--accent)">nbe_ultrasound_agent_papers.html</a>。
+    <a class="accent-link" href="./nbe_ultrasound_agent_papers.html">nbe_ultrasound_agent_papers.html</a>。
+  </div>
+
+  <div class="callout ok">
+    <b>2026 最新共识</b><br />
+    研究重点已经从“更大的 VLM 直接预测分期”转向：
+    <b>图像区域 grounding → 专病概念 → 工具验证 → 证据链报告 → 离线演化</b>。
+    本仓库的 human-mask 视觉 alignment 已符合该路线；controller routing 仍需独立的行为证据。
   </div>
 
   <div class="tags">
@@ -86,14 +96,100 @@
     <span class="tag p2">P2 周边：病理 / 内镜报告 / 腹腔镜</span>
   </div>
 
-  <h2>P0 · 胃癌分期 / 筛查（Nature 系）</h2>
+  <h2>当前主线与计划进度</h2>
+  <div class="callout ok">
+    <b>当前阶段：系统整合与安全收口</b><br />
+    T 分期仍是主输出，视觉模型负责区域和概念 grounding，deterministic router 负责无 human
+    标签条件下的安全工具路径，病理只用于 offline alignment 和审计。没有把任一 MLLM
+    controller 接入默认临床路径。
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>P0, T 分期主模型</h3>
+      <div class="meta"><span class="tag p0">已冻结 baseline</span></div>
+      <p>Phase 0 patient-disjoint 训练与评估已经完成，严格 external patient ACC 约 46.4%。继续重点是 T2/T3 边界、分中心差异和部署一致 ROI。</p>
+      <div class="why"><b>入口</b>：<span class="mono">docs/mainline/tstaging_current_mainline.md</span>，T 分期不能被报告生成或良恶性指标替代。</div>
+    </div>
+    <div class="card">
+      <h3>P1, 视觉 grounding</h3>
+      <div class="meta"><span class="tag p1">已完成候选训练</span></div>
+      <p>3B human-mask alignment bbox IoU 0.244，7B bbox IoU 0.230；correct 均显著优于 blank 和 shuffle。</p>
+      <div class="why"><b>产物</b>：<span class="mono">data/multimodal_agent/candidates/</span> 与 <span class="mono">mask_grounding_3b_final_v3.json</span>。</div>
+    </div>
+    <div class="card">
+      <h3>P1, 安全工具路径</h3>
+      <div class="meta"><span class="tag p1">safe baseline 已完成</span></div>
+      <p>deterministic router 在 1,318 个 development 患者上 tool selection 和 stop accuracy 均为 1.0；322 个 frozen-track 患者的 concepts、报告和 provenance 全部通过。</p>
+      <div class="why"><b>限制</b>：这是 model-derived synthetic policy，不是 clinician behavior model。</div>
+    </div>
+    <div class="card">
+      <h3>P2, offline image-pathology alignment</h3>
+      <div class="meta"><span class="tag p2">offline only</span></div>
+      <p>3B 和 7B 均完成 8,577 条 train/val offline alignment。3B held-out patient T-stage accuracy：external 0.413，newzip 0.265，prospective 0.543；7B：0.416，0.096，0.478。</p>
+      <div class="why"><b>限制</b>：7B 没有稳定优于 3B；病理不进入在线 prompt、controller 或默认权重，跨中心差异只用于误差审计。</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>计划项</th><th>状态</th><th>当前产物</th><th>下一步</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>真实 crop_ui 像素训练</td>
+        <td><span class="tag p1">完成</span></td>
+        <td><span class="mono">run_local_mllm_sft.py</span>, assistant-only loss</td>
+        <td>保持 pixel input contract</td>
+      </tr>
+      <tr>
+        <td>人工 mask 视觉对齐</td>
+        <td><span class="tag p1">完成</span></td>
+        <td>3B / 7B human-mask candidates</td>
+        <td>扩展 wall/lumen/serosa concept</td>
+      </tr>
+      <tr>
+        <td>deterministic safe path</td>
+        <td><span class="tag p1">完成</span></td>
+        <td><span class="mono">deterministic_router_v2_20260806</span></td>
+        <td>接入 integration replay</td>
+      </tr>
+      <tr>
+        <td>pathology image alignment</td>
+        <td><span class="tag p2">offline 完成</span></td>
+        <td><span class="mono">offline_pathology_alignment_v1</span> / <span class="mono">offline_pathology_alignment_7b_v1</span></td>
+        <td>按 center/device 做失败分析，不接 online</td>
+      </tr>
+      <tr>
+        <td>学习型 clinician controller</td>
+        <td><span class="tag p0">阻塞</span></td>
+        <td>没有 human behavior labels</td>
+        <td>不伪造标签，不晋级 MLLM controller</td>
+      </tr>
+      <tr>
+        <td>冻结 T-stage full claim</td>
+        <td><span class="tag p0">受限</span></td>
+        <td>controller-only frozen replay</td>
+        <td>先定义合法 pathology-safe T 输出</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout hot">
+    <b>主线红线</b><br />
+    语言模型 loss 下降、JSON 合法率提高或 synthetic routing accuracy 提高，都不能替代
+    image grounding、患者级外部泛化和 clinician behavior validation。病理只用于回顾性
+    offline 评价，不能写进在线训练 prompt。
+  </div>
+
+  <h2>P0 , 胃癌分期 / 筛查（Nature 系）</h2>
 
   <div class="card">
     <h3>Interpretable deep learning for multicenter gastric cancer T staging from CT images</h3>
     <div class="meta">
-      Zheng et al. · <b>npj Digital Medicine</b> · 2026 ·
+      Zheng et al. , <b>npj Digital Medicine</b> , 2026 ,
       <a href="https://doi.org/10.1038/s41746-025-02002-5">10.1038/s41746-025-02002-5</a>
-      · <span class="tag p0">P0</span>
+      , <span class="tag p0">P0</span>
     </div>
     <p>
       <b>GTRNet</b>：端到端四分类 T1–T4，输入门静脉期 CT 最大肿瘤轴位切片，无需手工分割；
@@ -109,9 +205,9 @@
   <div class="card">
     <h3>AI-based large-scale screening of gastric cancer from noncontrast CT imaging</h3>
     <div class="meta">
-      Hu et al. · <b>Nature Medicine</b> · 2025 ·
+      Hu et al. , <b>Nature Medicine</b> , 2025 ,
       <a href="https://doi.org/10.1038/s41591-025-03785-6">10.1038/s41591-025-03785-6</a>
-      · <span class="tag p0">P0</span>
+      , <span class="tag p0">P0</span>
     </div>
     <p>
       <b>GRAPE</b>：平扫 CT + 深度学习做胃癌筛查；2 中心训练、16 中心外测（AUC 0.927）；
@@ -127,9 +223,9 @@
   <div class="card">
     <h3>Multimodal digital biopsy for preoperative prediction of occult peritoneal metastasis in gastric cancer</h3>
     <div class="meta">
-      Chen et al. · <b>npj Digital Medicine</b> · 2026-01 ·
+      Chen et al. , <b>npj Digital Medicine</b> , 2026-01 ,
       <a href="https://doi.org/10.1038/s41746-025-02268-9">10.1038/s41746-025-02268-9</a>
-      · <span class="tag p0">P0</span>
+      , <span class="tag p0">P0</span>
     </div>
     <p>
       CT radiomics + 临床变量预测隐匿腹膜转移（OPM）；多中心外推 + 前瞻试验队列（NCT06478368）；
@@ -143,22 +239,22 @@
   <div class="card">
     <h3>Development of a deep learning model for T1N0 gastric cancer diagnosis using 2.5D radiomic data in preoperative CT images</h3>
     <div class="meta">
-      · <b>npj Precision Oncology</b> · 2025 ·
+      , <b>npj Precision Oncology</b> , 2025 ,
       <a href="https://doi.org/10.1038/s41698-025-01055-9">10.1038/s41698-025-01055-9</a>
-      · <span class="tag p0">P0</span>
+      , <span class="tag p0">P0</span>
     </div>
     <p>CT 2.5D radiomics 识别 pT1N0（早期且无淋巴结转移）联合终点，服务 ESD/手术路径选择。</p>
     <div class="why"><b>对本项目</b>：早期分层相关；仍是 CT，不是壁层超声。</div>
   </div>
 
-  <h2>P1 · 超声 / 视频 / Agent（Nature Biomedical Engineering）</h2>
+  <h2>P1 , 超声 / 视频 / Agent（Nature Biomedical Engineering）</h2>
 
   <div class="card">
     <h3>A visually grounded language model for fetal ultrasound understanding（Sonomate）</h3>
     <div class="meta">
-      · <b>Nature Biomedical Engineering</b> ·
+      , <b>Nature Biomedical Engineering</b> ,
       <a href="https://doi.org/10.1038/s41551-025-01578-3">10.1038/s41551-025-01578-3</a>
-      · <span class="tag p1">P1</span>
+      , <span class="tag p1">P1</span>
     </div>
     <p>
       525 条真实扫查视频–音频对；粗粒度 video–text + 细粒度 frame–sentence 对齐；
@@ -173,9 +269,9 @@
   <div class="card">
     <h3>A foundation generative model for breast ultrasound image analysis（BUSGen）</h3>
     <div class="meta">
-      Yu et al. · <b>Nature Biomedical Engineering</b> · 2026-04 ·
+      Yu et al. , <b>Nature Biomedical Engineering</b> , 2026-04 ,
       <a href="https://doi.org/10.1038/s41551-026-01639-1">10.1038/s41551-026-01639-1</a>
-      · <span class="tag p1">P1</span>
+      , <span class="tag p1">P1</span>
     </div>
     <p>
       350 万+ 乳腺超声预训练的生成式基础模型；few-shot 适配生成任务数据；
@@ -189,10 +285,10 @@
   <div class="card">
     <h3>Pathology-CoT: learning visual chain-of-thought agents from expert WSI diagnosis behaviour</h3>
     <div class="meta">
-      Wang et al. · <b>Nature Biomedical Engineering</b> · 2026-07-24 ·
+      Wang et al. , <b>Nature Biomedical Engineering</b> , 2026-07-24 ,
       <a href="https://doi.org/10.1038/s41551-026-01739-y">10.1038/s41551-026-01739-y</a>
-      · arXiv: <a href="https://arxiv.org/abs/2510.04587">2510.04587</a>
-      · <span class="tag p1">P1</span>
+      , arXiv: <a href="https://arxiv.org/abs/2510.04587">2510.04587</a>
+      , <span class="tag p1">P1</span>
     </div>
     <p>
       记录病理专家阅片轨迹 → 行为级 CoT 监督；两阶段 agent Pathology-o3；
@@ -207,22 +303,22 @@
   <div class="card">
     <h3>Voice-controlled super-resolution ultrasound imaging and reporting（MLLM）</h3>
     <div class="meta">
-      Guo et al. · <b>npj Digital Medicine</b> · 2026-06 ·
+      Guo et al. , <b>npj Digital Medicine</b> , 2026-06 ,
       <a href="https://doi.org/10.1038/s41746-026-02924-8">10.1038/s41746-026-02924-8</a>
-      · <span class="tag p1">P1</span>
+      , <span class="tag p1">P1</span>
     </div>
     <p>语音驱动超分辨超声 + DeepSeek-R1 / MiniCPM-V；约 4 分钟结构化报告；14 名临床评价。</p>
     <div class="why"><b>对本项目</b>：超声工作流 + 多模态 LLM 报告，偏工程产品向。</div>
   </div>
 
-  <h2>P1–P2 · 内镜 / 报告 / 手术视频（Nature 系）</h2>
+  <h2>P1–P2 , 内镜 / 报告 / 手术视频（Nature 系）</h2>
 
   <div class="card">
     <h3>Bootstrapping MLLM with medical knowledge for automatic EGD diagnosis and reporting</h3>
     <div class="meta">
-      Shi et al. · <b>Nature Communications</b> · 2026-07 ·
+      Shi et al. , <b>Nature Communications</b> , 2026-07 ,
       <a href="https://doi.org/10.1038/s41467-026-75377-y">10.1038/s41467-026-75377-y</a>
-      · <span class="tag p1">P1</span>
+      , <span class="tag p1">P1</span>
     </div>
     <p>
       多中心 EGD：4461 人 / 20 万+ 图；19 类 GI 疾病平均诊断准确率 0.882，超 SOTA AI 与初级内镜医生；
@@ -234,9 +330,9 @@
   <div class="card">
     <h3>Comparing AI and healthcare professionals in surgical/interventional video analysis（meta-analysis）</h3>
     <div class="meta">
-      Rafati Fard et al. · <b>npj Digital Medicine</b> · 2026 ·
+      Rafati Fard et al. , <b>npj Digital Medicine</b> , 2026 ,
       <a href="https://doi.org/10.1038/s41746-026-02401-2">10.1038/s41746-026-02401-2</a>
-      · <span class="tag p2">P2</span>
+      , <span class="tag p2">P2</span>
     </div>
     <p>146 项研究系统综述：AI 辅助显著提升敏感度/特异度；强调「辅助」优于「纯对抗」研究设计。</p>
     <div class="why"><b>对本项目</b>：写人机阅片研究时的设计依据（本仓库 reader study 可对齐）。</div>
@@ -245,12 +341,375 @@
   <div class="card">
     <h3>AI assisted real-time recognition of intra-abdominal metastasis during laparoscopic GC surgery</h3>
     <div class="meta">
-      · <b>npj Digital Medicine</b> · 2025 ·
+      , <b>npj Digital Medicine</b> , 2025 ,
       <a href="https://doi.org/10.1038/s41746-024-01372-6">10.1038/s41746-024-01372-6</a>
-      · <span class="tag p2">P2</span>
+      , <span class="tag p2">P2</span>
     </div>
     <p>AiLES 腹腔镜探查中实时分割隐匿转移；Dice 0.76，~11 FPS。</p>
     <div class="why"><b>对本项目</b>：胃癌分期链条下游（M 分期/腹腔镜），视频实时，非 EUS T。</div>
+  </div>
+
+  <h2>P1 , 2026 最新 foundation / grounding / Agent 方法</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>UltraSAM3: A Concept-Driven Foundation Model for Universal Ultrasound Image Segmentation</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 ,
+        <a href="https://arxiv.org/abs/2607.29200">arXiv:2607.29200</a>
+        , <span class="tag p1">超声 grounding</span>
+      </div>
+      <p>把超声样本组织为 image–mask–concept triplet，用概念提示驱动通用分割，并用 instruction agent 把复杂问题转成明确的超声概念。</p>
+      <div class="why"><b>对本项目</b>：胃癌数据应优先构造 lesion mask–wall concept–evidence 三元组，而不是把病理 T-stage 直接写入 prompt。</div>
+    </div>
+
+    <div class="card">
+      <h3>A disease-centric vision-language foundation model for precision oncology in kidney cancer</h3>
+      <div class="meta">
+        <b>Nature Communications</b> , 2026 ,
+        <a href="https://doi.org/10.1038/s41467-026-74175-w">10.1038/s41467-026-74175-w</a>
+        , <span class="tag p0">专病 foundation</span>
+      </div>
+      <p>RenalCLIP 以肾癌 CT、临床病理语义和多中心任务做两阶段 disease-centric pretraining，覆盖解剖、良恶性、侵袭性、预后和报告。</p>
+      <div class="why"><b>对本项目</b>：胃癌可以建立 wall/lumen/serosa/T boundary 的专病概念空间，再做多任务而不是只做 T 分类。</div>
+    </div>
+
+    <div class="card">
+      <h3>CLEAR: an auditable foundation model for radiology grounded in clinical concepts</h3>
+      <div class="meta">
+        <b>Nature Biomedical Engineering</b> , 2026 ,
+        <a href="https://doi.org/10.1038/s41551-026-01741-4">10.1038/s41551-026-01741-4</a>
+        , <span class="tag p1">可审计概念</span>
+      </div>
+      <p>将图像投影到由大量临床观察组成的概念空间，使预测可以拆解为具体 radiological observations，并支持 confounder audit。</p>
+      <div class="why"><b>对本项目</b>：每个胃壁征象应成为可审计 score 和 evidence_id，避免只保存一个最终 T stage。</div>
+    </div>
+
+    <div class="card">
+      <h3>A multimodal instruction dataset and benchmark for ultrasound understanding</h3>
+      <div class="meta">
+        <b>npj Digital Medicine</b> , 2026 ,
+        <a href="https://doi.org/10.1038/s41746-026-02930-w">10.1038/s41746-026-02930-w</a>
+        , <span class="tag p1">SonoInstruct / SonoBench</span>
+      </div>
+      <p>覆盖 30 多个超声来源、11 万以上图像和 26 万 instruction instances，评估 anatomy、feature、lesion、grounding、report 和 OOD。</p>
+      <div class="why"><b>对本项目</b>：应建立胃癌专病 benchmark，而不是只报告一个患者级 T-stage accuracy。</div>
+    </div>
+
+    <div class="card">
+      <h3>MedCTA: A Benchmark for Clinical Tool Agents</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 ,
+        <a href="https://arxiv.org/abs/2606.11702">arXiv:2606.11702</a>
+        , <span class="tag p1">工具 Agent</span>
+      </div>
+      <p>107 个 clinician-validated tasks，评价 tool recruitment、参数合法性、execution stability、trajectory fidelity 和最终结果。</p>
+      <div class="why"><b>对本项目</b>：synthetic router 只能作为 engineering baseline，不能替代 clinician-verified trajectory。</div>
+    </div>
+
+    <div class="card">
+      <h3>Experience Makes Skillful: Self-Evolving Skill Memory</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 ,
+        <a href="https://arxiv.org/abs/2606.09365">arXiv:2606.09365</a>
+        , <span class="tag p1">memory evolution</span>
+      </div>
+      <p>SkeMex 使用 Read–Write–Assess–Govern，将交互轨迹压缩成可治理的 procedural skills，不依赖在线权重更新。</p>
+      <div class="why"><b>对本项目</b>：优先演化 skill memory 和 tool reliability，不直接更新默认 adapter。</div>
+    </div>
+
+    <div class="card">
+      <h3>Route, Retrieve, Reflect, Repair</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 ,
+        <a href="https://arxiv.org/abs/2601.08192">arXiv:2601.08192</a>
+        , <span class="tag p1">反思修复</span>
+      </div>
+      <p>Router、Retriever、Reflector、Repairer 分离，联合报告文本、bbox 和临床错误类型，强调反事实检查和局部证据。</p>
+      <div class="why"><b>对本项目</b>：可把“报告句没有 evidence_id”作为 repair trigger，而不是只重写语言风格。</div>
+    </div>
+
+    <div class="card">
+      <h3>CT-FineBench: Diagnostic Fidelity Benchmark</h3>
+      <div class="meta">
+        <b>ACL 2026</b> ,
+        <a href="https://aclanthology.org/2026.acl-long.2038/">ACL 2026</a>
+        , <span class="tag p1">报告事实性</span>
+      </div>
+      <p>把报告拆成位置、大小、密度、边界等 attribute-level QA，避免 BLEU/ROUGE 掩盖临床事实错误。</p>
+      <div class="why"><b>对本项目</b>：胃超声报告应逐字段检查 lesion location、wall relation、serosa 和 uncertainty。</div>
+    </div>
+  </div>
+
+  <h2>P1 , TMI / MIA 方法线</h2>
+  <div class="card">
+    <h3>从跨模态对齐到专病可审计系统</h3>
+    <div class="meta">
+      <a href="https://doi.org/10.1109/TMI.2024.3472672">MOFO, IEEE TMI 2025</a> ,
+      <a href="https://doi.org/10.1109/TMI.2024.3424978">Ultrasound Report Generation, IEEE TMI 2025</a> ,
+      <a href="https://ieeexplore.ieee.org/document/10816606">RecLMIS, IEEE TMI 2025</a> ,
+      <a href="https://www.sciencedirect.com/science/article/abs/pii/S1566253525000685">MIA VLM review</a>
+    </div>
+    <ul>
+      <li><b>MOFO</b>：task prompt + anatomical prior，适合胃腔/壁层概念条件化。</li>
+      <li><b>Ultrasound Report Generation</b>：报告先做 image-text alignment，再做结构化生成。</li>
+      <li><b>RecLMIS</b>：用视觉和文本互重建，减少语言与区域语义脱节。</li>
+      <li><b>MIA 综述</b>：强调 segmentation、report、VQA 和 foundation model 需要分层评估。</li>
+    </ul>
+    <div class="why"><b>对本仓库</b>：视觉 adapter、concept head、LLM router 和 report validator 应分开测，不能用一项 loss 代表整个系统。</div>
+  </div>
+
+  <h2>P1 , 自进化与不确定性</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>EvoClinician</h3>
+      <div class="meta"><a href="https://arxiv.org/abs/2601.22964">arXiv:2601.22964</a></div>
+      <p>Diagnose–Grade–Evolve，动作级 credit assignment，同时考虑临床收益和检查成本。</p>
+      <div class="why"><b>迁移</b>：将每次 boundary/refine/stop 视为有成本的 evidence acquisition action。</div>
+    </div>
+    <div class="card">
+      <h3>MedExpMem</h3>
+      <div class="meta"><a href="https://arxiv.org/abs/2605.22872">arXiv:2605.22872</a></div>
+      <p>把错误整理成 pairwise differential notes，而不是保存无筛选历史轨迹。</p>
+      <div class="why"><b>迁移</b>：建立 T2/T3、T3/T4+ 的差异征象 memory，保留 provenance 和适用中心。</div>
+    </div>
+    <div class="card">
+      <h3>SRICE</h3>
+      <div class="meta"><a href="https://arxiv.org/abs/2503.08308">arXiv:2503.08308</a></div>
+      <p>用 uncertainty 和 conformal prediction 选择更值得信任的视觉工具。</p>
+      <div class="why"><b>迁移</b>：按 center、device、quality 记录 SAM/DINO 工具可靠性。</div>
+    </div>
+    <div class="card">
+      <h3>AEGIS</h3>
+      <div class="meta"><a href="https://arxiv.org/abs/2603.22322">arXiv:2603.22322</a></div>
+      <p>把自适应模型分成 APPROVE、CONDITIONAL APPROVAL、CLINICAL REVIEW、REJECT，并设置独立 ALARM。</p>
+      <div class="why"><b>迁移</b>：任何 skill、memory 或 adapter 更新都走 fixed reference、shadow、rollback。</div>
+    </div>
+  </div>
+
+  <h2>P1 , Agent 能力与自进化技术补充</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>Route, Retrieve, Reflect, Repair</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2601.08192">arXiv:2601.08192</a></div>
+      <p>把医学视觉 Agent 拆成 Router、Retriever、Reflector、Repairer，联合修复报告事实错误、定位错误、否定词和证据冲突。</p>
+      <div class="why"><b>胃超声迁移</b>：报告句缺少 evidence_id、mask 不支持概念或 wall 概念冲突时，触发 repair，而不是只重写措辞。</div>
+    </div>
+    <div class="card">
+      <h3>MedVR, Annotation-Free Medical Visual Reasoning</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2604.08203">arXiv:2604.08203</a></div>
+      <p>用 entropy-guided visual re-grounding 和 consensus-based credit assignment，在没有人工视觉 reasoning 标签时生成可验证的伪监督。</p>
+      <div class="why"><b>边界</b>：可用于 mask/ROI 探索和工具奖励，不能把 consensus pseudo-label 称为医生观察。</div>
+    </div>
+    <div class="card">
+      <h3>Which Tool Response Should I Trust?</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2602.21517">arXiv:2602.21517</a></div>
+      <p>通过交互学习不同工具在不同问题上的实际可靠性，处理多个视觉工具输出冲突。</p>
+      <div class="why"><b>胃超声迁移</b>：按 center、device、quality 和 concept 记录 YOLO、SAM、DINO 的 tool reliability。</div>
+    </div>
+    <div class="card">
+      <h3>ToolSelect, Picking the Right Specialist</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2602.14901">arXiv:2602.14901</a></div>
+      <p>用 specialist model 的行为摘要训练 selector，不要求每个病例重新训练所有工具。</p>
+      <div class="why"><b>胃超声迁移</b>：让 router 选择 lesion mask、wall evidence、lumen、report 工具，而不是让一个 VLM 包揽所有任务。</div>
+    </div>
+    <div class="card">
+      <h3>MedRoute, RL-Based Dynamic Specialist Routing</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2604.06180">arXiv:2604.06180</a></div>
+      <p>根据当前诊断历史动态分配 specialist，并用最终任务奖励训练 router。</p>
+      <div class="why"><b>当前可做</b>：先用 deterministic router 和可验证 mask/report reward 做 offline policy search，暂不做在线 RL。</div>
+    </div>
+    <div class="card">
+      <h3>RadAgent</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2604.15231">arXiv:2604.15231</a></div>
+      <p>用 checklist、specialist tools 和迭代式 report refinement 做胸部 CT 分析，强调每个判断绑定证据。</p>
+      <div class="why"><b>胃超声迁移</b>：把 T2/T3、T3/T4+ 的 wall checklist 作为 planner 状态，而不是让模型自由生成 T stage。</div>
+    </div>
+    <div class="card">
+      <h3>CT-Flow, MCP-based CT orchestration</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2603.00123">arXiv:2603.00123</a></div>
+      <p>通过 MCP servers 组织导航、测量、分割和 radiomics，把被动图像编码变成主动 probing。</p>
+      <div class="why"><b>胃超声迁移</b>：当前 tool registry 已存在，下一步可以为 frame、mask、wall、report 建立统一 action contract。</div>
+    </div>
+    <div class="card">
+      <h3>AgentClinic</h3>
+      <div class="meta"><b>npj Digital Medicine</b> , <a href="https://doi.org/10.1038/s41746-026-02674-7">10.1038/s41746-026-02674-7</a></div>
+      <p>多 specialty、多语言、多偏差模拟环境，除了 accuracy 还评价 follow-up、compliance 和 consultation quality。</p>
+      <div class="why"><b>胃超声迁移</b>：应把“是否请求更多证据”和“是否安全停止”作为一等指标。</div>
+    </div>
+    <div class="card">
+      <h3>MedXIAOHE</h3>
+      <div class="meta"><b>arXiv</b> , <a href="https://arxiv.org/abs/2602.12705">arXiv:2602.12705</a></div>
+      <p>entity-aware continual pretraining、evidence-grounded report、tool-augmented reasoning 和 preference rubric 组合成完整 recipe。</p>
+      <div class="why"><b>胃超声迁移</b>：先建立 gastric entity tree，再分开做 mask、concept、report 和 router 训练。</div>
+    </div>
+    <div class="card">
+      <h3>ClinCoT 与 MMedPO</h3>
+      <div class="meta">
+        <a href="https://arxiv.org/abs/2603.01124">ClinCoT</a> ,
+        <a href="https://proceedings.mlr.press/v267/zhu25v.html">MMedPO</a>
+      </div>
+      <p>把 preference alignment 从最终答案推进到 hypothesis-driven region reasoning，并用 lesion-region noising 构造视觉错误偏好。</p>
+      <div class="why"><b>胃超声迁移</b>：可构造 mask 遗漏、wall region 错位、unsupported report 等 offline rejected samples。</div>
+    </div>
+  </div>
+
+  <div class="callout ok">
+    <b>无 human 标签时仍可做 Agent 和自进化</b><br />
+    先将 Agent 限定为 offline environment 中的 planner、executor、verifier、reflector。
+    reward 来自 mask IoU、bbox valid、concept provenance、报告事实一致性、工具成本和
+    schema validity；更新对象是 skill memory、tool reliability 和 prompt patch，不是在线权重。
+    后续若获得医生记录，再把 clinician trajectory 接入同一套 replay 和 governance gate。
+  </div>
+
+  <h2>P1 , SAM3 Agent 与医学概念分割专题</h2>
+  <div class="callout ok">
+    <b>先区分论文状态</b><br />
+    “SAM3 Agent”目前主要来自 SAM3 原论文和官方工具文档，医学方向则由
+    MedSAM3、Medical SAM3、UltraSAM3 及若干实验性扩展组成。不是所有标题带 Agent
+    的项目都已经有同行评审论文，页面按 paper、code、model 和 planned 状态区分。
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>SAM 3: Segment Anything with Concepts</h3>
+      <div class="meta">
+        <b>Meta AI, arXiv</b> , 2025 , <a href="https://arxiv.org/abs/2511.16719">arXiv:2511.16719</a>
+        , <a href="https://github.com/facebookresearch/sam3">official code</a>
+      </div>
+      <p>提出 Promptable Concept Segmentation，支持 noun phrase、image exemplar、image/video detection、segmentation 和 tracking。Agent 使用 MLLM 将复杂查询拆成简单 concept prompt。</p>
+      <div class="why"><b>Agent tool</b>：<span class="mono">segment_phrase</span> → <span class="mono">examine_each_mask</span> → <span class="mono">select_masks_and_return</span> 或 <span class="mono">report_no_mask</span>。</div>
+    </div>
+
+    <div class="card">
+      <h3>MedSAM3: Delving into Segment Anything with Medical Concepts</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2025 , <a href="https://arxiv.org/abs/2511.19046">arXiv:2511.19046</a>
+        , <a href="https://github.com/Joey-S-Liu/MedSAM3">code</a>
+        , <a href="https://huggingface.co/lal-Joey/MedSAM3_v1">LoRA weights</a>
+      </div>
+      <p>医学 image–mask–concept 对齐，覆盖影像、超声、内镜和视频；MedSAM3 Agent 负责自然语言拆解和 mask 迭代检查。</p>
+      <div class="why"><b>对本项目</b>：胃病灶、胃壁、浆膜和 lumen 应分别成为可提示 concept，不把长句直接送给 SAM3。</div>
+    </div>
+
+    <div class="card">
+      <h3>Medical SAM3: Universal Prompt-Driven Medical Image Segmentation</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 , <a href="https://arxiv.org/abs/2601.10880">arXiv:2601.10880</a>
+        , <a href="https://github.com/AIM-Research-Lab/Medical-SAM3">code</a>
+      </div>
+      <p>在 33 个医学数据集上完整 fine-tune SAM3，强调 vanilla SAM3 在医学场景容易依赖 box 等 privileged geometric prompts。</p>
+      <div class="why"><b>重要边界</b>：该项目仓库当前把 Medical-SAM3 Agent 标为 planned，不能把 segmentation foundation 和完整 Agent 实现混为一谈。</div>
+    </div>
+
+    <div class="card">
+      <h3>UltraSAM3: Concept-Driven Foundation Model for Ultrasound</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 , <a href="https://arxiv.org/abs/2607.29200">arXiv:2607.29200</a>
+        , <a href="https://github.com/zhuqh19/UltraSAM3">code and agent inference</a>
+      </div>
+      <p>37 个超声数据集、13 类解剖目标，训练 image–mask–concept triplet；提供 instruction agent 将自然语言改写成简单超声概念提示。</p>
+      <div class="why"><b>当前仓库</b>：本地已有 <span class="mono">external/UltraSAM3/UltraSAM3.pt</span> 和 <span class="mono">inference_agent.py</span>，比重复下载另一套医学权重更适合先做 crop_ui smoke。</div>
+    </div>
+
+    <div class="card">
+      <h3>Adapting SAM3 for Concept-Driven Lesion Segmentation</h3>
+      <div class="meta">
+        <b>arXiv</b> , 2026 , <a href="https://arxiv.org/abs/2603.25945">arXiv:2603.25945</a>
+      </div>
+      <p>比较 box、text、image exemplar、adapter 和 full fine-tuning，覆盖 MRI、CT、超声、皮肤镜和内镜等病灶分割。</p>
+      <div class="why"><b>对本项目</b>：应先比较 text concept、human ROI、mask prompt 三种提示，不应只跑默认 SAM3。</div>
+    </div>
+
+    <div class="card">
+      <h3>Is SAM3 ready for pathology segmentation?</h3>
+      <div class="meta"><b>arXiv</b> , 2026 , <a href="https://arxiv.org/abs/2604.18225">arXiv:2604.18225</a></div>
+      <p>系统评估 text-only、few-shot visual prompt 和 supervised adapter，发现 text-only 对复杂医学概念不足，visual prompt noise 也会显著影响结果。</p>
+      <div class="why"><b>对本项目</b>：超声 concept prompt 必须做 prompt robustness 和 negative concept 对照。</div>
+    </div>
+
+    <div class="card">
+      <h3>Incentivizing Tool-augmented Thinking with Images</h3>
+      <div class="meta"><b>arXiv</b> , 2025 , <a href="https://arxiv.org/abs/2512.14157">arXiv:2512.14157</a></div>
+      <p>Ophiuchus 让 MLLM 在推理过程中自主调用 segmentation、crop、zoom 等视觉工具，并把每次 observation 加入后续轨迹。</p>
+      <div class="why"><b>对本项目</b>：可把 SAM3 mask、zoom、wall evidence 作为逐步 observation，但必须记录 tool cost 和 evidence provenance。</div>
+    </div>
+
+    <div class="card">
+      <h3>SAM3 Agent 官方工具说明</h3>
+      <div class="meta">
+        <b>Implementation docs</b> , <a href="https://www.mintlify.com/facebookresearch/sam3/api/sam3-agent">Agent API</a>
+        , <a href="https://www.mintlify.com/facebookresearch/sam3/guides/agent">workflow guide</a>
+      </div>
+      <p>官方 Agent 采用 perception–action loop：MLLM 生成短 noun phrase，SAM3 返回多个 mask，MLLM 逐个检查并选择或重试。</p>
+      <div class="why"><b>ModelScope</b>：官方模型 ID 为 <span class="mono">facebook/sam3</span> 和 <span class="mono">facebook/sam3.1</span>；当前下载目录为 <span class="mono">artifacts/model_weights/sam3_modelscope/</span>。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>VL-SAM-v3: Memory-Guided Visual Priors for Open-World Object Detection</h3>
+    <div class="meta">
+      <b>arXiv</b> , 2026 , <a href="https://arxiv.org/html/2605.03456v2">arXiv:2605.03456v2</a>
+      , <span class="tag p1">检索增强 SAM3</span>
+    </div>
+    <p>
+      论文不是新的 SAM3 Agent，而是给 open-world detector 增加外部视觉 memory：
+      用 concept text、scene descriptor、global image 构造 retrieval key，用 DINOv3
+      region feature 作为 visual value，检索 top-K 后生成 dense heatmap 和 sparse anchors，
+      再做 Memory-Guided Prompt Refinement。
+    </p>
+    <ul>
+      <li>memory bank 由 grounding image-region pairs 构成，而不是只存整图 embedding；</li>
+      <li>dense prior 提供局部类别支持，sparse prior 提供实例级空间锚点；</li>
+      <li>label-constrained decoding 防止检索到的 prototype 跨类别漂移；</li>
+      <li>训练时避免当前图像 self-match，评估时保持 memory 与 test split 隔离。</li>
+    </ul>
+    <div class="why">
+      <b>对本仓库最有价值</b>：现有
+      <span class="mono">adapter_dino_retriever.py</span>、DINOv3 region token、FAISS、
+      human-mask bbox 和 case memory 已经具备雏形。可以构建
+      <span class="mono">gastric_wall_visual_memory</span>，按
+      <span class="mono">lesion</span>、<span class="mono">wall_breakthrough</span>、
+      <span class="mono">serosal_interface</span>、<span class="mono">lumen_direction</span>
+      检索相似区域，给 SAM3.1 或 wall tool 提供视觉 prior。
+      memory 只能使用 train/dev，不能混入 frozen external/prospective，也不能把 pathology
+      作为 online retrieval text。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>SAM3 与 SAM3.1 选择结论</h3>
+    <div class="meta">
+      <b>官方 release</b> , 2026-03-27 ,
+      <a href="https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md">SAM3.1 release notes</a>
+      , <a href="https://huggingface.co/facebook/sam3.1">facebook/sam3.1 checkpoint</a>
+    </div>
+    <table>
+      <thead><tr><th>版本</th><th>核心能力</th><th>当前用途</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>SAM3</td>
+          <td>PCS、PVS、image/video concept segmentation；视频对象按独立路径处理</td>
+          <td>保留为论文复现和兼容性 baseline</td>
+        </tr>
+        <tr>
+          <td>SAM3.1</td>
+          <td>同一 prompt/API，加 Object Multiplex，共享 memory，最多 16 个对象联合处理；中等对象数约 2 倍吞吐，高对象数最高约 7 倍加速</td>
+          <td><b>视频主线默认选择</b>，尤其适合 cine tracking 和多候选 mask</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="why">
+      <b>胃超声结论</b>：当前病例通常只有一个主要病灶，SAM3.1 的速度优势可能小于拥挤场景；
+      但它是官方最新 video drop-in 版本，仍应作为主线候选。对同一患者视频固定 prompt、帧数、
+      阈值和后处理，做 SAM3 versus SAM3.1 paired A/B。<span class="mono">external/UltraSAM3/UltraSAM3.pt</span>
+      是医学超声适配权重，不能直接当作官方 SAM3.1 权重。
+    </div>
+  </div>
+
+  <div class="callout hot">
+    <b>对胃癌超声的实际 Agent 流程</b><br />
+    `自然语言请求 → concept rewrite → SAM3 segment_phrase → mask overlay / zoom →
+    examine_each_mask → select or report_no_mask → wall/lumen tools → evidence report`。
+    SAM3 只负责可验证的视觉操作，MLLM 负责拆解和检查，不直接覆盖 doctor_final 或 pathology T-stage。
   </div>
 
   <h2>Scientific Reports（Nature 旗下，相关但层级不同）</h2>
@@ -302,7 +761,8 @@
   </table>
 
   <footer>
-    整理于 2026-07 · 以 DOI 页摘要为准 · 非全文翻译。
+    整理于 2026-08-06 , 以 DOI、期刊页面、会议论文和 arXiv 摘要为准 , 非全文翻译。
+    最新方法扩展包括 TMI/MIA、UltraSAM3、RenalCLIP、CLEAR、MedCTA、SkeMex 和 AEGIS。
     若要对某一篇做双语精读 Markdown，指定 DOI 即可。
   </footer>
 </div>

@@ -68,11 +68,26 @@ interface AnalyzeRequestBody {
   use_mask_override?: boolean;
   mask_override?: {
     mask_polygon?: number[][];
+    wall_polygon?: number[][];
     roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
     image_width?: number;
     image_height?: number;
     source?: string;
   };
+  use_lumen_override?: boolean;
+  lumen_override?: {
+    lumen_bbox?: { x1: number; y1: number; x2: number; y2: number };
+    lumen_polygon?: number[][];
+    image_width?: number;
+    image_height?: number;
+    source?: string;
+    lumen_confidence?: number;
+    lumen_mask_type?: string;
+    detector_backend_id?: string;
+    sam_backend_id?: string;
+    sam_score?: number;
+  };
+  geometry_gate?: Record<string, unknown>;
   roi_mode?: 'predicted' | 'doctor' | 'auto';
   gc_us_report?: GcUsReportState;
 }
@@ -85,7 +100,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as AnalyzeRequestBody;
     const {
       patient, dataset, cohortYear, treatmentType, sessionId, memory_enabled, memory_store,
-      use_mask_override, mask_override, roi_mode, gc_us_report,
+      use_mask_override,
+      mask_override,
+      use_lumen_override,
+      lumen_override,
+      geometry_gate,
+      roi_mode,
+      gc_us_report,
     } = body;
 
     if (!patient) {
@@ -116,6 +137,9 @@ export async function POST(request: NextRequest) {
       memory_store: memory_store ?? process.env.AGENT_MEMORY_STORE,
       use_mask_override: Boolean(use_mask_override && mask_override),
       mask_override: use_mask_override ? mask_override : undefined,
+      use_lumen_override: Boolean(use_lumen_override && lumen_override),
+      lumen_override: use_lumen_override ? lumen_override : undefined,
+      geometry_gate: geometry_gate || undefined,
       roi_mode: roi_mode || 'predicted',
       gc_us_report: gc_us_report || undefined,
       ...resolvedPaths,

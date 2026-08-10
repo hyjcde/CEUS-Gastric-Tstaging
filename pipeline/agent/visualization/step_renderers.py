@@ -22,6 +22,22 @@ def save_lumen_overlay(image_path: str, lumen_obs: Dict[str, Any], out_path: Pat
     fig, ax = plt.subplots(figsize=(8, 6))
     fig.patch.set_facecolor(FIGURE_FACECOLOR)
     ax.imshow(overlay)
+    mask_path = lumen_obs.get("lumen_mask_png")
+    if mask_path:
+        mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+        if mask is not None and mask.shape[:2] == img.shape[:2]:
+            rgba = np.zeros((*mask.shape, 4), dtype=np.float32)
+            rgba[..., 0] = 0.15
+            rgba[..., 1] = 0.85
+            rgba[..., 2] = 0.75
+            rgba[..., 3] = (mask > 127).astype(np.float32) * 0.24
+            ax.imshow(rgba)
+    polygon = lumen_obs.get("lumen_polygon")
+    if isinstance(polygon, list) and len(polygon) >= 3:
+        points = np.asarray(polygon, dtype=np.float32)
+        if points.ndim == 2 and points.shape[1] >= 2:
+            closed = np.vstack([points[:, :2], points[0, :2]])
+            ax.plot(closed[:, 0], closed[:, 1], color="#48f3c2", linewidth=2.2)
     bb = lumen_obs.get("lumen_bbox")
     if bb:
         ax.add_patch(
@@ -35,7 +51,8 @@ def save_lumen_overlay(image_path: str, lumen_obs: Dict[str, Any], out_path: Pat
             )
         )
     ax.set_title(
-        f"Lumen YOLO conf={lumen_obs.get('lumen_confidence', 0)}",
+        f"Lumen {lumen_obs.get('lumen_mask_type', 'bbox_proxy')} "
+        f"conf={lumen_obs.get('lumen_confidence', 0)}",
         color=TEXT_COLOR,
         loc="left",
     )

@@ -294,14 +294,20 @@ def _mask_to_polygon(target: np.ndarray) -> tuple[list[list[float]], float]:
     if not contours:
         return [], area_ratio
     contour = max(contours, key=cv2.contourArea)
-    perimeter = cv2.arcLength(contour, True)
-    epsilon = max(0.75, perimeter * 0.002)
-    simplified = cv2.approxPolyDP(contour, epsilon, True).reshape(-1, 2)
-    if len(simplified) < 3:
-        simplified = contour.reshape(-1, 2)
+    raw = contour.reshape(-1, 2)
+    # Keep dense contours for editable UI; only light RDP when extremely long.
+    if len(raw) > 2048:
+        perimeter = cv2.arcLength(contour, True)
+        epsilon = max(0.35, perimeter * 0.0004)
+        simplified = cv2.approxPolyDP(contour, epsilon, True).reshape(-1, 2)
+        if len(simplified) >= 3:
+            raw = simplified
+    if len(raw) > 4096:
+        step = max(1, len(raw) // 4096)
+        raw = raw[::step]
     polygon = [
         [round(float(point[0]), 2), round(float(point[1]), 2)]
-        for point in simplified
+        for point in raw
     ]
     return polygon, area_ratio
 

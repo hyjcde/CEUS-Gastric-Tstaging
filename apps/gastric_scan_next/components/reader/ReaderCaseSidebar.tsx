@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { ReaderCohort } from '@/lib/reader/types';
+import { useSettings } from '@/contexts/SettingsContext';
 
 type CaseSummary = {
   case_id: string;
@@ -22,12 +23,6 @@ type Props = {
   loading?: boolean;
 };
 
-const COHORTS: { id: ReaderCohort; label: string }[] = [
-  { id: 'all', label: '全部' },
-  { id: 'benign_malignancy', label: '良恶性' },
-  { id: 't_staging', label: 'T分期' },
-];
-
 export function ReaderCaseSidebar({
   cohort,
   onCohortChange,
@@ -36,15 +31,25 @@ export function ReaderCaseSidebar({
   onSelectCase,
   loading,
 }: Props) {
+  const { language } = useSettings();
+  const zh = language !== 'en';
+  const cohorts: { id: ReaderCohort; label: string }[] = [
+    { id: 'all', label: zh ? '全部' : 'All' },
+    { id: 'benign_malignancy', label: zh ? '良恶性' : 'B/M' },
+    { id: 't_staging', label: zh ? 'T分期' : 'T-stage' },
+  ];
+
   return (
     <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-white/10 bg-[#0c0d0f]">
       <div className="border-b border-white/10 p-3">
-        <div className="text-xs font-semibold text-gray-200">病例库</div>
+        <div className="text-xs font-semibold text-gray-200">{zh ? '病例库' : 'Case library'}</div>
         <p className="mt-1 text-[10px] leading-relaxed text-gray-500">
-          阅片包 150 例：良恶性 50 + T 分期 100。点击/框选生成 mask 与报告。
+          {zh
+            ? '阅片包 150 例：良恶性 50 + T 分期 100。点击/框选生成 mask 与报告。'
+            : 'Reader pack 150 cases: 50 B/M + 100 T-staging. Click or box to create a mask and report.'}
         </p>
         <div className="mt-2 flex flex-wrap gap-1">
-          {COHORTS.map((c) => (
+          {cohorts.map((c) => (
             <button
               key={c.id}
               type="button"
@@ -60,7 +65,9 @@ export function ReaderCaseSidebar({
           ))}
         </div>
         <div className="mt-2 text-[10px] text-gray-500">
-          {loading ? '加载中…' : `${cases.length} 例`}
+          {loading
+            ? (zh ? '加载中…' : 'Loading…')
+            : (zh ? `${cases.length} 例` : `${cases.length} cases`)}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
@@ -69,8 +76,8 @@ export function ReaderCaseSidebar({
           const tag =
             item.study_mode === 'benign_malignancy'
               ? item.reference_lesion_nature === 'malignant'
-                ? '恶性'
-                : '良性'
+                ? (zh ? '恶性' : 'Malignant')
+                : (zh ? '良性' : 'Benign')
               : item.reference_pt || 'T?';
           return (
             <button

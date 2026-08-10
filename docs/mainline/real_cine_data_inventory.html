@@ -139,10 +139,11 @@
   </p>
 
   <div class="callout warn">
-    <b>已清理（2026-07-27）</b>：全部 <span class="mono">loop_still</span> crop MP4（7527）已移出活跃数据，
-    隔离至 <span class="mono">dataset/_quarantine/loop_still/</span>，并写入
-    <span class="mono">data/metadata/path_migration_log.csv</span>。图像/mask 保留。registry 中
-    <span class="mono">loop_still_samples=0</span>。
+    <b>已清理（2026-07-27）</b>：全部 <span class="mono">loop_still</span> crop MP4（7527）已移出活跃数据；
+    曾隔离至 <span class="mono">dataset/_quarantine/loop_still/</span>，同日按用户要求
+    <b>永久删除</b>（约 517MB），登记于
+    <span class="mono">data/metadata/path_migration_log.csv</span>（<span class="mono">purge_delete</span>）。
+    图像/mask 保留。registry 中 <span class="mono">loop_still_samples=0</span>。
   </div>
 
   <div class="callout ok">

@@ -1,15 +1,15 @@
 {
-  "created_at": "2026-07-26T16:33:24Z",
-  "n_patients_supervised": 557,
-  "n_samples_supervised": 2731,
+  "created_at": "2026-07-26T17:17:55Z",
+  "n_patients_supervised": 824,
+  "n_samples_supervised": 4809,
   "by_legacy_split_patients": {
-    "test_external": 117,
+    "test_external": 384,
     "test_external_newzip": 132,
     "train": 280,
     "val": 28
   },
   "by_eval_role_patients": {
-    "test_external": 58,
+    "test_external": 325,
     "test_external_newzip": 132,
     "test_internal_holdout": 13,
     "test_prospective": 46,
@@ -17,7 +17,7 @@
     "val": 28
   },
   "by_eval_role_samples": {
-    "test_external": 245,
+    "test_external": 2323,
     "test_external_newzip": 486,
     "test_internal_holdout": 83,
     "test_prospective": 234,
@@ -26,9 +26,9 @@
   },
   "by_cohort_x_eval_role": {
     "external|test_external_newzip": 132,
+    "external|test_external": 325,
     "external|train": 37,
     "external|val": 4,
-    "external|test_external": 58,
     "internal|train": 84,
     "internal|test_internal_holdout": 13,
     "internal|val": 16,

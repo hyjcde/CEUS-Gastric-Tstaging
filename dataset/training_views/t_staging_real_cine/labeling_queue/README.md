@@ -1,9 +1,9 @@
 # 真视频无 T 标签 · 标注队列
 
-生成：2026-07-26T16:33:24Z
+生成：2026-07-26T17:17:55Z
 
-- 总病人：**627**（有 `video_mode=cached`，缺可用 T）
-- 按队列优先级：{'P2_external': 325, 'P1_prospective': 297, 'P0_internal': 5}
+- 总病人：**360**（有 `video_mode=cached`，缺可用 T）
+- 按队列优先级：{'P2_external': 58, 'P1_prospective': 297, 'P0_internal': 5}
 - 按队列/中心：`by_hospital/`
 - 总表：`patients.csv`
 

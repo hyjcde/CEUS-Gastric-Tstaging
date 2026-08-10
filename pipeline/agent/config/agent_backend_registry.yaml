@@ -11,7 +11,8 @@
 #   - Legacy 20260302 mask4ch run is deprecated (checkpoint often missing on disk).
 
 schema_version: "1.0.0"
-updated_at: "2026-06-10"
+updated_at: "2026-08-09"
+freeze_decision_doc: docs/mainline/asset_freeze_decision_20260809.md
 
 selection_policy:
   primary_metric_for_agent_final: test_prospective_auc
@@ -19,6 +20,8 @@ selection_policy:
   external_reporting: held_out_disjoint_399_patients
   promotion_governance: pipeline/experiments/mainlines/tstaging_4class/baseline_registry.yaml
   notes:
+    - "2026-08-09: Keep acc_boost2 20260603 as Agent final T; Phase 0 225852 is paper/audit-only, never mix tables"
+    - "2026-08-09: SAM3.1 full_components_5epoch_run2 frozen for interactive workbench; Agent segmentation_primary stays UNet until 20+20 acceptance"
     - "2026-06-10: Agent final T switches to acc_boost2 (screened L1); external ACC must report held-out 399"
     - "region-aware ext=0.7480 > mask4ch ext=0.7326, but prospective 0.6857 < frozen 0.7455 → not promoted"
     - "predroi+mask4ch ext=0.7438 but prospective 0.6683 → deploy reference only"
@@ -30,6 +33,14 @@ agent_bindings:
     tool: ClassificationTool
     role: agent_final_t_stage
     trust_label: trusted
+
+  classification_phase0_strict_generalization:
+    backend_id: tstage_acc_boost2_phase0_20260610
+    tool: ClassificationTool
+    role: paper_audit_strict_no_external_train
+    trust_label: caution
+    weight_in_fusion: 0.0
+    notes: "Do not replace classification_primary; report in a separate Phase 0 table only"
 
   classification_external_evidence:
     backend_id: tstage_regionaware_clinical22_20260426
@@ -49,6 +60,14 @@ agent_bindings:
     tool: SegmentationTool
     role: lesion_mask_and_roi
     trust_label: trusted
+
+  segmentation_interactive_sam31:
+    backend_id: sam31_gastric_lora_full_components_5epoch_run2
+    tool: Sam31InteractiveService
+    role: interactive_static_and_video_mask_candidate
+    trust_label: caution
+    weight_in_fusion: 0.0
+    notes: "Workbench 8768 online; promote to segmentation_primary only after Agent acceptance"
 
   segmentation_research:
     backend_id: lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512
@@ -126,6 +145,24 @@ backends:
     reporting_notes:
       - "Paper primary external = held-out 399 patient ACC, not full 485 cohort"
       - "Phase 0 honest retrain config: tstaging_4class_acc_boost2_multitask_screened_eval_phase0.yaml"
+
+  tstage_acc_boost2_phase0_20260610:
+    model_task: t_staging_4class
+    model_family: dual_branch
+    stage_id: acc_boost2_multitask_screened_eval_phase0
+    scoreboard_decision: KeepForReferenceStrictGeneralization
+    config_path: pipeline/configs/tstaging_4class_acc_boost2_multitask_screened_eval_phase0.yaml
+    experiment_dir: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_convnext/tstaging_4class_acc_boost2_multitask_screened_eval_phase0_20260610_225852
+    checkpoint_path: pipeline/experiments/tree/gastric_tstage_4class/classification/dual_convnext/tstaging_4class_acc_boost2_multitask_screened_eval_phase0_20260610_225852/best_model.pth
+    metrics:
+      test_external_patient_acc_doctor_roi: 0.464
+      test_external_patient_acc_predicted_roi: 0.471
+      overlap_clinical_patient_uids: 0
+    adapter: pipeline.agent.tools.classification_tool.ClassificationTool
+    adapter_status: ready_same_adapter_different_config
+    reporting_notes:
+      - "Strict no-external-train line; report in a separate Phase 0 table only"
+      - "Do not mix with legacy held-out 399 / full 485 ACC tables"
 
   tstage_mask4ch_clinical22_frozen_20260423:
     model_task: t_staging_4class
@@ -245,6 +282,30 @@ backends:
     adapter: pipeline.agent.tools.segmentation_tool.SegmentationTool
     adapter_status: ready
     notes: "ConvNeXt-Base fulldata UNet; primary Agent seg"
+
+  sam31_gastric_lora_full_components_5epoch_run2:
+    model_task: lesion_segmentation_interactive
+    model_family: sam3.1_image_detector_lora
+    checkpoint_path: external/sam3.1/sam3.1_multiplex.pt
+    lora_checkpoint_path: artifacts/sam31_training/sam31_gastric_lora_full_components_5epoch_run2/best_lora_weights.pt
+    service_url: http://127.0.0.1:8768
+    gate_decision: artifacts/sam31_training/sam31_gastric_lora_full_components_5epoch_run2/evaluation/static_video_promotion_decision.json
+    adapter: scripts.serve_sam31_static
+    adapter_status: service_ready_agent_batch_pending
+    trust_label: caution
+    metrics:
+      protocol: frozen_registry_static_sam31_oracle_box_v1
+      lora_modules: 383
+      adapter_keys: 766
+      external_patient_mean_dice: 0.8544
+      internal_holdout_patient_mean_dice: 0.8636
+      prospective_patient_mean_dice: 0.8816
+      empty_prediction_rate: 0.0
+      video_canary_accepted_frames: 94
+      video_canary_reanchors: 2
+    notes: >
+      Interactive workbench backend only until Agent batch acceptance.
+      Oracle-box static Dice is not text-only discovery and not T-stage gain.
 
   lesion_segmentation_dinov3_vitb16_last2blocks_candidate_20260512:
     model_task: lesion_segmentation

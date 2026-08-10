@@ -1,0 +1,1867 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-10T15:29:06.500175+00:00",
+  "generator": "scripts/precompute_reader_similar_cases.py",
+  "memory_version": "phase0_train_only_v1",
+  "query_mode": "clinical_block_only",
+  "note": "Clinical-profile similarity only; live agent retrieval remains primary.",
+  "top_k": 5,
+  "n_cases": 150,
+  "n_available": 25,
+  "cases": {
+    "BM-001": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-002": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-003": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-004": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-005": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-006": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-007": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-008": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-009": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-010": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-011": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-012": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-013": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-014": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-015": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-016": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-017": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-018": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-019": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-020": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-021": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-022": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-023": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-024": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-025": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-026": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-027": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-028": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-029": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-030": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-031": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-032": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-033": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-034": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-035": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-036": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-037": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-038": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-039": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-040": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-041": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-042": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-043": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-044": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-045": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 75.0,
+        "thickness_mm": 19.0,
+        "cea_positive": true,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1016573",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.9222
+        },
+        {
+          "rank": 2,
+          "patient_id": "192",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.915
+        },
+        {
+          "rank": 3,
+          "patient_id": "465",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.9143
+        },
+        {
+          "rank": 4,
+          "patient_id": "517",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.9096
+        },
+        {
+          "rank": 5,
+          "patient_id": "6",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.8814
+        }
+      ],
+      "stage_distribution": {
+        "T3": 4,
+        "T4+": 1
+      }
+    },
+    "BM-046": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-047": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-048": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-049": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "BM-050": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-001": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 16.0,
+        "thickness_mm": 7.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9419
+        },
+        {
+          "rank": 2,
+          "patient_id": "1035089",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9128
+        },
+        {
+          "rank": 3,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9075
+        },
+        {
+          "rank": 4,
+          "patient_id": "1022687",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8469
+        },
+        {
+          "rank": 5,
+          "patient_id": "1034696",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8403
+        }
+      ],
+      "stage_distribution": {
+        "T1": 5
+      }
+    },
+    "CASE-002": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 25.0,
+        "thickness_mm": 7.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8807
+        },
+        {
+          "rank": 2,
+          "patient_id": "1035089",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8615
+        },
+        {
+          "rank": 3,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8165
+        },
+        {
+          "rank": 4,
+          "patient_id": "608",
+          "T_stage": "T1",
+          "data_source": "int/2019",
+          "similarity": 0.8052
+        },
+        {
+          "rank": 5,
+          "patient_id": "1032723",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.7924
+        }
+      ],
+      "stage_distribution": {
+        "T1": 5
+      }
+    },
+    "CASE-003": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 14.0,
+        "thickness_mm": 9.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9429
+        },
+        {
+          "rank": 2,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9209
+        },
+        {
+          "rank": 3,
+          "patient_id": "1034696",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8636
+        },
+        {
+          "rank": 4,
+          "patient_id": "1035089",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8631
+        },
+        {
+          "rank": 5,
+          "patient_id": "1022687",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8594
+        }
+      ],
+      "stage_distribution": {
+        "T1": 5
+      }
+    },
+    "CASE-004": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 32.0,
+        "thickness_mm": 18.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "760",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8945
+        },
+        {
+          "rank": 2,
+          "patient_id": "216",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.8726
+        },
+        {
+          "rank": 3,
+          "patient_id": "823",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.82
+        },
+        {
+          "rank": 4,
+          "patient_id": "Z0073923",
+          "T_stage": "T1",
+          "data_source": "int/2024",
+          "similarity": 0.7968
+        },
+        {
+          "rank": 5,
+          "patient_id": "911939",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.7755
+        }
+      ],
+      "stage_distribution": {
+        "T2": 2,
+        "T3": 1,
+        "T1": 2
+      }
+    },
+    "CASE-005": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃体",
+        "size_mm": null,
+        "thickness_mm": 15.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "760",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.9062
+        },
+        {
+          "rank": 2,
+          "patient_id": "216",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.9053
+        },
+        {
+          "rank": 3,
+          "patient_id": "1419083",
+          "T_stage": "T1",
+          "data_source": "int/2024",
+          "similarity": 0.8828
+        },
+        {
+          "rank": 4,
+          "patient_id": "823",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8559
+        },
+        {
+          "rank": 5,
+          "patient_id": "674",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.8521
+        }
+      ],
+      "stage_distribution": {
+        "T2": 2,
+        "T3": 2,
+        "T1": 1
+      }
+    },
+    "CASE-006": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 23.0,
+        "thickness_mm": 10.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.887
+        },
+        {
+          "rank": 2,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8426
+        },
+        {
+          "rank": 3,
+          "patient_id": "1034696",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.795
+        },
+        {
+          "rank": 4,
+          "patient_id": "1035153",
+          "T_stage": "T2",
+          "data_source": "int/2018",
+          "similarity": 0.7916
+        },
+        {
+          "rank": 5,
+          "patient_id": "1032723",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.7883
+        }
+      ],
+      "stage_distribution": {
+        "T1": 4,
+        "T2": 1
+      }
+    },
+    "CASE-007": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 28.0,
+        "thickness_mm": 10.0,
+        "cea_positive": false,
+        "ca199_positive": true
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "135",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8059
+        },
+        {
+          "rank": 2,
+          "patient_id": "250",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7858
+        },
+        {
+          "rank": 3,
+          "patient_id": "1034696",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.7414
+        },
+        {
+          "rank": 4,
+          "patient_id": "881",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.6714
+        },
+        {
+          "rank": 5,
+          "patient_id": "1034432",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.6503
+        }
+      ],
+      "stage_distribution": {
+        "T2": 2,
+        "T3": 1,
+        "T1": 1,
+        "T4+": 1
+      }
+    },
+    "CASE-008": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-009": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 25.0,
+        "thickness_mm": 8.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8915
+        },
+        {
+          "rank": 2,
+          "patient_id": "1035089",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8396
+        },
+        {
+          "rank": 3,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8301
+        },
+        {
+          "rank": 4,
+          "patient_id": "1032723",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8025
+        },
+        {
+          "rank": 5,
+          "patient_id": "608",
+          "T_stage": "T1",
+          "data_source": "int/2019",
+          "similarity": 0.792
+        }
+      ],
+      "stage_distribution": {
+        "T1": 5
+      }
+    },
+    "CASE-010": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-011": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-012": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-013": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-014": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-015": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-016": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 44.0,
+        "thickness_mm": 17.0,
+        "cea_positive": false,
+        "ca199_positive": true
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1014080",
+          "T_stage": "T2",
+          "data_source": "int/2018",
+          "similarity": 0.9236
+        },
+        {
+          "rank": 2,
+          "patient_id": "1022513",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.8368
+        },
+        {
+          "rank": 3,
+          "patient_id": "232",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.7925
+        },
+        {
+          "rank": 4,
+          "patient_id": "592",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7452
+        },
+        {
+          "rank": 5,
+          "patient_id": "464",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.7296
+        }
+      ],
+      "stage_distribution": {
+        "T2": 1,
+        "T4+": 3,
+        "T3": 1
+      }
+    },
+    "CASE-017": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": null,
+        "thickness_mm": null,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1018545",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.6621
+        },
+        {
+          "rank": 2,
+          "patient_id": "803",
+          "T_stage": "T1",
+          "data_source": "int/2019",
+          "similarity": 0.6334
+        },
+        {
+          "rank": 3,
+          "patient_id": "160",
+          "T_stage": "T1",
+          "data_source": "int/2019",
+          "similarity": 0.6309
+        },
+        {
+          "rank": 4,
+          "patient_id": "614",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.6222
+        },
+        {
+          "rank": 5,
+          "patient_id": "745",
+          "T_stage": "T1",
+          "data_source": "int/2019",
+          "similarity": 0.5947
+        }
+      ],
+      "stage_distribution": {
+        "T1": 4,
+        "T3": 1
+      }
+    },
+    "CASE-018": {
+      "available": false,
+      "reason": "insufficient_clinical_fields"
+    },
+    "CASE-019": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 29.0,
+        "thickness_mm": 16.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "216",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.8957
+        },
+        {
+          "rank": 2,
+          "patient_id": "925421",
+          "T_stage": "T4+",
+          "data_source": "int/2020_2023",
+          "similarity": 0.873
+        },
+        {
+          "rank": 3,
+          "patient_id": "356",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8621
+        },
+        {
+          "rank": 4,
+          "patient_id": "1011934",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.8571
+        },
+        {
+          "rank": 5,
+          "patient_id": "911939",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.855
+        }
+      ],
+      "stage_distribution": {
+        "T3": 1,
+        "T4+": 2,
+        "T2": 1,
+        "T1": 1
+      }
+    },
+    "CASE-020": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 32.0,
+        "thickness_mm": 14.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "760",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8319
+        },
+        {
+          "rank": 2,
+          "patient_id": "1013761",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.7808
+        },
+        {
+          "rank": 3,
+          "patient_id": "1034432",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.7706
+        },
+        {
+          "rank": 4,
+          "patient_id": "624",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7336
+        },
+        {
+          "rank": 5,
+          "patient_id": "823",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.7296
+        }
+      ],
+      "stage_distribution": {
+        "T2": 2,
+        "T4+": 2,
+        "T3": 1
+      }
+    },
+    "CASE-021": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 22.0,
+        "thickness_mm": 8.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9185
+        },
+        {
+          "rank": 2,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8687
+        },
+        {
+          "rank": 3,
+          "patient_id": "1035089",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8651
+        },
+        {
+          "rank": 4,
+          "patient_id": "1032723",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8115
+        },
+        {
+          "rank": 5,
+          "patient_id": "1022687",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8107
+        }
+      ],
+      "stage_distribution": {
+        "T1": 5
+      }
+    },
+    "CASE-022": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "全胃/多部位",
+        "size_mm": null,
+        "thickness_mm": null,
+        "cea_positive": true,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "500",
+          "T_stage": "T1",
+          "data_source": "int/2019",
+          "similarity": 0.708
+        },
+        {
+          "rank": 2,
+          "patient_id": "252",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.6912
+        },
+        {
+          "rank": 3,
+          "patient_id": "407",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.6804
+        },
+        {
+          "rank": 4,
+          "patient_id": "1034449",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.6802
+        },
+        {
+          "rank": 5,
+          "patient_id": "1013869",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.6647
+        }
+      ],
+      "stage_distribution": {
+        "T1": 1,
+        "T3": 4
+      }
+    },
+    "CASE-023": {
+      "available": false,
+      "reason": "insufficient_clinical_fields"
+    },
+    "CASE-024": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-025": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-026": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-027": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-028": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-029": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-030": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-031": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃角/胃窦",
+        "size_mm": 28.0,
+        "thickness_mm": 12.0,
+        "cea_positive": false,
+        "ca199_positive": true
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1034432",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.8119
+        },
+        {
+          "rank": 2,
+          "patient_id": "135",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8046
+        },
+        {
+          "rank": 3,
+          "patient_id": "1022513",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.7844
+        },
+        {
+          "rank": 4,
+          "patient_id": "1014080",
+          "T_stage": "T2",
+          "data_source": "int/2018",
+          "similarity": 0.7804
+        },
+        {
+          "rank": 5,
+          "patient_id": "1034696",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.7455
+        }
+      ],
+      "stage_distribution": {
+        "T4+": 2,
+        "T2": 2,
+        "T1": 1
+      }
+    },
+    "CASE-032": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 58.0,
+        "thickness_mm": 15.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "517",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.9327
+        },
+        {
+          "rank": 2,
+          "patient_id": "758",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.9305
+        },
+        {
+          "rank": 3,
+          "patient_id": "Z0061176",
+          "T_stage": "T4+",
+          "data_source": "int/2024",
+          "similarity": 0.919
+        },
+        {
+          "rank": 4,
+          "patient_id": "686",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.917
+        },
+        {
+          "rank": 5,
+          "patient_id": "1012937",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.9081
+        }
+      ],
+      "stage_distribution": {
+        "T3": 3,
+        "T4+": 2
+      }
+    },
+    "CASE-033": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "胃体",
+        "size_mm": 22.0,
+        "thickness_mm": 9.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1030251",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9526
+        },
+        {
+          "rank": 2,
+          "patient_id": "1033006",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.9462
+        },
+        {
+          "rank": 3,
+          "patient_id": "1035089",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8976
+        },
+        {
+          "rank": 4,
+          "patient_id": "1034696",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.8846
+        },
+        {
+          "rank": 5,
+          "patient_id": "1022687",
+          "T_stage": "T1",
+          "data_source": "int/2018",
+          "similarity": 0.883
+        }
+      ],
+      "stage_distribution": {
+        "T1": 5
+      }
+    },
+    "CASE-034": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 51.0,
+        "thickness_mm": 21.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "Z0090357",
+          "T_stage": "T4+",
+          "data_source": "int/2024",
+          "similarity": 0.9616
+        },
+        {
+          "rank": 2,
+          "patient_id": "1033179",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.9489
+        },
+        {
+          "rank": 3,
+          "patient_id": "1394558",
+          "T_stage": "T4+",
+          "data_source": "int/2024",
+          "similarity": 0.9465
+        },
+        {
+          "rank": 4,
+          "patient_id": "1419083",
+          "T_stage": "T1",
+          "data_source": "int/2024",
+          "similarity": 0.9397
+        },
+        {
+          "rank": 5,
+          "patient_id": "1391229",
+          "T_stage": "T4+",
+          "data_source": "int/2024",
+          "similarity": 0.9374
+        }
+      ],
+      "stage_distribution": {
+        "T4+": 4,
+        "T1": 1
+      }
+    },
+    "CASE-035": {
+      "available": false,
+      "reason": "insufficient_clinical_fields"
+    },
+    "CASE-036": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 45.0,
+        "thickness_mm": 13.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1033179",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.9556
+        },
+        {
+          "rank": 2,
+          "patient_id": "1012937",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.9381
+        },
+        {
+          "rank": 3,
+          "patient_id": "1024508",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.9378
+        },
+        {
+          "rank": 4,
+          "patient_id": "1012705",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.9337
+        },
+        {
+          "rank": 5,
+          "patient_id": "1394558",
+          "T_stage": "T4+",
+          "data_source": "int/2024",
+          "similarity": 0.9312
+        }
+      ],
+      "stage_distribution": {
+        "T4+": 3,
+        "T3": 2
+      }
+    },
+    "CASE-037": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 25.0,
+        "thickness_mm": 19.0,
+        "cea_positive": false,
+        "ca199_positive": true
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "491",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7955
+        },
+        {
+          "rank": 2,
+          "patient_id": "1034432",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.7871
+        },
+        {
+          "rank": 3,
+          "patient_id": "1014701",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.7529
+        },
+        {
+          "rank": 4,
+          "patient_id": "1023576",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.7371
+        },
+        {
+          "rank": 5,
+          "patient_id": "215",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.73
+        }
+      ],
+      "stage_distribution": {
+        "T3": 4,
+        "T4+": 1
+      }
+    },
+    "CASE-038": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 36.0,
+        "thickness_mm": 13.0,
+        "cea_positive": false,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "216",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.9354
+        },
+        {
+          "rank": 2,
+          "patient_id": "356",
+          "T_stage": "T2",
+          "data_source": "int/2019",
+          "similarity": 0.8902
+        },
+        {
+          "rank": 3,
+          "patient_id": "925421",
+          "T_stage": "T4+",
+          "data_source": "int/2020_2023",
+          "similarity": 0.8596
+        },
+        {
+          "rank": 4,
+          "patient_id": "1391229",
+          "T_stage": "T4+",
+          "data_source": "int/2024",
+          "similarity": 0.8338
+        },
+        {
+          "rank": 5,
+          "patient_id": "1011934",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.8315
+        }
+      ],
+      "stage_distribution": {
+        "T3": 1,
+        "T2": 1,
+        "T4+": 3
+      }
+    },
+    "CASE-039": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 39.0,
+        "thickness_mm": 12.0,
+        "cea_positive": true,
+        "ca199_positive": true
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "1021749",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.9133
+        },
+        {
+          "rank": 2,
+          "patient_id": "1010655",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.8484
+        },
+        {
+          "rank": 3,
+          "patient_id": "323",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7441
+        },
+        {
+          "rank": 4,
+          "patient_id": "625",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7385
+        },
+        {
+          "rank": 5,
+          "patient_id": "516",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.734
+        }
+      ],
+      "stage_distribution": {
+        "T3": 4,
+        "T4+": 1
+      }
+    },
+    "CASE-040": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 34.0,
+        "thickness_mm": 12.0,
+        "cea_positive": true,
+        "ca199_positive": false
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "321",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.7227
+        },
+        {
+          "rank": 2,
+          "patient_id": "1034449",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.7078
+        },
+        {
+          "rank": 3,
+          "patient_id": "501",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.651
+        },
+        {
+          "rank": 4,
+          "patient_id": "325",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.6391
+        },
+        {
+          "rank": 5,
+          "patient_id": "602",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.6349
+        }
+      ],
+      "stage_distribution": {
+        "T3": 4,
+        "T4+": 1
+      }
+    },
+    "CASE-041": {
+      "available": true,
+      "basis": [
+        "clinical"
+      ],
+      "clinical_summary": {
+        "location": "贲门/胃底",
+        "size_mm": 63.0,
+        "thickness_mm": 20.0,
+        "cea_positive": true,
+        "ca199_positive": true
+      },
+      "similar_cases": [
+        {
+          "rank": 1,
+          "patient_id": "766",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.9285
+        },
+        {
+          "rank": 2,
+          "patient_id": "1010756",
+          "T_stage": "T4+",
+          "data_source": "int/2018",
+          "similarity": 0.9016
+        },
+        {
+          "rank": 3,
+          "patient_id": "367",
+          "T_stage": "T4+",
+          "data_source": "int/2019",
+          "similarity": 0.8915
+        },
+        {
+          "rank": 4,
+          "patient_id": "1021749",
+          "T_stage": "T3",
+          "data_source": "int/2018",
+          "similarity": 0.8868
+        },
+        {
+          "rank": 5,
+          "patient_id": "517",
+          "T_stage": "T3",
+          "data_source": "int/2019",
+          "similarity": 0.8493
+        }
+      ],
+      "stage_distribution": {
+        "T3": 3,
+        "T4+": 2
+      }
+    },
+    "CASE-042": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-043": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-044": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-045": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-046": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-047": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-048": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-049": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-050": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-051": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-052": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-053": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-054": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-055": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-056": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-057": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-058": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-059": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-060": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-061": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-062": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-063": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-064": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-065": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-066": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-067": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-068": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-069": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-070": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-071": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-072": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-073": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-074": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-075": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-076": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-077": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-078": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-079": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-080": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-081": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-082": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-083": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-084": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-085": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-086": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-087": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-088": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-089": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-090": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-091": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-092": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-093": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-094": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-095": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-096": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-097": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-098": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-099": {
+      "available": false,
+      "reason": "no_clinical_link"
+    },
+    "CASE-100": {
+      "available": false,
+      "reason": "no_clinical_link"
+    }
+  }
+}

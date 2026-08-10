@@ -52,12 +52,22 @@
     {
       "name": "round2_completed_rows_gt0",
       "ok": false,
-      "detail": "round2_completed_rows=0"
+      "detail": "export_status=0, research_valid_completed=0"
     },
     {
-      "name": "research_audit_events_gt0",
+      "name": "round2_completed_with_initial_judgment",
+      "ok": true,
+      "detail": "completed_with_initial=0, research_valid_completed=0"
+    },
+    {
+      "name": "research_completed_cases_gt0",
       "ok": false,
-      "detail": "event_count=0"
+      "detail": "summary_completed=0, audit_completed=0, events=0"
+    },
+    {
+      "name": "exclusions_file_exists",
+      "ok": true,
+      "detail": "/data/research/gastric/GastricTstaging/docs/reader_audit_exclusions_20260801.json"
     }
   ],
   "note": "Clinical AI-assisted uplift claims are blocked until expertise is registered and Round2 research events produce completed paired rows."

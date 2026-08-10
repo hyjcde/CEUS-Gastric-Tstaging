@@ -1,14 +1,17 @@
 source_id,path,kind,size_mb,status,notes,updated_at
-200,artifacts/raw_imports/incoming/200.zip,zip_import,59.8,registered,raw import; not training manifest,2026-05-29
-2024_crop_ui_unlabeled_lumen_for_labelme(1),artifacts/raw_imports/incoming/2024_crop_ui_unlabeled_lumen_for_labelme(1).zip,zip_import,256.7,registered,raw import; not training manifest,2026-05-29
-2024_crop_ui_unlabeled_lumen_for_labelme(2),artifacts/raw_imports/incoming/2024_crop_ui_unlabeled_lumen_for_labelme(2).zip,zip_import,313.3,registered,raw import; not training manifest,2026-05-29
-外省整理,artifacts/raw_imports/incoming/外省整理.zip,zip_import,54.6,registered,raw import; not training manifest,2026-05-29
-外部测试集炎症视频,artifacts/raw_imports/incoming/外部测试集炎症视频.zip,zip_import,8591.9,registered,raw import; not training manifest,2026-05-29
-外部测试集胃癌视频,artifacts/raw_imports/incoming/外部测试集胃癌视频.zip,zip_import,8666.9,registered,raw import; not training manifest,2026-05-29
-德化直接手术,artifacts/raw_imports/incoming/德化直接手术.zip,zip_import,9.0,registered,raw import; not training manifest,2026-05-29
-胃癌直接手术外部测试集(1),artifacts/raw_imports/incoming/胃癌直接手术外部测试集(1).zip,zip_import,9828.3,registered,raw import; not training manifest,2026-05-29
-外省整理,data/外省整理.zip,zip_import,54.6,registered,raw import; not training manifest,2026-05-29
-德化直接手术,data/德化直接手术.zip,zip_import,9.0,registered,raw import; not training manifest,2026-05-29
-clinical_external_test,dataset/tables/clinical_table_registry.csv,clinical_table,,current,rows=806,2026-05-29
-clinical_internal_prospective,dataset/tables/clinical_table_registry.csv,clinical_table,,current,rows=492,2026-05-29
-clinical_internal_training,dataset/tables/clinical_table_registry.csv,clinical_table,,current,rows=1395,2026-05-29
+200,artifacts/raw_imports/incoming/200.zip,zip_import,59.8,registered,raw import; not training manifest,2026-06-12
+2024_crop_ui_unlabeled_lumen_for_labelme(1),artifacts/raw_imports/incoming/2024_crop_ui_unlabeled_lumen_for_labelme(1).zip,zip_import,256.7,registered,raw import; not training manifest,2026-06-12
+2024_crop_ui_unlabeled_lumen_for_labelme(2),artifacts/raw_imports/incoming/2024_crop_ui_unlabeled_lumen_for_labelme(2).zip,zip_import,313.3,registered,raw import; not training manifest,2026-06-12
+协和直接手术视频,artifacts/raw_imports/incoming/协和直接手术视频.zip,zip_import,19424.3,registered,raw import; not training manifest,2026-06-12
+合格视频,artifacts/raw_imports/incoming/合格视频.zip,zip_import,5215.0,registered,raw import; not training manifest,2026-06-12
+外省整理,artifacts/raw_imports/incoming/外省整理.zip,zip_import,54.6,registered,raw import; not training manifest,2026-06-12
+外部测试集炎症视频,artifacts/raw_imports/incoming/外部测试集炎症视频.zip,zip_import,8591.9,registered,raw import; not training manifest,2026-06-12
+外部测试集胃癌视频,artifacts/raw_imports/incoming/外部测试集胃癌视频.zip,zip_import,8666.9,registered,raw import; not training manifest,2026-06-12
+德化直接手术,artifacts/raw_imports/incoming/德化直接手术.zip,zip_import,9.0,registered,raw import; not training manifest,2026-06-12
+胃炎外部测试集,artifacts/raw_imports/incoming/胃炎外部测试集.zip,zip_import,9750.3,registered,raw import; not training manifest,2026-06-12
+胃癌直接手术外部测试集(1),artifacts/raw_imports/incoming/胃癌直接手术外部测试集(1).zip,zip_import,9828.3,registered,raw import; not training manifest,2026-06-12
+外省整理,data/外省整理.zip,zip_import,54.6,registered,raw import; not training manifest,2026-06-12
+德化直接手术,data/德化直接手术.zip,zip_import,9.0,registered,raw import; not training manifest,2026-06-12
+clinical_external_test,dataset/tables/clinical_table_registry.csv,clinical_table,,current,rows=806,2026-06-12
+clinical_internal_prospective,dataset/tables/clinical_table_registry.csv,clinical_table,,current,rows=492,2026-06-12
+clinical_internal_training,dataset/tables/clinical_table_registry.csv,clinical_table,,current,rows=1395,2026-06-12

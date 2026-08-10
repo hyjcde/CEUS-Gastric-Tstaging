@@ -1,7 +1,7 @@
 {
   "schema_version": "autoresearch_results_summary_v1",
   "bundle_id": "autoresearch_results_20260810_human_ai_closure",
-  "created_at": "2026-08-10T05:48:25Z",
+  "created_at": "2026-08-10T06:54:28Z",
   "clinical_claims_allowed": false,
   "verdict": "Human-AI collaborative mainline scaffolding is aggregated. Round1 no-AI baseline and model/Agent foundations are reportable. Formal Round2 AI-assisted doctor uplift remains blocked (completed_rows=0, expertise_registered=0).",
   "model_foundation": {
@@ -233,6 +233,12 @@
         },
         "case_order_server_applied": true,
         "case_order_column": "presentation_index",
+        "research_enforcement": {
+          "canonical_versions_required": true,
+          "case_membership_required": true,
+          "initial_judgment_before_final_action": true,
+          "ui_hides_ai_before_initial_judgment": true
+        },
         "structured_evidence_fields": [
           "lesion_extent",
           "wall_invasion_depth",

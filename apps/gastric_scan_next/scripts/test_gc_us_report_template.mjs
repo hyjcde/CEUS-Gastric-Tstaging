@@ -54,4 +54,8 @@ assert.equal(state.doctor_actions[0].after_value, '固有肌层（T2）');
 
 const report = buildGcUsReport(state, 'uncertain');
 assert.equal(report.structured.doctor_actions.length, 1);
+const reportEn = buildGcUsReport(state, 'uncertain', 'en');
+assert.match(reportEn.prose, /\[Ultrasound findings\]/);
+assert.match(reportEn.prose, /ultrasound-assessed cTx/i);
+assert.equal(reportEn.prose.includes('超声所见'), false);
 console.log('gc_us_report_template provenance regression: 3/3 passed');

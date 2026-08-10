@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import { DatasetType, CohortYear, TreatmentType, parseCohortYear, PROJECT_ROOT } from '@/lib/config';
 import { getPatientDatasetPaths, resolvePatientAgentPaths } from '@/lib/agent-server';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 import { Patient } from '@/types';
 
 export const runtime = 'nodejs';
@@ -151,6 +152,10 @@ function writeTempFrameInputs(body: AnalyzeBody): { imagePath: string; annotatio
 }
 
 export async function POST(request: NextRequest) {
+  // Public reader edge forwards compute to the workstation (NEXT_AGENT_UPSTREAM).
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+
   let cleanup: (() => void) | null = null;
   try {
     const body = (await request.json()) as AnalyzeBody;

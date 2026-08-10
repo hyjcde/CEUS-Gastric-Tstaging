@@ -29,11 +29,26 @@ interface AnalyzeRequestBody {
   use_mask_override?: boolean;
   mask_override?: {
     mask_polygon?: number[][];
+    wall_polygon?: number[][];
     roi_bbox?: { x1: number; y1: number; x2: number; y2: number };
     image_width?: number;
     image_height?: number;
     source?: string;
   };
+  use_lumen_override?: boolean;
+  lumen_override?: {
+    lumen_bbox?: { x1: number; y1: number; x2: number; y2: number };
+    lumen_polygon?: number[][];
+    image_width?: number;
+    image_height?: number;
+    source?: string;
+    lumen_confidence?: number;
+    lumen_mask_type?: string;
+    detector_backend_id?: string;
+    sam_backend_id?: string;
+    sam_score?: number;
+  };
+  geometry_gate?: Record<string, unknown>;
   roi_mode?: 'predicted' | 'doctor' | 'auto';
   gc_us_report?: GcUsReportState;
 }
@@ -41,7 +56,13 @@ interface AnalyzeRequestBody {
 function buildPayload(body: AnalyzeRequestBody) {
   const {
     patient, dataset, cohortYear, treatmentType, sessionId, memory_enabled, memory_store,
-    use_mask_override, mask_override, roi_mode, gc_us_report,
+    use_mask_override,
+    mask_override,
+    use_lumen_override,
+    lumen_override,
+    geometry_gate,
+    roi_mode,
+    gc_us_report,
   } = body;
   const resolvedPaths = resolvePatientAgentPaths(patient, cohortYear, treatmentType, dataset);
   if (!resolvedPaths.image_path) {
@@ -68,13 +89,69 @@ function buildPayload(body: AnalyzeRequestBody) {
     memory_store: memory_store ?? process.env.AGENT_MEMORY_STORE,
     use_mask_override: Boolean(use_mask_override && mask_override),
     mask_override: use_mask_override ? mask_override : undefined,
+    use_lumen_override: Boolean(use_lumen_override && lumen_override),
+    lumen_override: use_lumen_override ? lumen_override : undefined,
+    geometry_gate: geometry_gate || undefined,
     roi_mode: roi_mode || 'predicted',
     gc_us_report: gc_us_report || undefined,
     ...resolvedPaths,
   };
 }
 
+function validPolygon(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length >= 3
+    && value.every((point) => (
+      Array.isArray(point)
+      && point.length >= 2
+      && Number.isFinite(Number(point[0]))
+      && Number.isFinite(Number(point[1]))
+    ));
+}
+
+function validBox(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const box = value as Record<string, unknown>;
+  const x1 = Number(box.x1);
+  const y1 = Number(box.y1);
+  const x2 = Number(box.x2);
+  const y2 = Number(box.y2);
+  return [x1, y1, x2, y2].every(Number.isFinite) && x2 > x1 && y2 > y1;
+}
+
+function geometryGateError(body: AnalyzeRequestBody): string | null {
+  const lesionReady = Boolean(body.use_mask_override && validPolygon(body.mask_override?.mask_polygon));
+  const lumenReady = Boolean(
+    body.use_lumen_override
+    && (
+      validPolygon(body.lumen_override?.lumen_polygon)
+      || validBox(body.lumen_override?.lumen_bbox)
+    ),
+  );
+  if (!lesionReady && !lumenReady) return 'Agent requires confirmed lesion and lumen geometry';
+  if (!lesionReady) return 'Agent requires a confirmed lesion segmentation polygon';
+  if (!lumenReady) return 'Agent requires a confirmed lumen polygon or bounding box';
+  return null;
+}
+
 export async function POST(request: NextRequest) {
+  let gateBody: AnalyzeRequestBody;
+  try {
+    gateBody = await request.clone().json() as AnalyzeRequestBody;
+  } catch {
+    return new Response(
+      JSON.stringify({ event: 'error', error: 'Invalid Agent JSON payload' }) + '\n',
+      { status: 400, headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' } },
+    );
+  }
+  const gateError = geometryGateError(gateBody);
+  if (gateError) {
+    const encoder = new TextEncoder();
+    return new Response(
+      encoder.encode(JSON.stringify({ event: 'error', error: gateError, code: 'geometry_gate' }) + '\n'),
+      { status: 422, headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' } },
+    );
+  }
   const forwarded = await proxyAgentRequest(request);
   if (forwarded) return forwarded;
 

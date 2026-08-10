@@ -42,6 +42,7 @@ function buildLocalChannelSvg(
   frameDataUrl?: string | null,
   frameWidth?: number,
   frameHeight?: number,
+  zh = true,
 ): string {
   if (typeof window === 'undefined') return '';
   const wall = geom.wall_pts || [];
@@ -108,12 +109,16 @@ function buildLocalChannelSvg(
   const wallLine = polyline(indices.map((index) => wall[index]).filter(Boolean));
   const lesionLine = polyline(indices.map((index) => lesionFace[index]).filter(Boolean));
   const sourceInfo = analysis && window.ContactGeom?.layerSourceInfo?.(analysis);
-  const sourceText = sourceInfo?.badge || (analysis?.imaginary ? '几何参考' : '回声层界');
+  const sourceBadge = sourceInfo?.badge || '';
+  const sourceText = sourceBadge || (analysis?.imaginary
+    ? (zh ? '几何参考' : 'Geometry ref')
+    : (zh ? '回声层界' : 'Echo boundaries'));
   const centerWall = wall[center];
   const centerLesion = lesionFace[center];
   const imageLayer = frameDataUrl && frameWidth && frameHeight
     ? `<image href="${frameDataUrl}" x="0" y="0" width="${svgNumber(frameWidth)}" height="${svgNumber(frameHeight)}" preserveAspectRatio="none" opacity=".78"/>`
     : '';
+  const channelLabel = zh ? '局部通道' : 'Local channel';
   return `<svg viewBox="${svgNumber(minX)} ${svgNumber(minY)} ${svgNumber(width)} ${svgNumber(height)}" width="100%" height="148" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="display:block;background:#020617;border:1px solid rgba(255,255,255,.12);border-radius:8px">
     ${imageLayer}
     <rect x="${svgNumber(minX)}" y="${svgNumber(minY)}" width="${svgNumber(width)}" height="${svgNumber(height)}" fill="#020617" opacity="${imageLayer ? '0.16' : '1'}"/>
@@ -125,7 +130,7 @@ function buildLocalChannelSvg(
     <circle cx="${svgNumber(centerWall[0])}" cy="${svgNumber(centerWall[1])}" r="3.2" fill="#fb923c" stroke="#fff" stroke-width="1"/>
     <circle cx="${svgNumber(centerLesion[0])}" cy="${svgNumber(centerLesion[1])}" r="3.2" fill="#22d3ee" stroke="#fff" stroke-width="1"/>
     <text x="${svgNumber(minX + 5)}" y="${svgNumber(minY + 11)}" fill="#94a3b8" font-size="9">${sourceText}</text>
-    <text x="${svgNumber(maxX - 5)}" y="${svgNumber(minY + 11)}" fill="#cbd5e1" font-size="9" text-anchor="end">局部通道</text>
+    <text x="${svgNumber(maxX - 5)}" y="${svgNumber(minY + 11)}" fill="#cbd5e1" font-size="9" text-anchor="end">${channelLabel}</text>
   </svg>`;
 }
 
@@ -151,11 +156,29 @@ export function WallFeatureAnalysisCard({
     if (Number.isFinite(wallOffsetPx)) setOffset(wallOffsetPx as number);
   }, [wallOffsetPx]);
 
-  const canRun = lesionPolygon.length >= 3 && !!frameSize?.width && !!frameSize?.height;
+  const canRun = lesionPolygon.length >= 3 && !!frameSize?.width && !!frameSize?.height && !!frameDataUrl;
+  // Reasonable entry: lesion + freeze frame + lumen/wall orientation (meeting: 病灶与胃腔相对准 → 分析才准).
+  const orientationReady = wallPolygon.length >= 3
+    || (Array.isArray(lumenPrefer)
+      && Number.isFinite(lumenPrefer[0])
+      && Number.isFinite(lumenPrefer[1]));
+  const autoReady = canRun && orientationReady;
 
-  const run = useCallback(async () => {
-    if (!canRun || !frameSize) {
+  const run = useCallback(async (force = false) => {
+    if (!frameSize || lesionPolygon.length < 3) {
       setError(zh ? '需要病灶轮廓（≥3 点）与帧尺寸' : 'Need lesion polygon and frame size');
+      return;
+    }
+    if (!frameDataUrl) {
+      setError(zh ? '需要当前帧像素：请先暂停/冻结画面后再重算组织层' : 'Need current-frame pixels: pause/freeze the frame, then re-run');
+      return;
+    }
+    if (!orientationReady && !force) {
+      setError(zh
+        ? '请先勾画胃腔（或胃壁）以定向突破区，再自动分析壁层'
+        : 'Draw lumen (or wall) first so breakthrough orientation is reliable');
+      setResult(null);
+      onResult?.(null);
       return;
     }
     setBusy(true);
@@ -166,7 +189,7 @@ export function WallFeatureAnalysisCard({
       const analyzed = await LayerBridge.analyzeLayersFromMask({
         maskPolygon: maskNorm,
         wallPts: wallPolygon.length >= 3 ? wallPolygon : undefined,
-        frameDataUrl: frameDataUrl || undefined,
+        frameDataUrl,
         videoW: frameSize.width,
         videoH: frameSize.height,
         wallOffsetPx: offset || undefined,
@@ -177,7 +200,13 @@ export function WallFeatureAnalysisCard({
       });
       setResult(analyzed);
       onResult?.(analyzed);
-      if (!analyzed.ok) setError(analyzed.message || (zh ? '分层失败' : 'Layer analysis failed'));
+      if (!analyzed.ok) {
+        setError(analyzed.message || (zh ? '分层失败' : 'Layer analysis failed'));
+      } else if (!orientationReady) {
+        setError(zh
+          ? '已分析，但缺少胃腔定向，结果置信偏低，请补画胃腔后重算'
+          : 'Analyzed without lumen orientation; confidence is low — redraw lumen and re-run');
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'analyze failed';
       setError(msg);
@@ -186,16 +215,16 @@ export function WallFeatureAnalysisCard({
     } finally {
       setBusy(false);
     }
-  }, [canRun, frameSize, lesionPolygon, wallPolygon, frameDataUrl, offset, pick, lumenPrefer, onResult, zh]);
+  }, [frameSize, lesionPolygon, wallPolygon, frameDataUrl, offset, pick, lumenPrefer, orientationReady, onResult, zh]);
 
-  // Auto-run when lesion contour changes (debounced); skip while dragging
+  // Auto-run only when lesion + freeze + lumen/wall orientation are ready; skip while dragging.
   useEffect(() => {
-    if (!canRun || paused) return;
+    if (!autoReady || paused) return;
     const t = window.setTimeout(() => {
-      void run();
+      void run(false);
     }, 320);
     return () => window.clearTimeout(t);
-  }, [canRun, paused, lesionPolygon, wallPolygon, frameDataUrl, offset, pick?.x, pick?.y, lumenPrefer?.[0], lumenPrefer?.[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoReady, paused, lesionPolygon, wallPolygon, frameDataUrl, offset, pick?.x, pick?.y, lumenPrefer?.[0], lumenPrefer?.[1]]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const penText = useMemo(() => {
     if (!result?.ok || !window.ContactGeom) return '—';
@@ -203,12 +232,12 @@ export function WallFeatureAnalysisCard({
   }, [result]);
 
   const stackHtml = useMemo(() => {
-    if (!result?.ok || !window.ContactGeom?.wallStackSvg) return '';
-    const fracs = result.analysis?.edgeFracs || result.plan?.edgeFracs || [];
-    if (!fracs.length) return '';
-    const occ = Number.isFinite(result.pen?.ratio)
-      ? Number(result.pen?.ratio)
-      : Number(result.analysis?.ratioHint || 0);
+    if (!result?.ok || !result.pixelBased || result.analysis?.imaginary || !window.ContactGeom?.wallStackSvg) return '';
+    const fracs = result.analysis?.pixelEdges || result.analysis?.edgeFracs || [];
+    if (fracs.length < 2) return '';
+    const occ = Number.isFinite(result.analysis?.ratioHint)
+      ? Number(result.analysis?.ratioHint)
+      : Number(result.pen?.ratio || 0);
     try {
       return window.ContactGeom.wallStackSvg(fracs, occ, { w: 220, h: 120 }) || '';
     } catch {
@@ -230,7 +259,9 @@ export function WallFeatureAnalysisCard({
       };
     }
     const analysis = result.analysis || null;
-    const edgeFracs = analysis?.edgeFracs || result.plan?.edgeFracs || [];
+    const edgeFracs = result.pixelBased && !analysis?.imaginary
+      ? (analysis?.pixelEdges || analysis?.edgeFracs || [])
+      : [];
     const center = Number.isInteger(result.pickIdx)
       ? Number(result.pickIdx)
       : Number(result.geom.deep_idx || 0);
@@ -242,6 +273,7 @@ export function WallFeatureAnalysisCard({
       frameDataUrl,
       result.videoW,
       result.videoH,
+      zh,
     );
     let profileSvg = '';
     let remainSvg = '';
@@ -292,8 +324,11 @@ export function WallFeatureAnalysisCard({
           <button
             type="button"
             disabled={!canRun || busy}
-            onClick={() => void run()}
+            onClick={() => void run(true)}
             className="inline-flex items-center gap-1 rounded border border-emerald-400/40 px-1.5 py-0.5 text-[10px] text-emerald-100 disabled:opacity-40"
+            title={zh
+              ? (orientationReady ? '按病灶+胃腔定向重算壁层' : '缺少胃腔定向时仍可强制重算（置信偏低）')
+              : (orientationReady ? 'Re-run with lesion+lumen orientation' : 'Force re-run without lumen (low confidence)')}
           >
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
             {zh ? '重算' : 'Re-run'}
@@ -303,8 +338,8 @@ export function WallFeatureAnalysisCard({
 
       <div className="mb-2 text-[10px] text-emerald-200/70">
         {zh
-          ? '先观察胃壁组织层次，再结合病灶范围和连续帧进行判断'
-          : 'Observe tissue layers first, then combine lesion extent and continuous frames'}
+          ? '合理进入：病灶轮廓 + 冻结帧 + 胃腔/胃壁定向后自动分析。层界只来自当前帧像素回声剖面；结果写入老板壁层模板，不作病理结论。'
+          : 'Reasonable entry: lesion + freeze frame + lumen/wall orientation. Layer interfaces from current-frame echo only; output feeds the boss wall-layer template, not pathology.'}
       </div>
 
       {showNotes && (
@@ -326,8 +361,16 @@ export function WallFeatureAnalysisCard({
       {!canRun && (
         <div className="rounded border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-100">
           {zh
-            ? '先 SAM / 编辑得到青, 病灶轮廓（可选橙, 胃壁），再自动计算。'
-            : 'Create cyan lesion contour first (optional orange wall).'}
+            ? '先得到病灶轮廓，并暂停/冻结当前帧以抓取像素，再观察组织层。'
+            : 'Create a lesion contour and pause/freeze the current frame to capture pixels before tissue-layer observation.'}
+        </div>
+      )}
+
+      {canRun && !orientationReady && (
+        <div className="mb-2 rounded border border-sky-400/30 bg-sky-500/10 px-2 py-1.5 text-[10px] text-sky-100">
+          {zh
+            ? '已有病灶与冻结帧。请勾画胃腔（含胃壁与肿块区）以定向突破通道；到位后将自动分析并写入模板报告。'
+            : 'Lesion and freeze frame ready. Draw lumen (including wall and mass) to orient the breakthrough channel; analysis will auto-run into the template report.'}
         </div>
       )}
 
@@ -343,31 +386,42 @@ export function WallFeatureAnalysisCard({
             className="rounded-lg border px-2 py-2"
             style={{ borderColor: `${result.layer?.tone || '#8b93a1'}66` }}
           >
-            <div className="text-[10px] text-slate-400">{zh ? '达层读数' : 'Layer read'}</div>
+            <div className="text-[10px] text-slate-400">{zh ? '达层读数（像素实测）' : 'Layer read (pixel-measured)'}</div>
             <div
               className="text-sm font-bold"
-              style={{ color: result.layer?.tone || '#e2e8f0' }}
+              style={{ color: result.pixelBased && result.layer ? (result.layer.tone || '#e2e8f0') : '#94a3b8' }}
             >
-              {result.inContact
-                ? `${result.layer?.label || '—'}, ${result.layer?.tHint || ''}`
-                : (zh ? '未形成稳定接触, 不输出层次读数' : 'No stable contact, no layer readout')}
+              {!result.inContact
+                ? (zh ? '未形成稳定接触，不输出层次读数' : 'No stable contact, no layer readout')
+                : result.pixelBased && result.layer
+                  ? `${result.layer.label || '—'}, ${result.layer.tHint || ''}`
+                  : (zh ? '像素层界未确认，不输出层次读数' : 'Pixel interfaces not confirmed; no layer readout')}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] text-slate-500">
               <span>{zh ? '证据模式' : 'Evidence mode'}:</span>
               <span className="text-slate-300">
-                {result.source?.badge
-                  || (result.analysis?.imaginary
-                    ? (zh ? '几何参考' : 'Geometric reference')
-                    : result.analysis
-                      ? (zh ? '当前帧回声剖面' : 'Current-frame echo profile')
-                      : (zh ? '几何参考' : 'Geometric reference'))}
+                {result.pixelBased
+                  ? (result.source?.badge || (zh ? '当前帧回声剖面' : 'Current-frame echo profile'))
+                  : (result.source?.badge || (zh ? '像素未确认' : 'Pixels not confirmed'))}
               </span>
-              {result.analysis?.imaginary ? (
-                <span className="rounded border border-amber-300/20 bg-amber-400/10 px-1 text-amber-200">
-                  {zh ? '推断层界' : 'Inferred interfaces'}
+              {result.pixelBased ? (
+                <span className="rounded border border-emerald-300/25 bg-emerald-400/10 px-1 text-emerald-200">
+                  {zh ? '像素层界' : 'Pixel interfaces'}
                 </span>
-              ) : null}
+              ) : (
+                <span className="rounded border border-amber-300/20 bg-amber-400/10 px-1 text-amber-200">
+                  {zh ? '不采用等分/几何假层' : 'No equal-split / geometric fake layers'}
+                </span>
+              )}
             </div>
+            {!result.pixelBased || !result.layer ? (
+              <div className="mt-1.5 text-[9px] leading-relaxed text-amber-100/85">
+                {result.message
+                  || (zh
+                    ? '当前取样通道未见稳定像素层界，故不给出 L/T 读数；可查看下方回声剖面后换点重算。'
+                    : 'No stable pixel interfaces on this channel, so no L/T readout; review the echo profile and pick another point.')}
+              </div>
+            ) : null}
           </div>
 
           {stackHtml ? (

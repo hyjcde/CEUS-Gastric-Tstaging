@@ -5,7 +5,7 @@
 ## 定义
 
 - **只要真视频**：`video_mode=cached`（`videos/` 目录）
-- **不要** `loop_still`（静图循环）
+- **不要** `loop_still`（静图循环）；历史静态循环媒体已删除
 - **对齐清楚**：
   - 样本级：`alignment/samples_real_cine.csv`
   - 病人级：`alignment/patients_real_cine.csv`
@@ -16,12 +16,12 @@
 
 | 集合 | 数量 |
 |------|-----:|
-| 真视频样本 | 6234 |
-| 有真视频的病人 | 1184 |
-| **已对齐可训练**（有 T） | **557 人 / 2731 样本** |
-| 真视频但无 T 标签 | 627 人 |
+| 真视频样本 | 2605 |
+| 有真视频的病人 | 596 |
+| **已对齐可训练**（有 T） | **297 人 / 1379 样本** |
+| 真视频但无 T 标签 | 299 人 |
 
-监督病人按桶：`{'external': 231, 'internal': 113, 'prospective': 213}`
+监督病人按桶：`{'external': 84, 'prospective': 213}`
 
 ## 目录
 
@@ -41,17 +41,3 @@ alignment/*.csv
 4. 视频路径列：`crop_video_path` 或视图内 `view_video`
 
 未标注的 627 名真视频病人不要当 T 分期监督；可另做标注队列。
-
-## 冻结拆分与标注队列
-
-复跑：`python3 scripts/freeze_real_cine_training_package.py`
-
-| 路径 | 用途 |
-|------|------|
-| `splits/by_eval_role/` | **推荐**汇报/训练角色（已纠正 prospective→test_prospective） |
-| `splits/by_legacy_split/` | 与 `patient_media_registry.split` 一致 |
-| `by_split/<eval_role>/` | 按角色的病人软链（557） |
-| `labeling_queue/` | 627 名真视频无 T |
-| `alignment/patients_with_eval_role.csv` | 监督病人 + eval_role |
-| `splits/leakage_report.json` | 泄漏检查（pass=True） |
-

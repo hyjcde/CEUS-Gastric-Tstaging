@@ -34,6 +34,7 @@
 3. **不搬大实验树**：`experiments/`、`pipeline/experiments/` 仅索引，不整体搬迁。
 4. **不 rename** `dataset/external/` 下医院目录名（与 `dataset/tables/center_name_registry.csv` 绑定）。
 5. **Git**：只提交治理文档、registry、小脚本；不批量提交影像与 GB 级产物。
+6. **论文聚合入口**：根目录 `paper/` 只聚合原稿、笔记、DOI 索引和已有文献摘要，不复制大体积全文。
 
 ## 验证（每阶段必跑）
 
@@ -49,19 +50,25 @@ python scripts/build_asset_manifest.py
 python scripts/build_dataset_registry.py
 python scripts/build_script_registry.py
 python scripts/build_experiments_registry.py
+python scripts/build_workspace_inventory.py
+python scripts/classify_git_status.py
+python scripts/build_paper_ablation_matrix.py
+python scripts/build_model_inventory.py
+python scripts/build_log_index.py
 ```
 
 结果写入 `data/metadata/verify_YYYYMMDD.json` 与 `root_check_YYYYMMDD.json`。全部 `pass` 后再进入下一阶段。
 
 ## 根目录守门
 
-仅允许：4 个入口 md、`apps/`…`scripts/` 共 12 个工作目录、`_compat/`、以及 `.env` / `.gitignore` / `.git` / `.vscode`。其它根目录项只报告不自动删除（`scripts/check_repo_root.py`）。
+仅允许：4 个入口 md、`apps/`…`scripts/` 共 12 个工作目录、根目录 `paper/` 论文聚合工作区、`_compat/`、以及 `.env` / `.gitignore` / `.git` / `.vscode`。其它根目录项只报告不自动删除（`scripts/check_repo_root.py`）。
 
 ## 新增资产检查清单
 
 | 新增 | 必须先做 |
 |------|----------|
 | 文档 | 判 Tier A/B/C；实验报告 → `pipeline/experiments/reports/<name>/` |
+| 论文材料 | 进入根目录 `paper/`；原稿和笔记保留 SSOT 链接 |
 | 数据 | 写入 `data/registry/` + `asset_manifest`，再进 `dataset/` |
 | 权重 | `artifacts/model_weights/` + 更新 `experiments/registry.csv` |
 | 实验 run | `experiments/registry.csv` + run 目录 README |

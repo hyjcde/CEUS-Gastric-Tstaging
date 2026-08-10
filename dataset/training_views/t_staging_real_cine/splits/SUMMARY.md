@@ -1,6 +1,6 @@
 # Real-cine supervised splits
 
-Generated: 2026-07-26T16:33:24Z
+Generated: 2026-07-26T17:17:55Z
 
 ## Use which table?
 
@@ -14,7 +14,7 @@ Generated: 2026-07-26T16:33:24Z
 
 | role | patients | samples |
 |------|--------:|--------:|
-| `test_external` | 58 | 245 |
+| `test_external` | 325 | 2323 |
 | `test_external_newzip` | 132 | 486 |
 | `test_internal_holdout` | 13 | 83 |
 | `test_prospective` | 46 | 234 |

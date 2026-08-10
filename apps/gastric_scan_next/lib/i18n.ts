@@ -1,3 +1,5 @@
+import { deepToTraditionalHK } from '@/lib/zh-convert';
+
 export type Language = 'en' | 'zh' | 'zh-HK';
 
 export function isChineseLocale(language: Language): boolean {
@@ -314,5 +316,29 @@ const zhHK = {
 export const dictionary: Record<Language, typeof en> = {
   en,
   zh: zh as unknown as typeof en,
+  // Keep hand-tuned zhHK as override layer; default zh-HK is auto-converted from Simplified.
   'zh-HK': zhHK as unknown as typeof en,
 };
+
+/** Resolve UI dictionary. zh-HK prefers OpenCC(s2hk) of Simplified, then merges explicit zhHK overrides. */
+export function resolveDictionary(language: Language): typeof en {
+  if (language !== 'zh-HK') {
+    return dictionary[language];
+  }
+  const auto = deepToTraditionalHK(zh as unknown as typeof en);
+  return deepMergeDict(auto, zhHK as unknown as typeof en);
+}
+
+function deepMergeDict<T>(base: T, override: T): T {
+  if (typeof base === 'string' && typeof override === 'string') {
+    return (override || base) as T;
+  }
+  if (Array.isArray(base) || Array.isArray(override) || typeof base !== 'object' || typeof override !== 'object' || !base || !override) {
+    return (override ?? base) as T;
+  }
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(override as Record<string, unknown>)) {
+    out[key] = deepMergeDict((base as Record<string, unknown>)[key], value);
+  }
+  return out as T;
+}

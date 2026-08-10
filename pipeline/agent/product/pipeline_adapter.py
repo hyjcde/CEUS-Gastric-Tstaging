@@ -25,6 +25,7 @@ from ..tools.clinical_vector import normalize_frontend_clinical
 
 # Re-use product helpers (artifact URLs, report builders, session I/O).
 from . import analyze_case as ac
+from .evidence_pack import build_unified_evidence_pack, persist_unified_evidence_pack
 
 
 def _step_obs(state: CasePipelineState, step_id: str) -> Dict[str, Any]:
@@ -77,6 +78,29 @@ def _pipeline_step_to_agent_step(record: StepRecord, order: int) -> Dict[str, An
         ),
         "reasoning": record.explanation,
         "visual_refs": visual_refs,
+    }
+
+
+def _frontend_trace_to_agent_step(trace: Dict[str, Any], order: int) -> Dict[str, Any]:
+    """Map doctor/model UI actions into the same replayable Agent step contract."""
+    step_id = str(trace.get("step_id") or trace.get("action") or "workflow_step")
+    action = str(trace.get("action") or step_id)
+    status = str(trace.get("status") or "completed")
+    source = str(trace.get("source") or "doctor")
+    return {
+        "order": order,
+        "step_id": f"frontend_{step_id}",
+        "title": action,
+        "intent": f"Replay frontend workflow action: {action}",
+        "decision": "call" if status not in {"error", "skipped"} else status,
+        "tool_name": source,
+        "status": status,
+        "inputs": _contract_value(trace.get("input") or {}),
+        "outputs": _contract_value(trace.get("output") or {}),
+        "reasoning": str(trace.get("error") or f"Recorded {source} action from the doctor workflow."),
+        "visual_refs": {},
+        "trace_id": trace.get("trace_id"),
+        "recorded_at": trace.get("recorded_at"),
     }
 
 
@@ -404,6 +428,25 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         poly = lumen_override.get("lumen_polygon")
         if isinstance(poly, list) and len(poly) >= 3:
             lumen_override_polygon = list(poly)
+            if override_lumen_bbox is None:
+                points = []
+                for point in lumen_override_polygon:
+                    if not isinstance(point, (list, tuple)) or len(point) < 2:
+                        continue
+                    try:
+                        x = float(point[0])
+                        y = float(point[1])
+                    except (TypeError, ValueError):
+                        continue
+                    if np.isfinite(x) and np.isfinite(y):
+                        points.append((x, y))
+                if len(points) >= 3:
+                    override_lumen_bbox = {
+                        "x1": int(round(min(point[0] for point in points))),
+                        "y1": int(round(min(point[1] for point in points))),
+                        "x2": int(round(max(point[0] for point in points))) + 1,
+                        "y2": int(round(max(point[1] for point in points))) + 1,
+                    }
         lumen_override_source = str(lumen_override.get("source") or "manual")
         lumen_override_meta = {
             "lumen_confidence": lumen_override.get("lumen_confidence"),
@@ -417,11 +460,25 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     if roi_mode not in ("predicted", "doctor", "auto"):
         roi_mode = "predicted"
 
+    assist_profile = str(payload.get("assist_profile") or "").strip().lower() or None
+    contour_fast = assist_profile in {
+        "contour_anchored_fast",
+        "assist_fast",
+        "fast",
+    }
+    # Contour-anchored Assist already has confirmed lesion+lumen; skip slow optional branches.
+    # Binary gate MUST stay on: benign cases need correct benign-vs-malignant triage,
+    # then benign_skip short-circuits T-staging downstream.
+    enable_dino = (os.getenv("AGENT_ENABLE_DINO", "1") == "1") and not contour_fast
+    enable_rag = (os.getenv("AGENT_ENABLE_RAG", "1") == "1") and not contour_fast
+    enable_binary = os.getenv("AGENT_TRIAGE_MODE", "conditional") != "off"
+    triage_mode = os.getenv("AGENT_TRIAGE_MODE", "conditional")
+
     options = PipelineOptions(
-        enable_binary=os.getenv("AGENT_TRIAGE_MODE", "conditional") != "off",
-        enable_rag=True,
-        enable_dino=os.getenv("AGENT_ENABLE_DINO", "1") == "1",
-        triage_mode=os.getenv("AGENT_TRIAGE_MODE", "conditional"),
+        enable_binary=enable_binary,
+        enable_rag=enable_rag,
+        enable_dino=enable_dino,
+        triage_mode=triage_mode,
         render_figures=True,
         emit_stream=ac._stream_enabled(),
         stream_callback=stream_cb,
@@ -435,11 +492,20 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         mask_path=str(override_path) if override_path else None,
         override_roi_bbox=dict(override_roi) if isinstance(override_roi, dict) else None,
         mask_override_source=override_source,
-        use_lumen_override=bool(payload.get("use_lumen_override") and override_lumen_bbox),
+        use_lumen_override=bool(
+            payload.get("use_lumen_override")
+            and (override_lumen_bbox or lumen_override_polygon)
+        ),
         override_lumen_bbox=dict(override_lumen_bbox) if isinstance(override_lumen_bbox, dict) else None,
         lumen_override_source=lumen_override_source,
         lumen_override_polygon=lumen_override_polygon,
         lumen_override_meta=lumen_override_meta,
+        contour_context=(
+            dict(payload.get("contour_context"))
+            if isinstance(payload.get("contour_context"), dict)
+            else None
+        ),
+        assist_profile=assist_profile,
     )
 
     state = run_case_pipeline(case_input, pipeline_out, options)
@@ -486,14 +552,24 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         prediction_artifacts.update(dino_feature_artifacts)
 
+    frontend_trace = payload.get("workflow_trace")
+    if not isinstance(frontend_trace, list):
+        frontend_trace = []
+    frontend_trace = [item for item in frontend_trace if isinstance(item, dict)][-160:]
+
     traces: List[Dict[str, Any]] = []
+    if frontend_trace:
+        traces.append({"tool": "doctor_workflow", "result": frontend_trace})
     for record in state.steps:
         if record.tool_name:
             traces.append({"tool": record.tool_name, "result": record.observation})
 
-    agent_steps: List[Dict[str, Any]] = []
+    agent_steps: List[Dict[str, Any]] = [
+        _frontend_trace_to_agent_step(item, idx)
+        for idx, item in enumerate(frontend_trace, start=1)
+    ]
     for idx, record in enumerate(state.steps, start=1):
-        step = _pipeline_step_to_agent_step(record, idx)
+        step = _pipeline_step_to_agent_step(record, len(agent_steps) + idx)
         agent_steps.append(step)
         if ac._stream_enabled():
             ac._emit_stream_event("agent_step", {"step": step})
@@ -646,6 +722,31 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     if ac._stream_enabled():
         ac._emit_stream_event("runtime_verification", {"verification": runtime_verification})
 
+    evidence_items = belief_state.get("evidence") or _build_evidence_items(state, artifact_info)
+    evidence_pack = build_unified_evidence_pack(
+        payload=payload,
+        state=state,
+        frame_plan=frame_plan,
+        agent_steps=agent_steps,
+        evidence_items=evidence_items,
+        prediction_artifacts=prediction_artifacts,
+        report=report,
+        report_text=report_text,
+        gc_us_report=payload.get("gc_us_report"),
+        segmentation=segmentation,
+        lumen_detection=lumen_detection,
+        wall_evidence=wall_evidence,
+        artifact_info=artifact_info,
+        runtime_verification=runtime_verification,
+    )
+    evidence_pack_refs = persist_unified_evidence_pack(
+        evidence_pack,
+        artifact_dir=artifact_info["dir"],
+        relative_dir=artifact_info["relative_dir"],
+        artifact_url=ac._artifact_url,
+    )
+    prediction_artifacts.update(evidence_pack_refs)
+
     result = {
         "schema_version": "agent_result_v2",
         "session_id": session.session_id,
@@ -686,13 +787,16 @@ def analyze_via_unified_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         "management_advice": report.get("management_advice", []),
         "report": report,
         "agent_steps": agent_steps,
+        "workflow_trace": frontend_trace,
         "prediction_artifacts": prediction_artifacts,
+        "evidence_pack": evidence_pack,
+        "evidence_pack_refs": evidence_pack_refs,
         "runtime_verification": runtime_verification,
         "traces": traces,
         "pipeline_state_path": str(pipeline_out / "pipeline_state.json"),
         "memory_context": state.memory_context or {},
         "memory_store_ref": memory_store_ref,
-        "evidence": belief_state.get("evidence") or _build_evidence_items(state, artifact_info),
+        "evidence": evidence_items,
         "belief_state": belief_state,
         "provenance": _build_provenance(payload, state, artifact_info),
     }

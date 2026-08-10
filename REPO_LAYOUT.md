@@ -12,7 +12,7 @@
 | **6. 平台** | Next.js / Electron 应用 | `apps/` | 是（不含 node_modules） |
 | **7. 模型** | 权重与 checkpoint 索引 | `artifacts/model_weights/`、`pipeline/experiments/tree/` | 否（registry 进 Git） |
 
-根目录只保留：**START_HERE、README、REPO_LAYOUT、MAINTENANCE** + **12 个工作目录** + **`_compat/`**（旧路径 symlink，非正式入口）。
+根目录只保留：**START_HERE、README、REPO_LAYOUT、MAINTENANCE** + **12 个工作目录** + **`paper/` 论文聚合工作区** + **`_compat/`**（旧路径 symlink，非正式入口）。
 
 打开仓库请读 [START_HERE.md](START_HERE.md)。
 
@@ -77,6 +77,7 @@
 | [docs/DOCUMENT_MAP.md](docs/DOCUMENT_MAP.md) | 全文档索引 |
 | [docs/mainline/](docs/mainline/) | 当前主线 |
 | [docs/paper/](docs/paper/) | 论文材料（原根 `paper/`） |
+| [paper/](paper/) | 原稿、笔记和重点文献的统一聚合入口 |
 | [archive/docs_legacy/docs_copy/](archive/docs_legacy/docs_copy/) | 原 `docs copy/` |
 
 ---

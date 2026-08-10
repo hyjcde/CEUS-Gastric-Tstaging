@@ -7,6 +7,7 @@ import sys
 import unittest
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -77,6 +78,19 @@ class TestDirectionGrowth(unittest.TestCase):
         feat = compute_direction_growth_features(lesion, lumen_bbox=None)
         self.assertTrue(feat["used_fallback"])
         self.assertEqual(feat["status"], "not_assessable")
+
+    def test_confirmed_lumen_mask_controls_direction_and_contact(self):
+        lesion = _outward_bump_mask()
+        lumen = np.zeros((160, 200), dtype=np.uint8)
+        cv2.ellipse(lumen, (42, 80), (40, 28), 0, 0, 360, 1, -1)
+        feat = compute_direction_growth_features(
+            lesion,
+            lumen_bbox={"x1": 5, "y1": 35, "x2": 70, "y2": 125},
+            lumen_mask=lumen,
+        )
+        self.assertEqual(feat["direction_source"], "lumen_mask_centroid")
+        self.assertIn("lumen_mask_geometry", feat["quality_flags"])
+        self.assertGreater(feat["contact_arc_ratio"], 0.0)
 
 
 class TestWallGate(unittest.TestCase):

@@ -37,8 +37,13 @@
 ## 3. 正式启动前命令
 
 ```bash
-# 1) 资历登记完成后重新校验分层
-python3 scripts/build_reader_round2_freeze_tables.py
+# 1) 资历登记：填写模板后导入（不要重跑会覆盖 freeze order 的建表命令）
+#    模板：data/registry/reader_expertise_registry_20260810.csv
+python3 scripts/import_reader_expertise_registry.py \
+  --input /path/to/filled_expertise.csv
+
+# 如需重建脚手架（会拒绝覆盖已有 order/expertise，除非 --force）：
+# python3 scripts/build_reader_round2_freeze_tables.py
 
 # 2) 门控（expertise 未齐 / Round2 未开始应 exit non-zero 或 status=blocked）
 python3 scripts/validate_reader_round2_gate.py
@@ -46,6 +51,10 @@ python3 scripts/validate_reader_round2_gate.py
 # 3) 研究环境必须由认证反向代理注入身份和签名
 export READER_AUTH_PROXY_SECRET='<server-side-secret>'
 # Browser URL must include: ?environment=research
+# 离线契约冒烟（不含临床数据）：
+python3 scripts/smoke_reader_round2_research_contract.py
+# 可选：对着本地 Next 做签名请求
+# ROUND2_SMOKE_BASE_URL=http://127.0.0.1:3000 python3 scripts/smoke_reader_round2_research_contract.py
 
 # 4) 导出 Round1 基线与配对骨架
 python3 scripts/export_reader_round2_paired_tables.py
@@ -66,7 +75,7 @@ python3 scripts/analyze_reader_round2_expertise_uplift.py
 1. 仅使用认证会话中的 `Doctor_XX`；禁止 URL 改 ID。
 2. 服务端按认证医生应用 `reader_round2_case_order_20260810.csv` 的 `presentation_index`，前端不能自行重排。
 3. AI 只提供推荐、证据与 `review_required` 报告草稿；医生必须可修改 / 拒绝 / 标记证据不足。
-4. 先记录医生初始判断，再提交最终判断；每例同时保存病灶范围、胃壁受侵深度、浆膜改变、生长方式、AI 建议、动作、修改原因和证据 ID。
+4. 研究模式下必须先记录医生初始判断；初始判断完成前 UI 不展示 AI 建议/结构化证据，服务端也会拒绝无初始判断的最终 `doctor_action`。每例同时保存病灶范围、胃壁受侵深度、浆膜改变、生长方式、AI 建议、动作、修改原因和证据 ID。
 5. 时间字段拆分：总时间、主动阅片、AI 等待、报告完成。
 6. QA / staging 事件不得混入 research 分析。
 

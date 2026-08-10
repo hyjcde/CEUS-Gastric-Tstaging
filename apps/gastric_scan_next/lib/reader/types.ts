@@ -96,6 +96,31 @@ export type ReaderDoctorAction = {
   reason?: string;
 };
 
+export type PrecomputedSimilarCase = {
+  rank?: number;
+  patient_id?: string;
+  T_stage?: string;
+  data_source?: string;
+  similarity?: number;
+};
+
+export type PrecomputedSimilarCases = {
+  available: boolean;
+  reason?: string;
+  basis?: string[];
+  clinical_summary?: {
+    location?: string | null;
+    size_mm?: number | null;
+    thickness_mm?: number | null;
+    cea_positive?: boolean;
+    ca199_positive?: boolean;
+  };
+  similar_cases?: PrecomputedSimilarCase[];
+  stage_distribution?: Record<string, number>;
+  memory_version?: string;
+  query_mode?: string;
+};
+
 export type SamAnalyzeResult = {
   ok?: boolean;
   sam_score?: number;

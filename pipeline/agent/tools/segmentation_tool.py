@@ -22,6 +22,9 @@ from ..core.repo_paths import PROJECT_ROOT, first_existing_path
 
 logger = logging.getLogger(__name__)
 
+# Process-level cache for batch acceptance / repeated LangGraph registry builds.
+_SEG_MODEL_CACHE: Dict[str, Any] = {}
+
 DEFAULT_SEG_MODEL = first_existing_path(
     PROJECT_ROOT / "pipeline" / "experiments" / "tree" / "segmentation_auxiliary" / "segmentation" / "segmentation_misc" / "segmentation_fulldata" / "checkpoints" / "best_model.pth",
     PROJECT_ROOT / "pipeline" / "experiments" / "segmentation_fulldata" / "best_model.pth",
@@ -135,12 +138,20 @@ class SegmentationTool(BaseTool):
         self._loaded_encoder: Optional[str] = None
 
     def _ensure_model(self):
-        if self._model is None:
-            try:
-                self._model, self._loaded_encoder = _load_seg_model(self._model_path, self._device)
-            except Exception as exc:
-                self._load_error = str(exc)
-                logger.warning("Segmentation model unavailable: %s", exc)
+        if self._model is not None:
+            return
+        cache_key = f"{Path(self._model_path).resolve()}::{self._device}"
+        cached = _SEG_MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            self._model, self._loaded_encoder = cached
+            return
+        try:
+            loaded = _load_seg_model(self._model_path, self._device)
+            self._model, self._loaded_encoder = loaded
+            _SEG_MODEL_CACHE[cache_key] = loaded
+        except Exception as exc:
+            self._load_error = str(exc)
+            logger.warning("Segmentation model unavailable: %s", exc)
 
     def _runtime_invocation(self, *, forward_pass: bool) -> Dict[str, Any]:
         return {
@@ -190,6 +201,9 @@ class SegmentationTool(BaseTool):
             return {
                 "available": True,
                 "mask_available": True,
+                "backend_id": "lesion_segmentation_unet_fulldata_convnext_base",
+                "trust_label": "trusted",
+                "checkpoint": str(self._model_path),
                 "roi_source": "predicted",
                 "roi_bbox": bbox,
                 "lesion_area_ratio": area_ratio,
@@ -205,6 +219,9 @@ class SegmentationTool(BaseTool):
         return {
             "available": True,
             "mask_available": False,
+            "backend_id": "lesion_segmentation_unet_fulldata_convnext_base",
+            "trust_label": "trusted",
+            "checkpoint": str(self._model_path),
             "roi_source": "center_crop",
             "roi_bbox": {"x1": cx - cw, "y1": cy - ch,
                          "x2": cx + cw, "y2": cy + ch},

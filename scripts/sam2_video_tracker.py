@@ -123,17 +123,18 @@ class Sam2VideoTracker:
     @staticmethod
     def _polygon(mask: np.ndarray) -> list[list[float]]:
         mask_u8 = (mask.astype(np.uint8) * 255)
-        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         if not contours:
             return []
-        contour = max(contours, key=cv2.contourArea)
-        perimeter = max(float(cv2.arcLength(contour, True)), 1.0)
-        approx = cv2.approxPolyDP(contour, max(0.8, perimeter * 0.002), True)
-        points = approx.reshape(-1, 2).tolist()
-        if len(points) > 256:
-            step = max(1, len(points) // 256)
-            points = points[::step][:256]
-        return [[float(x), float(y)] for x, y in points]
+        contour = max(contours, key=cv2.contourArea).reshape(-1, 2)
+        if len(contour) > 2048:
+            perimeter = max(float(cv2.arcLength(contour, True)), 1.0)
+            approx = cv2.approxPolyDP(contour.astype(np.float32), max(0.35, perimeter * 0.0004), True)
+            contour = approx.reshape(-1, 2)
+        if len(contour) > 4096:
+            step = max(1, len(contour) // 4096)
+            contour = contour[::step][:4096]
+        return [[float(x), float(y)] for x, y in contour]
 
     @staticmethod
     def _stats(mask: np.ndarray, previous: dict[str, Any] | None) -> dict[str, Any]:

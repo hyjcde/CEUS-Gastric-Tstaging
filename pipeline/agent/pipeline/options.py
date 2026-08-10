@@ -35,3 +35,7 @@ class PipelineOptions:
     lumen_override_source: str = "manual"
     lumen_override_polygon: Optional[List[Any]] = None
     lumen_override_meta: Optional[Dict[str, Any]] = None
+    # Contour-anchored diagnosis context from the reader UI (lesion+lumen ready).
+    contour_context: Optional[Dict[str, Any]] = None
+    # reader Assist fast path: contour_anchored_fast | full | None
+    assist_profile: Optional[str] = None

@@ -1,12 +1,15 @@
 "use client";
 
 import { SettingsProvider } from "@/contexts/SettingsContext";
+import { DoctorAccountProvider } from "@/contexts/DoctorAccountContext";
 import { Toaster } from "react-hot-toast";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SettingsProvider>
+      <DoctorAccountProvider>
       {children}
+      </DoctorAccountProvider>
       <Toaster
         position="top-right"
         toastOptions={{

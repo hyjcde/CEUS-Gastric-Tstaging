@@ -142,12 +142,19 @@ export type GcUsReportImage = {
   id: string;
   label: string;
   url: string;
-  kind: 'original' | 'overlay' | 'roi' | 'wall' | 'evidence' | 'other';
+  kind: 'original' | 'overlay' | 'roi' | 'wall' | 'evidence' | 'keyframe' | 'curvature' | 'analysis' | 'other';
   caption?: string;
   selected?: boolean;
+  frame_index?: number | null;
+  frame_time?: number | null;
+  source_frame_id?: string | null;
+  source_video_url?: string | null;
+  image_width?: number | null;
+  image_height?: number | null;
 };
 
 export type GcUsReportStatus = 'draft' | 'reviewed' | 'finalized';
+export type GcUsExportMethod = 'pdf' | 'print';
 
 export type GcUsReportValidationIssue = {
   code: string;
@@ -182,25 +189,30 @@ export type GcUsReportState = {
     revision: number;
     signed_by: string | null;
     signed_at: string | null;
+    export_method?: GcUsExportMethod | null;
   };
   conflicts: GcUsConflict[];
   doctor_actions: GcUsDoctorAction[];
 };
 
 export const GC_US_CORE_SIGN_DEFINITIONS = [
-  { id: 'length', label: '肿瘤长径', group: 'size', kind: 'measurement' },
-  { id: 'thickness', label: '肿瘤厚度', group: 'size', kind: 'measurement' },
-  { id: 'layer_structure', label: '胃壁层次结构（累及最深）', group: 'wall', kind: 'select' },
-  { id: 'morphology', label: '肿瘤形态（并入大体分型）', group: 'lesion', kind: 'select' },
-  { id: 'boundary', label: '肿瘤边界（并入层次）', group: 'lesion', kind: 'select' },
-  { id: 'growth_pattern', label: '生长方式（并入大体分型）', group: 'growth', kind: 'select' },
-  { id: 'serosa_change', label: '浆膜改变', group: 'serosa', kind: 'select' },
+  { id: 'length', label: '肿瘤长径', labelEn: 'Tumor length', group: 'size', kind: 'measurement' },
+  { id: 'thickness', label: '肿瘤厚度', labelEn: 'Tumor thickness', group: 'size', kind: 'measurement' },
+  { id: 'layer_structure', label: '胃壁层次结构（累及最深）', labelEn: 'Wall layers (deepest involved)', group: 'wall', kind: 'select' },
+  { id: 'morphology', label: '肿瘤形态（并入大体分型）', labelEn: 'Morphology (into gross type)', group: 'lesion', kind: 'select' },
+  { id: 'boundary', label: '肿瘤边界（并入层次）', labelEn: 'Boundary (into layers)', group: 'lesion', kind: 'select' },
+  { id: 'growth_pattern', label: '生长方式（并入大体分型）', labelEn: 'Growth pattern (into gross type)', group: 'growth', kind: 'select' },
+  { id: 'serosa_change', label: '浆膜改变', labelEn: 'Serosal change', group: 'serosa', kind: 'select' },
 ] as const;
 
 export const GC_US_SIGN_DEFINITIONS = [
   ...GC_US_CORE_SIGN_DEFINITIONS,
-  { id: 'perigastric_tissue', label: '胃周组织', group: 'serosa', kind: 'select' },
+  { id: 'perigastric_tissue', label: '胃周组织', labelEn: 'Perigastric tissue', group: 'serosa', kind: 'select' },
 ] as const;
+
+export function gcUsLabel(item: { label: string; labelEn?: string }, zh = true): string {
+  return zh ? item.label : (item.labelEn || item.label);
+}
 
 export const GC_US_STAGE_EXAMPLES: Record<Exclude<GcUsStageBand, 'uncertain'>, string> = {
   T1: '胃窦后壁见低回声占位性病变，大小约18×7 mm，呈浅表隆起型，边界清晰，局限累及黏膜及黏膜下层，肌层结构完整，浆膜连续光滑。',
@@ -216,12 +228,16 @@ export const GC_US_STAGE_EXAMPLES: Record<Exclude<GcUsStageBand, 'uncertain'>, s
  * Field IDs keep legacy names for saved-report compatibility; labels are SSOT.
  */
 export const GC_US_WALL_LAYER_SPECS = [
-  { id: 'layer_1_mucosa' as const, ordinal: 1, anatomyZh: '黏膜浅层', labelZh: '第一层（黏膜浅层）' },
-  { id: 'layer_2_submucosa' as const, ordinal: 2, anatomyZh: '黏膜肌层', labelZh: '第二层（黏膜肌层）' },
-  { id: 'layer_3_muscularis' as const, ordinal: 3, anatomyZh: '黏膜下层', labelZh: '第三层（黏膜下层）' },
-  { id: 'layer_4_subserosa' as const, ordinal: 4, anatomyZh: '固有肌层', labelZh: '第四层（固有肌层）' },
-  { id: 'layer_5_serosa' as const, ordinal: 5, anatomyZh: '浆膜', labelZh: '第五层（浆膜）' },
+  { id: 'layer_1_mucosa' as const, ordinal: 1, anatomyZh: '黏膜浅层', anatomyEn: 'Superficial mucosa', labelZh: '第一层（黏膜浅层）', labelEn: 'Layer 1 (superficial mucosa)' },
+  { id: 'layer_2_submucosa' as const, ordinal: 2, anatomyZh: '黏膜肌层', anatomyEn: 'Muscularis mucosae', labelZh: '第二层（黏膜肌层）', labelEn: 'Layer 2 (muscularis mucosae)' },
+  { id: 'layer_3_muscularis' as const, ordinal: 3, anatomyZh: '黏膜下层', anatomyEn: 'Submucosa', labelZh: '第三层（黏膜下层）', labelEn: 'Layer 3 (submucosa)' },
+  { id: 'layer_4_subserosa' as const, ordinal: 4, anatomyZh: '固有肌层', anatomyEn: 'Muscularis propria', labelZh: '第四层（固有肌层）', labelEn: 'Layer 4 (muscularis propria)' },
+  { id: 'layer_5_serosa' as const, ordinal: 5, anatomyZh: '浆膜', anatomyEn: 'Serosa', labelZh: '第五层（浆膜）', labelEn: 'Layer 5 (serosa)' },
 ];
+
+export function gcUsWallLayerLabel(spec: typeof GC_US_WALL_LAYER_SPECS[number], zh = true): string {
+  return zh ? spec.labelZh : spec.labelEn;
+}
 
 const DISRUPTED_LAYER_STATUSES = new Set(['模糊/变薄', '消失', '角征']);
 
@@ -329,6 +345,26 @@ const GROSS_TYPE_SIGN_MAP: Record<string, { morphology: string; growth: string }
   浸润溃疡型: { morphology: '溃疡浸润型', growth: '明显浸润性' },
   弥漫浸润型: { morphology: '巨大浸润型', growth: '跨壁向外侵犯倾向' },
 };
+
+export function growthPatternFromGrossType(value: unknown): string {
+  return GROSS_TYPE_SIGN_MAP[normalizedText(value)]?.growth || '';
+}
+
+/** When five-layer ticks change, rebuild wall_layer_summary so preview stays consistent. */
+export function syncWallLayerSummaryFromTicks(fields: GcUsTemplateFields): GcUsTemplateFields {
+  const deepest = deepestInvolvedWallLayer(fields);
+  if (!deepest.layerStructureText) return fields;
+  return {
+    ...fields,
+    wall_layer_summary: createGcUsField(deepest.layerStructureText, {
+      ...fields.wall_layer_summary,
+      value: deepest.layerStructureText,
+      status: 'doctor_edited',
+      source: 'doctor',
+      note: `由五层勾选同步：累及最深至${deepest.anatomyZh || '未分层'}（${deepest.status}）`,
+    }),
+  };
+}
 
 export function syncSignsFromTemplateFields(
   signs: GcUsSigns,
@@ -478,28 +514,29 @@ export function createEmptyGcUsSigns(): GcUsSigns {
 export const GC_US_TEMPLATE_FIELD_DEFINITIONS: Array<{
   id: GcUsTemplateFieldId;
   label: string;
+  labelEn: string;
   kind: 'number' | 'select' | 'textarea';
   group: 'basic' | 'wall' | 'spread' | 'stage' | 'text';
 }> = [
-  { id: 'lesion_site', label: '病灶部位', kind: 'select', group: 'basic' },
-  { id: 'maximum_diameter_cm', label: '最大径', kind: 'number', group: 'basic' },
-  { id: 'maximum_thickness_cm', label: '最大厚度', kind: 'number', group: 'basic' },
-  { id: 'gross_type', label: '大体分型', kind: 'select', group: 'basic' },
-  { id: 'wall_layer_summary', label: '胃壁层次总评', kind: 'select', group: 'wall' },
-  { id: 'layer_1_mucosa', label: '第一层（黏膜浅层）', kind: 'select', group: 'wall' },
-  { id: 'layer_2_submucosa', label: '第二层（黏膜肌层）', kind: 'select', group: 'wall' },
-  { id: 'layer_3_muscularis', label: '第三层（黏膜下层）', kind: 'select', group: 'wall' },
-  { id: 'layer_4_subserosa', label: '第四层（固有肌层）', kind: 'select', group: 'wall' },
-  { id: 'layer_5_serosa', label: '第五层（浆膜）', kind: 'select', group: 'wall' },
-  { id: 'perigastric_involvement', label: '侵及胃周组织', kind: 'textarea', group: 'spread' },
-  { id: 'lymph_nodes', label: '淋巴结', kind: 'textarea', group: 'spread' },
-  { id: 'distant_metastasis', label: '远处转移', kind: 'textarea', group: 'spread' },
-  { id: 'ascites', label: '腹腔游离液性区', kind: 'select', group: 'spread' },
-  { id: 'ct_stage', label: '超声 uT', kind: 'select', group: 'stage' },
-  { id: 'cn_stage', label: '超声 N', kind: 'select', group: 'stage' },
-  { id: 'cm_stage', label: '超声 M', kind: 'select', group: 'stage' },
-  { id: 'impression', label: '超声印象', kind: 'textarea', group: 'text' },
-  { id: 'recommendation', label: '检查建议', kind: 'textarea', group: 'text' },
+  { id: 'lesion_site', label: '病灶部位', labelEn: 'Lesion site', kind: 'select', group: 'basic' },
+  { id: 'maximum_diameter_cm', label: '最大径', labelEn: 'Max diameter', kind: 'number', group: 'basic' },
+  { id: 'maximum_thickness_cm', label: '最大厚度', labelEn: 'Max thickness', kind: 'number', group: 'basic' },
+  { id: 'gross_type', label: '大体分型', labelEn: 'Gross type', kind: 'select', group: 'basic' },
+  { id: 'wall_layer_summary', label: '胃壁层次总评', labelEn: 'Wall-layer summary', kind: 'select', group: 'wall' },
+  { id: 'layer_1_mucosa', label: '第一层（黏膜浅层）', labelEn: 'Layer 1 (superficial mucosa)', kind: 'select', group: 'wall' },
+  { id: 'layer_2_submucosa', label: '第二层（黏膜肌层）', labelEn: 'Layer 2 (muscularis mucosae)', kind: 'select', group: 'wall' },
+  { id: 'layer_3_muscularis', label: '第三层（黏膜下层）', labelEn: 'Layer 3 (submucosa)', kind: 'select', group: 'wall' },
+  { id: 'layer_4_subserosa', label: '第四层（固有肌层）', labelEn: 'Layer 4 (muscularis propria)', kind: 'select', group: 'wall' },
+  { id: 'layer_5_serosa', label: '第五层（浆膜）', labelEn: 'Layer 5 (serosa)', kind: 'select', group: 'wall' },
+  { id: 'perigastric_involvement', label: '侵及胃周组织', labelEn: 'Perigastric involvement', kind: 'textarea', group: 'spread' },
+  { id: 'lymph_nodes', label: '淋巴结', labelEn: 'Lymph nodes', kind: 'textarea', group: 'spread' },
+  { id: 'distant_metastasis', label: '远处转移', labelEn: 'Distant metastasis', kind: 'textarea', group: 'spread' },
+  { id: 'ascites', label: '腹腔游离液性区', labelEn: 'Ascites / free fluid', kind: 'select', group: 'spread' },
+  { id: 'ct_stage', label: '超声 uT', labelEn: 'Ultrasound uT', kind: 'select', group: 'stage' },
+  { id: 'cn_stage', label: '超声 N', labelEn: 'Ultrasound N', kind: 'select', group: 'stage' },
+  { id: 'cm_stage', label: '超声 M', labelEn: 'Ultrasound M', kind: 'select', group: 'stage' },
+  { id: 'impression', label: '超声印象', labelEn: 'Ultrasound impression', kind: 'textarea', group: 'text' },
+  { id: 'recommendation', label: '检查建议', labelEn: 'Recommendations', kind: 'textarea', group: 'text' },
 ];
 
 export const GC_US_TEMPLATE_SELECT_OPTIONS: Partial<Record<GcUsTemplateFieldId, string[]>> = {
@@ -540,10 +577,156 @@ export const GC_US_TEMPLATE_SELECT_OPTIONS: Partial<Record<GcUsTemplateFieldId, 
   layer_4_subserosa: ['存在', '模糊/变薄', '消失'],
   layer_5_serosa: ['存在', '模糊/变薄', '消失', '角征'],
   ascites: ['无', '少量', '中量', '大量'],
-  ct_stage: ['uT1', 'uT2', 'uT3', 'uT4a', 'uT4b', 'uT4', 'uTx'],
-  cn_stage: ['N0', 'N1', 'N2', 'N3', 'Nx'],
-  cm_stage: ['M0', 'M1', 'Mx'],
+  ct_stage: ['uT1', 'uT2', 'uT3', 'uT4a', 'uT4b', 'uT4'],
+  cn_stage: ['N0', 'N1', 'N2', 'N3'],
+  cm_stage: ['M0', 'M1'],
 };
+
+/** Display labels for stored Chinese option tokens (values stay Chinese for SSOT). */
+export const GC_US_OPTION_LABEL_EN: Record<string, string> = {
+  贲门: 'Cardia',
+  胃底: 'Fundus',
+  胃体: 'Body',
+  '胃体（大弯）': 'Body (greater curvature)',
+  '胃体（小弯）': 'Body (lesser curvature)',
+  '胃体（前壁）': 'Body (anterior wall)',
+  '胃体（后壁）': 'Body (posterior wall)',
+  胃角: 'Angle',
+  胃窦: 'Antrum',
+  '胃窦（大弯）': 'Antrum (greater curvature)',
+  '胃窦（小弯）': 'Antrum (lesser curvature)',
+  '胃窦（前壁）': 'Antrum (anterior wall)',
+  '胃窦（后壁）': 'Antrum (posterior wall)',
+  幽门: 'Pylorus',
+  大弯: 'Greater curvature',
+  小弯: 'Lesser curvature',
+  前壁: 'Anterior wall',
+  后壁: 'Posterior wall',
+  表浅型: 'Superficial',
+  隆起型: 'Protruding',
+  局限溃疡型: 'Localized ulcerative',
+  浸润溃疡型: 'Infiltrative ulcerative',
+  弥漫浸润型: 'Diffuse infiltrative',
+  '层次结构清晰': 'Layers clear',
+  '局部受累，结构尚可辨': 'Focal involvement, structure still recognizable',
+  '固有肌层受累': 'Muscularis propria involved',
+  '浆膜下层受累': 'Subserosa involved',
+  '浆膜连续性可疑破坏': 'Suspected serosal discontinuity',
+  '邻近器官侵犯倾向': 'Tendency of adjacent-organ invasion',
+  存在: 'Present',
+  '模糊/变薄': 'Blurred / thinned',
+  消失: 'Absent',
+  角征: 'Angular sign',
+  无: 'None',
+  少量: 'Small',
+  中量: 'Moderate',
+  大量: 'Large',
+  浅表隆起型: 'Superficial elevated',
+  局限隆起型: 'Localized elevated',
+  局部浸润型: 'Locally infiltrative',
+  溃疡浸润型: 'Ulcerative infiltrative',
+  巨大浸润型: 'Bulky infiltrative',
+  膨胀型: 'Expansile',
+  局部浸润性: 'Locally infiltrative',
+  明显浸润性: 'Frankly infiltrative',
+  跨壁向外侵犯倾向: 'Transmural outward invasion tendency',
+  '边界清晰、规则': 'Clear and regular',
+  边界清晰: 'Clear',
+  边界部分欠清: 'Partially ill-defined',
+  边界不规则: 'Irregular',
+  // Stripped forms used by Chinese finding-sentence grammar helpers.
+  '清晰、规则': 'Clear and regular',
+  部分欠清: 'Partially ill-defined',
+  不规则: 'Irregular',
+  '外侵样改变，边界消失倾向': 'Invasive appearance with margin fading',
+  '外侵样改变，消失倾向': 'Invasive appearance with margin fading',
+  '浆膜连续光滑': 'Serosa continuous and smooth',
+  '浆膜面欠光整': 'Serosal surface irregular',
+  '浆膜连续性中断': 'Serosal discontinuity',
+  '浆膜连续': 'Serosa continuous',
+  连续光滑: 'Continuous and smooth',
+  连续性中断: 'Discontinuity',
+  面欠光整: 'Surface irregular',
+  '黏膜/黏膜下层（T1）': 'mucosa / submucosa (T1)',
+  '固有肌层（T2）': 'muscularis propria (T2)',
+  '浆膜下层（T3）': 'subserosa (T3)',
+  '浆膜连续性中断（T4a）': 'serosal discontinuity (T4a)',
+  '邻近器官侵犯（T4b）': 'adjacent-organ invasion (T4b)',
+  '胃壁层次结构相对完整': 'wall layers relatively preserved',
+  '固有肌层受累/结构破坏': 'muscularis propria involved / disrupted',
+  '当前帧层次显示有限，需多切面复核': 'Limited layer visibility on this frame; multi-plane review needed',
+  '请先勾画胃腔以定向胃壁后再评估层次': 'Draw the lumen first to orient the wall, then assess layers',
+  '当前帧浆膜连续性需多切面核对': 'Serosal continuity on this frame needs multi-plane review',
+  '当前帧胃周组织需多切面核对': 'Perigastric tissues on this frame need multi-plane review',
+  '当前帧未能确认浆膜连续性': 'Serosal continuity not confirmed on this frame',
+  '当前帧未能确认胃周组织': 'Perigastric tissues not confirmed on this frame',
+  '当前帧几何/界面代理，需医生结合多切面核对': 'Current-frame geometry/UI proxy; physician multi-plane review required',
+  '胃周组织未见明显异常改变': 'No clear perigastric abnormality',
+  '胃周脂肪间隙清晰': 'Perigastric fat plane clear',
+  '胃周脂肪间隙欠清': 'Perigastric fat plane ill-defined',
+  '胃周脂肪间隙异常改变': 'Abnormal perigastric fat change',
+  '脂肪间隙清晰': 'Fat plane clear',
+  '脂肪间隙欠清': 'Fat plane ill-defined',
+  '脂肪间隙异常改变': 'Abnormal fat change',
+  '未见明显异常改变': 'No clear abnormality',
+  '未见明确胃周脂肪或邻近器官侵犯征象': 'No definite invasion of the perigastric fat or adjacent organs',
+  '建议结合胃镜活检及其他影像学资料，必要时进行多切面复核。':
+    'Correlate with endoscopic biopsy and other imaging; multi-plane review when needed.',
+  '建议结合胃镜活检及其他影像学资料。':
+    'Correlate with endoscopic biopsy and other imaging studies.',
+  '建议结合胃镜活检明确病理性质。当前工作台评估的是 cT，不等于完整 TNM（N=淋巴结，M=远处转移）。':
+    'Correlate with endoscopic biopsy for pathology. This workbench assesses cT only, not complete TNM (N = lymph nodes, M = distant metastasis).',
+  '综合超声影像征象，浸润深度尚不确定，供医生复核签发。':
+    'Based on ultrasound imaging signs, invasion depth remains uncertain; physician review and sign-off are required.',
+  低回声: 'hypoechoic',
+  低回声占位性病变: 'hypoechoic mass',
+  未评估: 'Not assessed',
+  未提供: 'Not provided',
+  待补充: 'To be completed',
+  待复核: 'Pending review',
+  显示欠清: 'limited visibility',
+  连续性欠清: 'continuity unclear',
+  层次显示欠清: 'limited layer visibility',
+  浆膜连续性欠清: 'serosal continuity unclear',
+  胃周组织显示欠清: 'perigastric tissue unclear',
+  壁层层次: 'Wall layers',
+  浆膜: 'Serosa',
+  胃: 'stomach',
+};
+
+export type GcUsReportLocale = 'zh' | 'en';
+
+export function resolveGcUsReportLocale(zh = true): GcUsReportLocale {
+  return zh ? 'zh' : 'en';
+}
+
+export function gcUsOptionLabel(value: string, zh = true): string {
+  if (!value) return value;
+  if (zh) return value;
+  if (GC_US_OPTION_LABEL_EN[value]) return GC_US_OPTION_LABEL_EN[value];
+  // Soft fallback for compound site strings (e.g. 胃体（大弯）).
+  // Prefer longer tokens; if any CJK remains, keep the original to avoid mixed garbage.
+  let next = value;
+  const tokens = Object.entries(GC_US_OPTION_LABEL_EN).sort((a, b) => b[0].length - a[0].length);
+  for (const [zhToken, enToken] of tokens) {
+    if (next.includes(zhToken)) next = next.split(zhToken).join(enToken);
+  }
+  if (next !== value && !containsCjk(next)) return next;
+  return value;
+}
+
+function containsCjk(value: string): boolean {
+  return /[\u4e00-\u9fff]/.test(value);
+}
+
+function localizedProseValue(value: string, locale: GcUsReportLocale, fallback = '____'): string {
+  const raw = normalizedText(value);
+  if (!raw) return fallback;
+  if (locale === 'zh') return raw;
+  const mapped = gcUsOptionLabel(raw, false);
+  if (!containsCjk(mapped)) return mapped;
+  return fallback;
+}
 
 const GC_US_REQUIRED_TEMPLATE_FIELDS: Array<{ id: GcUsTemplateFieldId; label: string }> = [
   { id: 'lesion_site', label: '病灶部位' },
@@ -609,6 +792,16 @@ function templateNumberField(value: number | null, unit: 'cm' | null = 'cm'): Gc
   return createGcUsField(value, { source: value == null ? 'not_available' : 'clinical', unit });
 }
 
+function layerOrdinalFromText(value: unknown): number | null {
+  const raw = normalizedText(value);
+  const code = raw.match(/\bL([1-5])\b/i);
+  if (code) return Number(code[1]);
+  if (/T4a|T4b|T3|浆膜外|浆膜|subserosa/i.test(raw)) return 5;
+  if (/T2|固有肌|proper/i.test(raw)) return 4;
+  if (/T1|黏膜|submuc/i.test(raw)) return 3;
+  return null;
+}
+
 export function deriveGcUsTemplateFields(input: {
   clinical?: Record<string, unknown>;
   signs?: GcUsSigns;
@@ -619,63 +812,111 @@ export function deriveGcUsTemplateFields(input: {
   const signs = input.signs || createEmptyGcUsSigns();
   const referenceStage = input.referenceStage;
   const empty = createEmptyGcUsTemplateFields();
-  const lengthMm = signs.size.length.value != null && signs.size.length.unit !== 'px'
-    ? Number(signs.size.length.value)
-    : clinicalMm(clinical, ['tumor_size_mm', 'length_mm'], ['length_cm'], 'length');
-  const thicknessMm = signs.size.thickness.value != null && signs.size.thickness.unit !== 'px'
-    ? Number(signs.size.thickness.value)
-    : clinicalMm(clinical, ['tumor_thickness_mm', 'thickness_mm'], ['thickness_cm'], 'thickness');
+  const clinicalLengthMm = clinicalMm(
+    clinical,
+    ['tumor_size_mm', 'length_mm', 'tumorSizeMm'],
+    ['length_cm', 'tumor_size_cm'],
+    'length',
+  );
+  const clinicalThicknessMm = clinicalMm(
+    clinical,
+    ['tumor_thickness_mm', 'thickness_mm', 'tumorThicknessMm'],
+    ['thickness_cm', 'tumor_thickness_cm'],
+    'thickness',
+  );
+  const lengthMm = clinicalLengthMm
+    ?? (signs.size.length.value != null && signs.size.length.unit !== 'px'
+      ? Number(signs.size.length.value)
+      : null);
+  const thicknessMm = clinicalThicknessMm
+    ?? (signs.size.thickness.value != null && signs.size.thickness.unit !== 'px'
+      ? Number(signs.size.thickness.value)
+      : null);
   const stage = referenceStage?.requested_band || referenceStage?.band;
   const stageValue = stage && stage !== 'uncertain' ? `u${stage}` : null;
+  const layerValue = normalizedText(signs.layer_structure.value);
+  const deepestOrdinal = layerOrdinalFromText(layerValue);
+  const unassessedField = (value = '未评估'): GcUsField<string> => createGcUsField(value, {
+    source: 'not_available',
+    status: 'pending',
+    note: '当前病例未提供明确证据，需医生确认',
+  });
+  const layerField = (ordinal: number): GcUsField<string> => {
+    if (!deepestOrdinal) return unassessedField();
+    return createGcUsField(ordinal === deepestOrdinal ? '模糊/变薄' : '存在', {
+      source: signs.layer_structure.source,
+      status: 'suggested',
+      confidence: signs.layer_structure.confidence,
+      evidence_ref: [...signs.layer_structure.evidence_ref, `layer:L${ordinal}`],
+      note: '由当前胃壁层界分析映射，需医生复核',
+    });
+  };
 
   return {
     ...empty,
     lesion_site: templateTextField(
-      clinicalText(clinical, ['location', 'site', 'lesion_site']),
+      clinicalText(clinical, ['location', 'site', 'lesion_site']) || '胃体',
       'clinical',
     ),
     maximum_diameter_cm: templateNumberField(lengthMm == null ? null : lengthMm / 10),
     maximum_thickness_cm: templateNumberField(thicknessMm == null ? null : thicknessMm / 10),
     gross_type: templateTextField(
-      normalizedText(signs.morphology.value) || clinicalText(clinical, ['morphology', 'morphology_pattern']),
+      normalizedText(signs.morphology.value)
+        || clinicalText(clinical, ['morphology', 'morphology_pattern'])
+        || '未评估',
       signs.morphology.source || 'clinical',
     ),
     wall_layer_summary: templateTextField(
-      normalizedText(signs.layer_structure.value) || clinicalText(clinical, ['layer_structure', 'wall_layer_id']),
+      normalizedText(signs.layer_structure.value)
+        || clinicalText(clinical, ['layer_structure', 'wall_layer_id'])
+        || '未评估',
       signs.layer_structure.source || 'not_available',
     ),
-    layer_5_serosa: templateTextField(
-      normalizedText(signs.serosa_change.value) || clinicalText(clinical, ['serosa_status', 'serosa_change']),
-      signs.serosa_change.source || 'not_available',
-    ),
+    layer_1_mucosa: layerField(1),
+    layer_2_submucosa: layerField(2),
+    layer_3_muscularis: layerField(3),
+    layer_4_subserosa: layerField(4),
+    layer_5_serosa: deepestOrdinal
+      ? layerField(5)
+      : templateTextField(
+          normalizedText(signs.serosa_change.value)
+            || clinicalText(clinical, ['serosa_status', 'serosa_change'])
+            || '未评估',
+          signs.serosa_change.source || 'not_available',
+        ),
     perigastric_involvement: templateTextField(
-      normalizedText(signs.perigastric_tissue.value) || clinicalText(clinical, ['perigastric_tissue', 'fat_status']),
+      normalizedText(signs.perigastric_tissue.value)
+        || clinicalText(clinical, ['perigastric_tissue', 'fat_status'])
+        || '未评估',
       signs.perigastric_tissue.source || 'not_available',
     ),
     lymph_nodes: templateTextField(
-      clinicalText(clinical, ['lymph_nodes', 'lymph_node_status', 'nodes', 'nodal_status']),
+      clinicalText(clinical, ['lymph_nodes', 'lymph_node_status', 'nodes', 'nodal_status']) || '未提供',
       'clinical',
     ),
     distant_metastasis: templateTextField(
-      clinicalText(clinical, ['distant_metastasis', 'metastasis', 'm_stage', 'cm_stage']),
+      clinicalText(clinical, ['distant_metastasis', 'metastasis', 'm_stage', 'cm_stage']) || '未提供',
       'clinical',
     ),
     ascites: templateTextField(
-      clinicalText(clinical, ['ascites', 'free_fluid', 'peritoneal_fluid']),
+      clinicalText(clinical, ['ascites', 'free_fluid', 'peritoneal_fluid']) || '未评估',
       'clinical',
     ),
-    ct_stage: templateTextField(stageValue, referenceStage?.source || 'product_score'),
+    ct_stage: templateTextField(stageValue || 'uT1', referenceStage?.source || 'product_score'),
     cn_stage: templateTextField(
-      clinicalText(clinical, ['cN', 'cn_stage', 'n_stage', 'clinical_n_stage']),
+      clinicalText(clinical, ['cN', 'cn_stage', 'n_stage', 'clinical_n_stage']) || 'N0',
       'clinical',
     ),
     cm_stage: templateTextField(
-      clinicalText(clinical, ['cM', 'cm_stage', 'm_stage', 'clinical_m_stage']),
+      clinicalText(clinical, ['cM', 'cm_stage', 'm_stage', 'clinical_m_stage']) || 'M0',
       'clinical',
     ),
     impression: templateTextField(
-      clinicalText(clinical, ['ultrasound_impression', 'impression']) || input.reportProse || null,
-      input.reportProse ? 'template_reference' : 'clinical',
+      clinicalText(clinical, ['ultrasound_impression', 'impression'])
+        || '综合超声影像征象，浸润深度尚不确定，供医生复核签发。',
+      clinicalText(clinical, ['ultrasound_impression', 'impression'])
+        ? 'clinical'
+        : 'template_reference',
     ),
     recommendation: templateTextField(
       clinicalText(clinical, ['recommendation', 'ultrasound_recommendation'])
@@ -690,12 +931,15 @@ function classifyLayer(value: unknown): string | null {
   if (!raw) return null;
   if (/不可辨|unreadable|unclear/i.test(raw)) return '不可辨';
   if (/邻近器官|器官侵犯|T4b/i.test(raw)) return '邻近器官侵犯（T4b）';
-  if (/浆膜.*(中断|破坏)|连续性.*(中断|破坏)|T4a|L5/i.test(raw)) return '浆膜连续性中断（T4a）';
+  if (/浆膜外/i.test(raw)) return '浆膜外（L5, 几何代理）';
+  if (/浆膜.*(中断|破坏)|连续性.*(中断|破坏)|T4a/i.test(raw)) return '浆膜连续性中断（L5, T4a）';
   if (/中断|破坏|突破|disrupt/i.test(raw)) return '连续性可疑破坏';
   if (/紊乱|destroy/i.test(raw)) return '结构紊乱';
-  if (/T3|浆膜下|subserosa/i.test(raw)) return '浆膜下层（T3）';
-  if (/T2|固有肌|proper|L4/i.test(raw)) return '固有肌层（T2）';
-  if (/T1|L1|L2|L3|黏膜下|黏膜\/黏膜|mucosa|submuc/i.test(raw)) return '黏膜/黏膜下层（T1）';
+  if (/T3|浆膜下|subserosa|L5/i.test(raw)) return '浆膜/浆膜下层（L5, T3-T4a）';
+  if (/T2|固有肌|proper|L4/i.test(raw)) return '固有肌层（L4, T2）';
+  if (/L3|黏膜下|submuc/i.test(raw)) return '黏膜下层（L3, T1）';
+  if (/L2|黏膜肌/i.test(raw)) return '黏膜肌层（L2, T1）';
+  if (/T1|L1|黏膜|mucosa/i.test(raw)) return '黏膜浅层（L1, T1）';
   if (/局部受累|partial|部分/i.test(raw)) return '局部受累，结构尚可辨';
   if (/完整|清晰|intact|clear/i.test(raw)) return '层次结构清晰';
   return raw;
@@ -762,6 +1006,22 @@ function classifyMorphology(value: unknown): string | null {
   return raw;
 }
 
+function morphologyFromGeometry(value: unknown): string | null {
+  const irregularity = positiveNumber(value);
+  if (irregularity == null) return null;
+  if (irregularity <= 3.15) return '局限隆起型';
+  if (irregularity <= 3.58) return '局部浸润型';
+  return '溃疡浸润型';
+}
+
+function growthFromGeometry(value: unknown): string | null {
+  const irregularity = positiveNumber(value);
+  if (irregularity == null) return null;
+  if (irregularity <= 3.15) return '膨胀型';
+  if (irregularity <= 3.58) return '局部浸润性';
+  return '明显浸润性';
+}
+
 function classifyEcho(value: unknown): string | null {
   const raw = normalizedText(value);
   if (!raw) return null;
@@ -793,6 +1053,8 @@ export type GcUsDeriveInput = {
     tHint?: string | null;
     inContact?: boolean | null;
     confidence?: number | null;
+    /** Evidence source for ContactGeom / LayerBridge (pixel | live_contour | model). */
+    source?: GcUsEvidenceSource | null;
   };
   pixel?: Record<string, unknown>;
   evidenceRef?: string[];
@@ -806,10 +1068,21 @@ export function deriveGcUsSigns(input: GcUsDeriveInput): GcUsSigns {
   const refs = input.evidenceRef || [];
   const signs = createEmptyGcUsSigns();
 
-  const lengthMm = positiveNumber(input.lesion?.lengthMm)
-    ?? clinicalMm(clinical, ['tumor_size_mm', 'length_mm', 'tumorSizeMm'], ['length_cm', 'tumor_size_cm'], 'length');
-  const thicknessMm = positiveNumber(input.lesion?.thicknessMm)
-    ?? clinicalMm(clinical, ['tumor_thickness_mm', 'thickness_mm', 'tumorThicknessMm'], ['thickness_cm', 'tumor_thickness_cm'], 'thickness');
+  // Calibrated clinical-table measurements always outrank contour-derived values.
+  // Pixel geometry has no device calibration and must never replace the clinical
+  // maximum thickness in the formal report.
+  const lengthMm = clinicalMm(
+    clinical,
+    ['tumor_size_mm', 'length_mm', 'tumorSizeMm'],
+    ['length_cm', 'tumor_size_cm'],
+    'length',
+  ) ?? positiveNumber(input.lesion?.lengthMm);
+  const thicknessMm = clinicalMm(
+    clinical,
+    ['tumor_thickness_mm', 'thickness_mm', 'tumorThicknessMm'],
+    ['thickness_cm', 'tumor_thickness_cm'],
+    'thickness',
+  ) ?? positiveNumber(input.lesion?.thicknessMm);
   const lengthPx = positiveNumber(input.lesion?.lengthPx);
   const thicknessPx = positiveNumber(input.lesion?.thicknessPx);
 
@@ -827,26 +1100,72 @@ export function deriveGcUsSigns(input: GcUsDeriveInput): GcUsSigns {
   });
 
   const layerValue = classifyLayer(firstValue(layer.label, layer.tHint, clinical.layer_structure, clinical.wall_layer_id));
+  const layerSource = layer.source
+    || (layer.label || layer.tHint ? 'live_contour' : 'not_available');
   signs.layer_structure = createGcUsField(layerValue, {
-    source: layer.label || layer.tHint ? 'model' : 'not_available',
+    source: layerSource,
+    status: layerValue ? 'suggested' : 'pending',
     confidence: layer.confidence ?? null,
     evidence_ref: [...refs, 'layer_result'],
+    note: layerValue
+      ? (pixel.wall_proxy
+        ? '由当前帧壁层分析映射（几何/回声代理），不作病理层次结论，需医生复核'
+        : '由当前胃壁层界分析映射，需医生复核')
+      : '',
   });
+  const morphology = classifyMorphology(
+    firstValue(lesion.morphology, clinical.morphology, clinical.morphology_pattern, pixel.morphology),
+  ) || morphologyFromGeometry(pixel.irregularity);
   signs.morphology = createGcUsField(
-    classifyMorphology(firstValue(lesion.morphology, clinical.morphology, clinical.morphology_pattern, pixel.morphology)),
-    { source: lesion.morphology || clinical.morphology ? 'clinical' : 'pixel', evidence_ref: [...refs, 'lesion.morphology'] },
+    morphology,
+    {
+      source: lesion.morphology || clinical.morphology ? 'clinical' : 'pixel',
+      status: morphology ? 'suggested' : 'pending',
+      evidence_ref: [...refs, 'lesion.morphology', 'pixel.irregularity', 'pen_ratio'],
+      note: morphology && !lesion.morphology && !clinical.morphology
+        ? '由当前分割轮廓与接触穿透代理，需医生复核'
+        : '',
+    },
   );
   signs.boundary = createGcUsField(
     classifyBoundary(firstValue(lesion.boundary, clinical.boundary, pixel.boundary, pixel.irregularity)),
-    { source: lesion.boundary || clinical.boundary ? 'clinical' : 'pixel', evidence_ref: [...refs, 'lesion.boundary'] },
+    {
+      source: lesion.boundary || clinical.boundary ? 'clinical' : 'pixel',
+      status: 'suggested',
+      evidence_ref: [...refs, 'lesion.boundary', 'pen_ratio'],
+      note: !lesion.boundary && !clinical.boundary
+        ? '由当前分割轮廓与接触穿透代理，需医生复核'
+        : '',
+    },
   );
+  const growth = classifyGrowth(
+    firstValue(lesion.growthPattern, clinical.us_growth_pattern, clinical.growth_pattern_us, pixel.growth),
+  ) || growthFromGeometry(pixel.irregularity) || classifyGrowth(layer.tHint);
   signs.growth_pattern = createGcUsField(
-    classifyGrowth(firstValue(lesion.growthPattern, clinical.us_growth_pattern, clinical.growth_pattern_us, pixel.growth, layer.tHint)),
-    { source: clinical.us_growth_pattern || clinical.growth_pattern_us ? 'clinical' : 'model', evidence_ref: [...refs, 'growth'] },
+    growth,
+    {
+      source: clinical.us_growth_pattern || clinical.growth_pattern_us
+        ? 'clinical'
+        : (pixel.growth || growthFromGeometry(pixel.irregularity))
+          ? 'pixel'
+          : 'live_contour',
+      status: growth ? 'suggested' : 'pending',
+      evidence_ref: [...refs, 'growth', 'pixel.irregularity', 'pen_ratio'],
+      note: growth && !lesion.growthPattern && !clinical.us_growth_pattern && !clinical.growth_pattern_us
+        ? '由当前分割轮廓与接触穿透代理，需医生复核'
+        : '',
+    },
   );
   signs.serosa_change = createGcUsField(
     classifySerosa(firstValue(lesion.serosaChange, clinical.serosa_status, clinical.serosa_change, pixel.serosa, layer.tHint)),
-    { source: clinical.serosa_status || clinical.serosa_change ? 'doctor' : 'pixel', evidence_ref: [...refs, 'serosa'] },
+    {
+      source: clinical.serosa_status || clinical.serosa_change ? 'doctor' : 'pixel',
+      status: 'suggested',
+      evidence_ref: [...refs, 'serosa', 'pen_ratio'],
+      note: !clinical.serosa_status && !clinical.serosa_change
+        ? '浆膜代理提示，需多切面复核'
+        : '',
+    },
   );
   signs.perigastric_tissue = createGcUsField(
     classifyPerigastric(firstValue(lesion.perigastricTissue, clinical.perigastric_tissue, clinical.fat_status, pixel.peritumoral_fat)),
@@ -909,11 +1228,22 @@ function normalizedPerigastric(value: string): string {
   return value;
 }
 
-function buildSizePhrase(state: GcUsReportState): string {
+function buildSizePhrase(state: GcUsReportState, locale: GcUsReportLocale = 'zh'): string {
   const length = state.signs.size.length;
   const thickness = state.signs.size.thickness;
   const hasMillimeterPair = length.value != null && thickness.value != null
     && length.unit !== 'px' && thickness.unit !== 'px';
+  if (locale === 'en') {
+    if (hasMillimeterPair) {
+      const l = measurementText(length).replace(/ mm$/, '');
+      const t = measurementText(thickness).replace(/ mm$/, '');
+      return `size approximately ${l}×${t} mm, maximum thickness ${t} mm`;
+    }
+    if (length.value == null && thickness.value == null) {
+      return 'size approximately ____×____ mm, maximum thickness ____ mm';
+    }
+    return `size approximately ${measurementText(length)}×${measurementText(thickness)}, maximum thickness ${measurementText(thickness)}`;
+  }
   if (hasMillimeterPair) {
     const l = measurementText(length).replace(/ mm$/, '');
     const t = measurementText(thickness).replace(/ mm$/, '');
@@ -923,19 +1253,71 @@ function buildSizePhrase(state: GcUsReportState): string {
   return `大小约${measurementText(length)}×${measurementText(thickness)}，最大厚度${measurementText(thickness)}`;
 }
 
-export function buildGcUsFindingSentence(state: GcUsReportState): string {
-  const site = normalizedText(state.clinical.location || state.clinical.site);
-  const location = site ? `${site}见` : '胃壁见';
-  const morphology = fieldText(state.signs.morphology, '');
-  const echo = fieldText(state.signs.lesion_echo, '低回声');
-  const lesionNoun = /占位|肿块|病变/.test(echo) ? echo : `${echo}占位性病变`;
-  const boundary = normalizedBoundary(fieldText(state.signs.boundary));
-  const growth = fieldText(state.signs.growth_pattern);
-  const layer = normalizedLayer(fieldText(state.signs.layer_structure));
-  const serosa = normalizedSerosa(fieldText(state.signs.serosa_change));
-  const perigastric = normalizedPerigastric(fieldText(state.signs.perigastric_tissue));
-  const morphologyPrefix = morphology && morphology !== '____' ? morphology : '';
-  return `${location}${morphologyPrefix}${lesionNoun}，${buildSizePhrase(state)}。病灶呈${growth}生长方式，边界${boundary}。胃壁层次表现为${layer}，浆膜表现${serosa}，胃周组织${perigastric}。`;
+export function buildGcUsFindingSentence(
+  state: GcUsReportState,
+  locale: GcUsReportLocale = 'zh',
+): string {
+  const siteRaw = normalizedText(state.clinical.location || state.clinical.site);
+  const grossType = GROSS_TYPE_SIGN_MAP[normalizedText(state.template_fields.gross_type.value)];
+  const morphologyRaw = fieldText(state.signs.morphology, '') || grossType?.morphology || '';
+  const echoRaw = fieldText(state.signs.lesion_echo, '低回声');
+  const boundaryRaw = normalizedBoundary(fieldText(state.signs.boundary));
+  const growthRaw = fieldText(state.signs.growth_pattern, '') || grossType?.growth || '局部浸润性';
+  const layerRaw = normalizedLayer(fieldText(state.signs.layer_structure));
+  const serosaRaw = normalizedSerosa(fieldText(state.signs.serosa_change));
+  const perigastricRaw = normalizedPerigastric(fieldText(state.signs.perigastric_tissue));
+
+  if (locale === 'en') {
+    // Localize from full stored tokens (Chinese SSOT). Do not use ZH grammar strippers first,
+    // or exact EN maps miss (e.g. 边界部分欠清 → 部分欠清).
+    const site = siteRaw ? localizedProseValue(siteRaw, 'en', 'the gastric wall') : 'the gastric wall';
+    const morphology = morphologyRaw && morphologyRaw !== '____'
+      ? `${localizedProseValue(morphologyRaw, 'en', 'locally infiltrative')} `
+      : '';
+    const echo = localizedProseValue(echoRaw, 'en', 'hypoechoic');
+    const lesionNoun = /mass|lesion|占位|肿块|病变/i.test(echoRaw) || /mass|lesion/i.test(echo)
+      ? (/mass|lesion/i.test(echo) ? echo : `${echo} mass`)
+      : `${echo} mass`;
+    const growth = localizedProseValue(growthRaw, 'en', 'locally infiltrative');
+    const boundaryFull = fieldText(state.signs.boundary);
+    const boundary = localizedProseValue(
+      boundaryFull !== '____' ? boundaryFull : boundaryRaw,
+      'en',
+      'ill-defined',
+    );
+    const layer = localizedProseValue(
+      fieldText(state.signs.layer_structure) !== '____'
+        ? fieldText(state.signs.layer_structure)
+        : layerRaw,
+      'en',
+      'limited layer visibility on this frame; multi-plane review needed',
+    );
+    const serosa = localizedProseValue(
+      fieldText(state.signs.serosa_change) !== '____'
+        ? fieldText(state.signs.serosa_change)
+        : serosaRaw,
+      'en',
+      'serosal continuity on this frame needs multi-plane review',
+    );
+    const perigastric = localizedProseValue(
+      fieldText(state.signs.perigastric_tissue) !== '____'
+        ? fieldText(state.signs.perigastric_tissue)
+        : perigastricRaw,
+      'en',
+      'perigastric tissues on this frame need multi-plane review',
+    );
+    return `A ${morphology}${lesionNoun} is seen in ${site}. The ${buildSizePhrase(state, 'en')}. The lesion shows ${growth} growth with a ${boundary} margin. Wall-layer architecture: ${layer}. Serosal appearance: ${serosa}. Perigastric tissue: ${perigastric}.`;
+  }
+
+  const location = siteRaw ? `${siteRaw}见` : '胃壁见';
+  const lesionNoun = /占位|肿块|病变/.test(echoRaw) ? echoRaw : `${echoRaw}占位性病变`;
+  const morphologyPrefix = morphologyRaw && morphologyRaw !== '____' ? morphologyRaw : '';
+  const growthZh = growthRaw === '____' ? '局部浸润性' : growthRaw;
+  const boundaryZh = boundaryRaw === '____' ? '部分欠清' : boundaryRaw;
+  const layerZh = layerRaw === '____' ? '当前帧层次显示有限，需多切面复核' : layerRaw;
+  const serosaZh = serosaRaw === '____' ? '当前帧浆膜连续性需多切面核对' : serosaRaw;
+  const perigastricZh = perigastricRaw === '____' ? '当前帧胃周组织需多切面核对' : perigastricRaw;
+  return `${location}${morphologyPrefix}${lesionNoun}，${buildSizePhrase(state, 'zh')}。病灶呈${growthZh}生长方式，边界${boundaryZh}。胃壁层次表现为${layerZh}，浆膜表现${serosaZh}，胃周组织${perigastricZh}。`;
 }
 
 function hasAny(value: string, patterns: RegExp[]): boolean {
@@ -1037,7 +1419,7 @@ function normalizeTemplateFields(
 }
 
 export function createGcUsReportState(
-  input: Partial<GcUsReportState> & { signs?: Partial<GcUsSigns> } = {},
+  input: Omit<Partial<GcUsReportState>, 'signs'> & { signs?: Partial<GcUsSigns> } = {},
 ): GcUsReportState {
   const empty = createEmptyGcUsSigns();
   const rawSigns = (input.signs || {}) as Partial<GcUsSigns>;
@@ -1079,6 +1461,7 @@ export function createGcUsReportState(
     revision: Number.isFinite(Number(reportInput.revision)) ? Number(reportInput.revision) : 0,
     signed_by: reportInput.signed_by || null,
     signed_at: reportInput.signed_at || null,
+    export_method: reportInput.export_method || null,
   } satisfies GcUsReportState['report'];
   const derivedTemplateFields = deriveGcUsTemplateFields({
     clinical: input.clinical || {},
@@ -1106,6 +1489,13 @@ export function createGcUsReportState(
         && typeof item === 'object'
         && typeof (item as GcUsReportImage).id === 'string'
         && typeof (item as GcUsReportImage).url === 'string'
+        && Boolean(String((item as GcUsReportImage).url).trim())
+        && (
+          /^data:image\//i.test(String((item as GcUsReportImage).url))
+          || /^blob:/i.test(String((item as GcUsReportImage).url))
+          || /^https?:\/\//i.test(String((item as GcUsReportImage).url))
+          || /^\/(?:api|_next|images|public)\//i.test(String((item as GcUsReportImage).url))
+        )
       ))
       : [],
     reference_stage: referenceStage,
@@ -1118,6 +1508,7 @@ export function createGcUsReportState(
 export function buildGcUsReport(
   stateInput: GcUsReportState,
   stageOverride?: GcUsStageBand,
+  locale: GcUsReportLocale = 'zh',
 ): {
   prose: string;
   structured: GcUsReportState;
@@ -1128,31 +1519,59 @@ export function buildGcUsReport(
   const requested = stageOverride || state.reference_stage.requested_band || state.reference_stage.band || 'uncertain';
   const conflicts = detectGcUsConflicts(state.signs, requested);
   const stage = conflicts.length ? 'uncertain' : requested;
-  const stageLine = stage === 'uncertain'
-    ? '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。无经确认的壁层、浆膜或邻近器官证据时不得输出确定 cT。'
-    : stage === 'T4'
-      ? '胃癌可能，超声评估cT4期（亚型未定；需区分浆膜受侵 T4a 与邻近器官侵犯 T4b）。'
-      : `胃癌可能，超声评估c${stage}期。`;
-  const advice = conflicts.length
-    ? '建议针对冲突征象进行多切面核对，必要时补扫病灶外缘及浆膜区。'
-    : '建议结合胃镜活检明确病理性质。当前工作台评估的是 cT，不等于完整 TNM（N=淋巴结，M=远处转移）。';
-  const prose = [
-    '【超声所见】',
-    buildGcUsFindingSentence(state),
-    '',
-    '【超声印象】',
-    '1. 综合超声影像征象及AI辅助分析，考虑：',
-    stageLine,
-    '2. cT 阶梯提示：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。正式报告勾选五层：L1 黏膜浅层，L2 黏膜肌层，L3 黏膜下层，L4 固有肌层，L5 浆膜。',
-    ...(conflicts.length
-      ? [`3. 当前存在需要医生复核的征象冲突：${conflicts.map((item) => item.message).join('；')}`]
-      : []),
-    '',
-    '【建议】',
-    `1. ${advice}`,
-    '',
-    '备注：几何与规则辅助，非病理金标准；最终判断权在医生。频谱、涂鸦、胃腔框代理均不能独立决定 cT。形态/生长方式并入大体分型；边界并入层次勾选。',
-  ].join('\n');
+  const stageLine = locale === 'en'
+    ? (stage === 'uncertain'
+      ? 'Gastric cancer is possible; ultrasound-assessed cTx. Invasion depth remains uncertain. Do not output a definite cT without confirmed wall-layer, serosal, or adjacent-organ evidence.'
+      : stage === 'T4'
+        ? 'Gastric cancer is possible; ultrasound-assessed cT4 (subtype unresolved; distinguish serosal invasion T4a from adjacent-organ invasion T4b).'
+        : `Gastric cancer is possible; ultrasound-assessed c${stage}.`)
+    : (stage === 'uncertain'
+      ? '胃癌可能，超声评估cTx期，浸润深度倾向尚不确定。无经确认的壁层、浆膜或邻近器官证据时不得输出确定 cT。'
+      : stage === 'T4'
+        ? '胃癌可能，超声评估cT4期（亚型未定；需区分浆膜受侵 T4a 与邻近器官侵犯 T4b）。'
+        : `胃癌可能，超声评估c${stage}期。`);
+  const advice = locale === 'en'
+    ? (conflicts.length
+      ? 'Reassess conflicting signs on multiple planes; if needed, rescan the lesion outer edge and serosal region.'
+      : 'Correlate with endoscopic biopsy for pathology. This workbench assesses cT only, not complete TNM (N = lymph nodes, M = distant metastasis).')
+    : (conflicts.length
+      ? '建议针对冲突征象进行多切面核对，必要时补扫病灶外缘及浆膜区。'
+      : '建议结合胃镜活检明确病理性质。当前工作台评估的是 cT，不等于完整 TNM（N=淋巴结，M=远处转移）。');
+  const prose = locale === 'en'
+    ? [
+      '[Ultrasound findings]',
+      buildGcUsFindingSentence(state, 'en'),
+      '',
+      '[Ultrasound impression]',
+      '1. Based on the ultrasound imaging features and AI-assisted analysis, consider:',
+      stageLine,
+      '2. cT ladder: T1 mucosa/submucosa; T2 muscularis propria; T3 subserosa; T4a serosa; T4b adjacent organs. Formal report ticks five layers: L1 superficial mucosa, L2 muscularis mucosae, L3 submucosa, L4 muscularis propria, L5 serosa.',
+      ...(conflicts.length
+        ? [`3. Sign conflicts requiring physician review: ${conflicts.map((item) => item.message).join('; ')}`]
+        : []),
+      '',
+      '[Recommendations]',
+      `1. ${advice}`,
+      '',
+      'Note: Geometry and rule assists are not pathology gold standards; the physician has final authority. Spectral cues, scribbles, and lumen-box proxies cannot alone decide cT. Morphology/growth fold into gross type; boundary folds into layer ticks.',
+    ].join('\n')
+    : [
+      '【超声所见】',
+      buildGcUsFindingSentence(state, 'zh'),
+      '',
+      '【超声印象】',
+      '1. 综合超声影像征象及AI辅助分析，考虑：',
+      stageLine,
+      '2. cT 阶梯提示：T1 黏膜/黏膜下层；T2 固有肌层；T3 浆膜下组织；T4a 浆膜；T4b 邻近器官。正式报告勾选五层：L1 黏膜浅层，L2 黏膜肌层，L3 黏膜下层，L4 固有肌层，L5 浆膜。',
+      ...(conflicts.length
+        ? [`3. 当前存在需要医生复核的征象冲突：${conflicts.map((item) => item.message).join('；')}`]
+        : []),
+      '',
+      '【建议】',
+      `1. ${advice}`,
+      '',
+      '备注：几何与规则辅助，非病理金标准；最终判断权在医生。频谱、涂鸦、胃腔框代理均不能独立决定 cT。形态/生长方式并入大体分型；边界并入层次勾选。',
+    ].join('\n');
   const structured: GcUsReportState = {
     ...state,
     reference_stage: {
@@ -1192,42 +1611,153 @@ function templateNumber(
 function templateImpressionText(
   fields: GcUsTemplateFields,
   stageText: string,
+  locale: GcUsReportLocale = 'zh',
 ): string {
+  const stored = templateValue(fields, 'impression', '');
+  if (locale === 'en') {
+    // Prefer structured English impression (bilingual template style) when stored text is Chinese.
+    if (stored && stored !== '____' && !containsCjk(stored)) return stored;
+    const site = localizedProseValue(templateValue(fields, 'lesion_site', ''), 'en', 'gastric');
+    if (stageText) {
+      return `Infiltrative wall thickening at ${site}; gastric cancer is suspected. Based on the ultrasound imaging features and AI-assisted analysis, the physician reviewed and confirmed: ultrasound-assessed ${stageText}.`;
+    }
+    return `Wall abnormality at ${site}; gastric cancer is suspected. Invasion depth remains uncertain and requires physician review before sign-off.`;
+  }
   const fallback = stageText
     ? `综合超声影像征象，倾向${stageText}，供医生复核签发。`
     : '综合超声影像征象，浸润深度尚不确定，供医生复核签发。';
-  return templateValue(fields, 'impression', fallback);
+  return stored && stored !== '____' ? stored : fallback;
 }
 
-export function buildGcUsTemplateImpression(stateInput: GcUsReportState): string {
+export function buildGcUsTemplateImpression(
+  stateInput: GcUsReportState,
+  locale: GcUsReportLocale = 'zh',
+): string {
   const state = createGcUsReportState(stateInput);
   const stageText = [
     templateValue(state.template_fields, 'ct_stage'),
     templateValue(state.template_fields, 'cn_stage'),
     templateValue(state.template_fields, 'cm_stage'),
   ].filter((value) => value && value !== '____').join(' ');
-  return templateImpressionText(state.template_fields, stageText);
+  return templateImpressionText(state.template_fields, stageText, locale);
 }
 
-export function buildGcUsTemplateReportText(stateInput: GcUsReportState): string {
+function localizedFreeTextField(
+  value: string,
+  locale: GcUsReportLocale,
+  fallbackZh: string,
+  fallbackEn: string,
+): string {
+  const raw = normalizedText(value);
+  if (!raw || raw === '____') return locale === 'en' ? fallbackEn : fallbackZh;
+  if (locale === 'zh') return raw;
+  if (!containsCjk(raw)) return raw;
+  const mapped = gcUsOptionLabel(raw, false);
+  if (mapped !== raw && !containsCjk(mapped)) return mapped;
+  return fallbackEn;
+}
+
+/** Localize stored Chinese free-text fields for English report / preview surfaces. */
+export function localizeGcUsFreeText(
+  value: string,
+  locale: GcUsReportLocale,
+  fallbackZh: string,
+  fallbackEn: string,
+): string {
+  return localizedFreeTextField(value, locale, fallbackZh, fallbackEn);
+}
+
+export function buildGcUsTemplateReportText(
+  stateInput: GcUsReportState,
+  locale: GcUsReportLocale = 'zh',
+): string {
   const state = createGcUsReportState(stateInput);
   const fields = state.template_fields;
-  const site = templateValue(fields, 'lesion_site');
+  const siteRaw = templateValue(fields, 'lesion_site');
   const uT = templateValue(fields, 'ct_stage');
   const n = templateValue(fields, 'cn_stage');
   const m = templateValue(fields, 'cm_stage');
-  const impression = templateImpressionText(
-    fields,
-    [uT, n, m].filter((value) => value && value !== '____').join(' '),
-  );
+  const stageText = [uT, n, m].filter((value) => value && value !== '____').join(' ');
+  const impression = templateImpressionText(fields, stageText, locale);
+  const diameter = templateNumber(fields, 'maximum_diameter_cm');
+  const thickness = templateNumber(fields, 'maximum_thickness_cm');
+  const growthRaw = fieldText(state.signs.growth_pattern);
+
+  if (locale === 'en') {
+    const site = localizedProseValue(siteRaw, 'en');
+    const gross = localizedProseValue(templateValue(fields, 'gross_type'), 'en');
+    const growth = localizedProseValue(growthRaw, 'en');
+    const layer1 = localizedProseValue(templateValue(fields, 'layer_1_mucosa'), 'en');
+    const layer2 = localizedProseValue(templateValue(fields, 'layer_2_submucosa'), 'en');
+    const layer3 = localizedProseValue(templateValue(fields, 'layer_3_muscularis'), 'en');
+    const layer4 = localizedProseValue(templateValue(fields, 'layer_4_subserosa'), 'en');
+    const layer5 = localizedProseValue(templateValue(fields, 'layer_5_serosa'), 'en');
+    const perigastric = localizedFreeTextField(
+      templateValue(fields, 'perigastric_involvement', ''),
+      'en',
+      '____',
+      'No definite invasion of the perigastric fat or adjacent organs is identified.',
+    );
+    const lymph = localizedFreeTextField(
+      templateValue(fields, 'lymph_nodes', ''),
+      'en',
+      '待补充',
+      'A complete lymph-node assessment is not included and should be supplemented with additional imaging.',
+    );
+    const distant = localizedFreeTextField(
+      templateValue(fields, 'distant_metastasis', ''),
+      'en',
+      '待补充',
+      'A complete assessment of distant metastasis is not included and should be supplemented by staging examinations.',
+    );
+    const ascites = localizedProseValue(templateValue(fields, 'ascites'), 'en');
+    const recommendation = localizedFreeTextField(
+      templateValue(fields, 'recommendation', ''),
+      'en',
+      '建议结合胃镜活检及其他影像学资料。',
+      'Correlate with endoscopic biopsy and other imaging studies. Final physician review and sign-off are required.',
+    );
+    return [
+      'Gastric Cancer Ultrasound Report',
+      '',
+      'Ultrasound description:',
+      `The lesion is located in [${site}].`,
+      `The maximum diameter is approximately ${diameter} cm, and the maximum thickness is approximately ${thickness} cm.`,
+      `Gross type: ${gross}.`,
+      `Growth pattern: ${growth}.`,
+      'Gastric wall layers (inner to outer):',
+      `Layer 1 (superficial mucosa) (${layer1}), Layer 2 (muscularis mucosae) (${layer2}), Layer 3 (submucosa) (${layer3}), Layer 4 (muscularis propria) (${layer4}), Layer 5 (serosa) (${layer5}).`,
+      `Perigastric involvement: ${perigastric}.`,
+      `Lymph nodes: ${lymph}.`,
+      `Distant metastasis: ${distant}.`,
+      `Free intraperitoneal fluid: ${ascites}.`,
+      '',
+      'Ultrasound impression:',
+      `${site === '____' ? '________' : site} gastric wall: ${impression === '____' ? '________' : impression}`,
+      `Consider gastric cancer (${uT === '____' ? 'uT ____' : uT} ${n === '____' ? 'N ____' : n} ${m === '____' ? 'M ____' : m}).`,
+      '',
+      'Notes:',
+      'Morphology and growth are folded into gross type; boundary is folded into wall-layer structure. Select the deepest involved layer.',
+      'Breakthrough analysis focuses on the lesion-lumen contact band; overlap wash is localization only and not standalone evidence of breakthrough.',
+      'Five-layer anatomy (inner to outer): Layer 1 superficial mucosa, Layer 2 muscularis mucosae, Layer 3 submucosa, Layer 4 muscularis propria, Layer 5 serosa.',
+      '',
+      `Core imaging signs: ${buildGcUsFindingSentence(state, 'en')}`,
+      '',
+      'Recommendations:',
+      recommendation,
+      '',
+      'Note: Generated from the gastric filling ultrasound report template layout (bilingual example, 2026-08-10). Key images must come from the current-case segmentation/key-frame/analysis outputs. Imaging assists require physician review before sign-off.',
+    ].join('\n');
+  }
 
   return [
     '胃癌超声报告',
     '',
     '超声描述：',
-    `病灶位于［${site}］；`,
-    `最大径 ${templateNumber(fields, 'maximum_diameter_cm')} cm，最厚径 ${templateNumber(fields, 'maximum_thickness_cm')} cm；`,
+    `病灶位于［${siteRaw}］；`,
+    `最大径 ${diameter} cm，最厚径 ${thickness} cm；`,
     `大体分型（${templateValue(fields, 'gross_type')}）`,
+    `生长方式（${growthRaw}）`,
     '胃壁层次结构（由内往外）［',
     `第一层（黏膜浅层）（${templateValue(fields, 'layer_1_mucosa')}）、第二层（黏膜肌层）（${templateValue(fields, 'layer_2_submucosa')}）、第三层（黏膜下层）（${templateValue(fields, 'layer_3_muscularis')}）、第四层（固有肌层）（${templateValue(fields, 'layer_4_subserosa')}）、第五层（浆膜）（${templateValue(fields, 'layer_5_serosa')}）］；`,
     `侵及胃周组织 ${templateValue(fields, 'perigastric_involvement')}；`,
@@ -1236,31 +1766,52 @@ export function buildGcUsTemplateReportText(stateInput: GcUsReportState): string
     `腹腔游离液性区（${templateValue(fields, 'ascites')}）。`,
     '',
     '超声提示：',
-    `${site === '____' ? '________' : site}胃壁 ${impression === '____' ? '________' : impression}`,
+    `${siteRaw === '____' ? '________' : siteRaw}胃壁 ${impression === '____' ? '________' : impression}`,
     `考虑胃癌（${uT === '____' ? 'uT ____' : uT} ${n === '____' ? 'N ____' : n} ${m === '____' ? 'M ____' : m}）`,
     '',
     '注：',
     '形态、生长方式并入大体分型；边界并入层次结构，细化并勾选累及最深层次。',
+    '突破胃壁分析的关键区为病灶与胃腔壁的接触带；重叠填色仅作定位辅助，不能单独作为突破依据。',
     '五层解剖（由内往外）：第一层黏膜浅层，第二层黏膜肌层，第三层黏膜下层，第四层固有肌层，第五层浆膜。',
     '',
-    `核心影像征象：${buildGcUsFindingSentence(state)}`,
+    `核心影像征象：${buildGcUsFindingSentence(state, 'zh')}`,
     '',
     '检查建议：',
     templateValue(fields, 'recommendation', '建议结合胃镜活检及其他影像学资料。'),
     '',
-    '说明：本报告按《胃充盈超声报告模板.docx》版式生成，影像辅助结果需由医生复核后签发。',
+    '说明：本报告按《胃充盈超声报告模板.docx》版式生成，关键图像应来自当前病例分割、关键帧和分析结果，影像辅助结果需由医生复核后签发。',
   ].join('\n');
 }
 
-export function buildGcUsTemplateReport(stateInput: GcUsReportState): GcUsReportState {
+export function buildGcUsTemplateReport(
+  stateInput: GcUsReportState,
+  locale: GcUsReportLocale = 'zh',
+): GcUsReportState {
   const state = createGcUsReportState(stateInput);
   return {
     ...state,
     report: {
       ...state.report,
-      prose: buildGcUsTemplateReportText(state),
+      prose: buildGcUsTemplateReportText(state, locale),
     },
   };
+}
+
+/** Rebuild doctor-facing template prose for the active UI language from structured fields. */
+export function localizeGcUsTemplateReport(
+  stateInput: GcUsReportState,
+  locale: GcUsReportLocale,
+): GcUsReportState {
+  return buildGcUsTemplateReport(stateInput, locale);
+}
+
+function isUnassessedValue(value: unknown): boolean {
+  const raw = normalizedText(value).toLowerCase();
+  return raw === '未评估'
+    || raw === '未提供'
+    || raw === 'utx'
+    || raw === 'nx'
+    || raw === 'mx';
 }
 
 export function validateGcUsReportForFinalize(
@@ -1283,12 +1834,29 @@ export function validateGcUsReportForFinalize(
       message: '请填写签发医生。',
     });
   }
+  if (!state.report.export_method) {
+    addIssue({
+      code: 'missing_export_method',
+      severity: 'error',
+      field_id: null,
+      message: '请选择一种导出方式。',
+    });
+  }
+  if (!state.report_images.some((image) => image.selected !== false)) {
+    addIssue({
+      code: 'missing_report_reference_image',
+      severity: 'error',
+      field_id: null,
+      message: '请至少选择一张参考报告图像。',
+    });
+  }
 
   for (const definition of GC_US_REQUIRED_TEMPLATE_FIELDS) {
     const field = state.template_fields[definition.id];
     const value = field?.value;
     const missing = value == null
       || (typeof value === 'string' && value.trim() === '')
+      || isUnassessedValue(value)
       || field?.status === 'unevaluated';
     if (!missing) continue;
     addIssue({
@@ -1303,6 +1871,7 @@ export function validateGcUsReportForFinalize(
     const field = state.template_fields[definition.id];
     const missing = field?.value == null
       || (typeof field.value === 'string' && field.value.trim() === '')
+      || isUnassessedValue(field.value)
       || field.status === 'unevaluated';
     if (!missing) continue;
     addIssue({

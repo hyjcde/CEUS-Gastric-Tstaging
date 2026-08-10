@@ -1,45 +1,25 @@
 {
-  "created_utc": "2026-05-24T06:24:28.557087+00:00",
+  "created_utc": "2026-05-24T07:35:27.975864+00:00",
   "exp_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301",
   "layout": "panel",
   "cam_focus": "roi_expand_px",
   "pack_mode": "slim",
-  "external_holdout_only": false,
+  "external_holdout_only": true,
   "splits": [
     {
-      "split": "test_external",
-      "input_csv": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/eval/test_external/test_predictions.csv",
-      "output_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_test_external_full",
-      "panel_png_count": 2361,
-      "gradcam_results_rows": 2430,
-      "packed_panel_count": 2430,
-      "correct": 1166,
-      "misclassified": 1264,
-      "by_true_class": {
-        "T3": 916,
-        "T4+": 832,
-        "T1": 471,
-        "T2": 211
-      },
-      "pack_mode": "slim",
-      "external_holdout_only": false,
-      "zip_path": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_test_sets_pack/gradcam_test_external_slim.zip",
-      "zip_size_mb": 4908.12
-    },
-    {
       "split": "test_prospective",
-      "input_csv": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/eval/test_prospective/test_predictions.csv",
+      "input_csv": "/data/research/gastric/GastricTstaging/pipeline/data/tstaging_4class_prospective_full/test_prospective_full_clinical.csv",
       "output_dir": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_test_prospective_full",
-      "panel_png_count": 253,
-      "gradcam_results_rows": 253,
-      "packed_panel_count": 253,
-      "correct": 112,
-      "misclassified": 141,
+      "panel_png_count": 2285,
+      "gradcam_results_rows": 2285,
+      "packed_panel_count": 2285,
+      "correct": 1326,
+      "misclassified": 959,
       "by_true_class": {
-        "T3": 100,
-        "T4+": 81,
-        "T1": 40,
-        "T2": 32
+        "T4+": 932,
+        "T3": 660,
+        "T1": 451,
+        "T2": 242
       },
       "pack_mode": "slim",
       "external_holdout_only": false,
@@ -48,26 +28,17 @@
     }
   ],
   "screening_html": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_screening.html",
-  "screening_cases": 2430,
+  "screening_cases": 2285,
   "screening_split_counts": {
-    "test_external": 2177,
-    "test_prospective": 253
+    "test_prospective": 2285
   },
   "split_screening_html": [
     {
-      "split": "test_external",
-      "html": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_test_external_full/gradcam_screening.html",
-      "cases": 2430,
-      "split_counts": {
-        "test_external": 2430
-      }
-    },
-    {
       "split": "test_prospective",
       "html": "/data/research/gastric/GastricTstaging/pipeline/experiments/tree/gastric_tstage_4class/classification/dual_mask4ch/tstaging_4class_dual_v2_mask4ch_clinical22_full_20260423_092301/gradcam_test_prospective_full/gradcam_screening.html",
-      "cases": 253,
+      "cases": 2285,
       "split_counts": {
-        "test_prospective": 253
+        "test_prospective": 2285
       }
     }
   ],

@@ -12,7 +12,7 @@ import {
   type GcUsTscoreResult,
 } from '@/lib/gc-us-tscore';
 import { computeDirectionGrowthFromPolygons } from '@/lib/gc-us-sign-geometry';
-import { GcUsEvidencePanel } from '@/components/GcUsEvidencePanel';
+import { GcUsEvidencePanel, mergeFreshEvidence } from '@/components/GcUsEvidencePanel';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 
 export type ImagingAssistState = {
@@ -29,6 +29,7 @@ type Props = {
   assist: ImagingAssistState | null;
   zh?: boolean;
   signAnalysis?: AgentToolResult | null;
+  initialState?: GcUsReportState | null;
   onApplyCtStage?: (ct: string) => void;
   onEvidenceStateChange?: (state: GcUsReportState) => void;
 };
@@ -41,14 +42,17 @@ export function GcUsImagingReportCard({
   assist,
   zh = true,
   signAnalysis = null,
+  initialState = null,
   onApplyCtStage,
   onEvidenceStateChange,
 }: Props) {
   const [evidenceState, setEvidenceState] = useState<GcUsReportState | null>(null);
   const handleEvidenceStateChange = useCallback((next: GcUsReportState) => {
-    setEvidenceState(next);
-    onEvidenceStateChange?.(next);
-  }, [onEvidenceStateChange]);
+    const base = evidenceState?.case_id === next.case_id ? evidenceState : initialState;
+    const merged = mergeFreshEvidence(base, next);
+    setEvidenceState(merged);
+    onEvidenceStateChange?.(merged);
+  }, [evidenceState, initialState, onEvidenceStateChange]);
 
   const packed = useMemo(() => {
     const clin = patient?.clinical;
@@ -66,8 +70,9 @@ export function GcUsImagingReportCard({
     const tHint = layer?.layer?.tHint || null;
     const inContact = layer?.inContact ?? null;
     const occ = layer?.pen?.ratio ?? layer?.analysis?.ratioHint ?? null;
-    const doctorLayer = evidenceState?.signs.layer_structure;
-    const doctorSerosa = evidenceState?.signs.serosa_change;
+    const effectiveEvidenceState = initialState || evidenceState;
+    const doctorLayer = effectiveEvidenceState?.signs.layer_structure;
+    const doctorSerosa = effectiveEvidenceState?.signs.serosa_change;
     const doctorLayerValue = doctorLayer?.source === 'doctor' ? doctorLayer.value : null;
     const doctorSerosaValue = doctorSerosa?.source === 'doctor' ? doctorSerosa.value : null;
     const clinicalRecord = clin as (Record<string, unknown> | undefined);
@@ -116,7 +121,7 @@ export function GcUsImagingReportCard({
     });
 
     return { tscore, geom };
-  }, [patient, assist, evidenceState]);
+  }, [patient, assist, evidenceState, initialState]);
 
   if (!patient) return null;
 
@@ -212,6 +217,7 @@ export function GcUsImagingReportCard({
           layerResult={assist?.layerResult}
           productStage={tscore.ctStage}
           signAnalysis={signAnalysis}
+          initialState={initialState}
           zh={zh}
           onStateChange={handleEvidenceStateChange}
         />

@@ -109,20 +109,52 @@ def main() -> int:
             "aggregation": result.get("frame_evidence", {}).get("aggregation"),
             "frame_count": result.get("frame_evidence", {}).get("frame_count"),
             "rag_weight": (report.get("rag_gate") or {}).get("rag_weight"),
+            "supporting": len(report.get("supporting_evidence") or []),
             "conflicts": len(report.get("conflicting_evidence") or []),
+            "uncertainty_flags": list(report.get("uncertainty_flags") or []),
+            "seg_backend": (te.get("segmentation") or {}).get("backend_id")
+            or (te.get("segmentation") or {}).get("checkpoint"),
+            "cls_backend": (te.get("classification") or {}).get("backend_id")
+            or (te.get("classification") or {}).get("checkpoint"),
+            "runtime_verification": bool(result.get("runtime_verification")),
         }
+        case_path = args.out / f"case_{payload['patient_id']}.json"
+        case_path.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        row["case_json"] = str(case_path)
         summary_rows.append(row)
         print(f"OK {payload['patient_id']}: {row}")
         if row["cls"] and row["seg"]:
             ok += 1
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    evidence_ok = sum(
+        1
+        for row in summary_rows
+        if row.get("status") == "ok"
+        and row.get("supporting", 0) >= 0
+        and isinstance(row.get("uncertainty_flags"), list)
+        and row.get("conflicts", 0) >= 0
+    )
     out_path = args.out / f"batch_summary_{stamp}.json"
     out_path.write_text(
-        json.dumps({"completed": ok, "total": len(cases), "rows": summary_rows}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "completed_seg_cls": ok,
+                "evidence_fields_present": evidence_ok,
+                "total": len(cases),
+                "csv": args.csv,
+                "rows": summary_rows,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     print(f"Completed {ok}/{len(cases)} with seg+cls available.")
+    print(f"Evidence fields present: {evidence_ok}/{len(cases)}")
     print(f"Summary: {out_path}")
     return 0 if ok == len(cases) else 2
 

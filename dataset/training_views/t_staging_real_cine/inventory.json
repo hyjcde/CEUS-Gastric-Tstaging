@@ -1,28 +1,26 @@
 {
-  "created_at": "2026-07-26T16:33:24Z",
+  "created_at": "2026-08-03T08:14:48Z",
   "definition": "video_mode=cached only (true cine crop). loop_still excluded.",
-  "samples_real_cine": 6234,
-  "patients_real_cine": 1184,
-  "patients_aligned_supervised": 557,
-  "patients_real_cine_unlabeled": 627,
-  "samples_aligned_supervised": 2731,
+  "samples_real_cine": 2605,
+  "patients_real_cine": 596,
+  "patients_aligned_supervised": 297,
+  "patients_real_cine_unlabeled": 299,
+  "samples_aligned_supervised": 1379,
   "by_cohort_supervised_patients": {
-    "external": 231,
-    "internal": 113,
+    "external": 84,
     "prospective": 213
   },
   "by_cohort_unlabeled_patients": {
-    "external": 325,
-    "prospective": 297,
-    "internal": 5
+    "external": 2,
+    "prospective": 297
   },
   "link_stats": {
-    "link_images": 6234,
-    "link_videos": 6234,
-    "link_roi_masks": 6234,
-    "link_annotations": 6234,
-    "link_overlays": 6234,
-    "patient_links": 24936
+    "link_images": 2605,
+    "link_videos": 2605,
+    "link_roi_masks": 2605,
+    "link_annotations": 2605,
+    "link_overlays": 2605,
+    "patient_links": 10420
   },
   "alignment_rule": {
     "real_cine": "patient_media_sample_index.video_mode == cached",

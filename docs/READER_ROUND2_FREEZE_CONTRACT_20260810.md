@@ -126,6 +126,8 @@ Round2 隐藏：`reference_pt`、`reference_lesion_nature`、Round1 医生答案
 - [ ] 14 名 primary 医生完成资历登记且 `expertise_tier_primary != pending`
 - [ ] 认证绑定通过，测试账号无法写入 `environment=research`
 - [ ] case order CSV 已由服务端分发给阅片系统并校验 seed
+- [ ] research UI/API：初始判断前不暴露 AI，最终 `doctor_action` 无初始判断被拒绝
+- [ ] `smoke_reader_round2_research_contract.py` 离线通过；可选 live 签名请求通过
 - [ ] washout >= 14 天已核对
 - [ ] freeze JSON / backend registry / exclusion list hash 已写入开跑记录
 - [ ] 导出脚本 `scripts/export_reader_round2_paired_tables.py` dry-run 通过
@@ -133,5 +135,10 @@ Round2 隐藏：`reference_pt`、`reference_lesion_nature`、Round1 医生答案
 ## 10. 重建命令
 
 ```bash
+# Rebuild templates/order only when intentionally regenerating a freeze.
+# Existing artifacts are skipped unless --force is passed.
 python3 scripts/build_reader_round2_freeze_tables.py
+
+# Import filled expertise without rewriting case-order hashes:
+python3 scripts/import_reader_expertise_registry.py --input /path/to/filled_expertise.csv
 ```

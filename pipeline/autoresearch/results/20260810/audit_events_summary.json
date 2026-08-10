@@ -12,5 +12,7 @@
   "exclusions_path": "/data/research/gastric/GastricTstaging/docs/reader_audit_exclusions_20260801.json",
   "allowed_environments": [
     "research"
-  ]
+  ],
+  "completed_case_count": 0,
+  "case_count": 0
 }

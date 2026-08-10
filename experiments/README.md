@@ -19,4 +19,6 @@
 
 分析图表等产出在 [../artifacts/results/](../artifacts/results/)。
 
+**内部归位：** [INTERNAL_LAYOUT.md](INTERNAL_LAYOUT.md) · Tree 浅索引：[../pipeline/experiments/tree_index.csv](../pipeline/experiments/tree_index.csv)（`python scripts/build_experiments_tree_index.py`）
+
 详见 [../REPO_LAYOUT.md](../REPO_LAYOUT.md) §3。

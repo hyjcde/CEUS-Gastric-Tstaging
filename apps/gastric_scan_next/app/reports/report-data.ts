@@ -8,6 +8,11 @@ export interface Report {
   date: string;
   stage: string;
   status: ReportStatus;
+  source?: 'demo' | 'template';
+  caseId?: string;
+  revision?: number;
+  signedBy?: string | null;
+  changedFields?: string[];
 }
 
 export const statusFilters = ['All', 'Finalized', 'Reviewed', 'Draft'] as const;

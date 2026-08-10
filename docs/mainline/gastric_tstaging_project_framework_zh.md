@@ -2,7 +2,9 @@
 
 ## 文档定位
 
-本文档是 **GastricTstaging** 的**唯一总框架入口**：说明项目终局、任务优先级、已有模型资产、Agent 如何整合这些资产，以及接下来应做什么。
+**系统架构（模块、目录、文档分层）请先读 [../ARCHITECTURE.md](../ARCHITECTURE.md)。**
+
+本文档是 **GastricTstaging** 的**临床与资产总框架**：说明项目终局、任务优先级、已有模型资产、Agent 如何整合这些资产，以及接下来应做什么。
 
 **可视化总览（HTML）**：在浏览器中打开 [`gastric_tstaging_project_logic.html`](gastric_tstaging_project_logic.html) 可查看带流程图、**完整数据规模表**与导航的逻辑页（§9 含 manifest / split / 多中心 / T 分布）。
 

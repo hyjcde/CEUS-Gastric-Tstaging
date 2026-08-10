@@ -63,7 +63,7 @@
       margin-bottom: 2px;
     }
     nav.side a:hover { color: var(--accent); background: var(--surface2); }
-    main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
+    main { padding: 2rem 2.5rem 4rem; max-width: min(96vw, 1600px); }
     header.hero {
       margin-bottom: 2rem;
       padding-bottom: 1.5rem;
@@ -154,6 +154,22 @@
       height: 100%;
       background: var(--accent);
     }
+    .figure {
+      margin: 1rem 0 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .figure img { width: 100%; height: auto; display: block; }
+    .figure figcaption {
+      padding: 0.65rem 0.85rem;
+      font-size: 0.84rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    .figure-wide .figure-scroll { overflow-x: auto; }
+    .figure-wide img { width: 100%; min-width: 960px; height: auto; display: block; }
   </style>
 </head>
 <body>
@@ -180,7 +196,7 @@
           基于 <code>dataset/</code> 目录的正式预处理数据、manifest 清单、临床表与 T 分期建模 split 的交互式盘点页。
           实验前请区分 <strong>manifest 物理口径</strong> 与 <strong>建模 CSV 口径</strong>。
         </p>
-        <p class="meta">生成时间：2026-05-28 03:34 UTC · 数据根目录：/data/research/gastric/GastricTstaging/dataset · 重新生成：<code>python scripts/build_dataset_inventory.py</code></p>
+        <p class="meta">生成时间：2026-06-12 08:20 UTC · 数据根目录：/data/research/gastric/GastricTstaging/dataset · 重新生成：<code>python scripts/build_dataset_inventory.py</code></p>
       </header>
       <div id="app">
 <div class="kpi-grid"><div class="kpi"><div class="val">13,763</div><div class="lbl">正式 manifest 总帧</div></div><div class="kpi"><div class="val">10,659</div><div class="lbl">internal manifest</div></div><div class="kpi"><div class="val">3,104</div><div class="lbl">external manifest</div></div><div class="kpi"><div class="val">0</div><div class="lbl">newzip manifest</div></div><div class="kpi"><div class="val">10,659</div><div class="lbl">物理 original 图像</div></div><div class="kpi"><div class="val">2,558</div><div class="lbl">临床主表患者行</div></div></div>
@@ -216,14 +232,30 @@
 <p>未匹配：110 · 预处理错误：6</p>
 <h3>4.2 按年份 × 视图（物理文件数，original/images）</h3>
 <table><thead><tr><th>池</th><th>年份</th><th>original</th><th>crop_ui</th><th>crop_roi</th><th>建议</th></tr></thead><tbody><tr><td>train池</td><td class="num">2018</td><td class="num">3,638</td><td class="num">3,638</td><td class="num">3,638</td><td><span class="badge ok">训练主池</span></td></tr><tr><td>train池</td><td class="num">2019</td><td class="num">2,853</td><td class="num">2,853</td><td class="num">2,853</td><td><span class="badge ok">训练主池</span></td></tr><tr><td>train池</td><td>2020_2023</td><td class="num">199</td><td class="num">199</td><td class="num">199</td><td><span class="badge ok">训练主池</span></td></tr><tr><td>train池</td><td class="num">2024</td><td class="num">1,539</td><td class="num">1,539</td><td class="num">1,539</td><td><span class="badge ok">训练主池</span></td></tr><tr><td>前瞻池</td><td class="num">2025</td><td class="num">2,430</td><td class="num">2,430</td><td class="num">2,430</td><td><span class="badge warn">建议独立 test</span></td></tr></tbody></table>
+<h3>4.3 crop_ui overlay 可视化</h3>
+
+<figure class="figure figure-wide">
+  <div class="figure-scroll">
+    <img src="../figures/internal_crop_ui_overlay_montage.png" alt="Internal crop_ui overlay montage" loading="lazy" />
+  </div>
+  <figcaption>Internal years — <code>crop_ui/overlays</code>, one representative case per T stage (T1–T4+) when labeled.</figcaption>
+</figure>
 </section>
 
 <section id="external"><h2>5. 外部数据 (external/)</h2>
 <h3>5.1 原多中心 manifest</h3>
 <table><thead><tr><th>中心 (group_targets)</th><th>manifest 帧</th><th>占比</th><th></th></tr></thead><tbody><tr><td>莆田学院附属医院</td><td class="num">1,852</td><td>59.7%</td><td><div class="bar-cell">1,852<div class="bar"><span style="width:100.0%"></span></div></div></td></tr><tr><td>福建省肿瘤医院</td><td class="num">436</td><td>14.0%</td><td><div class="bar-cell">436<div class="bar"><span style="width:23.5%"></span></div></div></td></tr><tr><td>福建省立医院</td><td class="num">220</td><td>7.1%</td><td><div class="bar-cell">220<div class="bar"><span style="width:11.9%"></span></div></div></td></tr><tr><td>中核五〇四医院</td><td class="num">216</td><td>7.0%</td><td><div class="bar-cell">216<div class="bar"><span style="width:11.7%"></span></div></div></td></tr><tr><td>北京友谊医院</td><td class="num">124</td><td>4.0%</td><td><div class="bar-cell">124<div class="bar"><span style="width:6.7%"></span></div></div></td></tr><tr><td>佛山市第一人民医院</td><td class="num">112</td><td>3.6%</td><td><div class="bar-cell">112<div class="bar"><span style="width:6.0%"></span></div></div></td></tr><tr><td>福建省德化县医院</td><td class="num">100</td><td>3.2%</td><td><div class="bar-cell">100<div class="bar"><span style="width:5.4%"></span></div></div></td></tr><tr><td>莆田市第一医院</td><td class="num">25</td><td>0.8%</td><td><div class="bar-cell">25<div class="bar"><span style="width:1.3%"></span></div></div></td></tr><tr><td>三明市第二医院</td><td class="num">19</td><td>0.6%</td><td><div class="bar-cell">19<div class="bar"><span style="width:1.0%"></span></div></div></td></tr></tbody></table>
 <h3>5.2 各中心物理规模 (original/images)</h3>
-<table><thead><tr><th>目录名</th><th>original 图像</th><th>规模</th></tr></thead><tbody><tr><td>三明市第二医院</td><td class="num">19</td><td>小中心</td></tr><tr><td>中核五〇四医院</td><td class="num">216</td><td>中</td></tr><tr><td>佛山市第一人民医院</td><td class="num">112</td><td>中</td></tr><tr><td>北京友谊医院</td><td class="num">124</td><td>中</td></tr><tr><td>福建省德化县医院</td><td class="num">100</td><td>中</td></tr><tr><td>福建省立医院</td><td class="num">220</td><td>中</td></tr><tr><td>福建省肿瘤医院</td><td class="num">436</td><td>中</td></tr><tr><td>莆田学院附属医院</td><td class="num">1,852</td><td>大中心</td></tr><tr><td>莆田市第一医院</td><td class="num">25</td><td>小中心</td></tr></tbody></table>
+<table><thead><tr><th>目录名</th><th>original 图像</th><th>规模</th></tr></thead><tbody><tr><td>crop_ui</td><td class="num">0</td><td>小中心</td></tr><tr><td>multicenter</td><td class="num">0</td><td>小中心</td></tr><tr><td>putian</td><td class="num">0</td><td>小中心</td></tr><tr><td>putian_2024_new</td><td class="num">0</td><td>小中心</td></tr><tr><td>statistics</td><td class="num">0</td><td>小中心</td></tr><tr><td>{center}</td><td class="num">0</td><td>小中心</td></tr><tr><td>三明市第二医院</td><td class="num">19</td><td>小中心</td></tr><tr><td>中核五〇四医院</td><td class="num">216</td><td>中</td></tr><tr><td>佛山市第一人民医院</td><td class="num">112</td><td>中</td></tr><tr><td>北京友谊医院</td><td class="num">124</td><td>中</td></tr><tr><td>福建省德化县医院</td><td class="num">100</td><td>中</td></tr><tr><td>福建省立医院</td><td class="num">220</td><td>中</td></tr><tr><td>福建省肿瘤医院</td><td class="num">436</td><td>中</td></tr><tr><td>莆田学院附属医院</td><td class="num">1,852</td><td>大中心</td></tr><tr><td>莆田市第一医院</td><td class="num">25</td><td>小中心</td></tr></tbody></table>
 <p>未匹配：1,062 · 错误：1</p>
+<h3>5.3 crop_ui overlay 可视化</h3>
+
+<figure class="figure figure-wide">
+  <div class="figure-scroll">
+    <img src="../figures/external_crop_ui_overlay_montage.png" alt="External crop_ui overlay montage" loading="lazy" />
+  </div>
+  <figcaption>External centers — <code>crop_ui/overlays</code>, one representative case per T stage (T1–T4+) when labeled.</figcaption>
+</figure>
 </section>
 
 <section id="newzip"><h2>6. 新增外部 zip (new_external_zip_manifest)</h2>
@@ -254,6 +286,7 @@
 <ul>
 <li><a href="../../dataset/tables/external_hubei_mislabel_remediation.md">外省整理误标修复说明</a> <code>dataset/tables/external_hubei_mislabel_remediation.md</code></li><li><a href="../../dataset/DATASET_GUIDE.md">DATASET_GUIDE.md</a> <code>dataset/DATASET_GUIDE.md</code></li><li><a href="../../dataset/README.md">README.md</a> <code>dataset/README.md</code></li><li><a href="../../dataset/tables/README.md">tables/README.md</a> <code>dataset/tables/README.md</code></li>
 <li><a href="dataset_inventory.json">dataset_inventory.json</a> — 机器可读盘点数据</li>
+<li><a href="../index.html">dataset/index.html</a> — 图文并茂完整说明（含 crop_ui 组图）</li>
 </ul>
 </section>
 

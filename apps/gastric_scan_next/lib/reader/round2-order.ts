@@ -94,3 +94,26 @@ export function sortReaderRound2Patients<T extends { id: string }>(
   ));
   return { patients: sorted, orderApplied: true, freezeId: order.freezeId };
 }
+
+export function readerRound2CaseMembership(
+  readerId: string,
+  caseId: string,
+): { ok: true; presentationIndex: number; freezeId: string } | { ok: false; reason: string } {
+  const normalizedReader = String(readerId || '').trim();
+  const normalizedCase = String(caseId || '').trim();
+  if (!normalizedReader || !normalizedCase) {
+    return { ok: false, reason: 'reader_id and case_id are required for freeze membership' };
+  }
+  const order = loadOrder(normalizedReader);
+  if (!order) {
+    return { ok: false, reason: `No frozen Round2 case order for reader ${normalizedReader}` };
+  }
+  const presentationIndex = order.orderByCaseId.get(normalizedCase);
+  if (presentationIndex == null) {
+    return {
+      ok: false,
+      reason: `case_id ${normalizedCase} is not in the frozen Round2 order for ${normalizedReader}`,
+    };
+  }
+  return { ok: true, presentationIndex, freezeId: order.freezeId };
+}

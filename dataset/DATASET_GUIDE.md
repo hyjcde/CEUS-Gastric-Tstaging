@@ -2,6 +2,148 @@
 
 ## 文档定位
 
+2026-08-03 起，图片和掩膜的固定登记以
+[IMAGE_MASK_FREEZE_20260803.md](IMAGE_MASK_FREEZE_20260803.md) 和
+[image_mask_freeze_manifest_20260803.csv](image_mask_freeze_manifest_20260803.csv)
+为准。该快照按内部年份、T 分期外部中心和胃炎外部独立任务登记来源、样本数、视图、annotation、ROI mask 与 overlay；
+后续不直接修改快照，修订必须新建版本。
+
+详细可视化登记页：
+
+[dataset_detail_20260803.html](dataset_detail_20260803.html)
+
+重建命令：
+
+```bash
+python3 scripts/build_dataset_detail_html.py
+```
+
+该页面分别展示 T 分期内部年份、T 分期外部中心、胃腔手动标注来源和胃炎外部中心，并链接代表性图片、ROI mask、overlay 与胃腔标注 panel。
+
+## 胃腔手动标注固定说明
+
+胃腔手动标注是结构定位标注，不是良恶性标签，也不是 T 分期金标准。它用于胃腔检测、方向判断、ROI 归一化，以及病灶相对胃腔和胃壁关系分析。
+
+稳定去重入口：
+
+`dataset/lumen_detection/crop_ui_confirmed/`
+
+来源记录固定为：
+
+- `200.zip`：197 条
+- `2024_crop_ui_v1`：444 条
+- `2024_crop_ui_v2`：1,115 条
+- `data/raw/legacy_lumen/` 对应的 `lumen_dir`：102 条
+- 来源记录合计：1,858 条
+- 已识别重复：25 条
+- 稳定去重样本：1,833 个
+
+当前需要区分两个输出口径：
+
+- `data/processed/detection/yolo11_lumen_locator_cropui_combined_plus_zip2/dataset_manifest.json`：用于正式检测模型的 processed 入口，train 1,650，val 183，患者 427 / 48。
+- `dataset/lumen_detection/crop_ui_confirmed/dataset_manifest.json`：包含可视化和导出 split，train 1,439，val 211，test 183，患者 379 / 48 / 48。
+
+以上两个 split 用途不同，不能把行数相加，也不能将胃腔框标注解释为胃壁层次或 T 分期标签。
+
+### 2024 crop_ui v1 审计结论
+
+`2024 crop_ui v1` 当前不能作为独立新增数据使用。对 `exports_manifest.csv` 按数字患者键和样本序号规范化后，v1 的 444 条记录与 `2024 crop_ui v2` 的 444 条记录逐条对应，图片 SHA-256 和 YOLO label 内容均完全一致。
+
+同时，v1 的文件名存在编码异常，导致原始 `sample_id` 和 `patient_id` 无法直接与 v2、`200.zip` 及 legacy 来源完成患者级重叠识别。当前原始 `dataset_manifest.json` 的 1,833 个 `unique_count` 不能视为跨来源规范化后的最终唯一数。
+
+机器可读审计：
+
+`dataset/lumen_detection/crop_ui_confirmed/source_overlap_audit_20260803.json`
+
+规范化复核还发现：1,833 条导出行只能对应 1,363 个规范化样本键，隐藏重复行 470 行；其中 `zip_200` 内部还有 11 个重复键，`lumen_dir` 与 `zip_200` 还有 15 个重叠键。部分 `zip_200` 文件名也存在编码异常。
+
+处理原则：保留 v1 和其他来源作为来源追溯记录，不删除、不移动；训练和正式统计不得把 v1 当作 v2 之外的新样本。若要修正，应新建跨来源去重后的版本。
+
+另有一组旧的 `胃腔/` LabelMe 盘点记录，包含 248 个 JSON 和 248 个内嵌图像。它属于历史来源审计，不直接追加到当前 1,833 个稳定去重样本中；如要合并，必须新建版本并重新去重。
+
+## 胃炎外部图片和掩膜固定说明
+
+胃炎外部数据来源为 `胃炎外部测试集.zip`，正式入口为：
+
+`dataset/gastritis_external/`
+
+当前处理图像样本共 2,746，任务标签为 `benign_inflammation`，不进入 T1、T2、T3、T4+ 主 split。
+
+按中心统计：
+
+- 莆田学院附属医院：1,674
+- 三明市第二医院：342
+- 中核五〇四医院：280
+- 福建省德化县医院：200
+- 福建省肿瘤医院：199
+- 宁德市医院：51
+
+目录和清单职责：
+
+- `raw_decoded/`：解码后的原始图片、`.nii.gz`、视频和临床表
+- `processed_images/`：按中心保存 `original`、`crop_ui`、`crop_roi`
+- `manifest.csv`：成功进入静态图像预处理口径的样本
+- `raw_manifest.csv`：原始文件解码清单
+- `video_manifest.csv`：视频资产清单，视频不复制到 processed_images
+- `clinical_records.csv`：临床记录
+
+当前附属规模为：图像预处理错误 4 个，未匹配文件 7 个，视频 259 个，临床表 11 个，临床记录 1,593 条。目录名不能代替病理或患者级标签，胃炎外部数据也不能与 T 分期主线直接合并计算患者数。
+
+## 胃癌和胃炎视频 HTML 整理
+
+详细页面 [dataset_detail_20260803.html](dataset_detail_20260803.html) 已分别登记胃癌 crop 视频、胃癌前瞻 raw 视频和胃炎外部 raw 视频，并提供每个年份或中心的代表视频；胃炎页面还展开登记全部 259 条 video manifest 记录。
+
+当前整理入口：
+
+- 胃癌视频：`dataset/videos/`
+- 胃炎视频：`dataset/gastritis_external/raw_decoded/`
+- 胃炎视频清单：`dataset/gastritis_external/video_manifest.csv`
+- 胃炎浏览器预览：`dataset/gastritis_external/video_preview_manifest.csv`
+
+静态循环删除后，胃癌当前保留的动态 crop 视频为内部 2,429 个、外部 176 个，另有内部前瞻 raw 视频 708 个。胃炎外部 raw 视频共 259 个，主要来自中核五〇四医院、福建省德化县医院、福建省肿瘤医院和莆田学院附属医院。
+
+胃炎原始视频包含 AVI 和 MP4，HTML 播放使用由
+`scripts/build_gastritis_video_previews.py` 生成的代表性 H.264 MP4 预览；原始 AVI/MP4 保留在 `raw_decoded/`，不覆盖、不移动。
+
+帧变化审计显示：非 2025 胃癌 crop 视频原有 3,807 个，其中 3,631 个为纯静态循环，176 个为动态候选，全部解码检查通过；胃炎外部 259 个视频全部通过动态帧检查。审计结果见 `data/metadata/static_loop_frame_audit_20260803.json`。
+
+内部 raw 胃癌视频主来源为 `data/raw/legacy_gastric_staging/协和内部数据集/直接手术/`：
+
+- 2018：179 个 AVI
+- 2024：369 个 WMV
+- 2025：1,163 个 MP4 或 WMV
+
+外部 raw 胃癌视频主来源为 `data/raw/legacy_external_direct_surgery/直接手术视频/`，共 253 个：
+
+- 中核五〇四医院：134
+- 佛山市第一人民医院：49
+- 福建省德化县医院：47
+- 莆田学院附属医院：23
+
+这些 raw 视频不移动，视频资产 registry 为 `data/registry/video_assets_registry.csv`。
+
+胃炎外部完整层级统计为：
+
+- `raw_manifest.csv`：5,778 条，包含图片 2,758、mask 2,750、视频 259、临床表 11
+- `manifest.csv`：处理图片 2,746 条，unique patient_key 833 个
+- `clinical_records.csv`：1,593 条，unique patient_key 927 个
+- `video_manifest.csv`：259 条，unique patient_key 232 个
+- `errors.csv`：4 条
+- `unmatched_files.csv`：7 条
+
+除 2025 外，患者级对应视频优先读取：
+
+- `dataset/training_views/t_staging_real_cine/alignment/samples_real_cine.csv`
+- `dataset/training_views/t_staging_real_cine/alignment/patients_real_cine.csv`
+- `dataset/training_views/t_staging_real_cine/by_patient/`
+- `dataset/training_views/t_staging_real_cine/by_modality/`
+
+静态循环视频删除后，**训练 SSOT 真 cine 口径**以
+`dataset/training_views/t_staging_real_cine/alignment/samples_real_cine.csv`
+与 `data/registry/patient_media_registry_summary.json` 为准：当前 **2,605** 个真 cine 样本、**596** 个患者（与 multimodal agent freeze `data/multimodal_agent/freeze_v1/cine_inventory_freeze.json` 一致）。历史上“非 2025 外部子集 176 样本 / 86 患者”仅为旧快照，不再作为训练规模口径。2020 到 2023、2024 及其他没有动态视频的外部中心不再保留 crop MP4。2018 和 2019 当前没有进入真 cine 对齐视图。上述目录是软链接视图，不移动原始视频。
+
+视频文件展示不等于图片和视频已经全部完成患者级配对。老年份 crop 缺口和当前视频配对审计仍需单独参考 `data/registry/patient_media_sample_index.csv`、`data/registry/image_video_pair_index.csv` 及视频完整性报告。
+
 这份文档描述的是**当前 `dataset/` 目录下仍在使用的正式数据集**，不是历史上那套按患者注册的全量资料库。
 
 当前 T 分期正式口径只包含三部分：
@@ -723,11 +865,12 @@ python3 scripts/freeze_real_cine_training_package.py
 | 字段/模式 | 含义 |
 | --- | --- |
 | `video_mode=cached` | 由真实 cine/源视频转换得到的 crop MP4 |
-| `video_mode=loop_still` | 由静态截图生成的循环 MP4，不是真实录像 |
+| `video_mode=loop_still` | 历史上由静态截图生成的循环 MP4，不是真实录像；当前媒体已删除 |
 | `video_match_status=raw+crop` | 同时找到源视频与 crop 视频 |
 | `video_match_status=crop_only` | 只有 crop MP4，未匹配到源视频 |
 
-训练视频模型时，**只使用 `cached`（真 cine）**。全部 `loop_still` crop MP4（7527）已于 2026-07-27 隔离至 `dataset/_quarantine/loop_still/`（见 `path_migration_log.csv`），活跃 `crop_ui/videos` 中不再保留。
+训练视频模型时，**只使用 `cached`（真 cine）**。7,527 条历史 `loop_still` 登记记录对应的媒体已不存在，静态循环预览也已于 2026-08-03 删除；保留 crop report 和
+`data/metadata/static_loop_cleanup_20260803.csv` 作为审计记录。
 
 ### 构建与导出
 
