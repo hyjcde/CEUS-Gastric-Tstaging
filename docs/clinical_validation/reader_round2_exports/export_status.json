@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-10T05:48:25Z",
+  "freeze_id": "reader_round2_freeze_20260810",
+  "execution_status": "prepared_not_run",
+  "manifest_rows": 2400,
+  "round1_case_rows": 2400,
+  "round1_doctor_rows": 16,
+  "paired_rows": 2400,
+  "round2_completed_rows": 0,
+  "round2_input_provided": false,
+  "note": "Round2 clinical claims blocked until round2_completed_rows > 0 with research environment events",
+  "outputs": [
+    "round1_case_level.csv",
+    "round1_doctor_level.csv",
+    "paired_round1_round2_skeleton.csv",
+    "report_quality_scores_template.csv"
+  ]
+}

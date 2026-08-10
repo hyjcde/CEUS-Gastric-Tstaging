@@ -233,3 +233,17 @@ the compatibility default; `full_finetune` is an upper-bound experiment.
 - `README_GPU_SCHEDULE.md`：`generate_gpu_schedule.py` 的配套说明。
 - `extracted_pathology_concepts.json`：概念抽取的示例/中间产物数据，**不是**可执行脚本。
 - `visualization_samples.png`：示例图片资源。
+
+
+## 人机协同 Round2 导出与分析（2026-08-10）
+
+正式阅片协议与冻结契约见 `docs/READER_ROUND2_EXECUTION_RUNBOOK_20260810.md`。常用入口：
+
+1. `build_reader_round2_freeze_tables.py` — 资历登记表与病例顺序
+2. `export_reader_round2_paired_tables.py` — Round1 基线与配对骨架
+3. `analyze_reader_audit_events.py --environment research` — research 事件过滤
+4. `validate_reader_round2_gate.py` — 临床声称门控（脚手架可用 `--allow-prepared`）
+5. `analyze_reader_round2_expertise_uplift.py` — 资历交互 / 安全终点（Round2 空时 blocked）
+6. `build_autoresearch_results_summary.py` — 汇总进 `pipeline/autoresearch/results/latest/`
+
+产物目录：`docs/clinical_validation/reader_round2_exports/`；总汇总：`pipeline/autoresearch/results/latest/`。正式 `research` 事件还要求 Next 服务配置 `READER_AUTH_PROXY_SECRET`，由认证反向代理注入 `x-authenticated-reader-id` 和 HMAC 签名。

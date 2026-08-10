@@ -1,0 +1,168 @@
+{
+  "schema_version": "reader_round2_study_freeze_v1",
+  "freeze_id": "reader_round2_freeze_20260810",
+  "created_at": "2026-08-10",
+  "status": "frozen_for_execution",
+  "execution_status": "prepared_not_run",
+  "git_commit": "1c70b1a4daed79e7af34ba759eb323521d7a908d",
+  "protocol_doc": "docs/AI_ASSISTED_READER_PILOT_PROTOCOL_20260801.md",
+  "freeze_contract_doc": "docs/READER_ROUND2_FREEZE_CONTRACT_20260810.md",
+  "endpoints_doc": "docs/READER_ROUND2_ENDPOINTS_AND_REPORT_QUALITY_20260810.md",
+  "sap_doc": "docs/READER_ROUND2_STATISTICAL_ANALYSIS_PLAN_20260810.md",
+  "execution_runbook_doc": "docs/READER_ROUND2_EXECUTION_RUNBOOK_20260810.md",
+  "paper_evidence_chain_doc": "docs/paper_drafts/human_ai_reader_evidence_chain_20260810.md",
+  "exports_dir": "docs/clinical_validation/reader_round2_exports",
+  "autoresearch_results_dir": "pipeline/autoresearch/results/latest",
+  "autoresearch_results_summary": "pipeline/autoresearch/results/latest/RESULTS_SUMMARY.md",
+  "runtime_contract": {
+    "research_identity": {
+      "server_bound": true,
+      "proxy_id_header": "x-authenticated-reader-id",
+      "proxy_signature_header": "x-authenticated-reader-signature",
+      "signature": "HMAC-SHA256(reader_id, READER_AUTH_PROXY_SECRET)",
+      "url_reader_id_allowed": false
+    },
+    "case_order_server_applied": true,
+    "case_order_column": "presentation_index",
+    "structured_evidence_fields": [
+      "lesion_extent",
+      "wall_invasion_depth",
+      "serosal_breakthrough",
+      "growth_pattern"
+    ],
+    "time_fields": [
+      "total_case_time_sec",
+      "doctor_active_reading_sec",
+      "ai_wait_sec",
+      "report_completion_sec"
+    ],
+    "implementation_paths": [
+      "apps/gastric_scan_next/lib/reader/study-auth.ts",
+      "apps/gastric_scan_next/lib/reader/round2-order.ts",
+      "apps/gastric_scan_next/app/api/reader-audit/events/route.ts",
+      "apps/gastric_scan_next/app/api/patients/route.ts",
+      "scripts/analyze_reader_audit_events.py"
+    ]
+  },
+  "manifest": {
+    "path": "data/registry/reader_round2_ai_assisted_manifest.csv",
+    "sha256": "cd19511afe73fa4bf9447802b324b0558b5997c08a664d062b8d0d3163643f76",
+    "planned_rows": 2400,
+    "baseline_pairable_rows": 2312,
+    "readers_with_round1": 16,
+    "missing_readers": [
+      "Doctor_05"
+    ],
+    "complete_150_readers": [
+      "Doctor_01",
+      "Doctor_02",
+      "Doctor_03",
+      "Doctor_04",
+      "Doctor_06",
+      "Doctor_07",
+      "Doctor_08",
+      "Doctor_10",
+      "Doctor_11",
+      "Doctor_12",
+      "Doctor_14",
+      "Doctor_15",
+      "Doctor_16",
+      "Doctor_17"
+    ],
+    "partial_readers": {
+      "Doctor_09": {
+        "pairable": 64,
+        "planned": 150
+      },
+      "Doctor_13": {
+        "pairable": 148,
+        "planned": 150
+      }
+    }
+  },
+  "backend_registry": {
+    "path": "pipeline/agent/config/agent_backend_registry.yaml",
+    "sha256": "c25d1e3d7515478cdbcc397ae94f88ca70c90b1e64e48f1fbae3b48cc336c69e",
+    "classification_primary": "tstage_acc_boost2_screened_20260603",
+    "segmentation_primary": "lesion_segmentation_unet_fulldata_convnext_base",
+    "phase0_audit_only": "tstage_acc_boost2_phase0_20260610"
+  },
+  "runtime": {
+    "doc": "docs/AGENT_NEXT_RUNTIME_VERSION_20260801.md",
+    "runtime_id": "gastric-agent-next-lan-20260801",
+    "asset_freeze_doc": "docs/mainline/asset_freeze_decision_20260809.md"
+  },
+  "exclusions": {
+    "path": "docs/reader_audit_exclusions_20260801.json",
+    "sha256": "1aa39d088903968ccce57baab4de6f44ac7bc757d814ac2f094a73b93aa96a9d",
+    "qa_event_count": 102,
+    "rule": "Exclude unknown_reader, qa_smoke_*, environment=qa|staging, and listed session/event IDs from all research analyses"
+  },
+  "environment_namespaces": {
+    "qa": "browser smoke and developer checks only",
+    "staging": "pre-research dry runs with non-research reader IDs",
+    "research": "authenticated Round2 doctor sessions only",
+    "production": "clinical service outside this study"
+  },
+  "identity_binding": {
+    "required": true,
+    "forbid_url_reader_id": true,
+    "authenticated_reader_id_source": "server session / auth service",
+    "anonymous_study_id_field": "reader_id",
+    "mapping_file": "data/registry/reader_expertise_registry_20260810.csv"
+  },
+  "washout": {
+    "minimum_days_after_round1_last_save": 14,
+    "notes": "Round1 last saves were mid-2026-07; confirm calendar washout before first Round2 session"
+  },
+  "case_order": {
+    "seed": 20260810,
+    "method": "per_reader_fisher_yates_shuffle_of_150_cases",
+    "path": "data/registry/reader_round2_case_order_20260810.csv",
+    "allow_revisit_video": true,
+    "pathology_visible_to_reader": false,
+    "ai_visible": true,
+    "sha256": "a646367707f3b5400efdd6b118e97b9a1b88a44dabc072b20618d7d4f480904b",
+    "row_count": 2400
+  },
+  "visible_information_round2": [
+    "video",
+    "key_frames",
+    "SAM_or_mask_interaction",
+    "structured_signs",
+    "GC-US_or_wall_prompts",
+    "AI_recommendation",
+    "supporting_conflicting_uncertainty_evidence",
+    "report_draft_marked_review_required"
+  ],
+  "hidden_information_round2": [
+    "reference_pt",
+    "reference_lesion_nature",
+    "round1_doctor_answer",
+    "pathology_report_raw"
+  ],
+  "primary_analysis_set": "14_complete_150_pairable_readers",
+  "extended_analysis_set": "16_readers_with_round1_records",
+  "expertise_stratification": {
+    "preset_before_unblinding": true,
+    "primary_levels": [
+      "junior",
+      "senior"
+    ],
+    "sensitivity_level": "intermediate",
+    "registry_path": "data/registry/reader_expertise_registry_20260810.csv",
+    "status": "registration_required_before_round2_start",
+    "registry_sha256": "4e66a0ac90eb3b1f81f84a07108f4245d15a8842b9e88067ea183bb4a111dd24"
+  },
+  "version_fields_required_on_every_event": [
+    "software_version",
+    "agent_version",
+    "model_version",
+    "rule_version",
+    "prompt_version",
+    "manifest_version",
+    "freeze_id",
+    "environment",
+    "authenticated_reader_id"
+  ]
+}

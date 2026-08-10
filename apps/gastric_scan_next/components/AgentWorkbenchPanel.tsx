@@ -10,11 +10,18 @@ import { lumenOverrideToAnalyzePayload } from '@/lib/lumen-override';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
 import type { Language } from '@/lib/i18n';
 import { GcUsSignModelMap } from '@/components/GcUsSignModelMap';
+import { computeLesionLumenGeometry } from '@/lib/lesion-lumen-geometry';
 
 interface AgentWorkbenchPanelProps {
   patient: Patient | null;
   maskOverride?: MaskBoundaryOverride | null;
   lumenOverride?: LumenOverride | null;
+  imagingAssist?: {
+    lesionPolygon: number[][];
+    lumenPolygon?: number[][];
+    lumenBBox?: { x1: number; y1: number; x2: number; y2: number } | null;
+    frameSize?: { width: number; height: number } | null;
+  } | null;
   gcUsReport?: GcUsReportState | null;
   onAnalysisComplete?: (result: AgentAnalysisResponse) => void;
 }
@@ -127,6 +134,10 @@ function getStepOutputSummary(step: AgentStep): string {
       `wall=${formatUnknown(signs?.wall)}`,
       `lumen=${formatUnknown(signs?.lumen)}`,
     ].join(' · ');
+  }
+  if (stepId.includes('lumen')) {
+    const source = outputs.lumen_source || outputs.override_source || outputs.roi_source;
+    return `lumen=${formatUnknown(source)} bbox=${formatUnknown(outputs.lumen_bbox)} polygon=${Array.isArray(outputs.lumen_polygon) ? outputs.lumen_polygon.length : 0}pt`;
   }
   if (outputs.recommended_t_stage) return `${outputs.recommended_t_stage} / ${outputs.confidence ?? 'unknown'}`;
   if (outputs.top1_stage) return `${outputs.top1_stage} ${outputs.top1_prob ?? ''}`.trim();
@@ -299,6 +310,7 @@ export function AgentWorkbenchPanel({
   patient,
   maskOverride = null,
   lumenOverride = null,
+  imagingAssist = null,
   gcUsReport = null,
   onAnalysisComplete,
 }: AgentWorkbenchPanelProps) {
@@ -318,6 +330,58 @@ export function AgentWorkbenchPanel({
   const [imageLightbox, setImageLightbox] = useState<ImageZoomPayload | null>(null);
   const [memoryActionPending, setMemoryActionPending] = useState<string | null>(null);
   const [memoryActionMessage, setMemoryActionMessage] = useState<string | null>(null);
+  const lastRunGeometrySignatureRef = React.useRef('');
+
+  const geometryInputs = useMemo(() => {
+    const lesionPolygon = maskOverride?.mask_polygon || [];
+    const lumenPolygon = lumenOverride?.lumen_polygon || [];
+    const lumenBBox = lumenOverride?.lumen_bbox || null;
+    const geometry = computeLesionLumenGeometry(lesionPolygon, lumenPolygon, lumenBBox);
+    const lumenReady = lumenPolygon.length >= 3 || Boolean(lumenBBox);
+    return {
+      lesionPolygon,
+      lumenPolygon,
+      lumenBBox,
+      geometry,
+      lesionReady: lesionPolygon.length >= 3,
+      lumenReady,
+      ready: lesionPolygon.length >= 3 && lumenReady,
+      frameSize: maskOverride && lumenOverride
+        ? { width: maskOverride.imageWidth, height: maskOverride.imageHeight }
+        : null,
+    };
+  }, [
+    lumenOverride,
+    maskOverride,
+  ]);
+
+  const effectiveMaskOverride = maskOverride;
+  const effectiveLumenOverride = lumenOverride;
+  const liveGeometryPending = Boolean(
+    !geometryInputs.ready
+    && (
+      imagingAssist?.lesionPolygon?.length
+      || imagingAssist?.lumenPolygon?.length
+      || imagingAssist?.lumenBBox
+    ),
+  );
+
+  const geometrySignature = useMemo(
+    () => JSON.stringify({
+      lesion: geometryInputs.lesionPolygon,
+      lumen: geometryInputs.lumenPolygon,
+      lumen_bbox: geometryInputs.lumenBBox,
+      mask_updated_at: maskOverride?.updated_at || null,
+      lumen_updated_at: lumenOverride?.updated_at || null,
+    }),
+    [
+      geometryInputs.lesionPolygon,
+      geometryInputs.lumenBBox,
+      geometryInputs.lumenPolygon,
+      lumenOverride?.updated_at,
+      maskOverride?.updated_at,
+    ],
+  );
 
   const openImageLightbox = React.useCallback((payload: ImageZoomPayload) => {
     setImageLightbox(payload);
@@ -335,6 +399,7 @@ export function AgentWorkbenchPanel({
     setRuntimeVerification(null);
     setCopiedDraft(false);
     setCopyError(null);
+    lastRunGeometrySignatureRef.current = '';
   }, [patient?.id]);
 
   useEffect(() => {
@@ -413,6 +478,16 @@ export function AgentWorkbenchPanel({
 
   const runAnalysis = async () => {
     if (!patient || loading) return;
+    if (!geometryInputs.lesionReady || !geometryInputs.lumenReady) {
+      setWorkbenchOpen(true);
+      setError(
+        language !== 'en'
+          ? `Agent 未启动：${!geometryInputs.lesionReady ? '请先确认病灶分割轮廓' : ''}${!geometryInputs.lesionReady && !geometryInputs.lumenReady ? '；' : ''}${!geometryInputs.lumenReady ? '请先确认胃腔轮廓或胃腔框' : ''}`
+          : `Agent blocked: ${!geometryInputs.lesionReady ? 'confirm the lesion contour first' : ''}${!geometryInputs.lesionReady && !geometryInputs.lumenReady ? '; ' : ''}${!geometryInputs.lumenReady ? 'confirm the lumen contour or box first' : ''}`,
+      );
+      return;
+    }
+    lastRunGeometrySignatureRef.current = geometrySignature;
     setModalOpen(false);
     setWorkbenchOpen(true);
     setLoading(true);
@@ -434,8 +509,17 @@ export function AgentWorkbenchPanel({
           sessionId,
           memory_enabled: true,
           gc_us_report: gcUsReport || undefined,
-          ...maskOverrideToAnalyzePayload(maskOverride),
-          ...lumenOverrideToAnalyzePayload(lumenOverride),
+          ...maskOverrideToAnalyzePayload(effectiveMaskOverride),
+          ...lumenOverrideToAnalyzePayload(effectiveLumenOverride),
+          geometry_gate: {
+            confirmed_lesion: geometryInputs.lesionReady,
+            confirmed_lumen: geometryInputs.lumenReady,
+            relation: geometryInputs.geometry.relation,
+            overlap: geometryInputs.geometry.relation === 'overlap',
+            distance_px: geometryInputs.geometry.distancePx,
+            quality: geometryInputs.geometry.quality,
+            source: 'persisted_override',
+          },
         }),
       });
       if (!response.ok) {
@@ -513,7 +597,12 @@ export function AgentWorkbenchPanel({
   };
 
   const handleLauncherClick = () => {
-    if ((result || liveSteps.length > 0 || error) && !loading && !workbenchOpen) {
+    if (
+      (result || liveSteps.length > 0 || error)
+      && !loading
+      && !workbenchOpen
+      && lastRunGeometrySignatureRef.current === geometrySignature
+    ) {
       setWorkbenchOpen(true);
       return;
     }
@@ -618,14 +707,57 @@ export function AgentWorkbenchPanel({
         key: 'memory',
         title: language !== 'en' ? '相似病例 memory' : 'Similar-case memory',
         icon: Database,
-        tool: {
-          available: result.similar_cases.length > 0,
-          backend_id: 'FAISS / current_case_memory',
-          trust_label: result.tool_evidence.classification?.trust_label ?? 'caution',
-        },
+        tool: (() => {
+          const ragStep = (result.agent_steps || []).find((step) => String(step.step_id || '').includes('case_rag'));
+          const outputs = (ragStep?.outputs || {}) as Record<string, unknown>;
+          const runtime = (outputs.runtime_invocation && typeof outputs.runtime_invocation === 'object'
+            ? outputs.runtime_invocation
+            : {}) as Record<string, unknown>;
+          const available = Boolean(outputs.available ?? result.similar_cases.length > 0);
+          const backend = String(
+            runtime.backend
+            || outputs.memory_version
+            || (available ? 'case_similarity' : 'unavailable'),
+          );
+          const reason = !available
+            ? String(outputs.reason || runtime.reason || 'index_or_hits_unavailable')
+            : undefined;
+          return {
+            available,
+            backend_id: backend,
+            trust_label: result.tool_evidence.classification?.trust_label ?? 'caution',
+            reason,
+            memory_version: String(outputs.memory_version || runtime.memory_version || ''),
+            case_count: Number(runtime.case_count || result.similar_cases.length || 0),
+          };
+        })(),
         metrics: [
           { key: 'retrieved_cases', value: result.similar_cases.length },
           { key: 'majority_stage', value: result.report.similar_case_summary?.majority_stage },
+          {
+            key: 'memory_version',
+            value: (() => {
+              const ragStep = (result.agent_steps || []).find((step) => String(step.step_id || '').includes('case_rag'));
+              const outputs = (ragStep?.outputs || {}) as Record<string, unknown>;
+              const runtime = (outputs.runtime_invocation && typeof outputs.runtime_invocation === 'object'
+                ? outputs.runtime_invocation
+                : {}) as Record<string, unknown>;
+              return outputs.memory_version || runtime.memory_version || 'n/a';
+            })(),
+          },
+          {
+            key: 'unavailable_reason',
+            value: result.similar_cases.length
+              ? undefined
+              : (() => {
+                const ragStep = (result.agent_steps || []).find((step) => String(step.step_id || '').includes('case_rag'));
+                const outputs = (ragStep?.outputs || {}) as Record<string, unknown>;
+                const runtime = (outputs.runtime_invocation && typeof outputs.runtime_invocation === 'object'
+                  ? outputs.runtime_invocation
+                  : {}) as Record<string, unknown>;
+                return outputs.reason || runtime.reason || 'no_hits';
+              })(),
+          },
         ],
       },
     ];
@@ -1446,6 +1578,37 @@ export function AgentWorkbenchPanel({
                   ? '汇总胃腔、病灶、胃壁、分期与临床线索，生成医生可快速复核与编辑的意见。'
                   : 'Combine lumen, lesion, wall, staging, and clinical cues into a physician-editable opinion.'}
               </div>
+              <div className={`mt-3 rounded-lg border px-3 py-2 text-[10px] leading-relaxed ${
+                geometryInputs.ready
+                  ? 'border-emerald-300/30 bg-emerald-300/10 text-emerald-100'
+                  : 'border-amber-300/30 bg-amber-300/10 text-amber-100'
+              }`}>
+                <div className="font-semibold">
+                  {language !== 'en' ? 'Agent 几何输入门禁' : 'Agent geometry gate'}
+                </div>
+                <div className="mt-1">
+                  {language !== 'en'
+                    ? `病灶 ${geometryInputs.lesionReady ? '已确认' : '缺失'}，胃腔 ${geometryInputs.lumenReady ? '已确认' : '缺失'}`
+                    : `Lesion ${geometryInputs.lesionReady ? 'confirmed' : 'missing'}, lumen ${geometryInputs.lumenReady ? 'confirmed' : 'missing'}`}
+                  {geometryInputs.geometry.available
+                    ? `; ${geometryInputs.geometry.relation === 'overlap' ? (language !== 'en' ? '存在重叠' : 'overlap') : geometryInputs.geometry.relation}`
+                    : ''}
+                </div>
+                {liveGeometryPending ? (
+                  <div className="mt-1 text-amber-200">
+                    {language !== 'en'
+                      ? '当前轮廓尚未保存为确认 override，保存病灶和胃腔后 Agent 才会启动。'
+                      : 'The live contours are not saved as confirmed overrides. Save lesion and lumen geometry before starting the Agent.'}
+                  </div>
+                ) : null}
+                {geometryInputs.geometry.relation === 'overlap' ? (
+                  <div className="mt-1 text-amber-200">
+                    {language !== 'en'
+                      ? '重叠只表示投影关系，Agent 将同时接收两条轮廓，不把重叠当作侵犯证据。'
+                      : 'Overlap is only a projection relation. The Agent receives both contours and will not treat overlap as invasion evidence.'}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="flex shrink-0 items-start gap-3">
               {result && (
@@ -1785,6 +1948,83 @@ export function AgentWorkbenchPanel({
                         {language !== 'en'
                           ? '完整表格见步骤「运行时 API / 模型调用核验」。'
                           : 'See the runtime API verification step for the full table.'}
+                      </div>
+                    </div>
+                  )}
+
+                  {result?.tool_evidence && (
+                    <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/5 p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-200/80">
+                        {language !== 'en' ? '冻结后端口径（2026-08-09）' : 'Frozen backend contract (2026-08-09)'}
+                      </div>
+                      <div className="mt-2 grid gap-2 text-[11px] text-slate-200 sm:grid-cols-2">
+                        <div className="rounded-lg bg-black/25 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500">T staging</div>
+                          <div className="mt-0.5 font-mono text-[10px] text-sky-100">
+                            {formatUnknown(
+                              result.tool_evidence.classification?.backend_id
+                              ?? result.tool_evidence.classification?.checkpoint
+                              ?? 'tstage_acc_boost2_screened_20260603',
+                            )}
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-black/25 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500">Segmentation</div>
+                          <div className="mt-0.5 font-mono text-[10px] text-sky-100">
+                            {formatUnknown(
+                              result.tool_evidence.segmentation?.backend_id
+                              ?? result.tool_evidence.segmentation?.checkpoint
+                              ?? 'lesion_segmentation_unet_fulldata_convnext_base',
+                            )}
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-black/25 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500">
+                            {language !== 'en' ? '支持 / 冲突 / 不确定' : 'support / conflict / uncertainty'}
+                          </div>
+                          <div className="mt-0.5 text-sky-100">
+                            {(result.report.supporting_evidence?.length ?? 0)}
+                            {' / '}
+                            {(result.report.conflicting_evidence?.length ?? 0)}
+                            {' / '}
+                            {(result.report.uncertainty_flags?.length ?? 0)}
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-black/25 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500">SAM3.1</div>
+                          <div className="mt-0.5 text-[10px] text-slate-300">
+                            {language !== 'en'
+                              ? '交互候选已上线；Agent 批量主分割仍为 UNet'
+                              : 'Interactive candidate online; Agent batch primary remains UNet'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {result?.evidence_pack && (
+                    <div className="mt-3 rounded-xl border border-violet-300/20 bg-violet-300/5 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200/80">
+                            {language !== 'en' ? '统一病例证据包' : 'Unified case evidence pack'}
+                          </div>
+                          <div className="mt-1 text-[10px] text-slate-400">
+                            {language !== 'en'
+                              ? `已汇总 ${result.evidence_pack.assessments?.length || 0} 项评估, ${result.evidence_pack.artifacts?.length || 0} 个持久化产物`
+                              : `${result.evidence_pack.assessments?.length || 0} assessments, ${result.evidence_pack.artifacts?.length || 0} persisted artifacts`}
+                          </div>
+                        </div>
+                        {result.evidence_pack_refs?.evidence_pack_url && (
+                          <a
+                            href={result.evidence_pack_refs.evidence_pack_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-[11px] font-bold text-violet-100 transition hover:bg-violet-300/20"
+                          >
+                            {language !== 'en' ? '打开证据包 JSON' : 'Open evidence pack JSON'}
+                          </a>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2786,7 +3026,7 @@ export function AgentWorkbenchPanel({
                                 <div className="rounded bg-black/25 px-2 py-1 text-[11px] text-slate-500">{language !== 'en' ? '暂无结构化指标' : 'No structured metrics'}</div>
                               )}
                             </div>
-                            {card.tool?.error && (
+                            {card.tool && 'error' in card.tool && card.tool.error && (
                               <div className="mt-2 rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] text-red-200">{card.tool.error}</div>
                             )}
                             {card.tool?.trust_label && (

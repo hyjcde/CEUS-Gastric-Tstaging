@@ -1,0 +1,27 @@
+{
+  "seed": 20260810,
+  "freeze_id": "reader_round2_freeze_20260810",
+  "created_at": "2026-08-10T03:43:20Z",
+  "reader_count": 16,
+  "row_count": 2400,
+  "cases_per_reader": {
+    "Doctor_01": 150,
+    "Doctor_02": 150,
+    "Doctor_03": 150,
+    "Doctor_04": 150,
+    "Doctor_06": 150,
+    "Doctor_07": 150,
+    "Doctor_08": 150,
+    "Doctor_09": 150,
+    "Doctor_10": 150,
+    "Doctor_11": 150,
+    "Doctor_12": 150,
+    "Doctor_13": 150,
+    "Doctor_14": 150,
+    "Doctor_15": 150,
+    "Doctor_16": 150,
+    "Doctor_17": 150
+  },
+  "sha256": "a646367707f3b5400efdd6b118e97b9a1b88a44dabc072b20618d7d4f480904b",
+  "method": "per_reader_fisher_yates_shuffle"
+}

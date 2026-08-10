@@ -1,0 +1,2 @@
+bundle_id,created_at,kind,clinical_claims_allowed,round1_mean_t_acc,round2_completed_rows,uplift_status,path
+autoresearch_results_20260810_human_ai_closure,2026-08-10T05:48:25Z,human_ai_closure_aggregate,false,0.4436,0,blocked_until_round2_data,pipeline/autoresearch/results/20260810

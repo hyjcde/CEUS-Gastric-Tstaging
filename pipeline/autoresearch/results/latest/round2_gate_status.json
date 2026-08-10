@@ -1,0 +1,64 @@
+{
+  "freeze_id": "reader_round2_freeze_20260810",
+  "execution_status": "prepared_not_run",
+  "clinical_claims_allowed": false,
+  "scaffold_ready": true,
+  "checks": [
+    {
+      "name": "freeze_json_exists",
+      "ok": true,
+      "detail": "/data/research/gastric/GastricTstaging/data/registry/reader_round2_study_freeze_20260810.json"
+    },
+    {
+      "name": "manifest_exists",
+      "ok": true,
+      "detail": "/data/research/gastric/GastricTstaging/data/registry/reader_round2_ai_assisted_manifest.csv"
+    },
+    {
+      "name": "case_order_exists",
+      "ok": true,
+      "detail": "/data/research/gastric/GastricTstaging/data/registry/reader_round2_case_order_20260810.csv"
+    },
+    {
+      "name": "expertise_exists",
+      "ok": true,
+      "detail": "/data/research/gastric/GastricTstaging/data/registry/reader_expertise_registry_20260810.csv"
+    },
+    {
+      "name": "export_status_exists",
+      "ok": true,
+      "detail": "/data/research/gastric/GastricTstaging/docs/clinical_validation/reader_round2_exports/export_status.json"
+    },
+    {
+      "name": "manifest_sha256",
+      "ok": true,
+      "detail": "got=cd19511afe73fa4bf9447802b324b0558b5997c08a664d062b8d0d3163643f76"
+    },
+    {
+      "name": "case_order_sha256",
+      "ok": true,
+      "detail": "got=a646367707f3b5400efdd6b118e97b9a1b88a44dabc072b20618d7d4f480904b"
+    },
+    {
+      "name": "expertise_primary_registered",
+      "ok": false,
+      "detail": "registered=0, pending=14"
+    },
+    {
+      "name": "export_status_readable",
+      "ok": true,
+      "detail": "prepared_not_run"
+    },
+    {
+      "name": "round2_completed_rows_gt0",
+      "ok": false,
+      "detail": "round2_completed_rows=0"
+    },
+    {
+      "name": "research_audit_events_gt0",
+      "ok": false,
+      "detail": "event_count=0"
+    }
+  ],
+  "note": "Clinical AI-assisted uplift claims are blocked until expertise is registered and Round2 research events produce completed paired rows."
+}

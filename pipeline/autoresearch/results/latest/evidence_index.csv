@@ -1,0 +1,11 @@
+bucket,claim_level,path,metric,value
+model_foundation,reportable,docs/mainline/asset_freeze_decision_20260809.md,acc_boost2 / Phase0 split,frozen
+agent_acceptance,foundation_only,pipeline/experiments/reports/gastric_us_agent_frozen_validation_clean_20260809/SUMMARY.md,full Agent ACC internal/external 20+20,0.70 / 0.50
+offline_v150_ai,sensitivity_only,artifacts/eval/reader_study_v150_two_phase_v2/SUMMARY.md,AI BM/T on reader bundle,0.66 / 0.57
+round1_no_ai,reportable,docs/clinical_validation/reader_round2_exports/round1_doctor_level.csv,primary mean T/BM ACC,0.4436/0.5014
+round2_freeze,scaffold,data/registry/reader_round2_study_freeze_20260810.json,execution_status,prepared_not_run
+round2_gate,blocked_clinical,docs/clinical_validation/reader_round2_exports/round2_gate_status.json,clinical_claims_allowed,false
+round2_uplift,blocked_clinical,docs/clinical_validation/reader_round2_exports/expertise_uplift_summary.json,status,blocked_until_round2_data
+round2_runtime_contract,scaffold,data/registry/reader_round2_study_freeze_20260810.json,server auth / order / structured evidence,"implemented, research not started"
+paper_evidence_chain,design,docs/paper_drafts/human_ai_reader_evidence_chain_20260810.md,narrative_priority,A clinical > D model foundation
+sap,preregistered,docs/READER_ROUND2_STATISTICAL_ANALYSIS_PLAN_20260810.md,primary_endpoint,paired delta T ACC

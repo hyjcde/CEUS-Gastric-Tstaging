@@ -1,0 +1,16 @@
+{
+  "event_count": 0,
+  "event_type_counts": {},
+  "reader_counts": {},
+  "environment_counts": {},
+  "doctor_action_count": 0,
+  "safety_action_count": 0,
+  "excluded_event_count": 5994,
+  "events_path": [
+    "/data/research/gastric/GastricTstaging/apps/gastric_scan_next/data/reader_audit_events.jsonl"
+  ],
+  "exclusions_path": "/data/research/gastric/GastricTstaging/docs/reader_audit_exclusions_20260801.json",
+  "allowed_environments": [
+    "research"
+  ]
+}

@@ -1,0 +1,3 @@
+score_id,case_id,reader_id,condition,report_target,rater_id,blinded_to_condition,completeness,facticity,key_tstage_evidence,conflict_uncertainty_expression,traceability,clinical_usability,mean_score,overall_usable,comments,created_at
+example_ai_draft,CASE-001,Doctor_01,ai_assisted,ai_draft,rater_A,True,,,,,,,,,template only; do not analyze,
+example_doctor_final,CASE-001,Doctor_01,ai_assisted,doctor_final_report,rater_A,True,,,,,,,,,template only; do not analyze,

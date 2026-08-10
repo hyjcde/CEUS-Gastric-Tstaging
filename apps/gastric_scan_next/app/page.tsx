@@ -16,6 +16,7 @@ import {
   type DinoFeatureResult,
   type ImagingAssistPayload,
   type UnifiedAgentCapture,
+  type WorkflowTraceStep,
 } from '@/components/InteractiveSegPanel';
 import { ReaderAgentResultCard } from '@/components/ReaderAgentResultCard';
 import { ReaderStudyQueuePanel } from '@/components/ReaderStudyQueuePanel';
@@ -23,14 +24,27 @@ import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
 import { BenignTissueObservationCard } from '@/components/BenignTissueObservationCard';
 import { AssistHub } from '@/components/AssistHub';
 import { GcUsImagingReportCard } from '@/components/GcUsImagingReportCard';
-import { GcUsEvidencePanel } from '@/components/GcUsEvidencePanel';
+import { GcUsEvidencePanel, mergeFreshEvidence } from '@/components/GcUsEvidencePanel';
 // VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, LumenOverride, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
 import toast from 'react-hot-toast';
 import type { SamReport } from '@/lib/reader/types';
-import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import {
+  createGcUsReportState,
+  createGcUsField,
+  deriveGcUsSigns,
+  type GcUsReportImage,
+  type GcUsReportState,
+} from '@/lib/gc-us-report-template';
+import { reportImageFromBase64 } from '@/lib/report-evidence-images';
 import { lumenOverrideToAnalyzePayload } from '@/lib/lumen-override';
+import {
+  compactReaderSigns,
+  readerEnvironmentFromSearchParams,
+  readerEvidenceIds,
+  READER_ROUND2_VERSION_FIELDS,
+} from '@/lib/reader/study-contract';
 import { ChevronLeft, ChevronRight, Users, BarChart2, FileText, X } from 'lucide-react';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
 import {
@@ -49,6 +63,88 @@ import {
 const EMPTY_READER_CLINICAL: Record<string, unknown> = {};
 const EMPTY_POLYGON: number[][] = [];
 const EVIDENCE_PANEL_WIDTH = 'clamp(20rem, 30vw, 32rem)';
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function positiveClinicalNumber(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function clinicalMeasurementMm(
+  clinical: Record<string, unknown>,
+  mmKeys: string[],
+  cmKeys: string[],
+  nestedKey: 'length' | 'thickness',
+): number | null {
+  const records = [
+    clinical,
+    asRecord(clinical.measurements),
+    asRecord(clinical.measurement),
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
+  for (const record of records) {
+    for (const key of mmKeys) {
+      const value = positiveClinicalNumber(record[key]);
+      if (value != null) return value;
+    }
+    for (const key of cmKeys) {
+      const value = positiveClinicalNumber(record[key]);
+      if (value != null) return value * 10;
+    }
+  }
+  const nested = asRecord(clinical.tumorSize);
+  const value = positiveClinicalNumber(nested?.[nestedKey]);
+  return value == null ? null : value * 10;
+}
+
+function mergeReportEvidenceImages(
+  previous: GcUsReportImage[],
+  incoming: GcUsReportImage[],
+): GcUsReportImage[] {
+  const merged = new Map<string, GcUsReportImage>();
+  for (const image of [...previous, ...incoming]) {
+    if (!image?.id || !image.url) continue;
+    merged.set(image.id, image);
+  }
+  return [...merged.values()];
+}
+
+function contourIrregularity(points: number[][]): number | null {
+  if (points.length < 3) return null;
+  let area2 = 0;
+  let perimeter = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area2 += current[0] * next[1] - next[0] * current[1];
+    perimeter += Math.hypot(next[0] - current[0], next[1] - current[1]);
+  }
+  const area = Math.abs(area2) / 2;
+  return area > 1e-3 && perimeter > 1e-3
+    ? (perimeter * perimeter) / (4 * Math.PI * area)
+    : null;
+}
+
+function reportStorageKey(caseId: string): string {
+  return `next-gc-us-report:${caseId}`;
+}
+
+function readCachedReport(caseId: string): { state: GcUsReportState; updatedAt: number } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(reportStorageKey(caseId));
+    if (!raw) return null;
+    const parsed = createGcUsReportState(JSON.parse(raw) as Partial<GcUsReportState>);
+    const updatedAt = Number(window.localStorage.getItem(`${reportStorageKey(caseId)}:updated_at`) || 0);
+    return { state: parsed, updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0 };
+  } catch {
+    return null;
+  }
+}
 
 function normalizeAgentStage(value: unknown): string | null {
   const raw = String(value || '').trim();
@@ -111,7 +207,32 @@ export default function Home() {
   const isBenignQueue = selectedPatient?.phase === 'benign';
   const handleDinoFeatures = useCallback((result: DinoFeatureResult | null) => {
     setDinoFeature(result);
-    if (result?.available) setIsEvidencePanelOpen(true);
+    if (result?.available) {
+      setIsEvidencePanelOpen(true);
+      const dinoImages = [
+        result.feature_overlay_png
+          ? reportImageFromBase64(
+              'dino-feature-overlay',
+              'DINO 区域特征可视化',
+              result.feature_overlay_png,
+              '当前病例 DINO 特征叠加图',
+              'analysis',
+            )
+          : null,
+        result.wall_evidence_overlay_png
+          ? reportImageFromBase64(
+              'dino-wall-evidence-overlay',
+              'DINO 胃壁证据可视化',
+              result.wall_evidence_overlay_png,
+              '当前病例 DINO 胃壁证据叠加图',
+              'wall',
+            )
+          : null,
+      ].filter((image): image is GcUsReportImage => Boolean(image));
+      if (dinoImages.length) {
+        setReportEvidenceImages((previous) => mergeReportEvidenceImages(previous, dinoImages));
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -128,6 +249,7 @@ export default function Home() {
     setSaveStatus('idle');
     setSystemReport(null);
     setDinoFeature(null);
+    deepLinkCaseAppliedRef.current = null;
     if (cohortYear === 'reader_v150') setReaderStudyMode('benign_malignancy');
   }, [cohortYear, dataset, queueId]);
 
@@ -155,10 +277,18 @@ export default function Home() {
   const [readerUnifiedAgentResult, setReaderUnifiedAgentResult] = useState<AgentAnalysisResponse | null>(null);
   const [readerUnifiedAgentBusy, setReaderUnifiedAgentBusy] = useState(false);
   const [readerUnifiedAgentError, setReaderUnifiedAgentError] = useState<string | null>(null);
+  const [readerWorkflowTrace, setReaderWorkflowTrace] = useState<WorkflowTraceStep[]>([]);
   const [readerReportOpen, setReaderReportOpen] = useState(false);
+  const [readerFrameImage, setReaderFrameImage] = useState<string | null>(null);
+  const [readerFrameImageMeta, setReaderFrameImageMeta] = useState<{
+    frame_id?: string | null;
+    frame_time?: number | null;
+    source_video_url?: string | null;
+  } | null>(null);
   const [maskOverride, setMaskOverride] = useState<MaskBoundaryOverride | null>(null);
   const [lumenOverride, setLumenOverride] = useState<LumenOverride | null>(null);
   const [imagingAssist, setImagingAssist] = useState<ImagingAssistPayload | null>(null);
+  const [reportEvidenceImages, setReportEvidenceImages] = useState<GcUsReportImage[]>([]);
   const [gcUsReport, setGcUsReport] = useState<GcUsReportState | null>(null);
   const [agentFilledCount, setAgentFilledCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -180,6 +310,11 @@ export default function Home() {
   const gcUsAuditSessionRef = useRef<string | null>(null);
   const patientConceptStatesRef = useRef<Map<string, ConceptState>>(new Map());
   const conceptLoadTokenRef = useRef(0);
+  const reportLoadTokenRef = useRef(0);
+  const reportLoadAbortRef = useRef<AbortController | null>(null);
+  const readerAgentAbortRef = useRef<AbortController | null>(null);
+  const selectedPatientRef = useRef<Patient | null>(null);
+  const deepLinkCaseAppliedRef = useRef<string | null>(null);
   const conceptStateRef = useRef(conceptState);
   const saveConceptStateRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -191,6 +326,22 @@ export default function Home() {
     patientConceptStatesRef.current = patientConceptStates;
   }, [patientConceptStates]);
 
+  useEffect(() => {
+    selectedPatientRef.current = selectedPatient;
+  }, [selectedPatient]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !allPatients.length) return;
+    const requestedCase = new URLSearchParams(window.location.search).get('case_id');
+    if (!requestedCase || deepLinkCaseAppliedRef.current === requestedCase) return;
+    const target = allPatients.find((patient) => (
+      patient.id === requestedCase || patient.patient_id === requestedCase
+    ));
+    if (!target) return;
+    deepLinkCaseAppliedRef.current = requestedCase;
+    if (selectedPatientRef.current?.id !== target.id) setSelectedPatient(target);
+  }, [allPatients]);
+
   const syncFieldSourcesForPatient = useCallback((patientId: string, sources: ConceptFieldSources) => {
     fieldSourcesRef.current.set(patientId, sources);
     setFieldSources(sources);
@@ -200,11 +351,15 @@ export default function Home() {
     setAgentAnalysis(null);
     setReaderUnifiedAgentResult(null);
     setReaderUnifiedAgentError(null);
+    setReaderWorkflowTrace([]);
     setReaderReportOpen(false);
+    setReaderFrameImage(null);
+    setReaderFrameImageMeta(null);
     setAgentFilledCount(0);
     setSaveStatus('idle');
     setIsDirty(false);
     setImagingAssist(null);
+    setReportEvidenceImages([]);
     setGcUsReport(null);
     setSystemReport(null);
     setDinoFeature(null);
@@ -225,14 +380,68 @@ export default function Home() {
     const baseline = clinicalBaselinesRef.current.get(selectedPatient.id)
       ?? getConceptStateFromPatient(selectedPatient);
     syncFieldSourcesForPatient(selectedPatient.id, buildClinicalFieldSources(baseline));
-  }, [selectedPatient?.id, syncFieldSourcesForPatient]);
+  }, [selectedPatient, selectedPatient?.id, syncFieldSourcesForPatient]);
+
+  useEffect(() => {
+    const caseId = selectedPatient?.patient_id || selectedPatient?.id;
+    reportLoadAbortRef.current?.abort();
+    if (!caseId) {
+      setGcUsReport(null);
+      return;
+    }
+    const controller = new AbortController();
+    reportLoadAbortRef.current = controller;
+    const loadToken = reportLoadTokenRef.current + 1;
+    reportLoadTokenRef.current = loadToken;
+    const cached = readCachedReport(caseId);
+    if (cached) {
+      setGcUsReport(cached.state);
+      setIsDirty(cached.updatedAt > 0);
+    }
+    void fetch(`/api/reports/template?case_id=${encodeURIComponent(caseId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return await response.json() as {
+          ok?: boolean;
+          report?: GcUsReportState | null;
+          metadata?: { updated_at?: string | null } | null;
+        };
+      })
+      .then((payload) => {
+        if (controller.signal.aborted || reportLoadTokenRef.current !== loadToken) return;
+        if (!payload?.ok || !payload.report) {
+          if (!cached) setGcUsReport(null);
+          return;
+        }
+        const serverUpdatedAt = payload.metadata?.updated_at
+          ? Date.parse(payload.metadata.updated_at)
+          : 0;
+        if (cached && cached.updatedAt > serverUpdatedAt) {
+          setIsDirty(true);
+          return;
+        }
+        setGcUsReport(createGcUsReportState(payload.report));
+        setIsDirty(false);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || reportLoadTokenRef.current !== loadToken) return;
+        if (!cached) setGcUsReport(null);
+        // A missing report or a transient read failure must not block the case review.
+        void error;
+      });
+    return () => {
+      controller.abort();
+      if (reportLoadAbortRef.current === controller) reportLoadAbortRef.current = null;
+    };
+  }, [selectedPatient, selectedPatient?.id, selectedPatient?.patient_id]);
 
   useEffect(() => {
     gcUsActionIdsRef.current.clear();
+    readerAgentAbortRef.current?.abort();
     gcUsAuditSessionRef.current = selectedPatient
       ? `gcus-${selectedPatient.id}-${Date.now()}`
       : null;
-  }, [selectedPatient?.id]);
+  }, [selectedPatient, selectedPatient?.id]);
 
   const conceptPopulatedCount = useMemo(
     () => countPopulatedConceptFields(conceptState),
@@ -252,7 +461,10 @@ export default function Home() {
       setMaskOverride(null);
       setLumenOverride(null);
       setImagingAssist(null);
+    setReportEvidenceImages([]);
       setGcUsReport(null);
+      setReaderFrameImage(null);
+      setReaderFrameImageMeta(null);
       setConceptState(DEFAULT_STATE);
       setAgentFilledCount(0);
       setIsDirty(false);
@@ -262,23 +474,56 @@ export default function Home() {
 
   const handleReaderUnifiedAgent = useCallback(async (capture: UnifiedAgentCapture) => {
     if (!selectedPatient || !isReaderStudyQueue) return;
+    const lesionReady = capture.mask_polygon.length >= 3;
+    const lumenReady = Boolean(
+      (capture.lumen_polygon && capture.lumen_polygon.length >= 3)
+      || capture.lumen_bbox,
+    );
+    if (!lesionReady || !lumenReady) {
+      const message = !lesionReady
+        ? '请先确认病灶分割轮廓'
+        : '请先确认胃腔轮廓或胃腔框';
+      setReaderUnifiedAgentError(`Agent 未运行：${message}`);
+      toast.error(`Agent 未运行：${message}`);
+      return;
+    }
+    const caseId = selectedPatient.id;
+    readerAgentAbortRef.current?.abort();
+    const controller = new AbortController();
+    readerAgentAbortRef.current = controller;
     setReaderUnifiedAgentBusy(true);
     setReaderUnifiedAgentError(null);
     try {
+      const primaryFrame = capture.frames.reduce((best, frame) => (
+        Math.abs(frame.timestamp_sec - capture.current_time) < Math.abs(best.timestamp_sec - capture.current_time)
+          ? frame
+          : best
+      ), capture.frames[0]);
       const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const environment = readerEnvironmentFromSearchParams(params);
+      const readerId = environment === 'research'
+        ? undefined
+        : (params?.get('reader_id') || 'workbench_reader');
       const response = await fetch('/api/reader/agent/analyze', {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...READER_ROUND2_VERSION_FIELDS,
           case_id: selectedPatient.id,
           patient_id: selectedPatient.patient_id,
-          reader_id: params?.get('reader_id') || 'workbench_reader',
+          ...(readerId ? { reader_id: readerId } : {}),
+          condition: 'ai_assisted',
           round: params?.get('round') || 'round2',
+          environment,
           study_mode: selectedPatient.study_mode || readerStudyMode,
-          frame_id: selectedPatient.id,
-          frame_time: capture.current_time,
-          frame_png_b64: capture.frames[0]?.frame_png_b64,
+          frame_id: primaryFrame?.frame_id || selectedPatient.id,
+          frame_time: primaryFrame?.timestamp_sec ?? capture.current_time,
+          frame_png_b64: primaryFrame?.frame_png_b64,
           frames: capture.frames,
+          workflow_trace: capture.workflow_trace?.length
+            ? capture.workflow_trace
+            : readerWorkflowTrace,
           gc_us_report: gcUsReport || undefined,
           mask_override: capture.mask_polygon.length
             ? {
@@ -320,8 +565,20 @@ export default function Home() {
         error?: string;
         result?: AgentAnalysisResponse;
       };
+      if (controller.signal.aborted || selectedPatientRef.current?.id !== caseId) return;
       if (!response.ok || !data.ok || !data.result) {
         throw new Error(data.error || `Unified Agent HTTP ${response.status}`);
+      }
+      const frameImage = primaryFrame?.frame_png_b64;
+      if (frameImage) {
+        setReaderFrameImage(frameImage.startsWith('data:')
+          ? frameImage
+          : `data:image/png;base64,${frameImage}`);
+        setReaderFrameImageMeta({
+          frame_id: primaryFrame?.frame_id || selectedPatient.id,
+          frame_time: primaryFrame?.timestamp_sec ?? capture.current_time,
+          source_video_url: selectedPatient.video_urls?.[0]?.url || null,
+        });
       }
       if (capture.mask_polygon.length >= 3) {
         setSystemReport(
@@ -335,24 +592,65 @@ export default function Home() {
         );
       }
       setReaderUnifiedAgentResult(data.result);
+      void fetch('/api/reader-audit/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...READER_ROUND2_VERSION_FIELDS,
+          event_type: 'ai_suggestion',
+          session_id: `reader-unified-${caseId}`,
+          case_id: caseId,
+          ...(readerId ? { reader_id: readerId } : {}),
+          condition: 'ai_assisted',
+          study_mode: selectedPatient.study_mode || readerStudyMode,
+          round: params?.get('round') || 'round2',
+          environment,
+          patient_id: selectedPatient.patient_id,
+          payload: {
+            source: 'unified_agent_bridge',
+            recommended_t_stage: data.result.report?.recommended_t_stage || null,
+            stage_distribution: data.result.report?.similar_case_summary?.stage_distribution || null,
+            calibrated_confidence: data.result.report?.confidence || null,
+            structured_signs: compactReaderSigns(data.result.report),
+            evidence_ids: data.result.report?.supporting_evidence || readerEvidenceIds(data.result.report),
+            report_status: data.result.report?.status || 'review_required',
+            environment,
+          },
+          client_recorded_at: new Date().toISOString(),
+        }),
+      }).catch(() => {
+        // Audit failure must not interrupt the reading workflow.
+      });
       setReaderReportOpen(true);
       setIsEvidencePanelOpen(true);
       toast.success(language !== 'en' ? '辅助诊断意见已更新' : 'Assisted diagnosis updated');
     } catch (error) {
+      if (controller.signal.aborted || selectedPatientRef.current?.id !== caseId) return;
       const message = error instanceof Error ? error.message : '统一 Agent 分析失败';
       setReaderUnifiedAgentError(message);
       toast.error(message);
     } finally {
-      setReaderUnifiedAgentBusy(false);
+      if (readerAgentAbortRef.current === controller) {
+        readerAgentAbortRef.current = null;
+        setReaderUnifiedAgentBusy(false);
+      }
     }
-  }, [gcUsReport, isReaderStudyQueue, language, lumenOverride, readerStudyMode, selectedPatient]);
+  }, [gcUsReport, isReaderStudyQueue, language, lumenOverride, readerStudyMode, readerWorkflowTrace, selectedPatient]);
 
   const handleGcUsEvidenceState = useCallback((next: GcUsReportState) => {
-    setGcUsReport(next);
-    if (!selectedPatient || !isReaderStudyQueue) return;
+    const currentPatient = selectedPatientRef.current;
+    const currentCaseIds = currentPatient
+      ? new Set([currentPatient.id, currentPatient.patient_id].filter(Boolean))
+      : new Set<string>();
+    if (!currentPatient || (next.case_id && !currentCaseIds.has(next.case_id))) return;
+    setGcUsReport((previous) => mergeFreshEvidence(previous, next));
+    if (currentPatient.phase !== 'reader_v150') return;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const sessionId = gcUsAuditSessionRef.current || `gcus-${selectedPatient.id}`;
-    const readerId = params?.get('reader_id') || 'workbench_reader';
+    const sessionId = gcUsAuditSessionRef.current || `gcus-${currentPatient.id}`;
+    const environment = readerEnvironmentFromSearchParams(params);
+    const readerId = environment === 'research'
+      ? undefined
+      : (params?.get('reader_id') || 'workbench_reader');
     const round = params?.get('round') || 'round2';
     for (const action of next.doctor_actions || []) {
       if (gcUsActionIdsRef.current.has(action.action_id)) continue;
@@ -361,20 +659,29 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...READER_ROUND2_VERSION_FIELDS,
           event_id: action.action_id,
           event_type: 'doctor_action',
           session_id: sessionId,
-          case_id: selectedPatient.id,
-          reader_id: readerId,
+          case_id: currentPatient.id,
+          ...(readerId ? { reader_id: readerId } : {}),
+          condition: 'ai_assisted',
+          study_mode: currentPatient.study_mode || readerStudyMode,
           round,
-          patient_id: selectedPatient.patient_id,
+          environment,
+          patient_id: currentPatient.patient_id,
           payload: {
             action,
             report_schema_version: next.schema_version,
             template_id: next.template_id,
             reference_stage: next.reference_stage,
             signs: next.signs,
+            template_fields: next.template_fields,
+            report_status: next.report.status,
             doctor_actions: next.doctor_actions,
+            structured_signs: compactReaderSigns({ signs: next.signs }),
+            evidence_ids: next.report_images?.map((image) => image.id || image.label || image.kind).filter(Boolean) || [],
+            environment,
           },
           client_recorded_at: new Date().toISOString(),
         }),
@@ -382,11 +689,108 @@ export default function Home() {
         // Audit failure must not interrupt the reading workflow.
       });
     }
-  }, [isReaderStudyQueue, selectedPatient]);
+  }, [readerStudyMode]);
+
+  const handleWorkflowStep = useCallback((step: WorkflowTraceStep) => {
+    setReaderWorkflowTrace((previous) => [...previous, step].slice(-160));
+  }, []);
 
   const handleImagingAssist = useCallback((next: ImagingAssistPayload | null) => {
     setImagingAssist(next);
-    if (!next) setGcUsReport(null);
+    if (!next) {
+      setReportEvidenceImages([]);
+      setGcUsReport(null);
+      return;
+    }
+    const currentPatient = selectedPatientRef.current;
+    if (currentPatient) {
+      const clinical = {
+        ...(currentPatient.clinical || {}),
+        tumor_size_mm: currentPatient.clinical?.tumorSize?.length != null
+          ? Number(currentPatient.clinical.tumorSize.length) * 10
+          : undefined,
+        tumor_thickness_mm: currentPatient.clinical?.tumorSize?.thickness != null
+          ? Number(currentPatient.clinical.tumorSize.thickness) * 10
+          : undefined,
+      } as Record<string, unknown>;
+      const layer = next.layerResult?.layer;
+      const derivedSigns = deriveGcUsSigns({
+        caseId: currentPatient.patient_id || currentPatient.id,
+        frameId: currentPatient.id,
+        clinical,
+        layer: {
+          label: next.layerResult?.inContact === false ? null : layer?.label,
+          tHint: next.layerResult?.inContact === false ? null : layer?.tHint,
+          inContact: next.layerResult?.inContact,
+          confidence: typeof layer?.confidence === 'number' ? layer.confidence : null,
+        },
+        pixel: {
+          irregularity: contourIrregularity(next.lesionPolygon),
+        },
+        evidenceRef: [
+          currentPatient.id,
+          next.frameSize ? `frame_size:${next.frameSize.width}x${next.frameSize.height}` : 'frame_size:unknown',
+          next.wallPolygon.length >= 3 ? 'wall_polygon' : 'wall_unavailable',
+        ],
+      });
+      if (next.lesionPolygon.length >= 3) {
+        if (derivedSigns.layer_structure.value == null) {
+          derivedSigns.layer_structure = createGcUsField(
+            '当前帧层次显示有限，需多切面复核',
+            { status: 'pending', source: 'live_contour', confidence: 0.25 },
+          );
+        }
+        if (derivedSigns.serosa_change.value == null) {
+          derivedSigns.serosa_change = createGcUsField(
+            '当前帧浆膜连续性需多切面核对',
+            { status: 'pending', source: 'live_contour', confidence: 0.25 },
+          );
+        }
+        if (derivedSigns.perigastric_tissue.value == null) {
+          derivedSigns.perigastric_tissue = createGcUsField(
+            '当前帧胃周组织需多切面核对',
+            { status: 'pending', source: 'live_contour', confidence: 0.25 },
+          );
+        }
+      }
+      const derived = createGcUsReportState({
+        case_id: currentPatient.patient_id || currentPatient.id,
+        frame_id: currentPatient.id,
+        frame_time: null,
+        clinical,
+        signs: derivedSigns,
+      });
+      setGcUsReport((previous) => mergeFreshEvidence(previous, derived));
+    }
+  }, []);
+
+  const handleReportEvidenceImages = useCallback((images: GcUsReportImage[], caseId?: string | null) => {
+    if (caseId && selectedPatientRef.current?.id !== caseId) return;
+    setReportEvidenceImages((previous) => mergeReportEvidenceImages(previous, images));
+  }, []);
+
+  const handleAgentAnalysis = useCallback((next: AgentAnalysisResponse | null) => {
+    setAgentAnalysis(next);
+    const artifacts = asRecord(next?.prediction_artifacts);
+    if (!artifacts) return;
+    const artifactImages = [
+      ['agent-wall-analysis', '胃壁层次分析', artifacts.real_wall_analysis_panel_url],
+      ['agent-curvature-analysis', '曲率/边界分析', artifacts.wall_penetration_heatmap_url || artifacts.boundary_analysis_panel_url],
+      ['agent-dino-analysis', 'DINO 区域特征分析', artifacts.current_image_dino_feature_panel_url],
+      ['agent-core-signs', '核心征象分析', artifacts.gc_us_sign_panel_url],
+    ]
+      .filter((item): item is [string, string, string] => typeof item[2] === 'string' && item[2].length > 0)
+      .map(([id, label, url]) => ({
+        id,
+        label,
+        url,
+        kind: label.includes('曲率') ? 'curvature' as const : 'analysis' as const,
+        caption: `${label}, 来自当前病例 Agent 产物`,
+        selected: true,
+      }));
+    if (artifactImages.length) {
+      setReportEvidenceImages((previous) => mergeReportEvidenceImages(previous, artifactImages));
+    }
   }, []);
 
   const siblingImages = useMemo(() => {
@@ -398,20 +802,55 @@ export default function Home() {
   const imagingNarrative = gcUsReport?.report.prose || null;
   const readerAssistantStage = getReaderAgentStage(readerUnifiedAgentResult);
   const readerAssistantConfidence = getReaderAgentConfidence(readerUnifiedAgentResult);
+  const readerReportImages = useMemo<GcUsReportImage[]>(
+    () => mergeReportEvidenceImages(
+      reportEvidenceImages,
+      readerFrameImage
+        ? [{
+            id: 'reader-current-frame',
+            label: '当前关键帧原始图像',
+            url: readerFrameImage,
+            kind: 'original',
+            caption: '统一 Agent 分析使用的当前关键帧',
+            selected: true,
+            frame_time: readerFrameImageMeta?.frame_time ?? null,
+            source_frame_id: readerFrameImageMeta?.frame_id ?? null,
+            source_video_url: readerFrameImageMeta?.source_video_url ?? null,
+          }]
+        : [],
+    ),
+    [readerFrameImage, readerFrameImageMeta, reportEvidenceImages],
+  );
   const readerClinical = useMemo(() => {
     const clinical = selectedPatient?.clinical;
     if (!clinical) return EMPTY_READER_CLINICAL;
-    // Patient.clinical.tumorSize is stored in cm; evidence panel expects mm.
-    const lengthCm = clinical.tumorSize?.length;
-    const thicknessCm = clinical.tumorSize?.thickness;
+    const clinicalRecord = clinical as unknown as Record<string, unknown>;
+    const lengthMm = clinicalMeasurementMm(
+      clinicalRecord,
+      ['tumor_size_mm', 'length_mm', 'tumorSizeMm', 'tumor_length_mm', 'long_diameter_mm', 'maximum_diameter_mm'],
+      ['length_cm', 'tumor_size_cm', 'tumor_length_cm', 'long_diameter_cm', 'maximum_diameter_cm'],
+      'length',
+    );
+    const thicknessMm = clinicalMeasurementMm(
+      clinicalRecord,
+      ['tumor_thickness_mm', 'thickness_mm', 'tumorThicknessMm', 'tumor_depth_mm', 'maximum_thickness_mm'],
+      ['thickness_cm', 'tumor_thickness_cm', 'tumor_depth_cm', 'maximum_thickness_cm'],
+      'thickness',
+    );
+    const nestedTumorSize = asRecord(clinicalRecord.tumorSize) || {};
     return {
+      ...clinicalRecord,
       location: clinical.location,
-      tumorSize: clinical.tumorSize,
+      tumorSize: {
+        ...nestedTumorSize,
+        length: lengthMm == null ? nestedTumorSize.length : lengthMm / 10,
+        thickness: thicknessMm == null ? nestedTumorSize.thickness : thicknessMm / 10,
+      },
       biomarkers: clinical.biomarkers,
-      tumor_size_mm: lengthCm != null && Number(lengthCm) > 0 ? Number(lengthCm) * 10 : undefined,
-      tumor_thickness_mm: thicknessCm != null && Number(thicknessCm) > 0 ? Number(thicknessCm) * 10 : undefined,
-      length_cm: lengthCm ?? undefined,
-      thickness_cm: thicknessCm ?? undefined,
+      tumor_size_mm: lengthMm ?? undefined,
+      tumor_thickness_mm: thicknessMm ?? undefined,
+      length_cm: lengthMm == null ? undefined : lengthMm / 10,
+      thickness_cm: thicknessMm == null ? undefined : thicknessMm / 10,
       differentiation: clinical.differentiation,
       lauren: clinical.lauren,
       concept_features: clinical.concept_features,
@@ -489,7 +928,7 @@ export default function Home() {
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [conceptState, isDirty, selectedPatient?.id]);
+  }, [conceptState, isDirty, selectedPatient, selectedPatient?.id]);
 
   const handleResetConceptState = useCallback(async () => {
     if (!selectedPatient) return;
@@ -565,7 +1004,7 @@ export default function Home() {
     }
 
     loadPatientConceptState();
-  }, [selectedPatient?.id, applyConceptState, syncFieldSourcesForPatient]);
+  }, [selectedPatient, selectedPatient?.id, applyConceptState, syncFieldSourcesForPatient]);
 
   useEffect(() => {
     if (!selectedPatient) {
@@ -573,39 +1012,7 @@ export default function Home() {
       setLumenOverride(null);
       return;
     }
-    let cancelled = false;
-    const patientId = selectedPatient.patient_id;
-    const frameId = selectedPatient.id;
-    (async () => {
-      try {
-        const qs = new URLSearchParams({ patientId, frameId });
-        const res = await fetch(`/api/patients/mask-overrides?${qs.toString()}`);
-        if (!res.ok) {
-          if (!cancelled) setMaskOverride(null);
-          return;
-        }
-        const data = await res.json() as { override?: MaskBoundaryOverride | null };
-        if (!cancelled) setMaskOverride(data.override ?? null);
-      } catch {
-        if (!cancelled) setMaskOverride(null);
-      }
-    })();
-    (async () => {
-      try {
-        const qs = new URLSearchParams({ patientId, frameId });
-        const res = await fetch(`/api/patients/lumen-overrides?${qs.toString()}`);
-        if (!res.ok) {
-          if (!cancelled) setLumenOverride(null);
-          return;
-        }
-        const data = await res.json() as { override?: LumenOverride | null };
-        if (!cancelled) setLumenOverride(data.override ?? null);
-      } catch {
-        if (!cancelled) setLumenOverride(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedPatient?.id, selectedPatient?.patient_id]);
+  }, [selectedPatient, selectedPatient?.id, selectedPatient?.patient_id]);
 
   useEffect(() => {
     if (!agentAnalysis || !selectedPatient) return;
@@ -638,6 +1045,19 @@ export default function Home() {
 
   const handleExplainableComplete = useCallback((result: ExplainableAnalysisResult) => {
     if (!selectedPatient || !result.success) return;
+
+    const visualizationBase64 = result.visualization_base64;
+    if (visualizationBase64) {
+      setReportEvidenceImages((previous) => mergeReportEvidenceImages(previous, [
+        reportImageFromBase64(
+          'explainable-curvature-analysis',
+          '曲率/边界风险分析',
+          visualizationBase64,
+          'Explainable 边界与曲率可视化, 基于当前分割轮廓',
+          'curvature',
+        ),
+      ]));
+    }
 
     const signature = `${selectedPatient.id}:${result.predicted_stage}:${result.composite_score}`;
     if (lastMergedExplainableRef.current === signature) return;
@@ -727,8 +1147,9 @@ export default function Home() {
               patient={selectedPatient}
               maskOverride={maskOverride}
               lumenOverride={lumenOverride}
+              imagingAssist={imagingAssist}
               gcUsReport={gcUsReport}
-              onAnalysisComplete={setAgentAnalysis}
+              onAnalysisComplete={handleAgentAnalysis}
             />
           ) : null}
           <InteractiveSegPanel
@@ -742,7 +1163,9 @@ export default function Home() {
             onDinoFeatures={handleDinoFeatures}
             onUnifiedAgentRun={isReaderStudyQueue ? handleReaderUnifiedAgent : undefined}
             unifiedAgentBusy={readerUnifiedAgentBusy}
+            onWorkflowStep={isReaderStudyQueue ? handleWorkflowStep : undefined}
             onExplainableComplete={handleExplainableComplete}
+            onReportEvidenceImages={handleReportEvidenceImages}
             inline={Boolean(selectedPatient)}
           />
           {!isReaderStudyQueue && !isBenignQueue && (
@@ -880,7 +1303,7 @@ export default function Home() {
                 onOpenFullReport={() => setReaderReportOpen(true)}
               />
               <GcUsEvidencePanel
-                caseId={selectedPatient.id}
+                caseId={selectedPatient.patient_id || selectedPatient.id}
                 frameId={selectedPatient.id}
                 frameTime={maskOverride?.video_time_sec ?? 0}
                 clinical={readerClinical}
@@ -896,7 +1319,7 @@ export default function Home() {
                 assistantStage={readerAssistantStage}
                 assistantConfidence={readerAssistantConfidence}
                 signAnalysis={readerUnifiedAgentResult?.tool_evidence.gc_us_signs || null}
-                initialState={null}
+                initialState={gcUsReport}
                 zh={language !== 'en'}
                 compact
                 onStateChange={handleGcUsEvidenceState}
@@ -948,6 +1371,7 @@ export default function Home() {
                     assist={imagingAssist}
                     zh={language !== 'en'}
                     signAnalysis={agentAnalysis?.tool_evidence.gc_us_signs || null}
+                    initialState={gcUsReport}
                     onApplyCtStage={(stage) => {
                       handleExplainableComplete({
                         success: true,
@@ -956,7 +1380,7 @@ export default function Home() {
                         composite_score: 0.6,
                       });
                     }}
-                    onEvidenceStateChange={setGcUsReport}
+                    onEvidenceStateChange={handleGcUsEvidenceState}
                   />
                 </div>
                 <DiagnosisPanel
@@ -966,6 +1390,8 @@ export default function Home() {
                   systemReport={systemReport}
                   dinoFeature={dinoFeature}
                   gcUsReport={gcUsReport}
+                    extraImages={reportEvidenceImages}
+                  onGcUsReportChange={handleGcUsEvidenceState}
                   imagingNarrative={imagingNarrative}
                   onExpandedChange={setIsReportExpanded}
                 />
@@ -1017,8 +1443,25 @@ export default function Home() {
         )}
         {readerReportOpen && isReaderStudyQueue && selectedPatient && typeof document !== 'undefined'
           ? createPortal(
-              <div className="fixed inset-0 z-[200000] flex flex-col bg-[#05080c]/95 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={language !== 'en' ? '病例报告工作台' : 'Case report workspace'}>
-                <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-[#0b1118]/95 px-5">
+              <div
+                className="fixed inset-0 z-[200000] flex flex-col backdrop-blur-md"
+                style={{
+                  backgroundColor: 'rgba(27, 33, 43, 0.92)',
+                  WebkitBackdropFilter: 'blur(14px)',
+                  backdropFilter: 'blur(14px)',
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-label={language !== 'en' ? '病例报告工作台' : 'Case report workspace'}
+              >
+                <div
+                  className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-5 backdrop-blur-md"
+                  style={{
+                    backgroundColor: 'rgba(21, 27, 36, 0.9)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    backdropFilter: 'blur(12px)',
+                  }}
+                >
                   <div>
                     <div className="text-sm font-bold text-white">
                       {language !== 'en' ? '病例报告工作台' : 'Case report workspace'}
@@ -1043,6 +1486,8 @@ export default function Home() {
                       analysis={readerUnifiedAgentResult}
                       gcUsReport={gcUsReport}
                       systemReport={systemReport}
+                      extraImages={readerReportImages}
+                      onGcUsReportChange={handleGcUsEvidenceState}
                     />
                   </div>
                 </div>

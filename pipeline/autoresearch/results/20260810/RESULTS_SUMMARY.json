@@ -1,0 +1,340 @@
+{
+  "schema_version": "autoresearch_results_summary_v1",
+  "bundle_id": "autoresearch_results_20260810_human_ai_closure",
+  "created_at": "2026-08-10T05:48:25Z",
+  "clinical_claims_allowed": false,
+  "verdict": "Human-AI collaborative mainline scaffolding is aggregated. Round1 no-AI baseline and model/Agent foundations are reportable. Formal Round2 AI-assisted doctor uplift remains blocked (completed_rows=0, expertise_registered=0).",
+  "model_foundation": {
+    "agent_final_t": {
+      "backend_id": "tstage_acc_boost2_screened_20260603",
+      "prospective_patient_acc": 0.72,
+      "external_patient_acc_all_485": 0.629,
+      "external_patient_acc_heldout_399": 0.556,
+      "note": "Agent final T; legacy external must report held-out 399"
+    },
+    "phase0_audit_t": {
+      "backend_id": "tstage_acc_boost2_phase0_20260610",
+      "external_patient_acc_doctor_roi_approx": 0.464,
+      "external_patient_acc_predicted_roi_approx": 0.471,
+      "note": "Strict generalization audit line; report in separate table"
+    },
+    "segmentation_primary": "lesion_segmentation_unet_fulldata_convnext_base",
+    "sam31_role": "interactive_candidate_not_agent_primary",
+    "asset_freeze_doc": "docs/mainline/asset_freeze_decision_20260809.md"
+  },
+  "agent_acceptance": {
+    "status": "foundation_only",
+    "role": "Agent offline acceptance panel; not Round2 doctor benefit",
+    "source": "pipeline/experiments/reports/gastric_us_agent_frozen_validation_clean_20260809/frozen_validation_summary.json",
+    "protocol": "frozen_acceptance_panel_no_external_tuning",
+    "cohorts": [
+      {
+        "cohort": "internal",
+        "n": 20,
+        "base_t_only_acc": 0.7,
+        "full_agent_acc": 0.7,
+        "delta": 0.0,
+        "mean_rag_weight": 0.23499999999999996
+      },
+      {
+        "cohort": "external",
+        "n": 20,
+        "base_t_only_acc": 0.45,
+        "full_agent_acc": 0.5,
+        "delta": 0.05,
+        "mean_rag_weight": 0.2
+      }
+    ]
+  },
+  "offline_v150_ai": {
+    "status": "offline_model_eval_on_reader_bundle",
+    "role": "sensitivity / feasibility only; not formal Round2 doctor AI-assisted",
+    "source": "artifacts/eval/reader_study_v150_two_phase_v2/SUMMARY.md",
+    "phase1_bm_acc": 0.66,
+    "phase2_t_acc": 0.57,
+    "t2_recall": 0.1333
+  },
+  "human_ai": {
+    "round1_no_ai": {
+      "status": "available",
+      "condition": "no_ai",
+      "primary_complete150_readers": 14,
+      "mean_t_accuracy_primary": 0.4436,
+      "mean_bm_accuracy_primary": 0.5014,
+      "mean_reading_time_sec_primary": 61.17,
+      "source_csv": "docs/clinical_validation/reader_round2_exports/round1_doctor_level.csv",
+      "doctors": [
+        {
+          "reader_id": "Doctor_01",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.54,
+          "t_accuracy": 0.53,
+          "mean_reading_time_sec": 41.78
+        },
+        {
+          "reader_id": "Doctor_02",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.36,
+          "t_accuracy": 0.48,
+          "mean_reading_time_sec": 17.71
+        },
+        {
+          "reader_id": "Doctor_03",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.62,
+          "t_accuracy": 0.54,
+          "mean_reading_time_sec": 87.46
+        },
+        {
+          "reader_id": "Doctor_04",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.66,
+          "t_accuracy": 0.4,
+          "mean_reading_time_sec": 43.94
+        },
+        {
+          "reader_id": "Doctor_06",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.4,
+          "t_accuracy": 0.34,
+          "mean_reading_time_sec": 40.53
+        },
+        {
+          "reader_id": "Doctor_07",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.5,
+          "t_accuracy": 0.45,
+          "mean_reading_time_sec": 66.91
+        },
+        {
+          "reader_id": "Doctor_08",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.36,
+          "t_accuracy": 0.49,
+          "mean_reading_time_sec": 49.83
+        },
+        {
+          "reader_id": "Doctor_09",
+          "primary": false,
+          "n_pairable": 64,
+          "bm_accuracy": 0.48,
+          "t_accuracy": 0.4286,
+          "mean_reading_time_sec": 94.51
+        },
+        {
+          "reader_id": "Doctor_10",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.5,
+          "t_accuracy": 0.44,
+          "mean_reading_time_sec": 69.03
+        },
+        {
+          "reader_id": "Doctor_11",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.52,
+          "t_accuracy": 0.45,
+          "mean_reading_time_sec": 75.55
+        },
+        {
+          "reader_id": "Doctor_12",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.46,
+          "t_accuracy": 0.39,
+          "mean_reading_time_sec": 48.05
+        },
+        {
+          "reader_id": "Doctor_13",
+          "primary": false,
+          "n_pairable": 148,
+          "bm_accuracy": 0.7347,
+          "t_accuracy": 0.4545,
+          "mean_reading_time_sec": 39.35
+        },
+        {
+          "reader_id": "Doctor_14",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.6,
+          "t_accuracy": 0.37,
+          "mean_reading_time_sec": 24.43
+        },
+        {
+          "reader_id": "Doctor_15",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.54,
+          "t_accuracy": 0.47,
+          "mean_reading_time_sec": 62.21
+        },
+        {
+          "reader_id": "Doctor_16",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.54,
+          "t_accuracy": 0.42,
+          "mean_reading_time_sec": 187.23
+        },
+        {
+          "reader_id": "Doctor_17",
+          "primary": true,
+          "n_pairable": 150,
+          "bm_accuracy": 0.42,
+          "t_accuracy": 0.44,
+          "mean_reading_time_sec": 41.73
+        }
+      ]
+    },
+    "round2": {
+      "freeze_id": "reader_round2_freeze_20260810",
+      "execution_status": "prepared_not_run",
+      "planned_rows": 2400,
+      "baseline_pairable_rows": 2312,
+      "round2_completed_rows": 0,
+      "research_event_count": 0,
+      "excluded_event_count": 5994,
+      "expertise_primary_registered": 0,
+      "scaffold_ready": true,
+      "clinical_claims_allowed": false,
+      "uplift_status": "blocked_until_round2_data",
+      "claims_allowed": {
+        "round1_no_ai_baseline": true,
+        "ai_assisted_uplift": false,
+        "junior_exceeds_senior_no_ai": false,
+        "report_quality_improvement": false,
+        "inter_reader_variance_reduction": false
+      },
+      "endpoints": {
+        "primary_t_uplift": "not_estimable",
+        "ai_corrected_error": "not_estimable",
+        "ai_induced_error": "not_estimable",
+        "boundary_error_t2_t3": "not_estimable",
+        "boundary_error_t3_t4": "not_estimable",
+        "junior_ai_vs_senior_no_ai": "not_estimable_until_expertise_and_round2",
+        "condition_x_expertise_interaction": "not_estimable_until_expertise_and_round2"
+      },
+      "case_order_seed": 20260810,
+      "runtime_contract": {
+        "research_identity": {
+          "server_bound": true,
+          "proxy_id_header": "x-authenticated-reader-id",
+          "proxy_signature_header": "x-authenticated-reader-signature",
+          "signature": "HMAC-SHA256(reader_id, READER_AUTH_PROXY_SECRET)",
+          "url_reader_id_allowed": false
+        },
+        "case_order_server_applied": true,
+        "case_order_column": "presentation_index",
+        "structured_evidence_fields": [
+          "lesion_extent",
+          "wall_invasion_depth",
+          "serosal_breakthrough",
+          "growth_pattern"
+        ],
+        "time_fields": [
+          "total_case_time_sec",
+          "doctor_active_reading_sec",
+          "ai_wait_sec",
+          "report_completion_sec"
+        ],
+        "implementation_paths": [
+          "apps/gastric_scan_next/lib/reader/study-auth.ts",
+          "apps/gastric_scan_next/lib/reader/round2-order.ts",
+          "apps/gastric_scan_next/app/api/reader-audit/events/route.ts",
+          "apps/gastric_scan_next/app/api/patients/route.ts",
+          "scripts/analyze_reader_audit_events.py"
+        ]
+      },
+      "exports_dir": "docs/clinical_validation/reader_round2_exports",
+      "evidence_chain": "docs/paper_drafts/human_ai_reader_evidence_chain_20260810.md"
+    }
+  },
+  "pointers": {
+    "freeze_contract": "docs/READER_ROUND2_FREEZE_CONTRACT_20260810.md",
+    "endpoints": "docs/READER_ROUND2_ENDPOINTS_AND_REPORT_QUALITY_20260810.md",
+    "runbook": "docs/READER_ROUND2_EXECUTION_RUNBOOK_20260810.md",
+    "sap": "docs/READER_ROUND2_STATISTICAL_ANALYSIS_PLAN_20260810.md",
+    "mainline": "docs/mainline/tstaging_current_mainline.md",
+    "next_steps_autoresearch": "docs/agent_memory/plan/NEXT_STEPS_AUTORESEARCH.md"
+  },
+  "evidence_index": [
+    {
+      "bucket": "model_foundation",
+      "claim_level": "reportable",
+      "path": "docs/mainline/asset_freeze_decision_20260809.md",
+      "metric": "acc_boost2 / Phase0 split",
+      "value": "frozen"
+    },
+    {
+      "bucket": "agent_acceptance",
+      "claim_level": "foundation_only",
+      "path": "pipeline/experiments/reports/gastric_us_agent_frozen_validation_clean_20260809/SUMMARY.md",
+      "metric": "full Agent ACC internal/external 20+20",
+      "value": "0.70 / 0.50"
+    },
+    {
+      "bucket": "offline_v150_ai",
+      "claim_level": "sensitivity_only",
+      "path": "artifacts/eval/reader_study_v150_two_phase_v2/SUMMARY.md",
+      "metric": "AI BM/T on reader bundle",
+      "value": "0.66 / 0.57"
+    },
+    {
+      "bucket": "round1_no_ai",
+      "claim_level": "reportable",
+      "path": "docs/clinical_validation/reader_round2_exports/round1_doctor_level.csv",
+      "metric": "primary mean T/BM ACC",
+      "value": "0.4436/0.5014"
+    },
+    {
+      "bucket": "round2_freeze",
+      "claim_level": "scaffold",
+      "path": "data/registry/reader_round2_study_freeze_20260810.json",
+      "metric": "execution_status",
+      "value": "prepared_not_run"
+    },
+    {
+      "bucket": "round2_gate",
+      "claim_level": "blocked_clinical",
+      "path": "docs/clinical_validation/reader_round2_exports/round2_gate_status.json",
+      "metric": "clinical_claims_allowed",
+      "value": "false"
+    },
+    {
+      "bucket": "round2_uplift",
+      "claim_level": "blocked_clinical",
+      "path": "docs/clinical_validation/reader_round2_exports/expertise_uplift_summary.json",
+      "metric": "status",
+      "value": "blocked_until_round2_data"
+    },
+    {
+      "bucket": "round2_runtime_contract",
+      "claim_level": "scaffold",
+      "path": "data/registry/reader_round2_study_freeze_20260810.json",
+      "metric": "server auth / order / structured evidence",
+      "value": "implemented, research not started"
+    },
+    {
+      "bucket": "paper_evidence_chain",
+      "claim_level": "design",
+      "path": "docs/paper_drafts/human_ai_reader_evidence_chain_20260810.md",
+      "metric": "narrative_priority",
+      "value": "A clinical > D model foundation"
+    },
+    {
+      "bucket": "sap",
+      "claim_level": "preregistered",
+      "path": "docs/READER_ROUND2_STATISTICAL_ANALYSIS_PLAN_20260810.md",
+      "metric": "primary_endpoint",
+      "value": "paired delta T ACC"
+    }
+  ]
+}

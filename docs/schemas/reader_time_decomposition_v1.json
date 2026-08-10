@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reader_time_decomposition_v1",
+  "title": "Reader time decomposition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "reader_id",
+    "condition",
+    "round",
+    "total_case_time_sec",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "reader_time_decomposition_v1" },
+    "case_id": { "type": "string" },
+    "reader_id": { "type": "string" },
+    "condition": { "enum": ["no_ai", "ai_assisted"] },
+    "round": { "enum": ["round1", "round2"] },
+    "total_case_time_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Session clock from case open to final submit"
+    },
+    "doctor_active_reading_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Active video/frame/ROI interaction time excluding AI waits"
+    },
+    "ai_wait_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Time blocked on Agent/SAM/report generation; do not treat as doctor workload"
+    },
+    "report_completion_sec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Time from first report draft shown to doctor final report confirm"
+    },
+    "first_interaction_sec": { "type": "number", "minimum": 0 },
+    "frame_dwell_sec_total": { "type": "number", "minimum": 0 },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

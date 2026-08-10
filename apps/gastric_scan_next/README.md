@@ -40,10 +40,9 @@ bash scripts/run_lan_merged_system.sh start
 bash scripts/test_lan_full_stack.sh   # automated acceptance
 ```
 
-- Workbench: `http://<LAN_IP>:3000/`（推荐医生书签；左上 **辅助中心** 聚合入口，顶栏原按钮保留）
-- **In-app Reader Agent**: `http://<LAN_IP>:3000/reader` (SAM + 分层 + 文字报告，融合 HTML 阅片能力)
-- Reader HTML fallback: `http://<LAN_IP>:8767/interactive_video_agent.html`
-- Human-assist HTML: `http://<LAN_IP>:8767/direction_demo.html`（深链带 callback 可回写工作台）
+- Workbench: `http://<LAN_IP>:3000/`（当前唯一医生入口；左上 **辅助中心** 聚合 Next 内部功能）
+- **In-app Reader Agent**: `http://<LAN_IP>:3000/reader`（SAM + nnInteractive + 分层 + 文字报告）
+- Direction annotation: `http://<LAN_IP>:3000/annotate`（已合并进 Next 工作台）
 - DeepSeek status: `http://<LAN_IP>:8766/api/llm/status`
 - Requirements checklist: `docs/mainline/PRODUCT_REQUIREMENTS_CHECKLIST.md`（U1–U3）
 
@@ -64,10 +63,10 @@ switch these prompts to SAM3.1.
    cd /data/research/gastric/GastricTstaging
    test -d external/nnInteractive || \
      git clone https://github.com/MIC-DKFZ/nnInteractive.git external/nnInteractive
-   python3 -m venv --system-site-packages /tmp/gastric-nninteractive-venv
-   /tmp/gastric-nninteractive-venv/bin/pip install --no-deps nnunetv2==2.7.0
-   /tmp/gastric-nninteractive-venv/bin/pip install --no-deps -e external/nnInteractive
-   /tmp/gastric-nninteractive-venv/bin/pip install --no-deps -e external/nnInteractive/client
+   python3 -m venv --system-site-packages .venv-nninteractive
+   .venv-nninteractive/bin/pip install --no-deps nnunetv2==2.7.0
+   .venv-nninteractive/bin/pip install --no-deps -e external/nnInteractive
+   .venv-nninteractive/bin/pip install --no-deps -e external/nnInteractive/client
    ```
 
 2. Start the official server through the repository wrapper. The wrapper keeps
@@ -76,7 +75,7 @@ switch these prompts to SAM3.1.
 
    ```bash
    NNINTERACTIVE_PATCH_SIZE=128 \
-     /tmp/gastric-nninteractive-venv/bin/python scripts/serve_nninteractive_server.py \
+     .venv-nninteractive/bin/python scripts/serve_nninteractive_server.py \
      --model nnInteractive_v1.0 --host 127.0.0.1 --port 1527 \
      --device cuda:0 --no-torch-compile
    ```
@@ -87,7 +86,7 @@ switch these prompts to SAM3.1.
    ```bash
    export NN_INTERACTIVE_SERVER_URL=http://127.0.0.1:1527
    export NN_INTERACTIVE_API_KEY=<server-api-key>
-   /tmp/gastric-nninteractive-venv/bin/python scripts/serve_nninteractive_agent.py \
+   .venv-nninteractive/bin/python scripts/serve_nninteractive_agent.py \
      --host 127.0.0.1 --port 8770
    ```
 
@@ -112,11 +111,13 @@ Because the full package currently excludes some PyTorch versions used by the
 SAM services, install it in a separate environment on the GPU host:
 
 ```bash
-python3 -m venv --system-site-packages /tmp/gastric-nninteractive-venv
-/tmp/gastric-nninteractive-venv/bin/pip install --no-deps nnunetv2==2.7.0
-/tmp/gastric-nninteractive-venv/bin/pip install --no-deps -e external/nnInteractive
+cd /data/research/gastric/GastricTstaging
+python3 -m venv --system-site-packages .venv-nninteractive
+.venv-nninteractive/bin/pip install --no-deps nnunetv2==2.7.0
+.venv-nninteractive/bin/pip install --no-deps -e external/nnInteractive
+.venv-nninteractive/bin/pip install --no-deps -e external/nnInteractive/client
 export NN_INTERACTIVE_API_KEY="$(openssl rand -hex 32)"
-/tmp/gastric-nninteractive-venv/bin/python scripts/serve_nninteractive_server.py \
+.venv-nninteractive/bin/python scripts/serve_nninteractive_server.py \
   --model nnInteractive_v1.0 --host 0.0.0.0 --port 1527 \
   --api-key "$NN_INTERACTIVE_API_KEY"
 ```
@@ -134,7 +135,7 @@ Then point the local bridge at that private server:
 ```bash
 export NN_INTERACTIVE_SERVER_URL=http://<PRIVATE_GPU_HOST>:1527
 export NN_INTERACTIVE_API_KEY=<optional-server-api-key>
-python3 scripts/serve_nninteractive_agent.py --host 127.0.0.1 --port 8770
+.venv-nninteractive/bin/python scripts/serve_nninteractive_agent.py --host 127.0.0.1 --port 8770
 ```
 
 Keep port `1527` restricted to the private network or an authenticated tunnel.
@@ -177,6 +178,36 @@ NEXT_PUBLIC_READER_ONLY=1 NEXT_DIST_DIR=.next-aliyun npm run build
 
 Agent/DINO/SAM requests are forwarded to the workstation through the
 authenticated reverse tunnel; the public host does not need the model stack.
+
+### Round2 research identity and case order
+
+Formal Round2 traffic must use `environment=research`. The Next server does
+not trust a URL or browser body `reader_id` for research events. The
+authenticated reverse proxy must inject:
+
+```text
+x-authenticated-reader-id: Doctor_XX
+x-authenticated-reader-signature: HMAC-SHA256(READER_AUTH_PROXY_SECRET, Doctor_XX)
+```
+
+Configure the same secret only in the server environment:
+
+```bash
+export READER_AUTH_PROXY_SECRET='<server-side-secret>'
+```
+
+For a signed reader ID, the proxy can compute the hexadecimal digest with:
+
+```bash
+printf '%s' "$READER_ID" | openssl dgst -sha256 -hmac "$READER_AUTH_PROXY_SECRET" -hex
+```
+
+Open the formal study queue with `?environment=research`. The server then
+verifies the proxy identity, applies that reader's frozen Round2 order from
+`data/registry/reader_round2_case_order_20260810.csv`, and writes the
+authenticated ID plus freeze and version fields into every accepted audit
+event. Local QA or staging runs must use `environment=qa` or
+`environment=staging`; they are excluded from clinical analysis.
 
 ### Interactive boundary edit → Agent analyze
 

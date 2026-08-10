@@ -1,0 +1,1 @@
+reader_id,authenticated_reader_id,case_id,condition,round,total_case_time_sec,doctor_active_reading_sec,ai_wait_sec,report_completion_sec,first_interaction_sec,frame_dwell_sec_total,created_at

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reader_round2_case_record_v1",
+  "title": "Reader Round2 paired case record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pair_key",
+    "reader_id",
+    "case_id",
+    "study_mode",
+    "condition",
+    "round",
+    "freeze_id",
+    "completed",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "reader_round2_case_record_v1" },
+    "pair_key": { "type": "string", "description": "reader_id::case_id" },
+    "reader_id": { "type": "string" },
+    "case_id": { "type": "string" },
+    "study_mode": { "enum": ["benign_malignancy", "t_staging"] },
+    "condition": { "enum": ["no_ai", "ai_assisted"] },
+    "round": { "enum": ["round1", "round2"] },
+    "freeze_id": { "type": "string" },
+    "baseline_pairable": { "type": "boolean" },
+    "completed": { "type": "boolean" },
+    "doctor_initial_nature": { "type": ["string", "null"] },
+    "doctor_final_nature": { "type": ["string", "null"] },
+    "doctor_initial_t_stage": { "type": ["string", "null"] },
+    "doctor_final_t_stage": { "type": ["string", "null"] },
+    "doctor_confidence": { "type": ["string", "number", "null"] },
+    "authenticated_reader_id": { "type": ["string", "null"] },
+    "ai_recommended_nature": { "type": ["string", "null"] },
+    "ai_recommended_t_stage": { "type": ["string", "null"] },
+    "ai_suggestion_id": { "type": ["string", "null"] },
+    "doctor_action": {
+      "type": ["string", "null"],
+      "enum": ["accept", "modify", "reject", "request_more_evidence", "insufficient_evidence", null]
+    },
+    "before_value": { "type": ["string", "null"] },
+    "after_value": { "type": ["string", "null"] },
+    "modify_reason": { "type": ["string", "null"] },
+    "structured_signs": { "type": ["object", "null"] },
+    "lesion_extent": { "type": ["object", "null"] },
+    "wall_invasion_depth": { "type": ["object", "string", "null"] },
+    "serosal_breakthrough": { "type": ["object", "string", "null"] },
+    "growth_pattern": { "type": ["object", "string", "null"] },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reference_nature_secure": { "type": ["string", "null"] },
+    "reference_pt_secure": { "type": ["string", "null"] },
+    "nature_correct_final": { "type": ["boolean", "null"] },
+    "t_stage_correct_final": { "type": ["boolean", "null"] },
+    "ai_corrected_error": {
+      "type": ["boolean", "null"],
+      "description": "Round1 wrong and Round2 final correct"
+    },
+    "ai_induced_error": {
+      "type": ["boolean", "null"],
+      "description": "Round1 correct and Round2 final wrong"
+    },
+    "boundary_error_t2_t3": { "type": ["boolean", "null"] },
+    "boundary_error_t3_t4": { "type": ["boolean", "null"] },
+    "overstaging": { "type": ["boolean", "null"] },
+    "understaging": { "type": ["boolean", "null"] },
+    "time": { "$ref": "reader_time_decomposition_v1.json" },
+    "software_version": { "type": ["string", "null"] },
+    "agent_version": { "type": ["string", "null"] },
+    "model_version": { "type": ["string", "null"] },
+    "rule_version": { "type": ["string", "null"] },
+    "prompt_version": { "type": ["string", "null"] },
+    "manifest_version": { "type": ["string", "null"] },
+    "environment": {
+      "type": ["string", "null"],
+      "enum": ["qa", "staging", "research", "production", null]
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "round": { "const": "round2" }
+        }
+      },
+      "then": {
+        "required": [
+          "condition",
+          "freeze_id",
+          "software_version",
+          "agent_version",
+          "model_version",
+          "rule_version",
+          "prompt_version",
+          "manifest_version",
+          "environment",
+          "authenticated_reader_id"
+        ]
+      }
+    }
+  ]
+}

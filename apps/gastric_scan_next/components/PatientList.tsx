@@ -87,6 +87,17 @@ async function fetchPatientPage(
     offset: String(offset),
     limit: String(PATIENT_PAGE_SIZE),
   });
+  if (queueId === 'reader:reader_v150' && typeof window !== 'undefined') {
+    const searchParams = new URLSearchParams(window.location.search);
+    const environment = searchParams.get('environment') || searchParams.get('env') || (
+      searchParams.get('round') === 'qa' ? 'qa' : 'staging'
+    );
+    params.set('environment', environment);
+    if (environment !== 'research') {
+      const readerId = searchParams.get('reader_id');
+      if (readerId) params.set('reader_id', readerId);
+    }
+  }
   const response = await fetch(`/api/patients?${params.toString()}`, { signal });
   if (!response.ok) {
     throw new Error(language === 'en'

@@ -1,0 +1,34 @@
+{
+  "created_at": "2026-08-10T05:04:41Z",
+  "freeze_id": "reader_round2_freeze_20260810",
+  "status": "blocked_until_round2_data",
+  "primary_complete150_readers": 14,
+  "expertise_primary_registered": 0,
+  "round1_primary_mean_t_accuracy": 0.4436,
+  "round1_primary_mean_bm_accuracy": 0.5014,
+  "round2_completed_primary_rows": 0,
+  "round2_t_pairs": 0,
+  "round2_bm_pairs": 0,
+  "endpoints": {
+    "primary_t_uplift": "not_estimable",
+    "ai_corrected_error": "not_estimable",
+    "ai_induced_error": "not_estimable",
+    "boundary_error_t2_t3": "not_estimable",
+    "boundary_error_t3_t4": "not_estimable",
+    "junior_ai_vs_senior_no_ai": "not_estimable_until_expertise_and_round2",
+    "condition_x_expertise_interaction": "not_estimable_until_expertise_and_round2"
+  },
+  "claims_allowed": {
+    "round1_no_ai_baseline": true,
+    "ai_assisted_uplift": false,
+    "junior_exceeds_senior_no_ai": false,
+    "report_quality_improvement": false,
+    "inter_reader_variance_reduction": false
+  },
+  "limitations": [
+    "Fixed order no_ai then ai_assisted; learning/order effects cannot be balanced yet",
+    "Expertise registry currently pending for primary readers",
+    "No research Round2 completed pairs at analysis time"
+  ],
+  "tier_summary": []
+}

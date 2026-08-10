@@ -13,6 +13,8 @@ analyze_gc_us_tscore_latest_lasso_3d_v1.py,analysis,analysis,4,scripts,scripts/a
 analyze_imaging_truth_paper_metrics.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 analyze_imaging_truth_tstage_corr.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 analyze_imaging_truth_tstage_corr_v3.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
+analyze_reader_audit_events.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+analyze_reader_round2_expertise_uplift.py,runtime,module,9,scripts,scripts/runtime,import_only,true,
 analyze_reader_study_v150_eval.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 analyze_report_subgroups_clean_agent.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 analyze_tscore_deeper_v1.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -48,6 +50,7 @@ build_agent_traces.py,runtime,module,8,scripts,scripts/runtime,import_only,true,
 build_architecture_html.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_asset_manifest.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_auto_discovery_seed_prompts.py,current,segmentation,6,scripts,scripts/current,yes,true,
+build_autoresearch_results_summary.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_balanced_routing_records.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_binary_current_gastritis_dataset.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_binary_fn_must_review_list.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -68,6 +71,7 @@ build_experiments_registry.py,maintenance,governance,,scripts,scripts/maintenanc
 build_experiments_tree_index.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_external_center_eval_table.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 build_full_prospective_tstaging_csv.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+build_full_queue_t2t3_report_20260809.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_gastric_agent_baseline_model_card.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_gastric_agent_history_library.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_gastric_agent_publication_tables.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -100,6 +104,7 @@ build_phase0_anatomic_region_splits.py,maintenance,data_governance,3,scripts,scr
 build_preop_clinical_fusion_manifest.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_putian_unified_patient_inventory.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 build_reader_patch_zip.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+build_reader_round2_freeze_tables.py,runtime,module,9,scripts,scripts/runtime,import_only,true,
 build_real_cine_aligned_view.py,current,data_governance,3,scripts,scripts/current,yes,true,
 build_region_contrastive_manifest.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 build_report_image_semantic_consistency.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -182,6 +187,7 @@ eval_multimodal_frozen_tracks.py,runtime,module,,scripts,scripts/runtime,import_
 eval_offline_pathology_alignment.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 eval_reader_study_v150_two_phase.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 eval_safe_path_evidence_contract.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+eval_sam31_prompt_robustness.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 eval_sam31_static_registry.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 evaluate_agent_scientific_benchmark.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 evaluate_dino_region_clean_branch.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -201,6 +207,7 @@ export_imaging_truth_share_png_white.py,runtime,module,,scripts,scripts/runtime,
 export_nnunet_prediction_review.py,unknown,segmentation,2,scripts,needs_review,review,false,needs manual review
 export_patient_media_splits.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 export_project_logic_pdf.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+export_reader_round2_paired_tables.py,runtime,module,9,scripts,scripts/runtime,import_only,true,
 export_wall_proxy_from_lumen.py,analysis,analysis,4,scripts,scripts/analysis,review_env,false,
 extract_gc_us_clinical_cohort_features_v1.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 extract_gc_us_growth_features_v1.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
@@ -274,6 +281,7 @@ generate_yolo_detection_report.py,current,detection,1,scripts,scripts/current,re
 generate_yolo_detection_year_comparison.py,unknown,detection,1,scripts,needs_review,review,false,needs manual review
 ingest_doctor_mask_corrections.py,current,segmentation,6,scripts,scripts/current,yes,true,
 inspect_excel.py,legacy,legacy,7,scripts,scripts/legacy,no,false,hardcoded paths or README §7
+install_gastric_user_services.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 link_videos.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 make_screening_funnel_figure.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 make_segmentation_example_panels.py,unknown,segmentation,2,scripts,needs_review,review,false,needs manual review
@@ -343,6 +351,8 @@ reorganize_project_logic_white_html.py,unknown,unknown,,scripts,needs_review,rev
 repo_env.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 repo_paths.py,runtime,governance,,scripts,scripts/runtime,import_only,true,
 run_adjacent_boundary_expert_calibration.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+run_agent_acceptance_inprocess.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+run_agent_acceptance_panel.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 run_agent_full_pipeline.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_clean_dino_prompt_policy.py,utility,utility,6,scripts,scripts/analysis,review,true,
 run_clinical_loop_correction_finetune.py,current,segmentation,6,scripts,scripts/current,yes,true,
@@ -368,6 +378,7 @@ run_evolution_replay.py,runtime,module,8,scripts,scripts/runtime,import_only,tru
 run_framelevel_ensemble_optimized_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_framelevel_ft_transformer_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_framelevel_tabular_mlp_eval.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+run_frozen_agent_validation_20260809.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_ft_transformer_rf_distillation.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_full_video_preprocess.py,unknown,data_governance,3,scripts,needs_review,review,true,needs manual review
 run_gastric_us_multimodal_agent.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -393,6 +404,7 @@ run_sam2_prompt_benchmark.py,runtime,module,,scripts,scripts/runtime,import_only
 run_sam2_static_prompt_adapter_finetune.py,utility,utility,6,scripts,scripts/analysis,review,true,
 run_sam2_temporal_adapter_finetune.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_sam2_tracking_canary.py,utility,utility,6,scripts,scripts/analysis,review,true,
+run_sam31_clean_until_converged.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 run_sam31_epoch3_continuation.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 run_sam3_concept_candidate_probe.py,utility,utility,6,scripts,scripts/analysis,review,true,
 run_sam_dino_fusion_probe.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
@@ -446,6 +458,7 @@ train_prospective_like_weighted_clean_agent.py,runtime,module,,scripts,scripts/r
 train_t2_rescue_branch.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_wall_layer_t123_expert.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 update_concepts_pipeline.py,analysis,analysis,5,scripts,scripts/analysis,review_env,false,
+validate_reader_round2_gate.py,unknown,unknown,9,scripts,needs_review,review,true,needs manual review
 verify_dinov3_setup.py,maintenance,governance,,scripts,scripts/maintenance,yes,false,
 verify_patient_split_leakage.py,maintenance,governance,3,scripts,scripts/maintenance,yes,false,
 verify_repo_paths.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
@@ -456,5 +469,9 @@ visualize_wall_layer_profiles.py,analysis,analysis,4,scripts,scripts/analysis,re
 visualize_wall_strip_examples.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 viz_gc_us_margin_pixel_examples.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 viz_gc_us_wall_layer_examples.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+wait_for_sam31_ready.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 watch_sam31_epoch3_then_continue.sh,utility,shell,7,scripts,scripts/analysis,review,false,
+watch_sam31_full_components_run2.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 yolo_detection_runtime.py,runtime,detection,1,scripts,scripts/runtime,import_only,true,
+build_phase0_case_rag_memory.py,runtime,module,,scripts,scripts/runtime,cli,true,Build Phase0 train-only Case-RAG memory
+run_case_rag_frozen_validation.py,runtime,module,,scripts,scripts/runtime,cli,true,Frozen R0/R1/R2 Case-RAG validation pack

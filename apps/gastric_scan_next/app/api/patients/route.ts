@@ -23,6 +23,9 @@ import {
 import { getVideosForPatient } from '@/lib/video-index';
 import { loadReaderCasesBundle } from '@/lib/reader/cases-server';
 import { readerMediaUrl } from '@/lib/reader/media-url';
+import { resolveResearchReader } from '@/lib/reader/study-auth';
+import { READER_ROUND2_FREEZE_ID, READER_ROUND2_ORDER_SEED } from '@/lib/reader/study-contract';
+import { sortReaderRound2Patients } from '@/lib/reader/round2-order';
 import { clinicalFromReaderUsTable } from '@/lib/reader/us-clinical-server';
 import { enrichConceptFeaturesFromClinical } from '@/lib/concept-extract';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
@@ -263,7 +266,7 @@ function buildAgentReport(info: PatientInfo, annotationAvailable: boolean, overl
     },
     classification: {
       status: 'pending',
-      summary: 'Run Agent Workbench analysis to load mask4ch T-staging probabilities (clinical22 + lumen/wall evidence).',
+      summary: 'Run Agent Workbench analysis to load acc_boost2 T-staging probabilities (mask4ch + clinical22 + lumen/wall evidence).',
     },
     similar_case_support: {
       status: 'pending',
@@ -671,9 +674,9 @@ function buildLegacyGistPatients(dataset: DatasetType): Patient[] {
   });
 }
 
-function buildReaderStudyV150Patients(): Patient[] {
+function buildReaderStudyV150Patients(readerId?: string): Patient[] {
   const bundle = loadReaderCasesBundle();
-  return (bundle.cases || [])
+  const patients: Patient[] = (bundle.cases || [])
     .filter((item) => item.has_video !== false)
     .map((item) => {
       const frames = (item.frames || []).filter((frame) => Boolean(frame.video_rel));
@@ -723,6 +726,7 @@ function buildReaderStudyV150Patients(): Patient[] {
         clinical,
       };
     });
+  return sortReaderRound2Patients(patients, readerId).patients;
 }
 
 function mergeUniquePatients(patients: Patient[]): Patient[] {
@@ -817,9 +821,10 @@ function buildQueuePatientsPage(
   dataset: DatasetType,
   offset: number,
   limit: number,
+  readerId?: string,
 ): { items: Patient[]; total: number } {
   if (queueId === 'reader:reader_v150') {
-    const all = treatmentType === 'surgery' ? buildReaderStudyV150Patients() : [];
+    const all = treatmentType === 'surgery' ? buildReaderStudyV150Patients(readerId) : [];
     return { items: all.slice(offset, offset + limit), total: all.length };
   }
   if (queueId === 'legacy:gist') {
@@ -856,8 +861,22 @@ export async function GET(request: NextRequest) {
     const cohortYearParam = searchParams.get('cohort') || '2025';
     const treatmentTypeParam = searchParams.get('treatment') || 'surgery';
     const queueParam = searchParams.get('queue');
+    const environment = searchParams.get('environment') || 'staging';
+    const requestedReaderId = searchParams.get('reader_id') || '';
     const dataset = parseDatasetType(datasetParam);
     const treatmentType: TreatmentType = treatmentTypeParam === 'nac' ? 'nac' : 'surgery';
+    let readerId = requestedReaderId || undefined;
+
+    if (environment === 'research') {
+      const auth = resolveResearchReader(request.headers, requestedReaderId);
+      if (!auth.ok) {
+        return NextResponse.json(
+          { ok: false, error: auth.message, code: `research_auth_${auth.code}` },
+          { status: auth.code === 'invalid_identity' ? 403 : 401 },
+        );
+      }
+      readerId = auth.readerId;
+    }
 
     if (queueParam || publicReaderOnly) {
       const queueId = publicReaderOnly
@@ -867,18 +886,26 @@ export async function GET(request: NextRequest) {
       const rawLimit = Number.parseInt(searchParams.get('limit') || '80', 10);
       const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
       const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, rawLimit)) : 80;
-      const page = buildQueuePatientsPage(queueId, treatmentType, dataset, offset, limit);
+      const page = buildQueuePatientsPage(queueId, treatmentType, dataset, offset, limit, readerId);
       return NextResponse.json({
         items: page.items,
         total: page.total,
         offset,
         limit,
         has_more: offset + page.items.length < page.total,
+        study_contract: queueId === 'reader:reader_v150'
+          ? {
+              freeze_id: READER_ROUND2_FREEZE_ID,
+              order_seed: READER_ROUND2_ORDER_SEED,
+              order_applied: Boolean(readerId),
+              environment,
+            }
+          : undefined,
       });
     }
 
     if (publicReaderOnly || cohortYearParam === 'reader_v150' || cohortYearParam === 'reader-v150') {
-      return NextResponse.json(buildReaderStudyV150Patients());
+      return NextResponse.json(buildReaderStudyV150Patients(readerId));
     }
     const cohortYear = parseCohortYear(cohortYearParam);
 

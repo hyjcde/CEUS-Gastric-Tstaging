@@ -7,6 +7,16 @@ import { PROJECT_ROOT } from '@/lib/config';
 import { proxyAgentRequest } from '@/lib/agent-upstream';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
+import { resolveResearchReader } from '@/lib/reader/study-auth';
+import {
+  READER_ROUND2_AGENT_VERSION,
+  READER_ROUND2_FREEZE_ID,
+  READER_ROUND2_MANIFEST_VERSION,
+  READER_ROUND2_MODEL_VERSION,
+  READER_ROUND2_PROMPT_VERSION,
+  READER_ROUND2_RULE_VERSION,
+  READER_ROUND2_SOFTWARE_VERSION,
+} from '@/lib/reader/study-contract';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,8 +40,18 @@ type ReaderAgentRequest = {
   case_id: string;
   patient_id?: string;
   reader_id?: string;
+  authenticated_reader_id?: string;
   round?: string;
+  condition?: string;
   study_mode?: string;
+  environment?: string;
+  freeze_id?: string;
+  software_version?: string;
+  agent_version?: string;
+  model_version?: string;
+  rule_version?: string;
+  prompt_version?: string;
+  manifest_version?: string;
   frame_id?: string | null;
   frame_time?: number | null;
   frame_png_b64?: string;
@@ -42,6 +62,7 @@ type ReaderAgentRequest = {
   mask_override?: Record<string, unknown>;
   lumen_override?: Record<string, unknown>;
   use_lumen_override?: boolean;
+  workflow_trace?: Array<Record<string, unknown>>;
 };
 
 function safeSegment(value: string, fallback: string): string {
@@ -108,16 +129,66 @@ function runPython(payload: Record<string, unknown>): Promise<Record<string, unk
   });
 }
 
-export async function POST(request: NextRequest) {
-  const forwarded = await proxyAgentRequest(request);
-  if (forwarded) return forwarded;
+function validPolygon(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length >= 3
+    && value.every((point) => (
+      Array.isArray(point)
+      && point.length >= 2
+      && Number.isFinite(Number(point[0]))
+      && Number.isFinite(Number(point[1]))
+    ));
+}
 
+function validBox(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const box = value as Record<string, unknown>;
+  const x1 = Number(box.x1);
+  const y1 = Number(box.y1);
+  const x2 = Number(box.x2);
+  const y2 = Number(box.y2);
+  return [x1, y1, x2, y2].every(Number.isFinite) && x2 > x1 && y2 > y1;
+}
+
+export async function POST(request: NextRequest) {
   let body: ReaderAgentRequest;
   try {
-    body = await request.json() as ReaderAgentRequest;
+    body = await request.clone().json() as ReaderAgentRequest;
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid JSON request' }, { status: 400 });
   }
+  const environment = body.environment || (body.round === 'qa' ? 'qa' : 'staging');
+  if (environment === 'research') {
+    if (body.round !== 'round2') {
+      return NextResponse.json({ ok: false, error: 'research Agent requests must use round2' }, { status: 422 });
+    }
+    const auth = resolveResearchReader(request.headers, body.reader_id);
+    if (!auth.ok) {
+      return NextResponse.json(
+        { ok: false, error: auth.message, code: `research_auth_${auth.code}` },
+        { status: auth.code === 'invalid_identity' ? 403 : 401 },
+      );
+    }
+    if (body.freeze_id && body.freeze_id !== READER_ROUND2_FREEZE_ID) {
+      return NextResponse.json({ ok: false, error: `freeze_id must be ${READER_ROUND2_FREEZE_ID}` }, { status: 422 });
+    }
+    body.reader_id = auth.readerId;
+    body.authenticated_reader_id = auth.readerId;
+  }
+  if (!validPolygon(body.mask_override?.mask_polygon)) {
+    return NextResponse.json(
+      { ok: false, error: 'Agent requires a confirmed lesion segmentation polygon', code: 'geometry_gate' },
+      { status: 422 },
+    );
+  }
+  if (!validPolygon(body.lumen_override?.lumen_polygon) && !validBox(body.lumen_override?.lumen_bbox)) {
+    return NextResponse.json(
+      { ok: false, error: 'Agent requires a confirmed lumen polygon or bounding box', code: 'geometry_gate' },
+      { status: 422 },
+    );
+  }
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
   if (!body.case_id) {
     return NextResponse.json({ ok: false, error: 'case_id is required' }, { status: 400 });
   }
@@ -170,6 +241,7 @@ export async function POST(request: NextRequest) {
       clinical: body.clinical || {},
       report_text: body.report_text || {},
       gc_us_report: body.gc_us_report,
+      workflow_trace: Array.isArray(body.workflow_trace) ? body.workflow_trace.slice(-160) : [],
       use_mask_override: Boolean(body.mask_override),
       mask_override: body.mask_override,
       use_lumen_override: Boolean(body.use_lumen_override && body.lumen_override),
@@ -177,11 +249,22 @@ export async function POST(request: NextRequest) {
       reader_context: {
         case_id: body.case_id,
         reader_id: body.reader_id || 'unknown_reader',
+        authenticated_reader_id: body.authenticated_reader_id || null,
         round: body.round || 'round2',
+        condition: body.condition || 'ai_assisted',
         study_mode: body.study_mode || 'unknown',
+        environment,
+        freeze_id: body.freeze_id || READER_ROUND2_FREEZE_ID,
+        software_version: body.software_version || READER_ROUND2_SOFTWARE_VERSION,
+        agent_version: body.agent_version || READER_ROUND2_AGENT_VERSION,
+        model_version: body.model_version || READER_ROUND2_MODEL_VERSION,
+        rule_version: body.rule_version || READER_ROUND2_RULE_VERSION,
+        prompt_version: body.prompt_version || READER_ROUND2_PROMPT_VERSION,
+        manifest_version: body.manifest_version || READER_ROUND2_MANIFEST_VERSION,
         bridge: 'reader_v150_to_unified_agent_v1',
         frame_input_dir: inputDir,
         frame_input_retention_hours: 24,
+        workflow_trace_count: Array.isArray(body.workflow_trace) ? body.workflow_trace.length : 0,
       },
     };
     const result = await runPython(payload);

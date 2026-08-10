@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft, ExternalLink, Loader2, RefreshCw, ScanSearch,
+  ArrowLeft, Loader2, RefreshCw, ScanSearch,
 } from 'lucide-react';
 import { ReaderCaseSidebar, type CaseSummary } from '@/components/reader/ReaderCaseSidebar';
 import { ReaderToolbar } from '@/components/reader/ReaderToolbar';
@@ -36,11 +36,19 @@ import type {
   ReaderDoctorAction,
   SamReport,
 } from '@/lib/reader/types';
-import type { AgentAnalysisResponse } from '@/types';
+import type {
+  AgentAnalysisResponse,
+  LumenOverride,
+  MaskBoundaryOverride,
+} from '@/types';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import type { GcUsReportState } from '@/lib/gc-us-report-template';
-import { buildReadingAgentUrl, getReadingAgentPageUrl } from '@/lib/reading-agent-url';
+import { lumenOverrideToAnalyzePayload } from '@/lib/lumen-override';
 import { navigateTo } from '@/lib/navigation';
+import {
+  readerEnvironmentFromSearchParams,
+  READER_ROUND2_VERSION_FIELDS,
+} from '@/lib/reader/study-contract';
 
 const TRACK_INTERVAL_MS = 1000;
 const VIDEO_SPEEDS = [0.25, 0.5, 1] as const;
@@ -101,11 +109,79 @@ async function copyReaderText(text: string): Promise<boolean> {
   }
 }
 
+type PersistedReaderGeometry = {
+  maskPolygon: number[][] | null;
+  box: SamBox | null;
+  maskOverride: MaskBoundaryOverride | null;
+  lumenOverride: LumenOverride | null;
+};
+
+function validPolygon(value: unknown): value is number[][] {
+  return Array.isArray(value)
+    && value.length >= 3
+    && value.every((point) => (
+      Array.isArray(point)
+      && point.length >= 2
+      && Number.isFinite(Number(point[0]))
+      && Number.isFinite(Number(point[1]))
+    ));
+}
+
+function boxFromPolygon(value: number[][]): SamBox | null {
+  if (!validPolygon(value)) return null;
+  const xs = value.map((point) => Number(point[0]));
+  const ys = value.map((point) => Number(point[1]));
+  const box = {
+    x1: Math.min(...xs),
+    y1: Math.min(...ys),
+    x2: Math.max(...xs),
+    y2: Math.max(...ys),
+  };
+  return box.x2 > box.x1 && box.y2 > box.y1 ? box : null;
+}
+
+function resolvePersistedReaderGeometry(
+  maskOverride: MaskBoundaryOverride | null,
+  lumenOverride: LumenOverride | null,
+): PersistedReaderGeometry {
+  const frame = maskOverride?.video_frames?.length
+    ? maskOverride.video_frames.reduce((closest, candidate) => (
+      Math.abs(Number(candidate.timestamp_sec)) < Math.abs(Number(closest.timestamp_sec))
+        ? candidate
+        : closest
+    ))
+    : null;
+  const maskPolygon = frame?.mask_polygon && validPolygon(frame.mask_polygon)
+    ? frame.mask_polygon
+    : maskOverride?.mask_polygon && validPolygon(maskOverride.mask_polygon)
+      ? maskOverride.mask_polygon
+      : null;
+  const box = frame?.roi_bbox
+    || maskOverride?.roi_bbox
+    || (maskPolygon ? boxFromPolygon(maskPolygon) : null);
+  return {
+    maskPolygon,
+    box,
+    maskOverride,
+    lumenOverride,
+  };
+}
+
 async function writeReaderAuditEvent(event: {
   event_type: AuditEventType;
   session_id: string;
   case_id: string;
   reader_id?: string;
+  condition?: string;
+  study_mode?: string;
+  environment?: string;
+  freeze_id?: string;
+  software_version?: string;
+  agent_version?: string;
+  model_version?: string;
+  rule_version?: string;
+  prompt_version?: string;
+  manifest_version?: string;
   round?: string;
   patient_id?: string;
   payload?: Record<string, unknown>;
@@ -150,6 +226,7 @@ export function ReaderWorkbench() {
   const [unifiedAgentBusy, setUnifiedAgentBusy] = useState(false);
   const [unifiedAgentError, setUnifiedAgentError] = useState<string | null>(null);
   const [gcUsReport, setGcUsReport] = useState<GcUsReportState | null>(null);
+  const [lumenOverride, setLumenOverride] = useState<LumenOverride | null>(null);
   const [samScore, setSamScore] = useState<number | null>(null);
   const [showMask, setShowMask] = useState(true);
   const [maskOpacity, setMaskOpacity] = useState(0.3);
@@ -233,17 +310,38 @@ export function ReaderWorkbench() {
       const sessionId = overrides.sessionId || auditSessionRef.current;
       const caseId = overrides.caseId || auditCaseRef.current || activeCaseId;
       if (!sessionId || !caseId) return;
+      const environment = readerEnvironmentFromSearchParams(searchParams);
+      const readerId = environment === 'research' ? undefined : readerIdParam;
+      const versionFields = READER_ROUND2_VERSION_FIELDS;
       void writeReaderAuditEvent({
+        ...versionFields,
         event_type: eventType,
         session_id: sessionId,
         case_id: caseId,
-        reader_id: readerIdParam,
+        ...(readerId ? { reader_id: readerId } : {}),
+        condition: 'ai_assisted',
+        study_mode: selectedCase?.study_mode || undefined,
+        environment,
         round: roundParam,
         patient_id: overrides.patientId || selectedCase?.patient_id || patientIdParam || caseId,
-        payload,
+        payload: {
+          ...payload,
+          ...versionFields,
+          environment,
+          condition: 'ai_assisted',
+          study_mode: selectedCase?.study_mode || undefined,
+        },
       });
     },
-    [activeCaseId, patientIdParam, readerIdParam, roundParam, selectedCase?.patient_id],
+    [
+      activeCaseId,
+      patientIdParam,
+      readerIdParam,
+      roundParam,
+      searchParams,
+      selectedCase?.patient_id,
+      selectedCase?.study_mode,
+    ],
   );
 
   const handleGcUsEvidenceState = useCallback((state: GcUsReportState) => {
@@ -330,6 +428,36 @@ export function ReaderWorkbench() {
     }
   }, []);
 
+  const readPersistedGeometry = useCallback(async (
+    readerCase: ReaderCase,
+  ): Promise<PersistedReaderGeometry> => {
+    const patientId = readerCase.patient_id || readerCase.case_id;
+    const frameId = readerCase.case_id;
+    const query = `patientId=${encodeURIComponent(patientId)}&frameId=${encodeURIComponent(frameId)}`;
+    const [maskResponse, lumenResponse] = await Promise.all([
+      fetch(`/api/patients/mask-overrides?${query}`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
+      }),
+      fetch(`/api/patients/lumen-overrides?${query}`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
+      }),
+    ]);
+    const [maskPayload, lumenPayload] = await Promise.all([
+      maskResponse.ok
+        ? maskResponse.json() as Promise<{ override?: MaskBoundaryOverride | null }>
+        : Promise.resolve({ override: null }),
+      lumenResponse.ok
+        ? lumenResponse.json() as Promise<{ override?: LumenOverride | null }>
+        : Promise.resolve({ override: null }),
+    ]);
+    return resolvePersistedReaderGeometry(
+      maskPayload.override || null,
+      lumenPayload.override || null,
+    );
+  }, []);
+
   const loadCaseDetail = useCallback(async (caseId: string) => {
     const requestId = ++caseSelectionRequestRef.current;
     if (auditSessionRef.current && auditCaseRef.current && auditCaseRef.current !== caseId) {
@@ -347,6 +475,21 @@ export function ReaderWorkbench() {
       const data = await res.json();
       if (!data.ok || !data.case) throw new Error('case not found');
       if (requestId !== caseSelectionRequestRef.current) return;
+      const readerCase = data.case as ReaderCase;
+      const persistedGeometry = searchParams.get('restore_history') === '1'
+        ? await readPersistedGeometry(readerCase).catch(() => ({
+            maskPolygon: null,
+            box: null,
+            maskOverride: null,
+            lumenOverride: null,
+          }))
+        : {
+            maskPolygon: null,
+            box: null,
+            maskOverride: null,
+            lumenOverride: null,
+          };
+      if (requestId !== caseSelectionRequestRef.current) return;
       const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.set('case', caseId);
       nextParams.set('cohort', cohort);
@@ -359,17 +502,23 @@ export function ReaderWorkbench() {
       auditSuggestionRef.current = null;
       auditStartedAtRef.current = Date.now();
       lastAuditFrameRef.current = 0;
-      setSelectedCase(data.case as ReaderCase);
+      setSelectedCase(readerCase);
       setFrameIndex(0);
       resetInteraction();
+      if (persistedGeometry.maskPolygon) {
+        setMaskPolygon(persistedGeometry.maskPolygon);
+        setBox(persistedGeometry.box);
+        setBadge('已加载历史遮罩，可直接生成报告');
+      }
+      setLumenOverride(persistedGeometry.lumenOverride);
       recordAudit(
         'session_start',
         {
           cohort,
           round: roundParam,
           reader_id: readerIdParam,
-          study_mode: data.case.study_mode,
-          frame_count: data.case.frames?.length || 0,
+          study_mode: readerCase.study_mode,
+          frame_count: readerCase.frames?.length || 0,
           software_version: 'gastric_scan_next_reader',
         },
         { sessionId, caseId, patientId: data.case.patient_id },
@@ -377,7 +526,7 @@ export function ReaderWorkbench() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '病例加载失败');
     }
-  }, [cohort, readerIdParam, recordAudit, roundParam, searchParams]);
+  }, [cohort, readPersistedGeometry, readerIdParam, recordAudit, roundParam, searchParams]);
 
   const resetInteraction = () => {
     setClicks([]);
@@ -794,14 +943,19 @@ export function ReaderWorkbench() {
       }
       setCurrentTime(originalTime);
       if (wasPlaying) void video.play().catch(() => {});
+      const environment = readerEnvironmentFromSearchParams(searchParams);
+      const readerId = environment === 'research' ? undefined : readerIdParam;
       const response = await fetch('/api/reader/agent/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...READER_ROUND2_VERSION_FIELDS,
           case_id: selectedCase.case_id,
           patient_id: selectedCase.patient_id || selectedCase.case_id,
-          reader_id: readerIdParam,
+          ...(readerId ? { reader_id: readerId } : {}),
+          condition: 'ai_assisted',
           round: roundParam,
+          environment,
           study_mode: selectedCase.study_mode,
           frame_id: currentFrame?.media_token || currentFrame?.video_rel || null,
           frame_time: currentTime,
@@ -821,15 +975,16 @@ export function ReaderWorkbench() {
                 video_time_sec: currentTime,
               }
             : undefined,
+          ...lumenOverrideToAnalyzePayload(lumenOverride),
         }),
       });
-      const data = await response.json() as {
+      const data = await response.json().catch(() => null) as {
         ok?: boolean;
         error?: string;
         result?: AgentAnalysisResponse;
-      };
-      if (!response.ok || !data.ok || !data.result) {
-        throw new Error(data.error || `Unified Agent HTTP ${response.status}`);
+      } | null;
+      if (!response.ok || !data?.ok || !data.result) {
+        throw new Error(data?.error || `Unified Agent HTTP ${response.status}`);
       }
       setUnifiedAgentResult(data.result);
       recordAudit('ai_suggestion', {
@@ -857,10 +1012,12 @@ export function ReaderWorkbench() {
     currentTime,
     duration,
     gcUsReport,
+    lumenOverride,
     maskPolygon,
     readerIdParam,
     recordAudit,
     roundParam,
+    searchParams,
     selectedCase,
   ]);
 
@@ -1203,23 +1360,6 @@ export function ReaderWorkbench() {
             type="button"
             className="reader-btn"
             onClick={() => {
-              const htmlUrl = buildReadingAgentUrl({
-                id: searchParams.get('frame_id') || undefined,
-                patient_id: selectedCase?.patient_id || patientIdParam || undefined,
-                id_short: selectedCase?.display_id || searchParams.get('title') || selectedCase?.case_id || undefined,
-                image_url: externalImage || undefined,
-                video_urls: externalVideo ? [{ url: externalVideo }] : undefined,
-              });
-              window.open(htmlUrl || getReadingAgentPageUrl(), '_blank', 'noopener,noreferrer');
-            }}
-            title="打开经典 HTML 版（回退；带 callback 可回写工作台）"
-          >
-            <ExternalLink size={12} /> HTML 版
-          </button>
-          <button
-            type="button"
-            className="reader-btn"
-            onClick={() => {
               fetchSamStatus().then(setSamStatus);
               fetchNnInteractiveStatus().then(setNnInteractiveStatus);
             }}
@@ -1323,9 +1463,9 @@ export function ReaderWorkbench() {
                 <Loader2 className="animate-spin" />
               ) : (
                 <>
-                  <div>请从左侧选病例，或从主工作台 Header「阅片Agent」/ 辅助中心带深链进入。</div>
+                  <div>请从左侧选病例，或从主工作台 Header「阅片Agent」/ 辅助中心进入。</div>
                   <div className="max-w-md text-[11px] leading-relaxed text-gray-600">
-                    分割完成后结果会 POST 回主工作台右上角「辅助回写」卡。也可点右上角「HTML 版」打开经典页（同样可回写）。
+                    分割完成后结果会 POST 回主工作台右上角「辅助回写」卡。
                   </div>
                   <button
                     type="button"

@@ -5,6 +5,12 @@ import { CheckCircle2, PlayCircle, ShieldCheck, Sparkles } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import type { Patient, ReaderStudyMode } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
+import {
+  compactReaderSigns,
+  readerEnvironmentFromSearchParams,
+  readerEvidenceIds,
+  READER_ROUND2_VERSION_FIELDS,
+} from '@/lib/reader/study-contract';
 import { useSettings } from '@/contexts/SettingsContext';
 
 type DoctorAction = 'accept' | 'modify' | 'reject' | 'request_more_evidence';
@@ -84,21 +90,34 @@ export function ReaderStudyQueuePanel({
   const zh = language !== 'en';
   const [finalStage, setFinalStage] = useState('');
   const [finalNature, setFinalNature] = useState('');
+  const [initialStage, setInitialStage] = useState('');
+  const [initialNature, setInitialNature] = useState('');
+  const [initialRecorded, setInitialRecorded] = useState(false);
   const [reason, setReason] = useState('');
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [editableReport, setEditableReport] = useState<SamReport | null>(systemReport);
   const sessionRef = useRef<string | null>(null);
+  const caseStartedAtRef = useRef<number>(typeof performance === 'undefined' ? Date.now() : performance.now());
+  const firstInteractionAtRef = useRef<number | null>(null);
+  const reportFirstShownAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     setEditableReport(systemReport);
+    if (systemReport && reportFirstShownAtRef.current == null) {
+      reportFirstShownAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+    }
   }, [systemReport]);
 
   const taskPatients = useMemo(
     () => patients.filter((item) => item.study_mode === studyMode),
     [patients, studyMode],
   );
-  const completedKey = `reader_v150_ai_completed_${studyMode}`;
+  const studyEnvironment = readerEnvironmentFromSearchParams(searchParams);
+  const progressReaderKey = studyEnvironment === 'research'
+    ? 'authenticated_reader'
+    : (searchParams.get('reader_id') || 'staging_reader');
+  const completedKey = `reader_v150_${studyEnvironment}_${progressReaderKey}_completed_${studyMode}`;
 
   useEffect(() => {
     try {
@@ -110,8 +129,15 @@ export function ReaderStudyQueuePanel({
   }, [completedKey]);
 
   useEffect(() => {
+    caseStartedAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+    firstInteractionAtRef.current = null;
+    reportFirstShownAtRef.current = null;
+    sessionRef.current = null;
     setFinalStage('');
     setFinalNature('');
+    setInitialStage('');
+    setInitialNature('');
+    setInitialRecorded(false);
     setReason('');
     setActionStatus(null);
   }, [patient?.id, studyMode]);
@@ -136,6 +162,9 @@ export function ReaderStudyQueuePanel({
 
   const updateReportSign = (fieldPath: string, value: string) => {
     if (!activeReport) return;
+    if (firstInteractionAtRef.current == null) {
+      firstInteractionAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+    }
     const currentSigns = (activeReport.signs || {}) as Record<string, Record<string, unknown>>;
     const [group, key] = fieldPath.split('.');
     const nextSigns: Record<string, Record<string, unknown>> = { ...currentSigns };
@@ -179,8 +208,61 @@ export function ReaderStudyQueuePanel({
     });
   };
 
+  const recordInitialJudgment = async () => {
+    if (!patient) return;
+    const initialValue = isNatureTask ? initialNature : initialStage;
+    if (!initialValue) {
+      setActionStatus(zh ? `请先完成${taskLabel}初始判断` : `Complete the initial ${taskLabel} first`);
+      return;
+    }
+    if (!sessionRef.current) sessionRef.current = `queue-${patient.id}-${Date.now()}`;
+    const environment = studyEnvironment;
+    const readerId = environment === 'research'
+      ? undefined
+      : (searchParams.get('reader_id') || 'public_reader');
+    const recordedAt = new Date().toISOString();
+    setActionStatus(zh ? '正在记录初始判断…' : 'Recording initial judgment…');
+    try {
+      const response = await fetch('/api/reader-audit/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...READER_ROUND2_VERSION_FIELDS,
+          event_type: 'initial_judgment',
+          session_id: sessionRef.current,
+          case_id: patient.id,
+          ...(readerId ? { reader_id: readerId } : {}),
+          condition: 'ai_assisted',
+          study_mode: studyMode,
+          round: searchParams.get('round') || 'round2',
+          environment,
+          patient_id: patient.patient_id,
+          payload: {
+            doctor_initial_nature: isNatureTask ? initialNature : null,
+            doctor_initial_t_stage: isNatureTask ? null : initialStage,
+            initial_recorded_at: recordedAt,
+            ai_visible_before_initial: reportFirstShownAtRef.current != null,
+            structured_signs_visible: Boolean(activeReport),
+          },
+          client_recorded_at: recordedAt,
+        }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setInitialRecorded(true);
+      setActionStatus(zh ? '初始判断已记录，请继续核对 AI 证据并提交最终判断。' : 'Initial judgment recorded. Review the AI evidence and submit the final judgment.');
+    } catch (error) {
+      setActionStatus(error instanceof Error
+        ? `${zh ? '初始判断记录失败' : 'Initial judgment failed'}: ${error.message}`
+        : (zh ? '初始判断记录失败' : 'Initial judgment failed'));
+    }
+  };
+
   const writeDoctorAction = async (actionType: DoctorAction) => {
     if (!patient) return;
+    if (studyEnvironment === 'research' && !initialRecorded) {
+      setActionStatus(zh ? '请先记录初始判断，再提交最终判断。' : 'Record the initial judgment before submitting the final judgment.');
+      return;
+    }
     if (actionType === 'accept' && recommendationBlocked) {
       setActionStatus(zh
         ? '存在高风险证据冲突，不能直接采纳；请修改、拒绝或标记证据不足。'
@@ -192,21 +274,46 @@ export function ReaderStudyQueuePanel({
       return;
     }
     if (!sessionRef.current) sessionRef.current = `queue-${patient.id}-${Date.now()}`;
+    const environment = readerEnvironmentFromSearchParams(searchParams);
+    const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+    const totalCaseTimeSec = Math.max(0, (now - caseStartedAtRef.current) / 1000);
+    const aiWaitSec = Number.isFinite(Number(activeReport?.elapsed_ms))
+      ? Math.max(0, Number(activeReport?.elapsed_ms) / 1000)
+      : 0;
+    const reportCompletionSec = reportFirstShownAtRef.current == null
+      ? null
+      : Math.max(0, (now - reportFirstShownAtRef.current) / 1000);
+    const doctorActiveReadingSec = Math.max(0, totalCaseTimeSec - aiWaitSec);
+    const firstInteractionSec = firstInteractionAtRef.current == null
+      ? null
+      : Math.max(0, (firstInteractionAtRef.current - caseStartedAtRef.current) / 1000);
+    const structuredSigns = compactReaderSigns(activeReport);
+    const evidenceIds = readerEvidenceIds(activeReport);
+    const readerId = environment === 'research'
+      ? undefined
+      : (searchParams.get('reader_id') || 'public_reader');
     setActionStatus(zh ? '正在记录…' : 'Recording…');
     try {
       const response = await fetch('/api/reader-audit/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...READER_ROUND2_VERSION_FIELDS,
           event_type: 'doctor_action',
           session_id: sessionRef.current,
           case_id: patient.id,
-          reader_id: searchParams.get('reader_id') || 'public_reader',
+          ...(readerId ? { reader_id: readerId } : {}),
+          condition: 'ai_assisted',
+          study_mode: studyMode,
           round: searchParams.get('round') || 'round2',
+          environment,
           patient_id: patient.patient_id,
           payload: {
             action_id: `action-${Date.now()}`,
             action_type: actionType,
+            doctor_initial_nature: isNatureTask ? initialNature || null : null,
+            doctor_initial_t_stage: isNatureTask ? null : initialStage || null,
+            initial_judgment_recorded: initialRecorded,
             before_value: activeReport?.recommended_stage || null,
             after_value: selectedValue || null,
             reason: reason || (actionType === 'request_more_evidence' ? (zh ? '证据不足' : 'insufficient evidence') : null),
@@ -216,7 +323,28 @@ export function ReaderStudyQueuePanel({
             system_report_available: Boolean(activeReport),
             recommendation_status: activeReport?.recommendation_status || null,
             conflicts,
-            environment: searchParams.get('round') === 'qa' ? 'qa' : 'research',
+            structured_signs: structuredSigns,
+            lesion_extent: {
+              length: (structuredSigns['size.length'] as Record<string, unknown> | undefined)?.value
+                || (structuredSigns.size as Record<string, unknown> | undefined)?.length
+                || null,
+              thickness: (structuredSigns['size.thickness'] as Record<string, unknown> | undefined)?.value
+                || (structuredSigns.size as Record<string, unknown> | undefined)?.thickness
+                || null,
+              mask_evidence: evidenceIds.some((id) => /mask|lesion|roi/i.test(id)),
+            },
+            wall_invasion_depth: structuredSigns.layer_structure || null,
+            serosal_breakthrough: structuredSigns.serosa_change || null,
+            growth_pattern: structuredSigns.growth_pattern || null,
+            evidence_ids: evidenceIds,
+            time_decomposition: {
+              total_case_time_sec: totalCaseTimeSec,
+              doctor_active_reading_sec: doctorActiveReadingSec,
+              ai_wait_sec: aiWaitSec,
+              report_completion_sec: reportCompletionSec,
+              first_interaction_sec: firstInteractionSec,
+            },
+            environment,
           },
           client_recorded_at: new Date().toISOString(),
         }),
@@ -238,7 +366,7 @@ export function ReaderStudyQueuePanel({
             confidence: activeReport?.calibrated_confidence != null
               ? String(activeReport.calibrated_confidence)
               : undefined,
-            reviewer: searchParams.get('reader_id') || 'public_reader',
+            reviewer: readerId || 'authenticated_reader',
           }),
         });
       } catch {
@@ -388,6 +516,54 @@ export function ReaderStudyQueuePanel({
       </div>
       ) : null}
 
+      <div className="mt-4 rounded-lg border border-sky-500/25 bg-sky-500/[0.04] p-2.5">
+        <div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-sky-300">
+          <span>{zh ? '医生初始判断（先于最终确认）' : 'Physician initial judgment before final confirmation'}</span>
+          <span className={initialRecorded ? 'text-emerald-300' : 'text-sky-200/70'}>
+            {initialRecorded ? (zh ? '已记录' : 'Recorded') : (zh ? '待记录' : 'Pending')}
+          </span>
+        </div>
+        {isNatureTask ? (
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {NATURES.slice(1).map((value) => (
+              <button
+                key={`initial-${value}`}
+                type="button"
+                disabled={initialRecorded}
+                onClick={() => setInitialNature(value)}
+                className={`rounded border px-2 py-1.5 text-[10px] ${initialNature === value ? 'border-sky-300 bg-sky-400/20 text-sky-100' : 'border-white/10 text-gray-400 hover:bg-white/5'} disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                {value === 'benign' ? (zh ? '初始倾向良性' : 'Initial benign') : (zh ? '初始倾向恶性' : 'Initial malignant')}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <select
+            value={initialStage}
+            disabled={initialRecorded}
+            onChange={(event) => setInitialStage(event.target.value)}
+            className="mt-2 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-gray-200 disabled:opacity-60"
+          >
+            {STAGES.map((stage) => <option key={`initial-${stage}`} value={stage}>{stage || (zh ? '初始判断待定' : 'Initial uncertain')}</option>)}
+          </select>
+        )}
+        <button
+          type="button"
+          disabled={initialRecorded}
+          onClick={() => void recordInitialJudgment()}
+          className="reader-btn mt-2 w-full justify-center border-sky-500/30 text-sky-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {initialRecorded
+            ? (zh ? '初始判断已记录' : 'Initial judgment recorded')
+            : (zh ? '记录初始判断' : 'Record initial judgment')}
+        </button>
+        <div className="mt-1 text-[9px] leading-relaxed text-gray-500">
+          {zh
+            ? '初始判断用于和 AI 建议及医生最终判断配对，不能用最终答案回填。'
+            : 'The initial judgment is paired with the AI suggestion and final judgment; it cannot be backfilled from the final answer.'}
+        </div>
+      </div>
+
       <div className="mt-4 border-t border-white/10 pt-3">
         <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-300">
           <CheckCircle2 size={12} /> {zh ? '医生最终判断：' : 'Physician final decision: '}{taskLabel}
@@ -398,7 +574,12 @@ export function ReaderStudyQueuePanel({
               <button
                 key={value}
                 type="button"
-                onClick={() => setFinalNature(value)}
+                onClick={() => {
+                  if (firstInteractionAtRef.current == null) {
+                    firstInteractionAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+                  }
+                  setFinalNature(value);
+                }}
                 className={`rounded border px-2 py-2 text-[11px] ${finalNature === value ? 'border-emerald-300 bg-emerald-400/20 text-emerald-100' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}
               >
                 {value === 'benign' ? (zh ? '良性' : 'Benign') : (zh ? '恶性' : 'Malignant')}
@@ -408,7 +589,12 @@ export function ReaderStudyQueuePanel({
         ) : (
           <select
             value={finalStage}
-            onChange={(event) => setFinalStage(event.target.value)}
+            onChange={(event) => {
+              if (firstInteractionAtRef.current == null) {
+                firstInteractionAtRef.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+              }
+              setFinalStage(event.target.value);
+            }}
             className="mt-2 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-gray-200"
           >
             {STAGES.map((stage) => <option key={stage} value={stage}>{stage || (zh ? '暂不确定' : 'Uncertain')}</option>)}

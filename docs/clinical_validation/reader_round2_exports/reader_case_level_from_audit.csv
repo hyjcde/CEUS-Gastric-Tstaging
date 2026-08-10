@@ -1,0 +1,1 @@
+reader_id,authenticated_reader_id,case_id,session_id,environment,round,condition,event_count,has_ai_suggestion,has_report,doctor_initial_nature,doctor_initial_t_stage,doctor_action,final_value,ai_suggestion_id,ai_recommended_t_stage,structured_signs,lesion_extent,wall_invasion_depth,serosal_breakthrough,growth_pattern
