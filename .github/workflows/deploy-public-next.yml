@@ -1,0 +1,129 @@
+name: Deploy public Next (Aliyun)
+
+# Builds reader-only Next and atomically swaps /var/www/gastric-next on Aliyun.
+# Secrets (repo Settings → Secrets and variables → Actions):
+#   ALIYUN_SSH_PRIVATE_KEY  – private key for the deploy user (ed25519)
+#   ALIYUN_SSH_HOST         – e.g. 47.106.33.102
+#   ALIYUN_SSH_USER         – e.g. root
+# Optional:
+#   ALIYUN_SSH_PORT         – default 22
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref_note:
+        description: "Optional note for this deploy"
+        required: false
+        default: ""
+  push:
+    branches:
+      - main
+      - assist-keyframe-workflow-20260814
+    paths:
+      - "apps/gastric_scan_next/**"
+      - "scripts/deploy_public_next.sh"
+      - ".github/workflows/deploy-public-next.yml"
+
+concurrency:
+  group: deploy-public-next
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/gastric_scan_next
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/gastric_scan_next/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build reader-only
+        env:
+          NEXT_PUBLIC_READER_ONLY: "1"
+          NEXT_DIST_DIR: ".next-public-deploy-dist"
+        run: npm run build
+
+      - name: Package standalone static
+        run: |
+          set -euo pipefail
+          DIST=.next-public-deploy-dist
+          test -f "$DIST/BUILD_ID"
+          test -f "$DIST/standalone/server.js"
+          mkdir -p "$DIST/standalone/.next" "$DIST/standalone/data"
+          rm -rf "$DIST/standalone/.next/static"
+          cp -a "$DIST/static" "$DIST/standalone/.next/static"
+          if [ -d public ]; then
+            rm -rf "$DIST/standalone/public"
+            cp -a public "$DIST/standalone/public"
+          fi
+          if [ -f data/reader_v150_clinical.json ]; then
+            cp -a data/reader_v150_clinical.json "$DIST/standalone/data/reader_v150_clinical.json"
+          fi
+          cp -a "$DIST/BUILD_ID" "$DIST/standalone/BUILD_ID"
+          echo "PUBLIC_BUILD=$(cat "$DIST/BUILD_ID")"
+
+      - name: Setup SSH
+        env:
+          ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+          ALIYUN_SSH_HOST: ${{ secrets.ALIYUN_SSH_HOST }}
+          ALIYUN_SSH_USER: ${{ secrets.ALIYUN_SSH_USER }}
+          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ALIYUN_SSH_PRIVATE_KEY:-}" ] || [ -z "${ALIYUN_SSH_HOST:-}" ] || [ -z "${ALIYUN_SSH_USER:-}" ]; then
+            echo "Missing required secrets: ALIYUN_SSH_PRIVATE_KEY, ALIYUN_SSH_HOST, ALIYUN_SSH_USER" >&2
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$ALIYUN_SSH_PRIVATE_KEY" > ~/.ssh/aliyun_deploy
+          chmod 600 ~/.ssh/aliyun_deploy
+          PORT="${ALIYUN_SSH_PORT:-22}"
+          ssh-keyscan -p "$PORT" -H "$ALIYUN_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          cat > ~/.ssh/config <<EOF
+          Host aliyun-deploy
+            HostName ${ALIYUN_SSH_HOST}
+            User ${ALIYUN_SSH_USER}
+            Port ${PORT}
+            IdentityFile ~/.ssh/aliyun_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+          EOF
+          chmod 600 ~/.ssh/config
+          ssh -o BatchMode=yes aliyun-deploy 'echo ssh_ok && hostname'
+
+      - name: Atomic remote swap
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/deploy_public_next.sh
+          DEPLOY_SSH_HOST=aliyun-deploy \
+            bash scripts/deploy_public_next.sh --skip-build --skip-verify
+
+      - name: Smoke public URLs
+        run: |
+          set -euo pipefail
+          HOST="${{ secrets.ALIYUN_SSH_HOST }}"
+          code_root="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "http://${HOST}/" || true)"
+          code_login="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "http://${HOST}/workbench_login.html" || true)"
+          code_clinical="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "http://${HOST}/clinical/task1.html" || true)"
+          echo "root=$code_root login=$code_login clinical=$code_clinical"
+          # root should redirect to login (302) or serve app (200)
+          echo "$code_root" | grep -Eq '^(200|302)$'
+          test "$code_login" = "200"
+          test "$code_clinical" = "200"

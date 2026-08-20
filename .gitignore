@@ -6,6 +6,17 @@
 .env.*
 !.env.example
 
+# Local workstation secrets (auto-login password files, etc.)
+*.password
+runtime/**/*.password
+apps/runtime-data/
+# API keys / tokens on disk (public GitHub — never commit)
+secrets/
+
+# Reader-only / Aliyun deploy build dirs (local or CI artifacts)
+apps/gastric_scan_next/.next-public-deploy-dist/
+apps/gastric_scan_next/.next-aliyun/
+
 # Local datasets and large assets
 外部测试集/
 data/raw/
@@ -58,6 +69,10 @@ yarn-error.log*
 !data/metadata/*.csv
 !data/metadata/*.md
 !data/metadata/*.txt
+
+# Generated TIME-Cat runtime configs (expanded 192 embedding columns)
+pipeline/configs/_runtime_*.yaml
+pipeline/data/tstaging_4class_time_cat_phase0_20260820/runtime_config.yaml
 
 # Large experiment trees (index via experiments/registry.csv)
 pipeline/experiments/tree/
