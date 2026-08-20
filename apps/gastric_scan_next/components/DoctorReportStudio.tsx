@@ -16,6 +16,7 @@ import {
   Sparkles,
   Stethoscope,
   TableProperties,
+  X,
 } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
 import type {
@@ -27,15 +28,23 @@ import type {
 import type { SamReport } from '@/lib/reader/types';
 import { CaseQuestioner } from '@/components/CaseQuestioner';
 import { SpectralFeaturePanel } from '@/components/SpectralFeaturePanel';
-import { TemplateReportEditor } from '@/components/TemplateReportEditor';
+import { TemplateReportEditor, TemplateReportPreview } from '@/components/TemplateReportEditor';
+import { formatAssistFiveClass, getAssistFiveClass } from '@/lib/reader/assist-display-stage';
+import { isBenignReaderBmCase } from '@/lib/reader/clinical-display';
 import {
   buildGcUsTemplateReportText,
+  isGcUsProseReady,
   createGcUsReportState,
   gcUsOptionLabel,
   resolveGcUsReportLocale,
   type GcUsReportImage,
   type GcUsReportState,
 } from '@/lib/gc-us-report-template';
+import {
+  BM_US_REPORT_SOURCE_DOC,
+  buildBmUsTemplateReportText,
+  type BmUsReportState,
+} from '@/lib/bm-us-report-template';
 
 type StudioTab = 'template' | 'overview' | 'evidence' | 'report' | 'review';
 type ReviewAction = 'accept' | 'modify' | 'reject' | 'request_more_evidence';
@@ -45,9 +54,12 @@ interface DoctorReportStudioProps {
   patient: Patient | null;
   analysis: AgentAnalysisResponse | null;
   gcUsReport?: GcUsReportState | null;
+  bmReport?: BmUsReportState | null;
+  studyMode?: string | null;
   systemReport?: SamReport | null;
   extraImages?: GcUsReportImage[];
   onGcUsReportChange?: (state: GcUsReportState) => void;
+  readOnly?: boolean;
 }
 
 type Metric = {
@@ -277,12 +289,32 @@ function ArtifactStrip({
 }) {
   const [failed, setFailed] = React.useState<Set<string>>(() => new Set());
   const artifacts = asRecord(analysis?.prediction_artifacts);
+  const boundaryFromExtra = extraImages.find((image) => (
+    image.id === 'explainable-curvature-analysis'
+    || image.id === 'segmentation-curvature'
+    || image.id === 'agent-curvature-analysis'
+    || image.id === 'wall-analysis'
+    || image.kind === 'curvature'
+    || image.kind === 'wall'
+  ) && !/^dino-|DINO/i.test(`${image.id} ${image.label}`));
   const candidates = [
-    ...extraImages.map((image) => ({ key: image.id, label: image.label, src: image.url })),
+    ...extraImages
+      .filter((image) => image.id !== boundaryFromExtra?.id)
+      .map((image) => ({ key: image.id, label: image.label, src: image.url })),
     { key: 'image', label: zh ? '原始影像' : 'Original', src: patient.image_url },
-    { key: 'wall', label: zh ? '壁层分析' : 'Wall analysis', src: artifacts?.real_wall_analysis_panel_url },
+    {
+      key: 'wall',
+      label: zh ? '胃壁边界分析' : 'Wall boundary analysis',
+      src: boundaryFromExtra?.url
+        || artifacts?.boundary_analysis_panel_url
+        || artifacts?.real_wall_analysis_panel_url,
+    },
     { key: 'signs', label: zh ? '核心征象' : 'Core signs', src: artifacts?.gc_us_sign_panel_url },
-    { key: 'dino', label: zh ? 'DINO 区域特征' : 'DINO region features', src: artifacts?.current_image_dino_feature_panel_url },
+    {
+      key: 'dino',
+      label: zh ? 'DINO 壁层证据（绿）' : 'DINO wall-evidence (green)',
+      src: artifacts?.dino_wall_evidence_map_url || artifacts?.current_image_dino_feature_panel_url,
+    },
   ].filter((item): item is { key: string; label: string; src: string } => (
     typeof item.src === 'string'
     && item.src.length > 0
@@ -299,7 +331,7 @@ function ArtifactStrip({
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
       {candidates.map((item) => (
-        <div key={item.key} className="overflow-hidden rounded-lg border border-white/10 bg-slate-900">
+        <div key={item.key} className="overflow-hidden rounded-lg border border-white/10 bg-black">
           <div className="relative flex h-28 items-center justify-center bg-black">
             {/* Prefer plain img so data URLs and /api/agent/artifacts load without next/image CORS traps. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -324,17 +356,216 @@ function ArtifactStrip({
   );
 }
 
+type ReportVisual = {
+  key: string;
+  title: string;
+  caption: string;
+  src: string;
+};
+
+function isRenderableSrc(src: unknown): src is string {
+  return typeof src === 'string'
+    && src.length > 0
+    && (src.startsWith('data:image/')
+      || src.startsWith('blob:')
+      || src.startsWith('/api/')
+      || src.startsWith('/_next/')
+      || src.startsWith('/images/')
+      || /^https?:\/\//i.test(src));
+}
+
+function englishVisualMeta(image: GcUsReportImage): { title: string; caption: string } {
+  const blob = `${image.id} ${image.kind} ${image.label} ${image.caption || ''}`;
+  if (/dino/i.test(blob)) {
+    return { title: 'DINO wall-evidence', caption: 'DINO wall-evidence heatmap (green)' };
+  }
+  if (/curvature/i.test(blob)) {
+    return { title: 'Curvature / boundary', caption: 'Curvature and boundary analysis from the current-case Agent' };
+  }
+  if (/wall|boundary/i.test(blob)) {
+    return { title: 'Wall boundary analysis', caption: 'Boundary-analysis panel used for wall assessment' };
+  }
+  if (/sign/i.test(blob)) {
+    return { title: 'Core imaging signs', caption: 'Core imaging-sign analysis panel' };
+  }
+  if (/overlay/i.test(blob)) {
+    return { title: 'Segmentation overlay', caption: 'Lesion / lumen segmentation overlay' };
+  }
+  if (/roi/i.test(blob)) {
+    return { title: 'Lesion ROI', caption: 'Cropped lesion region of interest' };
+  }
+  if (/frame|original|key-?frame/i.test(blob)) {
+    return { title: 'Current key frame', caption: 'Current key-frame original image used for assist' };
+  }
+  const caption = image.caption && /^[A-Za-z]/.test(image.caption)
+    ? image.caption
+    : (image.label && /^[A-Za-z]/.test(image.label) ? image.label : 'Case visualization');
+  const title = image.label && /^[A-Za-z]/.test(image.label) ? image.label : (image.kind || 'Image');
+  return { title, caption };
+}
+
+function collectReportVisuals(
+  patient: Patient,
+  analysis: AgentAnalysisResponse | null,
+  extraImages: GcUsReportImage[],
+): ReportVisual[] {
+  const artifacts = asRecord(analysis?.prediction_artifacts);
+  const catalog: ReportVisual[] = [
+    ...extraImages.map((image) => {
+      const meta = englishVisualMeta(image);
+      return {
+        key: image.id || image.url,
+        title: meta.title,
+        caption: meta.caption,
+        src: image.url,
+      };
+    }),
+    {
+      key: 'patient-original',
+      title: 'Original still',
+      caption: 'Current-case original ultrasound still',
+      src: patient.image_url,
+    },
+    {
+      key: 'patient-overlay',
+      title: 'Segmentation overlay',
+      caption: 'Lesion / lumen segmentation overlay',
+      src: patient.overlay_url,
+    },
+    {
+      key: 'patient-roi',
+      title: 'Lesion ROI',
+      caption: 'Cropped lesion region of interest',
+      src: patient.roi_url || '',
+    },
+    {
+      key: 'artifact-wall',
+      title: 'Wall boundary analysis',
+      caption: 'Boundary-analysis panel used for wall assessment',
+      src: String(artifacts?.boundary_analysis_panel_url || artifacts?.real_wall_analysis_panel_url || ''),
+    },
+    {
+      key: 'artifact-curvature',
+      title: 'Curvature / boundary',
+      caption: 'Curvature and boundary analysis from the current-case Agent',
+      src: String(artifacts?.wall_penetration_heatmap_url || ''),
+    },
+    {
+      key: 'artifact-dino',
+      title: 'DINO wall-evidence',
+      caption: 'DINO wall-evidence heatmap (green)',
+      src: String(artifacts?.dino_wall_evidence_map_url || artifacts?.current_image_dino_feature_panel_url || ''),
+    },
+    {
+      key: 'artifact-signs',
+      title: 'Core imaging signs',
+      caption: 'Core imaging-sign analysis panel',
+      src: String(artifacts?.gc_us_sign_panel_url || ''),
+    },
+  ];
+  const seen = new Set<string>();
+  return catalog.filter((item) => {
+    if (!isRenderableSrc(item.src) || seen.has(item.src)) return false;
+    seen.add(item.src);
+    return true;
+  });
+}
+
+function ReportVisualizationGallery({
+  items,
+  zh,
+}: {
+  items: ReportVisual[];
+  zh: boolean;
+}) {
+  const [failed, setFailed] = React.useState<Set<string>>(() => new Set());
+  const [active, setActive] = React.useState<ReportVisual | null>(null);
+  const visible = items.filter((item) => !failed.has(item.key));
+  if (!visible.length) {
+    return (
+      <div className="rounded-lg border border-dashed border-white/15 px-4 py-8 text-center text-[12px] text-neutral-500">
+        {zh
+          ? '辅助意见完成后，这里会显示当前帧、壁层分析和叠加图。这些图不写入报告正文。'
+          : 'After assist, this rail shows the current frame, wall analysis, and overlays. They are not written into the report body.'}
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="space-y-3">
+        {visible.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setActive(item)}
+            className="block w-full overflow-hidden rounded-lg border border-white/10 bg-black text-left hover:border-cyan-300/40"
+          >
+            <div className="relative flex min-h-40 items-center justify-center bg-black">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={item.src}
+                alt={item.caption}
+                className="max-h-56 w-full object-contain"
+                onError={() => {
+                  setFailed((previous) => {
+                    if (previous.has(item.key)) return previous;
+                    const next = new Set(previous);
+                    next.add(item.key);
+                    return next;
+                  });
+                }}
+              />
+            </div>
+            <div className="border-t border-white/10 px-3 py-2">
+              <div className="text-[12px] font-semibold text-neutral-100">{item.title}</div>
+              <div className="mt-0.5 text-[11px] leading-5 text-neutral-400">{item.caption}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      {active ? (
+        <div
+          className="fixed inset-0 z-[260000] flex items-center justify-center bg-black/92 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={active.caption}
+          onClick={() => setActive(null)}
+        >
+          <div className="relative max-h-[92vh] max-w-[92vw]" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setActive(null)}
+              className="absolute -right-2 -top-2 rounded-full border border-white/20 bg-black/80 p-1.5 text-neutral-200 hover:bg-white/10"
+              aria-label={zh ? '关闭图像' : 'Close image'}
+            >
+              <X size={14} />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={active.src} alt={active.caption} className="max-h-[82vh] max-w-[88vw] object-contain" />
+            <div className="mt-3 text-center font-[Times_New_Roman,Times,serif] text-[13px] text-neutral-300">
+              {active.caption}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function DoctorReportStudio({
   patient,
   analysis,
   gcUsReport = null,
+  bmReport = null,
+  studyMode = null,
   systemReport = null,
   extraImages = [],
   onGcUsReportChange,
+  readOnly = false,
 }: DoctorReportStudioProps) {
   const { language } = useSettings();
   const zh = language !== 'en';
-  const [tab, setTab] = useState<StudioTab>('template');
+  const [tab, setTab] = useState<StudioTab>(readOnly ? 'report' : 'template');
   const [doctorStage, setDoctorStage] = useState('');
   const [pathologyStage, setPathologyStage] = useState('');
   const [reviewNote, setReviewNote] = useState('');
@@ -364,18 +595,10 @@ export function DoctorReportStudio({
   const researchStage = normalizeStage(
     classification.top1_stage || report?.recommended_t_stage,
   );
-  const assistDisplayStage = normalizeStage(
-    report?.assist_display_stage
-    || report?.contour_diagnosis?.display_stage
-    || 'cTx',
-  );
-  // Doctor-facing suggestion follows ContourEvidenceGate; conflicts downgrade display to cTx.
-  const recommendedStage = (gcUsReport?.conflicts?.length || 0) > 0 ? 'cTx' : assistDisplayStage;
-  const selectedDoctorStage = doctorStage || (
-    !recommendedStage || recommendedStage === 'cTx' || recommendedStage === 'N/A'
-      ? ''
-      : recommendedStage
-  );
+  const gatedAssist = getAssistFiveClass(analysis);
+  const assistDisplayStage = formatAssistFiveClass(analysis, zh);
+  const recommendedStage = gatedAssist || '';
+  const selectedDoctorStage = doctorStage || recommendedStage;
 
   const stageProbabilities = useMemo(() => {
     const fromPack = pack?.charts?.stage_probability || pack?.stage?.probabilities;
@@ -443,9 +666,12 @@ export function DoctorReportStudio({
   // Formal doctor-facing text is the boss wall-layer template; regenerate by UI language
   // from structured fields (bilingual DOCX example, 2026-08-10). Agent draft is assist-only.
   const locale = resolveGcUsReportLocale(zh);
-  const templateProse = gcUsReport
-    ? buildGcUsTemplateReportText(gcUsReport, locale)
-    : '';
+  const isBmReport = studyMode === 'benign_malignancy';
+  const templateProse = isBmReport
+    ? (bmReport?.report.prose || (bmReport ? buildBmUsTemplateReportText(bmReport, locale) : ''))
+    : (gcUsReport && isGcUsProseReady(gcUsReport)
+      ? buildGcUsTemplateReportText(gcUsReport, locale)
+      : '');
   const agentDraftText = dynamicDraft?.full_text || '';
   const reportText = templateProse || agentDraftText || systemReport?.summary || '';
   const copyText = templateProse || agentDraftText || systemReport?.summary || '';
@@ -464,19 +690,31 @@ export function DoctorReportStudio({
   ].filter((item): item is { label: string; value: string } => Boolean(item.value?.trim()));
   const spectralRoughness = asNumber(morphology.boundary_roughness);
   const tumorSize = patient?.clinical?.tumorSize;
-  const na = zh ? '未评估' : 'Not assessed';
-  const noSource = zh ? '暂无来源' : 'No source';
-  const notProvided = zh ? '未提供' : 'Not provided';
+  // No blank/"not assessed" cells: mask-derived template measurements and
+  // negative-biomarker defaults fill the gaps.
+  const templateLengthCm = asNumber(templateState?.template_fields?.maximum_diameter_cm?.value);
+  const templateThicknessCm = asNumber(templateState?.template_fields?.maximum_thickness_cm?.value);
+  const sizeText = tumorSize?.length != null || tumorSize?.thickness != null
+    ? `${tumorSize?.length ?? templateLengthCm ?? '—'} x ${tumorSize?.thickness ?? templateThicknessCm ?? '—'} cm`
+    : templateLengthCm != null && templateThicknessCm != null
+      ? `${templateLengthCm} x ${templateThicknessCm} cm`
+      : (zh ? '以分割测量为准' : 'Per segmentation measurement');
+  const noSource = zh ? '未提供' : 'Not provided';
+  const allowMarkers = !isBenignReaderBmCase(patient?.id || patient?.patient_id);
+  const ceaValue = patient?.clinical?.biomarkers.cea;
+  const ca199Value = patient?.clinical?.biomarkers.ca199;
   const clinicalRows = [
     { label: zh ? '病灶部位' : 'Lesion location', value: patient?.clinical?.location || noSource },
     {
       label: zh ? '长径 x 厚度' : 'Length x thickness',
-      value: tumorSize
-        ? `${tumorSize.length ?? na} x ${tumorSize.thickness ?? na} cm`
-        : na,
+      value: sizeText,
     },
-    { label: 'CEA', value: patient?.clinical?.biomarkers.cea ?? notProvided },
-    { label: 'CA19-9', value: patient?.clinical?.biomarkers.ca199 ?? notProvided },
+    ...(allowMarkers && (ceaValue != null || patient?.clinical?.biomarkers.cea_positive)
+      ? [{ label: 'CEA', value: ceaValue ?? (zh ? '阳性' : 'Positive') }]
+      : []),
+    ...(allowMarkers && (ca199Value != null || patient?.clinical?.biomarkers.ca199_positive)
+      ? [{ label: 'CA19-9', value: ca199Value ?? (zh ? '阳性' : 'Positive') }]
+      : []),
   ];
 
   const copyReport = async () => {
@@ -566,18 +804,78 @@ export function DoctorReportStudio({
     }
   };
 
-  const tabs: Array<{ id: StudioTab; label: string; icon: React.ReactNode }> = [
+  const allTabs: Array<{ id: StudioTab; label: string; icon: React.ReactNode }> = [
     { id: 'template', label: zh ? '模板报告' : 'Template report', icon: <FileText size={14} /> },
     { id: 'overview', label: zh ? '总览' : 'Overview', icon: <Gauge size={14} /> },
     { id: 'evidence', label: zh ? '证据图谱' : 'Evidence map', icon: <TableProperties size={14} /> },
     { id: 'report', label: zh ? '报告正文' : 'Report', icon: <FileText size={14} /> },
     { id: 'review', label: zh ? '医生复核' : 'Review', icon: <Stethoscope size={14} /> },
   ];
+  const tabs = allTabs.filter((item) => (
+    !readOnly || item.id === 'report' || item.id === 'overview' || item.id === 'evidence'
+  ));
 
   if (!patient) {
     return (
       <div className="rounded-xl border border-dashed border-white/10 bg-slate-900 px-5 py-10 text-center text-sm text-slate-500">
         {zh ? '运行当前病例 Agent 后，这里会显示完整证据报告。' : 'Run the case Agent to populate the complete evidence report.'}
+      </div>
+    );
+  }
+
+  if (readOnly) {
+    const visuals = collectReportVisuals(patient, analysis, extraImages);
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-black text-neutral-100 lg:flex-row">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-6 py-4 lg:px-10">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-neutral-500">
+                {zh ? '正式报告（Word 版式）' : 'Formal report (Word layout)'}
+              </div>
+              <div className="mt-1 text-[11px] text-neutral-500">
+                {zh
+                  ? '正式超声报告版式。如需修改，请关闭后回到右侧证据面板，再重新生成。'
+                  : 'Formal ultrasound-report layout. To edit, close this view, change the evidence panel, then generate again.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void copyReport()}
+              className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[11px] text-neutral-100 hover:bg-white/10"
+            >
+              {copied ? <Check size={13} /> : <Clipboard size={13} />}
+              {copied ? (zh ? '已复制' : 'Copied') : (zh ? '复制正文' : 'Copy')}
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto bg-black px-4 py-6">
+            <TemplateReportPreview
+              patient={patient}
+              state={templateState}
+              analysis={analysis}
+              extraImages={extraImages}
+              previewId="generated-report-word"
+              zh={zh}
+              formalHospital
+            />
+          </div>
+        </section>
+        <aside className="flex min-h-[42vh] w-full shrink-0 flex-col overflow-hidden border-t border-white/10 bg-black lg:h-full lg:w-[28rem] lg:border-l lg:border-t-0 xl:w-[32rem]">
+          <div className="shrink-0 border-b border-white/10 px-4 py-3">
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
+              <ImageIcon size={14} className="text-cyan-300" />
+              {zh ? '界面可视化' : 'Interface visualization'}
+            </div>
+            <div className="mt-1 text-[11px] leading-5 text-neutral-500">
+              {zh
+                ? '当前帧、壁层、DINO 与叠加图只显示在这里，不进入报告正文。图注为英文。'
+                : 'Current frame, wall, DINO, and overlays stay here and are excluded from the report body.'}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <ReportVisualizationGallery items={visuals} zh={zh} />
+          </div>
+        </aside>
       </div>
     );
   }
@@ -687,7 +985,7 @@ export function DoctorReportStudio({
         </div>
       </div>
 
-      {tab === 'template' ? (
+      {tab === 'template' && !readOnly ? (
         <TemplateReportEditor
           patient={patient}
           state={templateState}
@@ -709,11 +1007,9 @@ export function DoctorReportStudio({
               <div className="flex items-end gap-4">
                 <div className="text-6xl font-black tracking-tight text-white">{assistDisplayStage}</div>
                 <div className="pb-2">
-                  <div className={`rounded-full border px-2.5 py-1 text-[11px] ${statusTone(assistDisplayStage === 'cTx' || review.required ? 'partial' : 'available')}`}>
-                    {assistDisplayStage === 'cTx'
-                      ? (zh ? '壁层未确认，保持 cTx' : 'Wall unconfirmed, keep cTx')
-                      : review.required
-                        ? (zh ? '证据不足或存在冲突' : 'Conflict or incomplete evidence')
+                  <div className={`rounded-full border px-2.5 py-1 text-[11px] ${statusTone(review.required ? 'partial' : 'available')}`}>
+                    {review.required
+                        ? (zh ? ' provisional，证据不足或存在冲突' : ' Provisional; conflict or incomplete evidence')
                         : (zh ? '证据链可复核' : 'Evidence chain reviewable')}
                   </div>
                   <div className="mt-2 text-[11px] text-slate-400">
@@ -980,9 +1276,9 @@ export function DoctorReportStudio({
           <div className="rounded-2xl border border-emerald-300/20 bg-[linear-gradient(135deg,rgba(6,40,30,0.55),rgba(6,10,15,0.95))] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/70">{zh ? '正式模板报告（老板壁层模板）' : 'Formal template report'}</div>
-                <h3 className="mt-1 text-xl font-bold text-white">{zh ? '胃充盈超声报告' : 'Gastric filling US report'}</h3>
-                <div className="mt-1 text-[10px] text-slate-500">{zh ? '复制与 PDF 均以模板正文为准；下方 Agent 叙述仅作辅助。' : 'Copy/PDF use template prose; Agent narrative below is assist-only.'}</div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/70">{isBmReport ? (zh ? '正式模板报告（良恶性鉴别）' : 'Formal template report') : (zh ? '正式模板报告（老板壁层模板）' : 'Formal template report')}</div>
+                <h3 className="mt-1 text-xl font-bold text-white">{isBmReport ? (zh ? '胃良恶性病变鉴别超声报告' : 'Benign–malignant US report') : (zh ? '胃充盈超声报告' : 'Gastric filling US report')}</h3>
+                <div className="mt-1 text-[10px] text-slate-500">{isBmReport ? (zh ? `复制与 PDF 均以《${BM_US_REPORT_SOURCE_DOC}》正文为准。` : 'Copy/PDF use the benign–malignant template prose.') : (zh ? '复制与 PDF 均以模板正文为准；下方 Agent 叙述仅作辅助。' : 'Copy/PDF use template prose; Agent narrative below is assist-only.')}</div>
               </div>
               <button type="button" onClick={() => void copyReport()} className="flex items-center gap-1.5 rounded-lg border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[11px] text-emerald-100 hover:bg-emerald-300/20">
                 {copied ? <Check size={13} /> : <Clipboard size={13} />}
@@ -990,7 +1286,7 @@ export function DoctorReportStudio({
               </button>
             </div>
             <div className="mt-5 rounded-xl border border-white/10 bg-slate-900 p-4">
-              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-slate-200">{templateProse || (zh ? '暂无模板正文：请先完成病灶与胃腔勾画并生成壁层证据。' : 'No template prose yet: finish lesion+lumen contours and wall evidence.')}</pre>
+              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-slate-200">{templateProse || (isBmReport ? (zh ? '暂无模板正文：请先填写良恶性鉴别字段，再生成报告。' : 'No template prose yet: complete the benign–malignant fields, then generate.') : (zh ? '暂无模板正文：请先完成病灶与胃腔勾画并生成壁层证据。' : 'No template prose yet: finish lesion+lumen contours and wall evidence.'))}</pre>
             </div>
           </div>
 
@@ -1052,7 +1348,7 @@ export function DoctorReportStudio({
                   {zh ? '医生确认的 cT' : 'Physician cT'}
                   <select value={doctorStage} onChange={(event) => setDoctorStage(event.target.value)} className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white">
                     <option value="">{zh ? `沿用 Agent: ${recommendedStage}` : `Use Agent: ${recommendedStage}`}</option>
-                    {['cTx', 'T1', 'T2', 'T3', 'T4a', 'T4b', 'T4+'].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                    {['T1', 'T2', 'T3', 'T4a', 'T4b', 'T4+'].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
                   </select>
                   <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
                     {zh
@@ -1099,7 +1395,7 @@ export function DoctorReportStudio({
                       onClick={() => { setReviewAction(action); void submitReview(action); }}
                       disabled={submitState === 'submitting' || acceptBlocked}
                       title={acceptBlocked
-                        ? (zh ? '证据不足或 cTx/冲突时不能直接采纳；请先确认 cT 或改为修改/证据不足' : 'Cannot accept with cTx or conflicts; confirm cT or use modify / need more evidence')
+                        ? (zh ? '存在冲突时不能直接采纳；请先确认 cT 或改为修改/证据不足' : 'Cannot accept with unresolved conflicts; confirm cT or use modify / need more evidence')
                         : undefined}
                       className={`rounded-lg border bg-slate-900 px-2 py-2.5 text-[11px] font-semibold hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40 ${style}`}
                     >
