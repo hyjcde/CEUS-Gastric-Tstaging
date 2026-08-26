@@ -1,0 +1,70 @@
+experiment_name: tstaging_4class_gus_mask2stage_20260826
+description: >-
+  GUS-Mask2Stage on official maincenter_retrospective_v20260821.
+  Shared ConvNeXt V2 Tiny, full plus context views, signed-distance
+  regions, trans-boundary radial tokens, threshold-specific Top-K
+  bag fusion, conditional ordinal T1/T2/T3/T4+. Image and lesion
+  mask only. No clinical fields, no similar-case votes.
+
+model_type: gus_mask2stage
+backbone: convnextv2_tiny.fcmae_ft_in22k_in1k
+pretrained: true
+num_classes: 4
+class_names: [T1, T2, T3, T4+]
+
+variant: M4
+aggregation: A4
+ordinal: O3
+use_star: false
+star_beta: 0.15
+
+token_dim: 192
+n_points: 24
+top_m: 4
+top_k: 2
+tau_b: 0.5
+tau_f: 0.5
+dropout: 0.10
+drop_path_rate: 0.10
+
+data_dir: dataset/task_datasets/t_staging/maincenter_retrospective_v20260821/splits
+official_pack: dataset/task_datasets/t_staging/maincenter_retrospective_v20260821
+max_frames: 10
+image_size: 384
+context_size: 384
+context_expand: 0.45
+clinical_dim: 0
+geom_dim: 12
+geom_from: clean_full_mask
+standardize_geom: true
+
+new_lr: 0.0002
+late_lr: 0.00002
+early_lr: 0.000005
+weight_decay: 0.05
+epochs: 80
+warmup_epochs: 5
+scheduler: cosine
+batch_size: 2
+gradient_accumulation: 6
+early_stopping: 12
+early_stopping_metric: qwk
+amp: true
+ema: true
+ema_decay: 0.999
+grad_clip: 1.0
+num_workers: 4
+seed: 20260826
+
+lambda_mask_cons: 0.15
+lambda_view_cons: 0.05
+
+existing_t_ckpt: pipeline/experiments/tree/gastric_tstage_4class/classification/mask_pooled_ordinal_convnext/tstaging_4class_maskpool_ordinal_phase0_20260819_20260819_222247/best_model.pth
+existing_t_yaml: pipeline/configs/tstaging_4class_maskpool_ordinal_phase0_20260819.yaml
+
+no_leak_policy:
+  selection_splits: [train, val]
+  official_prospective: dataset/task_datasets/t_staging/maincenter_retrospective_v20260821/splits/test_prospective.csv
+  official_external: dataset/task_datasets/t_staging/maincenter_retrospective_v20260821/splits/test_external.csv
+  locked_test: true
+  clinical_in_core: false

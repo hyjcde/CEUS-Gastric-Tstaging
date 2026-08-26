@@ -1,0 +1,86 @@
+{
+  "model": "GUS-Mask2Stage",
+  "core_inputs": [
+    "doctor keyframes",
+    "lesion mask"
+  ],
+  "excluded": [
+    "clinical fields",
+    "similar-case labels",
+    "doctor first impression"
+  ],
+  "backbone": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+  "default_variant": "M4/A4/O3",
+  "phases": {
+    "0": "live mask-pool CORAL checkpoint, single vs multi-frame aggregation",
+    "1": "mask usage M0-M6",
+    "2": "aggregation A0-A5 on a locked visual checkpoint",
+    "3": "ordinal head O0-O3",
+    "4": "optional OOF tabular fusion, only if it beats MLP/CatBoost"
+  },
+  "preflight": {
+    "pack": "dataset/task_datasets/t_staging/maincenter_retrospective_v20260821/splits",
+    "backbone": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+    "splits": {
+      "train": {
+        "rows": 6044,
+        "patients": 1062,
+        "label_counts": {
+          "2": 369,
+          "3": 318,
+          "0": 239,
+          "1": 136
+        },
+        "missing_images": 0,
+        "missing_masks": 0,
+        "expected_patients": null
+      },
+      "val": {
+        "rows": 733,
+        "patients": 128,
+        "label_counts": {
+          "2": 43,
+          "3": 41,
+          "0": 33,
+          "1": 11
+        },
+        "missing_images": 0,
+        "missing_masks": 0,
+        "expected_patients": null
+      },
+      "test_prospective": {
+        "rows": 1659,
+        "patients": 425,
+        "label_counts": {
+          "3": 185,
+          "2": 112,
+          "0": 94,
+          "1": 34
+        },
+        "missing_images": 0,
+        "missing_masks": 0,
+        "expected_patients": 425
+      },
+      "test_external": {
+        "rows": 2458,
+        "patients": 485,
+        "label_counts": {
+          "3": 208,
+          "2": 130,
+          "0": 80,
+          "1": 67
+        },
+        "missing_images": 0,
+        "missing_masks": 0,
+        "expected_patients": 485
+      }
+    },
+    "leaks": {
+      "train_val": 0,
+      "train_prosp": 0,
+      "train_ext": 0,
+      "val_prosp": 0
+    },
+    "ok": true
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "probs": [
+    0.5668036937713623,
+    0.23240773379802704,
+    0.07880867272615433,
+    0.12197992950677872
+  ],
+  "q": [
+    0.4331963360309601,
+    0.20078860223293304,
+    0.12197992950677872
+  ],
+  "params": {
+    "trainable": 29842228,
+    "frozen": 0,
+    "total": 29842228
+  },
+  "backbone": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+  "geom_dim": 12,
+  "geom_sanity": {
+    "circle_circularity": 0.8872286081314087,
+    "circle_eccentricity": 0.0,
+    "ellipse_circularity": 0.49328163266181946,
+    "ellipse_eccentricity": 0.9668081998825073
+  }
+}
