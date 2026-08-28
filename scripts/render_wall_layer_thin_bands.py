@@ -42,15 +42,15 @@ DINO_CKPT = (
     / "experiments/segmentation/dinov3_vitb16_roi_lora_mlp_512_m025_20260828_full/checkpoints/best.pt"
 )
 
-LESION_BLUE = (147, 197, 253)
+LESION_BLUE = (191, 219, 254)
 LAYER_RGB = {
-    0: (253, 224, 71),
-    1: (253, 186, 116),
-    2: (167, 243, 208),
+    0: (254, 240, 158),
+    1: (254, 215, 170),
+    2: (187, 247, 208),
 }
-WALL = (253, 230, 138)
-LAYER_BLEND = 0.32
-LESION_BLEND = 0.26
+WALL = (254, 240, 180)
+LAYER_BLEND = 0.18
+LESION_BLEND = 0.14
 
 # Tight pads. P008 lesion sits on the lower wall; drop the empty upper sector.
 CROP_HINT = {
@@ -149,22 +149,19 @@ def overlay_layers(rgb: np.ndarray, xs, ys, labels) -> np.ndarray:
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def peri_window(rgb: np.ndarray, wall: np.ndarray, lesion_mask: np.ndarray) -> tuple[int, int, int, int]:
+def wall_strip(rgb: np.ndarray, wall: np.ndarray, pad: int = 22) -> tuple[int, int, int, int]:
+    """Keep the full painted stroke, including the right-hand start."""
     h, w = rgb.shape[:2]
-    ys, xs = np.where(lesion_mask > 0)
-    if len(xs) >= 20:
-        cx, cy = int(xs.mean()), int(ys.mean())
-        win = 88
-        return max(0, cx - win), max(0, cy - win), min(w, cx + win), min(h, cy + win)
     wall = as_xy(wall)
     if len(wall) < 2:
         return 0, 0, w, h
-    pad = 16
-    x1 = max(0, int(wall[:, 0].min()) - pad)
-    y1 = max(0, int(wall[:, 1].min()) - pad)
-    x2 = min(w, int(wall[:, 0].max()) + pad)
-    y2 = min(h, int(wall[:, 1].max()) + pad)
-    return x1, y1, x2, y2
+    y1 = max(0, int(np.floor(wall[:, 1].min()) - pad))
+    y2 = min(h, int(np.ceil(wall[:, 1].max()) + pad))
+    if y2 - y1 < 36:
+        mid = 0.5 * (y1 + y2)
+        y1 = max(0, int(mid - 18))
+        y2 = min(h, y1 + 36)
+    return 0, y1, w, y2
 
 
 def peri_zoom(rgb: np.ndarray, wall: np.ndarray, lesion_mask: np.ndarray, scale: int = 5) -> np.ndarray:
@@ -310,11 +307,23 @@ class RoiSegmenter:
         return cv2.resize(inner, (w, h), interpolation=cv2.INTER_NEAREST) * 255
 
 
-def choose_arm(gray, wall, lesion_mask, lumen_center, lesion_poly, cavity, brush: float, method: str = "kmeans"):
+def choose_arm(
+    gray,
+    wall,
+    lesion_mask,
+    lumen_center,
+    lesion_poly,
+    cavity,
+    brush: float,
+    method: str = "kmeans1d_gray",
+    fit_side: str = "right",
+    assign_lesion: bool = False,
+):
     return cluster_brush_band(
         gray, wall, lesion_mask,
         brush_radius=brush, k=3, dilate_px=5, exclude_lesion=True, method=method,
         lumen_center=lumen_center, lesion_poly=lesion_poly, cavity_side_source=cavity,
+        fit_side=fit_side, assign_lesion=assign_lesion,
     )
 
 
@@ -336,63 +345,57 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         wall_crop[:, 0] -= x1
         wall_crop[:, 1] -= y1
     crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-    wx1, wy1, wx2, wy2 = peri_window(crop_rgb, wall_crop, crop_mask)
-    win_bgr = crop[wy1:wy2, wx1:wx2]
-    win_mask = crop_mask[wy1:wy2, wx1:wx2]
-    wall_win = wall_crop.copy()
-    if len(wall_win):
-        wall_win = wall_win - np.array([wx1, wy1], dtype=np.float32)
-        inside = (
-            (wall_win[:, 0] >= -2) & (wall_win[:, 0] < (wx2 - wx1) + 2)
-            & (wall_win[:, 1] >= -2) & (wall_win[:, 1] < (wy2 - wy1) + 2)
-        )
-        if int(inside.sum()) >= 4:
-            wall_win = wall_win[inside]
-    win_lumen = None
+    crop_lumen = None
     if lumen_center is not None:
-        win_lumen = lumen_center - np.array([x1 + wx1, y1 + wy1], dtype=np.float32)
-    win_poly = mask_to_polygon(win_mask)
-    # Cluster the pixels in this peri-lesion window, not the whole cine stroke.
+        crop_lumen = lumen_center - np.array([x1, y1], dtype=np.float32)
+    # Fit gray clusters on the full painted stroke. The line starts on the right.
     arm = choose_arm(
-        to_gray(win_bgr), wall_win, win_mask, win_lumen, win_poly, cavity, brush, method="kmeans",
+        to_gray(crop), wall_crop, crop_mask, crop_lumen, lesion_poly, cavity, brush,
+        method="kmeans1d_gray", fit_side="right", assign_lesion=False,
     )
 
     panel_a = overlay_blue(crop_rgb, crop_mask)
     if len(wall_crop) >= 2:
         cv2.polylines(panel_a, [np.round(wall_crop).astype(np.int32)], False, WALL, 1, cv2.LINE_AA)
 
-    zoom_base = overlay_blue(cv2.cvtColor(win_bgr, cv2.COLOR_BGR2RGB), win_mask)
+    labeled = overlay_blue(crop_rgb.copy(), crop_mask)
     if arm is not None and getattr(arm, "status", "") == "ok":
-        zoom_base = overlay_layers(zoom_base, arm.xs, arm.ys, arm.labels)
-    if len(wall_win) >= 2:
-        cv2.polylines(zoom_base, [np.round(wall_win).astype(np.int32)], False, WALL, 1, cv2.LINE_AA)
+        labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels)
+    if len(wall_crop) >= 2:
+        cv2.polylines(labeled, [np.round(wall_crop).astype(np.int32)], False, WALL, 1, cv2.LINE_AA)
+    sx1, sy1, sx2, sy2 = wall_strip(labeled, wall_crop, pad=20)
+    strip = labeled[sy1:sy2, sx1:sx2]
     panel_b = cv2.resize(
-        zoom_base,
-        (zoom_base.shape[1] * 6, zoom_base.shape[0] * 6),
+        strip,
+        (strip.shape[1] * 4, strip.shape[0] * 4),
         interpolation=cv2.INTER_NEAREST,
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.6), gridspec_kw={"width_ratios": [1.0, 1.25]})
+    time_sec = meta.get("time_sec")
+    kf = str(meta.get("zml_keyframe_id") or "")
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.4), gridspec_kw={"width_ratios": [1.0, 1.35]})
     axes[0].imshow(panel_a)
-    axes[0].set_title("A. Tight ROI, pale lesion mask", fontsize=12)
+    axes[0].set_title(f"A. {time_sec}s painted frame, yellow = ZML wall", fontsize=11)
     axes[0].axis("off")
     axes[1].imshow(panel_b)
-    axes[1].set_title("B. Peri-lesion k-means k=3, pale pixel labels", fontsize=12)
+    axes[1].set_title("B. Gray k-means from the right; gap = interrupt", fontsize=11)
     axes[1].axis("off")
     area = int((crop_mask > 0).sum())
     fig.suptitle(
-        f"{meta.get('display_id')}  pT {meta.get('pT_ref') or '?'}  "
-        f"{seg.kind}  mask_px={area}  {getattr(arm, 'method', '')} {getattr(arm, 'pattern', '') or ''}",
-        fontsize=13,
+        f"{meta.get('display_id')}  {time_sec}s  {kf}  pT {meta.get('pT_ref') or '?'}  "
+        f"{seg.kind}  {getattr(arm, 'method', '')} {getattr(arm, 'pattern', '') or ''}",
+        fontsize=12,
         y=0.98,
     )
     fig.text(
         0.5,
         0.02,
-        "Pale blue = lesion mask on this ROI. Yellow line = expected wall. "
-        "Pale yellow / orange / green = real k-means pixels (shallow / muscularis / serosa). Not a cT.",
+        f"This is the {time_sec}s cine frame where the expected wall was painted "
+        f"({int(meta.get('zml_wall_bands') or 0) or 3} bands, {kf or 'keyframe'}). "
+        "Pale colors = gray clusters fit on the right start of the line. "
+        "Blue mask pixels stay unlabeled, so the layers interrupt. Not a cT.",
         ha="center",
-        fontsize=10,
+        fontsize=9,
     )
     fig.tight_layout(rect=[0, 0.05, 1, 0.93])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -407,8 +410,12 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         "seg": seg.kind,
         "mask_px": area,
         "roi": [x1, y1, x2, y2],
+        "time_sec": meta.get("time_sec"),
+        "zml_keyframe_id": meta.get("zml_keyframe_id"),
         "method": getattr(arm, "method", ""),
         "pattern": getattr(arm, "pattern", ""),
+        "fit_side": "right",
+        "assign_lesion": False,
         "bright_dark_bright": bool(getattr(arm, "bright_dark_bright", False)),
     }
 
@@ -433,7 +440,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Segment lesion on a tight wall ROI, then magnify peri-lesion layers.")
     parser.add_argument("--fixtures", default=str(DEFAULT_FIXTURES))
     parser.add_argument("--out", default=str(DEFAULT_OUT))
-    parser.add_argument("--brush", type=float, default=10.0)
+    parser.add_argument("--brush", type=float, default=12.0)
     parser.add_argument("--case", action="append", dest="cases", help="P040 or CASE-040. Repeatable. Default: all.")
     parser.add_argument("--index", action="store_true", help="Also write a 4-case contact sheet.")
     args = parser.parse_args()

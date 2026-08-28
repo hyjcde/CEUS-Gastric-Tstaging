@@ -15,8 +15,12 @@
         815,
         542
       ],
-      "method": "kmeans",
+      "time_sec": 1.85,
+      "zml_keyframe_id": "dkf_1.850_s8gyvd",
+      "method": "kmeans1d_gray",
       "pattern": "bright-dark-bright",
+      "fit_side": "right",
+      "assign_lesion": false,
       "bright_dark_bright": true
     }
   ],

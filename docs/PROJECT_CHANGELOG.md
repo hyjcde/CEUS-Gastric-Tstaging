@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 right-seeded gray clusters, interrupt at lesion
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`fit_side`, `assign_lesion`), `scripts/render_wall_layer_thin_bands.py --case P040`. Panel `results/visualizations/error_cases/CASE-040_thin_bands.png`.
+- Reason: The previous peri-lesion window sat on the mass and cut off the right-hand start of the painted wall (x about 787). Depth-weighted k-means then painted three parallel bands through the blue mask. That is not gray clustering, and it hides the interrupt.
+- Key changes: Fit `kmeans1d_gray` on the right flank of the full painted stroke. Lesion pixels stay unlabeled. Overlay alpha is lower. Figure title prints 1.85s / `dkf_1.850_s8gyvd` so the painted frame is obvious. Does not unlock cT.
+- Validation: Synthetic test still passes; right-fit + no lesion labels asserted. Offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 single-case pale k-means
 
 - Scope: `scripts/render_wall_layer_thin_bands.py --case P040`. Panel `results/visualizations/error_cases/CASE-040_thin_bands.png`.

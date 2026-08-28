@@ -508,9 +508,12 @@ def cluster_brush_band(
     lumen_center: np.ndarray | None = None,
     lesion_poly: np.ndarray | None = None,
     cavity_side_source: str = "heuristic",
+    fit_side: str = "all",
+    assign_lesion: bool = True,
 ) -> ClusterArm:
     method = str(method or "kmeans").strip().lower()
-    name = f"{'exclude' if exclude_lesion else 'full'}_{method}_k{k}_d{dilate_px}"
+    fit_side = str(fit_side or "all").strip().lower()
+    name = f"{'exclude' if exclude_lesion else 'full'}_{method}_k{k}_d{dilate_px}_{fit_side}"
     wall = densify_polyline(as_xy(wall), 3.0)
     lesion_pts = as_xy(lesion_poly) if lesion_poly is not None else np.zeros((0, 2), dtype=np.float32)
     lesion_center = polygon_centroid(lesion_pts)
@@ -549,22 +552,42 @@ def cluster_brush_band(
         )
 
     feat_all = features_for_method(samples, method)
-    feat_fit = feat_all[keep]
-    labels_fit, centers = cluster_features(feat_fit, k, method)
-    order = np.argsort([float(samples["across"][keep][labels_fit == lab].mean()) if np.any(labels_fit == lab) else 0.0 for lab in range(k)])
+    fit = keep.copy()
+    if fit_side in {"right", "left"} and keep.any():
+        xs_keep = samples["xs"][keep].astype(np.float32)
+        cut = float(np.quantile(xs_keep, 0.42 if fit_side == "right" else 0.58))
+        if fit_side == "right":
+            fit = keep & (samples["xs"] >= cut)
+        else:
+            fit = keep & (samples["xs"] <= cut)
+        if int(fit.sum()) < MIN_VALID_PIXELS:
+            fit = keep
+    feat_fit = feat_all[fit]
+    labels_seed, centers = cluster_features(feat_fit, k, method)
+    order = np.argsort([
+        float(samples["across"][fit][labels_seed == lab].mean()) if np.any(labels_seed == lab) else 0.0
+        for lab in range(k)
+    ])
     remap = {int(old): int(new) for new, old in enumerate(order.tolist())}
-    labels_fit = np.array([remap[int(lab)] for lab in labels_fit], dtype=np.int32)
-    labels_fit = majority_vote_sparse(samples["xs"][keep], samples["ys"][keep], labels_fit, gray.shape)
+    labels_seed = np.array([remap[int(lab)] for lab in labels_seed], dtype=np.int32)
+    labels_seed = majority_vote_sparse(samples["xs"][fit], samples["ys"][fit], labels_seed, gray.shape)
 
-    # Assign every brush pixel from the flank-fitted centers (query cells do not refit).
+    # Fit on the seed side only. Other normal-wall pixels follow those gray centers.
+    # Lesion pixels stay unlabeled when assign_lesion is false, so the bands interrupt.
     labels_all = np.full(len(samples["xs"]), -1, dtype=np.int32)
-    labels_all[keep] = labels_fit
+    labels_all[fit] = labels_seed
     if len(centers) >= k:
         ordered_centers = centers[order]
+        follow = keep & ~fit
+        if follow.any():
+            d2 = ((feat_all[follow, None, :] - ordered_centers[None, :, :]) ** 2).sum(axis=2)
+            labels_all[follow] = np.argmin(d2, axis=1).astype(np.int32)
         rest = ~keep
-        if rest.any():
+        if assign_lesion and rest.any():
             d2 = ((feat_all[rest, None, :] - ordered_centers[None, :, :]) ** 2).sum(axis=2)
             labels_all[rest] = np.argmin(d2, axis=1).astype(np.int32)
+
+    labels_fit = labels_all[keep]
 
     if k >= 3:
         names = LAYER_NAMES_3

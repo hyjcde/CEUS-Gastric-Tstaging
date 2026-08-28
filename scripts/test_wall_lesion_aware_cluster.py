@@ -81,6 +81,20 @@ def main() -> int:
         )
         method_hits[method] = arm.bright_dark_bright
         assert arm.status == "ok", (method, arm.skip_reason)
+    right = cluster_brush_band(
+        gray, wall, lesion_mask,
+        brush_radius=6, k=3, dilate_px=3, exclude_lesion=True, method="kmeans1d_gray",
+        lumen_center=lumen_center, lesion_poly=lesion, cavity_side_source="lumen",
+        fit_side="right", assign_lesion=False,
+    )
+    assert right.status == "ok", right.skip_reason
+    labels = np.asarray(right.labels, dtype=np.int32)
+    xs = np.asarray(right.xs, dtype=np.int32)
+    ys = np.asarray(right.ys, dtype=np.int32)
+    lesion_pix = lesion_mask[ys, xs] > 0
+    if lesion_pix.any():
+        assert int((labels[lesion_pix] >= 0).sum()) == 0
+    assert int((labels >= 0).sum()) >= 40
     # Spatial-only 1D may slice equally and still miss the gray pattern.
     assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {
