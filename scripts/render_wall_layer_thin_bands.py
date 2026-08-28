@@ -44,12 +44,17 @@ DINO_CKPT = (
 
 LESION_BLUE = (191, 219, 254)
 LAYER_RGB = {
-    0: (254, 240, 158),
-    1: (254, 215, 170),
-    2: (187, 247, 208),
+    0: (250, 204, 21),
+    1: (251, 113, 133),
+    2: (52, 211, 153),
+}
+RIDGE_RGB = {
+    0: (234, 179, 8),
+    1: (244, 63, 94),
+    2: (16, 185, 129),
 }
 WALL = (254, 240, 180)
-LAYER_BLEND = 0.18
+LAYER_BLEND = 0.30
 LESION_BLEND = 0.14
 
 # Tight pads. P008 lesion sits on the lower wall; drop the empty upper sector.
@@ -132,6 +137,19 @@ def overlay_blue(rgb: np.ndarray, mask: np.ndarray, alpha: float = LESION_BLEND)
         contours, _ = cv2.findContours(sel.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(out, contours, -1, LESION_BLUE, 1, cv2.LINE_AA)
     return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def overlay_ridges(rgb: np.ndarray, polylines: dict, origin: tuple[int, int] = (0, 0)) -> np.ndarray:
+    out = rgb.copy()
+    ox, oy = origin
+    names = ("shallow", "muscularis", "serosa")
+    for lab, name in enumerate(names):
+        pts = np.asarray(polylines.get(name) or [], dtype=np.float32)
+        if len(pts) < 2:
+            continue
+        shifted = np.round(pts - np.array([ox, oy], dtype=np.float32)).astype(np.int32)
+        cv2.polylines(out, [shifted], False, RIDGE_RGB[lab], 1, cv2.LINE_AA)
+    return out
 
 
 def overlay_layers(rgb: np.ndarray, xs, ys, labels) -> np.ndarray:
@@ -323,7 +341,7 @@ def choose_arm(
         gray, wall, lesion_mask,
         brush_radius=brush, k=3, dilate_px=5, exclude_lesion=True, method=method,
         lumen_center=lumen_center, lesion_poly=lesion_poly, cavity_side_source=cavity,
-        fit_side=fit_side, assign_lesion=assign_lesion,
+        fit_side=fit_side, assign_lesion=assign_lesion, sensitive=True,
     )
 
 
@@ -361,6 +379,7 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     labeled = overlay_blue(crop_rgb.copy(), crop_mask)
     if arm is not None and getattr(arm, "status", "") == "ok":
         labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels)
+        labeled = overlay_ridges(labeled, getattr(arm, "layer_polylines", {}) or {})
     if len(wall_crop) >= 2:
         cv2.polylines(labeled, [np.round(wall_crop).astype(np.int32)], False, WALL, 1, cv2.LINE_AA)
     sx1, sy1, sx2, sy2 = wall_strip(labeled, wall_crop, pad=20)
@@ -373,27 +392,32 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
 
     time_sec = meta.get("time_sec")
     kf = str(meta.get("zml_keyframe_id") or "")
-    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.4), gridspec_kw={"width_ratios": [1.0, 1.35]})
+    fates = list(getattr(arm, "fates", None) or [])
+    fate_txt = "   ".join(
+        f"{item.get('id')}: {item.get('status')}"
+        + (f" -> {item.get('fuse_with')}" if item.get("fuse_with") and item.get("fuse_with") != item.get("id") else "")
+        for item in fates
+    ) or "no layer fate"
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.6), gridspec_kw={"width_ratios": [1.0, 1.35]})
     axes[0].imshow(panel_a)
-    axes[0].set_title(f"A. {time_sec}s painted frame, yellow = ZML wall", fontsize=11)
+    axes[0].set_title(f"A. {time_sec}s painted frame; yellow = heading only", fontsize=11)
     axes[0].axis("off")
     axes[1].imshow(panel_b)
-    axes[1].set_title("B. Gray k-means from the right; gap = interrupt", fontsize=11)
+    axes[1].set_title("B. Gray split, parallel walk; near-lesion fate", fontsize=11)
     axes[1].axis("off")
     area = int((crop_mask > 0).sum())
     fig.suptitle(
         f"{meta.get('display_id')}  {time_sec}s  {kf}  pT {meta.get('pT_ref') or '?'}  "
-        f"{seg.kind}  {getattr(arm, 'method', '')} {getattr(arm, 'pattern', '') or ''}",
-        fontsize=12,
+        f"{getattr(arm, 'pattern', '') or ''}  {fate_txt}",
+        fontsize=11,
         y=0.98,
     )
     fig.text(
         0.5,
-        0.02,
-        f"This is the {time_sec}s cine frame where the expected wall was painted "
-        f"({int(meta.get('zml_wall_bands') or 0) or 3} bands, {kf or 'keyframe'}). "
-        "Pale colors = gray clusters fit on the right start of the line. "
-        "Blue mask pixels stay unlabeled, so the layers interrupt. Not a cT.",
+        0.015,
+        f"Yellow line is the painted heading, not a layer edge. "
+        f"Gold / rose / mint = brighter / darker / brighter pixels walked along the strip. "
+        f"Near the lesion: {fate_txt or 'n/a'}. Not a cT.",
         ha="center",
         fontsize=9,
     )
@@ -416,7 +440,9 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         "pattern": getattr(arm, "pattern", ""),
         "fit_side": "right",
         "assign_lesion": False,
+        "sensitive": True,
         "bright_dark_bright": bool(getattr(arm, "bright_dark_bright", False)),
+        "fates": fates,
     }
 
 

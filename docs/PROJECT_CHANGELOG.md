@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 sensitive gray bands and near-lesion fate
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`sensitive`, `walk_layer_fate`), `scripts/render_wall_layer_thin_bands.py --case P040`.
+- Reason: Global gray k-means plus majority vote collapsed the two bright echoes into one wash. The doctor line is only a heading. Need pixel-gray split (dark vs bright), two bright bands kept parallel on either side of the dark band, then walk to the mass and mark vanish vs fuse.
+- Key changes: Sensitive path clusters dark/bright first, then splits the two brights by which side of the dark band they sit on. Overlay uses gold / rose / mint plus thin ridges. Each layer gets a near-lesion fate. Does not unlock cT.
+- Validation: Synthetic test still passes, including the sensitive path and three fates. Offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 right-seeded gray clusters, interrupt at lesion
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`fit_side`, `assign_lesion`), `scripts/render_wall_layer_thin_bands.py --case P040`. Panel `results/visualizations/error_cases/CASE-040_thin_bands.png`.

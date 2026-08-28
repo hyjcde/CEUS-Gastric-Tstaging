@@ -15,7 +15,16 @@ import numpy as np
 MIN_VALID_PIXELS = 40
 MIN_FLANK_ARC_PX = 12.0
 DEPTH_WEIGHT = 0.60
+# Gray stays primary. A small across term only keeps the two bright
+# echoes on opposite sides of the dark band, so they stay parallel.
+SENSITIVE_ACROSS = 0.15
 DEFAULT_BRUSH = 8.0
+FATE_ZH = {
+    "present": "还在",
+    "vanished": "消失",
+    "fused": "融合",
+    "uncertain": "无法判断",
+}
 LAYER_NAMES_3 = ("shallow", "muscularis", "serosa")
 LAYER_NAMES_ZH = {
     "shallow": "浅层",
@@ -454,6 +463,7 @@ class ClusterArm:
     ys: list[int] = field(default_factory=list)
     labels: list[int] = field(default_factory=list)
     layer_polylines: dict[str, list[list[float]]] = field(default_factory=dict)
+    fates: list[dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         data = asdict(self)
@@ -474,25 +484,246 @@ class ClusterArm:
         return data
 
 
-def layer_centers(xs: np.ndarray, ys: np.ndarray, labels: np.ndarray, names: tuple[str, ...]) -> dict[str, list[list[float]]]:
+def kmeans_gray_sensitive(values: np.ndarray, k: int, n_iter: int = 28) -> tuple[np.ndarray, np.ndarray]:
+    """Split gray values from percentile seeds so dark and bright do not collapse."""
+    vals = np.asarray(values, dtype=np.float32).reshape(-1)
+    if len(vals) < k:
+        labels = np.zeros((len(vals),), dtype=np.int32)
+        centers = vals.copy() if len(vals) else np.zeros((0,), dtype=np.float32)
+        return labels, centers
+    qs = np.quantile(vals, np.linspace(0.12, 0.88, k)).astype(np.float32)
+    centers = qs.copy()
+    labels = np.zeros((len(vals),), dtype=np.int32)
+    for _ in range(n_iter):
+        dist = np.abs(vals[:, None] - centers[None, :])
+        labels = dist.argmin(axis=1).astype(np.int32)
+        for lab in range(k):
+            sel = labels == lab
+            if sel.any():
+                centers[lab] = float(vals[sel].mean())
+    return labels, centers
+
+
+def assign_sensitive_layers(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    fit: np.ndarray,
+    k: int,
+    assign_lesion: bool,
+    shape: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Gray-first layers. Two brights sit on opposite sides of the dark band."""
+    gray = samples["gray"].astype(np.float32)
+    across = samples["across"].astype(np.float32)
+    labels_all = np.full(len(gray), -1, dtype=np.int32)
+    if int(fit.sum()) < MIN_VALID_PIXELS or k < 2:
+        return labels_all, labels_all[keep]
+    if k == 3:
+        lab2, centers2 = kmeans_gray_sensitive(gray[fit], 2)
+        if float(centers2[0]) > float(centers2[1]):
+            lab2 = 1 - lab2
+            centers2 = centers2[::-1]
+        dark_g = float(centers2[0])
+        bright_g = float(centers2[1])
+        if (bright_g - dark_g) >= 10.0 and np.any(lab2 == 0):
+            dark_ac = float(across[fit][lab2 == 0].mean())
+            mid_g = 0.5 * (dark_g + bright_g)
+            is_dark = gray <= (mid_g - 5.0)
+            is_bright = gray >= (mid_g + 5.0)
+            pred = np.where(
+                is_dark,
+                1,
+                np.where(is_bright, np.where(across < dark_ac, 0, 2), np.where(np.abs(across - dark_ac) < 0.22, 1, np.where(across < dark_ac, 0, 2))),
+            ).astype(np.int32)
+            labels_all[keep] = pred[keep]
+            if assign_lesion:
+                labels_all[~keep] = pred[~keep]
+            sel = labels_all >= 0
+            if sel.any():
+                cleaned = filter_small_components(
+                    samples["xs"][sel], samples["ys"][sel], labels_all[sel], shape, min_area=4,
+                )
+                labels_all[sel] = cleaned
+            return labels_all, labels_all[keep]
+    seed_lab, _ = kmeans_gray_sensitive(gray[fit], k)
+    order = np.argsort([
+        float(across[fit][seed_lab == lab].mean()) if np.any(seed_lab == lab) else 0.0
+        for lab in range(k)
+    ])
+    remap = {int(old): int(new) for new, old in enumerate(order.tolist())}
+    seed_lab = np.array([remap[int(lab)] for lab in seed_lab], dtype=np.int32)
+    g_c = np.array([
+        float(gray[fit][seed_lab == lab].mean()) if np.any(seed_lab == lab) else 0.0
+        for lab in range(k)
+    ], dtype=np.float32)
+    a_c = np.array([
+        float(across[fit][seed_lab == lab].mean()) if np.any(seed_lab == lab) else 0.0
+        for lab in range(k)
+    ], dtype=np.float32)
+    dist = np.abs(gray[:, None] / 255.0 - g_c[None, :] / 255.0) + SENSITIVE_ACROSS * np.abs(across[:, None] - a_c[None, :])
+    pred = dist.argmin(axis=1).astype(np.int32)
+    labels_all[keep] = pred[keep]
+    if assign_lesion:
+        labels_all[~keep] = pred[~keep]
+    sel = labels_all >= 0
+    if sel.any():
+        cleaned = filter_small_components(
+            samples["xs"][sel], samples["ys"][sel], labels_all[sel], shape, min_area=4,
+        )
+        labels_all[sel] = cleaned
+    return labels_all, labels_all[keep]
+
+
+def layer_centers(
+    xs: np.ndarray,
+    ys: np.ndarray,
+    labels: np.ndarray,
+    names: tuple[str, ...],
+    along: np.ndarray | None = None,
+    skip: np.ndarray | None = None,
+) -> dict[str, list[list[float]]]:
     out: dict[str, list[list[float]]] = {}
     for lab, name in enumerate(names):
         sel = labels == lab
+        if skip is not None:
+            sel = sel & ~skip
         if int(sel.sum()) < 4:
             out[name] = []
             continue
-        pts = np.stack([xs[sel].astype(np.float32), ys[sel].astype(np.float32)], axis=1)
-        order = np.argsort(pts[:, 0] * 0.7 + pts[:, 1] * 0.3)
-        pts = pts[order]
-        bins = max(6, min(40, len(pts) // 8))
-        edges = np.linspace(0, len(pts), bins + 1).astype(int)
+        if along is None:
+            pts = np.stack([xs[sel].astype(np.float32), ys[sel].astype(np.float32)], axis=1)
+            order = np.argsort(pts[:, 0] * 0.7 + pts[:, 1] * 0.3)
+            pts = pts[order]
+            bins = max(6, min(48, len(pts) // 6))
+            edges = np.linspace(0, len(pts), bins + 1).astype(int)
+            line = []
+            for a, b in zip(edges[:-1], edges[1:]):
+                chunk = pts[a:b]
+                if len(chunk) >= 2:
+                    line.append([float(chunk[:, 0].mean()), float(chunk[:, 1].mean())])
+            out[name] = line
+            continue
         line = []
-        for a, b in zip(edges[:-1], edges[1:]):
-            chunk = pts[a:b]
-            if len(chunk):
-                line.append([float(chunk[:, 0].mean()), float(chunk[:, 1].mean())])
+        started = False
+        gap = 0
+        for st in np.unique(along):
+            hit = sel & (along == st)
+            if int(hit.sum()) >= 2:
+                line.append([float(xs[hit].mean()), float(ys[hit].mean())])
+                started = True
+                gap = 0
+            elif started:
+                gap += 1
+                if gap >= 2:
+                    break
         out[name] = line
     return out
+
+
+def walk_layer_fate(
+    samples: dict[str, np.ndarray],
+    labels: np.ndarray,
+    keep: np.ndarray,
+    fit: np.ndarray,
+    lesion_mask: np.ndarray,
+    names: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Compare right-seed layers with the ring just outside the lesion."""
+    gray = samples["gray"]
+    xs = samples["xs"]
+    ys = samples["ys"]
+    height, width = lesion_mask.shape[:2]
+    approach = dilate_mask(lesion_mask, 16)
+    core = dilate_mask(lesion_mask, 5)
+    ring = np.zeros((len(xs),), dtype=bool)
+    for i, (x, y) in enumerate(zip(xs.tolist(), ys.tolist())):
+        if 0 <= x < width and 0 <= y < height and approach[y, x] > 0 and core[y, x] == 0:
+            ring[i] = True
+    seed = fit & (labels >= 0)
+    peri = ring & keep & (labels >= 0)
+    seed_n, seed_g, peri_n, peri_g = [], [], [], []
+    for lab in range(len(names)):
+        s = seed & (labels == lab)
+        p = peri & (labels == lab)
+        seed_n.append(int(s.sum()))
+        peri_n.append(int(p.sum()))
+        seed_g.append(float(gray[s].mean()) if s.any() else float("nan"))
+        peri_g.append(float(gray[p].mean()) if p.any() else float("nan"))
+    inside = ~keep
+    inside_n = [0] * len(names)
+    if int(inside.sum()) >= 20 and all(n >= 8 for n in seed_n):
+        centers = np.array(seed_g, dtype=np.float32)
+        pred_in = np.abs(gray[inside, None] - centers[None, :]).argmin(axis=1)
+        for lab in range(len(names)):
+            inside_n[lab] = int((pred_in == lab).sum())
+        total_in = float(max(1, int(inside.sum())))
+        dominant = int(np.argmax(inside_n))
+        if inside_n[dominant] / total_in >= 0.70:
+            fates = []
+            for lab, name in enumerate(names):
+                status = "fused" if lab == dominant else "vanished"
+                fates.append({
+                    "id": name,
+                    "name_zh": LAYER_NAMES_ZH.get(name, name),
+                    "status": status,
+                    "status_zh": FATE_ZH[status],
+                    "fuse_with": "dark-mass" if status == "fused" else "",
+                    "seed_gray": round(seed_g[lab], 1),
+                    "peri_gray": None if peri_g[lab] != peri_g[lab] else round(peri_g[lab], 1),
+                    "seed_count": seed_n[lab],
+                    "peri_count": peri_n[lab],
+                    "inside_count": inside_n[lab],
+                })
+            return fates
+        fates = []
+        for lab, name in enumerate(names):
+            status = "vanished" if inside_n[lab] / total_in < 0.12 else "present"
+            fates.append({
+                "id": name,
+                "name_zh": LAYER_NAMES_ZH.get(name, name),
+                "status": status,
+                "status_zh": FATE_ZH[status],
+                "fuse_with": "",
+                "seed_gray": round(seed_g[lab], 1),
+                "peri_gray": None if peri_g[lab] != peri_g[lab] else round(peri_g[lab], 1),
+                "seed_count": seed_n[lab],
+                "peri_count": peri_n[lab],
+                "inside_count": inside_n[lab],
+            })
+        return fates
+    fates = []
+    for lab, name in enumerate(names):
+        status = "present"
+        fuse_with = ""
+        if seed_n[lab] < 8:
+            status = "uncertain"
+        elif peri_n[lab] < max(6, int(0.18 * seed_n[lab])):
+            status = "vanished"
+        else:
+            for other in (lab - 1, lab + 1):
+                if other < 0 or other >= len(names):
+                    continue
+                if seed_n[other] < 8 or peri_n[other] < 6:
+                    continue
+                d0 = abs(seed_g[lab] - seed_g[other])
+                d1 = abs(peri_g[lab] - peri_g[other])
+                if d0 >= 12.0 and d1 < max(8.0, 0.40 * d0):
+                    status = "fused"
+                    fuse_with = names[other]
+                    break
+        fates.append({
+            "id": name,
+            "name_zh": LAYER_NAMES_ZH.get(name, name),
+            "status": status,
+            "status_zh": FATE_ZH[status],
+            "fuse_with": fuse_with,
+            "seed_gray": None if seed_g[lab] != seed_g[lab] else round(seed_g[lab], 1),
+            "peri_gray": None if peri_g[lab] != peri_g[lab] else round(peri_g[lab], 1),
+            "seed_count": seed_n[lab],
+            "peri_count": peri_n[lab],
+            "inside_count": inside_n[lab],
+        })
+    return fates
 
 
 def cluster_brush_band(
@@ -510,10 +741,13 @@ def cluster_brush_band(
     cavity_side_source: str = "heuristic",
     fit_side: str = "all",
     assign_lesion: bool = True,
+    sensitive: bool = False,
 ) -> ClusterArm:
     method = str(method or "kmeans").strip().lower()
     fit_side = str(fit_side or "all").strip().lower()
     name = f"{'exclude' if exclude_lesion else 'full'}_{method}_k{k}_d{dilate_px}_{fit_side}"
+    if sensitive:
+        name += "_sensitive"
     wall = densify_polyline(as_xy(wall), 3.0)
     lesion_pts = as_xy(lesion_poly) if lesion_poly is not None else np.zeros((0, 2), dtype=np.float32)
     lesion_center = polygon_centroid(lesion_pts)
@@ -562,32 +796,36 @@ def cluster_brush_band(
             fit = keep & (samples["xs"] <= cut)
         if int(fit.sum()) < MIN_VALID_PIXELS:
             fit = keep
-    feat_fit = feat_all[fit]
-    labels_seed, centers = cluster_features(feat_fit, k, method)
-    order = np.argsort([
-        float(samples["across"][fit][labels_seed == lab].mean()) if np.any(labels_seed == lab) else 0.0
-        for lab in range(k)
-    ])
-    remap = {int(old): int(new) for new, old in enumerate(order.tolist())}
-    labels_seed = np.array([remap[int(lab)] for lab in labels_seed], dtype=np.int32)
-    labels_seed = majority_vote_sparse(samples["xs"][fit], samples["ys"][fit], labels_seed, gray.shape)
+    if sensitive:
+        labels_all, labels_fit = assign_sensitive_layers(
+            samples, keep, fit, k, assign_lesion, gray.shape,
+        )
+    else:
+        feat_fit = feat_all[fit]
+        labels_seed, centers = cluster_features(feat_fit, k, method)
+        order = np.argsort([
+            float(samples["across"][fit][labels_seed == lab].mean()) if np.any(labels_seed == lab) else 0.0
+            for lab in range(k)
+        ])
+        remap = {int(old): int(new) for new, old in enumerate(order.tolist())}
+        labels_seed = np.array([remap[int(lab)] for lab in labels_seed], dtype=np.int32)
+        labels_seed = majority_vote_sparse(samples["xs"][fit], samples["ys"][fit], labels_seed, gray.shape)
 
-    # Fit on the seed side only. Other normal-wall pixels follow those gray centers.
-    # Lesion pixels stay unlabeled when assign_lesion is false, so the bands interrupt.
-    labels_all = np.full(len(samples["xs"]), -1, dtype=np.int32)
-    labels_all[fit] = labels_seed
-    if len(centers) >= k:
-        ordered_centers = centers[order]
-        follow = keep & ~fit
-        if follow.any():
-            d2 = ((feat_all[follow, None, :] - ordered_centers[None, :, :]) ** 2).sum(axis=2)
-            labels_all[follow] = np.argmin(d2, axis=1).astype(np.int32)
-        rest = ~keep
-        if assign_lesion and rest.any():
-            d2 = ((feat_all[rest, None, :] - ordered_centers[None, :, :]) ** 2).sum(axis=2)
-            labels_all[rest] = np.argmin(d2, axis=1).astype(np.int32)
-
-    labels_fit = labels_all[keep]
+        # Fit on the seed side only. Other normal-wall pixels follow those gray centers.
+        # Lesion pixels stay unlabeled when assign_lesion is false, so the bands interrupt.
+        labels_all = np.full(len(samples["xs"]), -1, dtype=np.int32)
+        labels_all[fit] = labels_seed
+        if len(centers) >= k:
+            ordered_centers = centers[order]
+            follow = keep & ~fit
+            if follow.any():
+                d2 = ((feat_all[follow, None, :] - ordered_centers[None, :, :]) ** 2).sum(axis=2)
+                labels_all[follow] = np.argmin(d2, axis=1).astype(np.int32)
+            rest = ~keep
+            if assign_lesion and rest.any():
+                d2 = ((feat_all[rest, None, :] - ordered_centers[None, :, :]) ** 2).sum(axis=2)
+                labels_all[rest] = np.argmin(d2, axis=1).astype(np.int32)
+        labels_fit = labels_all[keep]
 
     if k >= 3:
         names = LAYER_NAMES_3
@@ -616,6 +854,13 @@ def cluster_brush_band(
     if bdb:
         pattern = "bright-dark-bright"
 
+    skip = ~keep if (not assign_lesion) else None
+    fates = walk_layer_fate(samples, labels_all, keep, fit, lesion_d if exclude_lesion else lesion_mask, names)
+    ridges = layer_centers(
+        samples["xs"], samples["ys"], labels_all, names,
+        along=samples["along_idx"], skip=skip,
+    )
+
     return ClusterArm(
         name=name,
         status="ok",
@@ -632,7 +877,8 @@ def cluster_brush_band(
         xs=samples["xs"].tolist(),
         ys=samples["ys"].tolist(),
         labels=labels_all.tolist(),
-        layer_polylines=layer_centers(samples["xs"][keep], samples["ys"][keep], labels_fit, names),
+        layer_polylines=ridges,
+        fates=fates,
     )
 
 

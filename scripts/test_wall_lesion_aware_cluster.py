@@ -95,6 +95,20 @@ def main() -> int:
     if lesion_pix.any():
         assert int((labels[lesion_pix] >= 0).sum()) == 0
     assert int((labels >= 0).sum()) >= 40
+    sensitive = cluster_brush_band(
+        gray, wall, lesion_mask,
+        brush_radius=6, k=3, dilate_px=3, exclude_lesion=True, method="kmeans1d_gray",
+        lumen_center=lumen_center, lesion_poly=lesion, cavity_side_source="lumen",
+        fit_side="right", assign_lesion=False, sensitive=True,
+    )
+    assert sensitive.status == "ok", sensitive.skip_reason
+    assert sensitive.bright_dark_bright, sensitive.classes
+    assert len(sensitive.fates) == 3
+    assert {item["id"] for item in sensitive.fates} == {"shallow", "muscularis", "serosa"}
+    mid = next(item for item in sensitive.fates if item["id"] == "muscularis")
+    shallow = next(item for item in sensitive.fates if item["id"] == "shallow")
+    assert mid["status"] in {"vanished", "fused"}
+    assert shallow["status"] == "vanished"
     # Spatial-only 1D may slice equally and still miss the gray pattern.
     assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {
