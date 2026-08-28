@@ -1,16 +1,23 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, BookOpen, Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import {
   ensureHumanAssistGeometry,
-  formatPenetration,
   toNormPolygon,
+  type LayerEchoBand,
   type LayerGeometry,
   type LayerEchoAnalysis,
   type LayerAnalyzeResult,
 } from '@/lib/human-assist/load-contact-geom';
-import { HUMAN_ASSIST_ALGO_SOURCE, HUMAN_ASSIST_MEETING_BULLETS } from '@/lib/human-assist/meeting-notes';
+import {
+  WALL_LAYER_GUIDES,
+  cropChannelOverview,
+  cropSquareZoom,
+  lerpPoint,
+  loadFrameImage,
+  type WallLayerCode,
+} from '@/lib/human-assist/wall-layer-medical';
 
 type Props = {
   zh?: boolean;
@@ -34,6 +41,72 @@ function svgNumber(value: number): string {
   return Number.isFinite(value) ? value.toFixed(1) : '0';
 }
 
+const ECHO_LAYER_NAMES = [
+  { zh: '黏膜', en: 'Mucosa' },
+  { zh: '黏膜肌', en: 'MM' },
+  { zh: '黏膜下', en: 'SM' },
+  { zh: '固有肌', en: 'MP' },
+  { zh: '浆膜', en: 'Serosa' },
+] as const;
+
+function buildEchoProfileSvg(
+  values: number[],
+  bands: Array<{ kind?: 'bright' | 'dark'; f0?: number; f1?: number }>,
+  wallFrac: number | null,
+  peakFrac: number | null,
+  zh: boolean,
+): string {
+  if (values.length < 4) return '';
+  const w = 360;
+  const h = 148;
+  const padL = 28;
+  const padR = 10;
+  const padT = 16;
+  const padB = 22;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const vmin = Math.min(...values);
+  const vmax = Math.max(...values);
+  const span = Math.max(1, vmax - vmin);
+  const xAt = (frac: number) => padL + Math.max(0, Math.min(1, frac)) * plotW;
+  const yAt = (value: number) => padT + plotH * (1 - (value - vmin) / span);
+  const points = values.map((value, index) => {
+    const x = padL + (index / Math.max(1, values.length - 1)) * plotW;
+    return `${x.toFixed(1)},${yAt(value).toFixed(1)}`;
+  });
+  const area = `${padL.toFixed(1)},${(padT + plotH).toFixed(1)} ${points.join(' ')} ${(padL + plotW).toFixed(1)},${(padT + plotH).toFixed(1)}`;
+  const bandList = bands.length
+    ? bands
+    : ECHO_LAYER_NAMES.map((_, index) => ({
+      kind: index % 2 === 0 ? 'dark' : 'bright',
+      f0: index / ECHO_LAYER_NAMES.length,
+      f1: (index + 1) / ECHO_LAYER_NAMES.length,
+    }));
+  const bandRects = bandList.map((band) => {
+    const x0 = xAt(Number(band.f0) || 0);
+    const x1 = xAt(Number(band.f1) || 1);
+    const fill = band.kind === 'bright' ? '#fbbf24' : '#38bdf8';
+    return `<rect x="${x0.toFixed(1)}" y="${padT}" width="${Math.max(2, x1 - x0).toFixed(1)}" height="${plotH}" fill="${fill}" opacity="${band.kind === 'bright' ? '.18' : '.10'}"/>`;
+  }).join('');
+  const wallX = wallFrac != null ? xAt(wallFrac) : null;
+  const peakX = peakFrac != null ? xAt(peakFrac) : null;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" xmlns="http://www.w3.org/2000/svg" style="display:block;background:#020617;border:1px solid rgba(255,255,255,.14);border-radius:8px">
+    ${bandRects}
+    <polygon points="${area}" fill="#e2e8f0" opacity=".10"/>
+    <polyline points="${points.join(' ')}" fill="none" stroke="#f8fafc" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#22d3ee" stroke-width="2"/>
+    <line x1="${padL + plotW}" y1="${padT}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="#fde68a" stroke-width="2"/>
+    ${wallX != null ? `<line x1="${wallX.toFixed(1)}" y1="${padT}" x2="${wallX.toFixed(1)}" y2="${padT + plotH}" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="3 2"/>` : ''}
+    ${peakX != null ? `<line x1="${peakX.toFixed(1)}" y1="${padT}" x2="${peakX.toFixed(1)}" y2="${padT + plotH}" stroke="#facc15" stroke-width="2"/>` : ''}
+    <text x="${padL}" y="12" fill="#67e8f9" font-size="9">${zh ? '灶' : 'Lesion'}</text>
+    <text x="${padL + plotW}" y="12" fill="#fde68a" font-size="9" text-anchor="end">${zh ? '浆膜' : 'Serosa'}</text>
+    ${WALL_LAYER_GUIDES.map((guide) => {
+      const mid = xAt((guide.frac0 + guide.frac1) / 2);
+      return `<text x="${mid.toFixed(1)}" y="${(padT + plotH + 11).toFixed(1)}" text-anchor="middle" fill="${guide.color}" font-size="8">${zh ? guide.shortZh : guide.shortEn}</text>`;
+    }).join('')}
+  </svg>`;
+}
+
 function buildLocalChannelSvg(
   geom: LayerGeometry,
   centerIdx: number,
@@ -43,50 +116,61 @@ function buildLocalChannelSvg(
   frameWidth?: number,
   frameHeight?: number,
   zh = true,
+  overlayBandCols?: string[],
 ): string {
   if (typeof window === 'undefined') return '';
   const wall = geom.wall_pts || [];
   const lesionFace = geom.wall_lesion_pts || [];
   if (wall.length < 3 || lesionFace.length < 3) return '';
   const center = Math.max(0, Math.min(wall.length - 1, centerIdx));
-  const half = 10;
+  const half = 16;
   const indices = window.ContactGeom?.localArcIndices?.(wall.length, center, half)
     || Array.from({ length: Math.min(wall.length, half * 2 + 1) }, (_, index) => (
       (center - half + index + wall.length * 2) % wall.length
     ));
-  const points = indices.flatMap((index) => [wall[index], lesionFace[index]]).filter(
-    (point): point is number[] => Array.isArray(point) && point.length >= 2,
-  );
+  const lesionArc = indices
+    .map((index) => lesionFace[index])
+    .filter((point): point is number[] => Array.isArray(point) && point.length >= 2);
+  const denseLesion = window.ContactGeom?.resamplePoly?.(lesionArc, Math.max(180, Math.min(720, lesionArc.length * 12)), false)
+    || lesionArc;
+  const points = denseLesion;
   if (points.length < 4) return '';
-  const minX = Math.min(...points.map((point) => point[0])) - 12;
-  const maxX = Math.max(...points.map((point) => point[0])) + 12;
-  const minY = Math.min(...points.map((point) => point[1])) - 12;
-  const maxY = Math.max(...points.map((point) => point[1])) + 12;
-  const width = Math.max(24, maxX - minX);
-  const height = Math.max(24, maxY - minY);
+  const minX = Math.min(...points.map((point) => point[0])) - 10;
+  const maxX = Math.max(...points.map((point) => point[0])) + 10;
+  const minY = Math.min(...points.map((point) => point[1])) - 10;
+  const maxY = Math.max(...points.map((point) => point[1])) + 10;
+  const width = Math.max(20, maxX - minX);
+  const height = Math.max(20, maxY - minY);
   const polyline = (items: number[][]) => items
     .map((point) => `${svgNumber(point[0])},${svgNumber(point[1])}`)
     .join(' ');
+  const pixelOverlay = Boolean(analysis?.pixelBands?.length);
+  const hugFracs = edgeFracs.length ? edgeFracs : [0.22, 0.5, 0.82];
   const layerCurves = window.ContactGeom?.channelLayerCurvesSvg?.(
     geom,
     center,
-    edgeFracs,
+    hugFracs,
     {
-      half: 10,
-      minDot: 0.55,
-      maxSpanPx: 64,
-      bandOpacity: 0.28,
+      half: 16,
+      minDot: 0.3,
+      maxSpanPx: 80,
+      denseN: 480,
+      bandOpacity: 0.2,
       showBands: true,
       showLines: true,
       dashed: Boolean(analysis?.imaginary),
       imaginary: Boolean(analysis?.imaginary),
+      pixelBands: pixelOverlay,
+      pxStroke: 0.55,
+      bandCols: overlayBandCols,
+      lineCols: overlayBandCols,
     },
   ) || window.ContactGeom?.wallLayerArcsSvg?.(
     geom,
     center,
-    10,
-    edgeFracs,
-    { showBands: true, bandOpacity: 0.28 },
+    16,
+    hugFracs,
+    { showBands: true, bandOpacity: 0.2, pxStroke: 0.55 },
   ) || '';
   const wallPoint = wall[center];
   const lesionPoint = lesionFace[center];
@@ -94,43 +178,53 @@ function buildLocalChannelSvg(
   const strip = window.ContactGeom?.channelStripOverlaySvg?.(
     wallPoint,
     lesionPoint,
-    edgeFracs,
-    Math.max(2.5, remain),
+    hugFracs,
+    Math.max(2.5, Math.min(7.2, remain || 5)),
     {
-      halfWidth: Math.max(2.5, Math.min(8, remain * 0.22)),
-      bandOpacity: 0.34,
+      halfWidth: 2.4,
+      bandOpacity: 0.28,
       showBands: true,
       showLines: true,
       dashed: Boolean(analysis?.imaginary),
       imaginary: Boolean(analysis?.imaginary),
-      pxStroke: 0.85,
+      pxStroke: 0.55,
+      pixelBands: pixelOverlay,
+      bandCols: overlayBandCols,
+      lineCols: overlayBandCols,
     },
   ) || '';
-  const wallLine = polyline(indices.map((index) => wall[index]).filter(Boolean));
-  const lesionLine = polyline(indices.map((index) => lesionFace[index]).filter(Boolean));
+  const wallNearby = indices
+    .map((index) => wall[index])
+    .filter((point): point is number[] => {
+      if (!Array.isArray(point) || point.length < 2) return false;
+      const hit = window.ContactGeom?.closestPointOnPoly?.(point, lesionArc, false);
+      return !hit || hit.dist <= 14;
+    });
+  const wallLine = polyline(wallNearby);
+  const lesionLine = polyline(denseLesion);
   const sourceInfo = analysis && window.ContactGeom?.layerSourceInfo?.(analysis);
   const sourceBadge = sourceInfo?.badge || '';
-  const sourceText = sourceBadge || (analysis?.imaginary
-    ? (zh ? '几何参考' : 'Geometry ref')
-    : (zh ? '回声层界' : 'Echo boundaries'));
+  const sourceText = sourceBadge || (analysis?.pixelBands?.length
+    ? (zh ? '像素亮暗' : 'Pixel bands')
+    : analysis?.imaginary
+      ? (zh ? '几何参考' : 'Geometry')
+      : (zh ? '回声层界' : 'Echo edges'));
   const centerWall = wall[center];
   const centerLesion = lesionFace[center];
   const imageLayer = frameDataUrl && frameWidth && frameHeight
     ? `<image href="${frameDataUrl}" x="0" y="0" width="${svgNumber(frameWidth)}" height="${svgNumber(frameHeight)}" preserveAspectRatio="none" opacity=".78"/>`
     : '';
-  const channelLabel = zh ? '局部通道' : 'Local channel';
-  return `<svg viewBox="${svgNumber(minX)} ${svgNumber(minY)} ${svgNumber(width)} ${svgNumber(height)}" width="100%" height="148" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="display:block;background:#020617;border:1px solid rgba(255,255,255,.12);border-radius:8px">
+  return `<svg viewBox="${svgNumber(minX)} ${svgNumber(minY)} ${svgNumber(width)} ${svgNumber(height)}" width="100%" height="180" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="display:block;background:#020617;border:1px solid rgba(255,255,255,.12);border-radius:8px">
     ${imageLayer}
     <rect x="${svgNumber(minX)}" y="${svgNumber(minY)}" width="${svgNumber(width)}" height="${svgNumber(height)}" fill="#020617" opacity="${imageLayer ? '0.16' : '1'}"/>
-    <polyline points="${wallLine}" fill="none" stroke="#fb923c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-    <polyline points="${lesionLine}" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    ${wallLine ? `<polyline points="${wallLine}" fill="none" stroke="#fb923c" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>` : ''}
+    <polyline points="${lesionLine}" fill="none" stroke="#22d3ee" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round"/>
     ${layerCurves}
     ${strip}
     <line x1="${svgNumber(centerWall[0])}" y1="${svgNumber(centerWall[1])}" x2="${svgNumber(centerLesion[0])}" y2="${svgNumber(centerLesion[1])}" stroke="#f8fafc" stroke-width="1.2" stroke-dasharray="4 3" opacity=".85"/>
     <circle cx="${svgNumber(centerWall[0])}" cy="${svgNumber(centerWall[1])}" r="3.2" fill="#fb923c" stroke="#fff" stroke-width="1"/>
     <circle cx="${svgNumber(centerLesion[0])}" cy="${svgNumber(centerLesion[1])}" r="3.2" fill="#22d3ee" stroke="#fff" stroke-width="1"/>
     <text x="${svgNumber(minX + 5)}" y="${svgNumber(minY + 11)}" fill="#94a3b8" font-size="9">${sourceText}</text>
-    <text x="${svgNumber(maxX - 5)}" y="${svgNumber(minY + 11)}" fill="#cbd5e1" font-size="9" text-anchor="end">${channelLabel}</text>
   </svg>`;
 }
 
@@ -149,15 +243,16 @@ export function WallFeatureAnalysisCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LayerAnalyzeResult | null>(null);
-  const [showNotes, setShowNotes] = useState(false);
   const [offset, setOffset] = useState(wallOffsetPx ?? 0);
+  const [selectedLayer, setSelectedLayer] = useState<WallLayerCode>('L5');
+  const [corridorZoom, setCorridorZoom] = useState<string>('');
+  const [layerZooms, setLayerZooms] = useState<Partial<Record<WallLayerCode, string>>>({});
 
   useEffect(() => {
     if (Number.isFinite(wallOffsetPx)) setOffset(wallOffsetPx as number);
   }, [wallOffsetPx]);
 
   const canRun = lesionPolygon.length >= 3 && !!frameSize?.width && !!frameSize?.height && !!frameDataUrl;
-  // Reasonable entry: lesion + freeze frame + lumen/wall orientation (meeting: 病灶与胃腔相对准 → 分析才准).
   const orientationReady = wallPolygon.length >= 3
     || (Array.isArray(lumenPrefer)
       && Number.isFinite(lumenPrefer[0])
@@ -166,17 +261,15 @@ export function WallFeatureAnalysisCard({
 
   const run = useCallback(async (force = false) => {
     if (!frameSize || lesionPolygon.length < 3) {
-      setError(zh ? '需要病灶轮廓（≥3 点）与帧尺寸' : 'Need lesion polygon and frame size');
+      setError(zh ? '先框出病灶' : 'Draw the lesion first');
       return;
     }
     if (!frameDataUrl) {
-      setError(zh ? '需要当前帧像素：请先暂停/冻结画面后再重算组织层' : 'Need current-frame pixels: pause/freeze the frame, then re-run');
+      setError(zh ? '请先暂停画面' : 'Pause the frame first');
       return;
     }
     if (!orientationReady && !force) {
-      setError(zh
-        ? '请先勾画胃腔（或胃壁）以定向突破区，再自动分析壁层'
-        : 'Draw lumen (or wall) first so breakthrough orientation is reliable');
+      setError(zh ? '再画出胃腔，用来对准胃壁方向' : 'Draw the lumen to orient the wall');
       setResult(null);
       onResult?.(null);
       return;
@@ -201,11 +294,9 @@ export function WallFeatureAnalysisCard({
       setResult(analyzed);
       onResult?.(analyzed);
       if (!analyzed.ok) {
-        setError(analyzed.message || (zh ? '分层失败' : 'Layer analysis failed'));
+        setError(analyzed.message || (zh ? '这一帧看不清层界' : 'Layer edges are unclear on this frame'));
       } else if (!orientationReady) {
-        setError(zh
-          ? '已分析，但缺少胃腔定向，结果置信偏低，请补画胃腔后重算'
-          : 'Analyzed without lumen orientation; confidence is low — redraw lumen and re-run');
+        setError(zh ? '没有胃腔方向，请补画后重算' : 'Add the lumen, then re-run');
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'analyze failed';
@@ -226,25 +317,6 @@ export function WallFeatureAnalysisCard({
     return () => window.clearTimeout(t);
   }, [autoReady, paused, lesionPolygon, wallPolygon, frameDataUrl, offset, pick?.x, pick?.y, lumenPrefer?.[0], lumenPrefer?.[1]]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const penText = useMemo(() => {
-    if (!result?.ok || !window.ContactGeom) return '—';
-    return formatPenetration(window.ContactGeom, result.pen);
-  }, [result]);
-
-  const stackHtml = useMemo(() => {
-    if (!result?.ok || !result.pixelBased || result.analysis?.imaginary || !window.ContactGeom?.wallStackSvg) return '';
-    const fracs = result.analysis?.pixelEdges || result.analysis?.edgeFracs || [];
-    if (fracs.length < 2) return '';
-    const occ = Number.isFinite(result.analysis?.ratioHint)
-      ? Number(result.analysis?.ratioHint)
-      : Number(result.pen?.ratio || 0);
-    try {
-      return window.ContactGeom.wallStackSvg(fracs, occ, { w: 220, h: 120 }) || '';
-    } catch {
-      return '';
-    }
-  }, [result]);
-
   const fineVisuals = useMemo(() => {
     if (typeof window === 'undefined' || !result?.ok || !result.geom) {
       return {
@@ -259,9 +331,15 @@ export function WallFeatureAnalysisCard({
       };
     }
     const analysis = result.analysis || null;
-    const edgeFracs = result.pixelBased && !analysis?.imaginary
-      ? (analysis?.pixelEdges || analysis?.edgeFracs || [])
-      : [];
+    const overlay = analysis?.pixelBands?.length && window.ContactGeom?.pixelBandOverlay
+      ? window.ContactGeom.pixelBandOverlay(analysis.pixelBands, analysis.outwardWallFrac)
+      : null;
+    const edgeFracs = overlay?.edges?.length
+      ? overlay.edges
+      : (result.pixelBased && !analysis?.imaginary
+        ? (analysis?.pixelEdges || analysis?.edgeFracs || [])
+        : [0.22, 0.5, 0.82]);
+    const overlayBandCols = overlay?.bandCols || analysis?.overlayBandCols || [];
     const center = Number.isInteger(result.pickIdx)
       ? Number(result.pickIdx)
       : Number(result.geom.deep_idx || 0);
@@ -274,18 +352,26 @@ export function WallFeatureAnalysisCard({
       result.videoW,
       result.videoH,
       zh,
+      overlayBandCols,
     );
-    let profileSvg = '';
+    const echoValues = (analysis?.outwardValues && analysis.outwardValues.length
+      ? analysis.outwardValues
+      : analysis?.values) || [];
+    const profileSvg = buildEchoProfileSvg(
+      echoValues.map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+      analysis?.pixelBands || [],
+      Number.isFinite(analysis?.outwardWallFrac) ? Number(analysis?.outwardWallFrac) : null,
+      analysis?.serosa && Number.isFinite(Number((analysis.serosa as { peak?: { frac?: number } }).peak?.frac))
+        ? Number((analysis.serosa as { peak?: { frac?: number } }).peak?.frac)
+        : null,
+      zh,
+    );
     let remainSvg = '';
     try {
-      profileSvg = analysis && window.ContactGeom?.echoClusterSvg
-        ? window.ContactGeom.echoClusterSvg(analysis, 280, 92) || ''
-        : '';
       remainSvg = window.ContactGeom?.remainProfileSvg
         ? window.ContactGeom.remainProfileSvg(result.geom, center, 18, 280, 64) || ''
         : '';
     } catch {
-      profileSvg = '';
       remainSvg = '';
     }
     const sourceInfo = analysis && window.ContactGeom?.layerSourceInfo?.(analysis);
@@ -305,303 +391,336 @@ export function WallFeatureAnalysisCard({
     };
   }, [frameDataUrl, result]);
 
+  const nextStep = !canRun
+    ? (zh ? '先框出病灶，并暂停画面' : 'Draw the lesion and pause the frame')
+    : !orientationReady
+      ? (zh ? '再画出胃腔，用来对准胃壁方向' : 'Draw the lumen to orient the wall')
+      : null;
+  const serosa = result?.serosa || result?.analysis?.serosa || null;
+  const layerLabel = result?.ok
+    ? (result.layer?.label || '').replace(/[()（）]/g, '').trim()
+    : '';
+  const serosaLine = !result?.inContact
+    ? (zh ? '未贴壁' : 'Not against the wall')
+    : serosa?.status === 'not_reached'
+      ? (zh ? '未贴到' : 'Not reached')
+      : serosa?.status === 'continuous'
+        ? (zh ? '亮线还在' : 'Line intact')
+        : serosa?.status === 'interrupted'
+          ? (zh ? '亮线中断' : 'Line broken')
+          : (zh ? '看不清' : 'Unclear');
+
+  const headline = layerLabel || serosaLine;
+  const showLineChip = Boolean(result?.ok && serosaLine && serosaLine !== headline);
+  const remainText = fineVisuals.remain != null ? `${fineVisuals.remain.toFixed(1)} px` : null;
+  const pixelBands: LayerEchoBand[] = result?.analysis?.pixelBands || [];
+  const layerRows = WALL_LAYER_GUIDES.map((guide) => {
+    const hit = pixelBands.find((band) => {
+      const mid = ((Number(band.f0) || 0) + (Number(band.f1) || 1)) / 2;
+      return mid >= guide.frac0 && mid < guide.frac1;
+    }) || null;
+    const cropFrac = hit
+      ? ((Number(hit.f0) || 0) + (Number(hit.f1) || 1)) / 2
+      : (guide.frac0 + guide.frac1) / 2;
+    return { guide, band: hit, cropFrac };
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const geom = result?.ok ? result.geom : null;
+    const center = fineVisuals.center;
+    const wall = geom?.wall_pts || [];
+    const lesionFace = geom?.wall_lesion_pts || [];
+    if (!frameDataUrl || center == null || !wall[center] || !lesionFace[center]) {
+      setCorridorZoom('');
+      setLayerZooms({});
+      return undefined;
+    }
+    const remain = Math.max(12, fineVisuals.remain || 24);
+    void loadFrameImage(frameDataUrl).then((image) => {
+      if (cancelled) return;
+      const lesion = lesionFace[center];
+      const wallPt = wall[center];
+      setCorridorZoom(cropChannelOverview(image, lesion, wallPt, Math.max(28, remain * 0.55), 420, 200));
+      const next: Partial<Record<WallLayerCode, string>> = {};
+      layerRows.forEach((row) => {
+        const point = lerpPoint(lesion, wallPt, row.cropFrac);
+        const src = Math.max(36, Math.min(140, remain * 0.85));
+        next[row.guide.code] = cropSquareZoom(image, point[0], point[1], src, 168, row.guide.color);
+      });
+      setLayerZooms(next);
+    }).catch(() => {
+      if (!cancelled) {
+        setCorridorZoom('');
+        setLayerZooms({});
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [frameDataUrl, result?.ok, result?.geom, fineVisuals.center, fineVisuals.remain, pixelBands.length]);
+
+  const serosaDetail = (() => {
+    const status = serosa?.status;
+    if (!result?.inContact) {
+      return zh
+        ? '病灶前缘还没贴到外缘。先不要谈浆膜亮线断不断。'
+        : 'The front is not against the outer edge yet. Do not score serosal continuity.';
+    }
+    if (status === 'not_reached') {
+      return zh
+        ? '已经贴壁，但低回声还没贴到最外亮线。更像浆膜还在外侧。'
+        : 'Against the wall, but the hypoechoic front has not reached the outer bright line.';
+    }
+    if (status === 'continuous') {
+      return zh
+        ? '贴到浆膜亮线，这条高回声带在接触弧上还在。邻帧再看一次。'
+        : 'The front reached the serosal bright line and that line still reads along the contact arc. Recheck a neighbor frame.';
+    }
+    if (status === 'interrupted') {
+      return zh
+        ? '贴到浆膜亮线，接触弧上亮峰弱或断了。单帧更像伪像，请换邻帧。'
+        : 'The front reached the line and the bright peak is weak or broken on this arc. A single frame is often artifact; check a neighbor.';
+    }
+    return zh
+      ? '贴到外缘，但亮线本帧看不清。看不清不等于中断。'
+      : 'Against the outer edge, but the bright line is unseen on this frame. Unseen is not interruption.';
+  })();
+
   return (
-    <div className="rounded-xl border border-emerald-400/25 bg-emerald-950/30 p-3 text-[11px] text-emerald-50/90">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 font-semibold text-emerald-100">
-          <Activity size={13} />
-          {zh ? '组织层观察（系统辅助）' : 'Tissue layer observation'}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setShowNotes((v) => !v)}
-            className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-slate-300 hover:bg-white/5"
-            title={zh ? '会议纪要要点' : 'Meeting notes'}
-          >
-            <BookOpen size={12} className="inline" /> {zh ? '纪要' : 'Notes'}
-          </button>
-          <button
-            type="button"
-            disabled={!canRun || busy}
-            onClick={() => void run(true)}
-            className="inline-flex items-center gap-1 rounded border border-emerald-400/40 px-1.5 py-0.5 text-[10px] text-emerald-100 disabled:opacity-40"
-            title={zh
-              ? (orientationReady ? '按病灶+胃腔定向重算壁层' : '缺少胃腔定向时仍可强制重算（置信偏低）')
-              : (orientationReady ? 'Re-run with lesion+lumen orientation' : 'Force re-run without lumen (low confidence)')}
-          >
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            {zh ? '重算' : 'Re-run'}
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-2 text-[10px] text-emerald-200/70">
-        {zh
-          ? '合理进入：病灶轮廓 + 冻结帧 + 胃腔/胃壁定向后自动分析。层界只来自当前帧像素回声剖面；结果写入老板壁层模板，不作病理结论。'
-          : 'Reasonable entry: lesion + freeze frame + lumen/wall orientation. Layer interfaces from current-frame echo only; output feeds the boss wall-layer template, not pathology.'}
-      </div>
-
-      {showNotes && (
-        <div className="mb-2 max-h-36 space-y-1 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 text-[10px] text-slate-300">
-          <div className="font-semibold text-amber-200/90">
-            {zh ? '会议纪要 → 算法验收点' : 'Meeting → acceptance'}
-          </div>
-          {HUMAN_ASSIST_MEETING_BULLETS.map((b) => (
-            <div key={b.id}>
-              <span className="text-amber-300/90">{b.id}</span> {b.title}：{b.detail}
-            </div>
-          ))}
-          <div className="pt-1 text-[9px] text-slate-500">
-            src: {HUMAN_ASSIST_ALGO_SOURCE.origin}
-          </div>
-        </div>
-      )}
-
-      {!canRun && (
-        <div className="rounded border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-100">
-          {zh
-            ? '先得到病灶轮廓，并暂停/冻结当前帧以抓取像素，再观察组织层。'
-            : 'Create a lesion contour and pause/freeze the current frame to capture pixels before tissue-layer observation.'}
-        </div>
-      )}
-
-      {canRun && !orientationReady && (
-        <div className="mb-2 rounded border border-sky-400/30 bg-sky-500/10 px-2 py-1.5 text-[10px] text-sky-100">
-          {zh
-            ? '已有病灶与冻结帧。请勾画胃腔（含胃壁与肿块区）以定向突破通道；到位后将自动分析并写入模板报告。'
-            : 'Lesion and freeze frame ready. Draw lumen (including wall and mass) to orient the breakthrough channel; analysis will auto-run into the template report.'}
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-2 rounded border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-[10px] text-rose-100">
-          {error}
-        </div>
-      )}
-
-      {result?.ok && (
-        <div className="space-y-1.5">
-          <div
-            className="rounded-lg border px-2 py-2"
-            style={{ borderColor: `${result.layer?.tone || '#8b93a1'}66` }}
-          >
-            <div className="text-[10px] text-slate-400">{zh ? '达层读数（像素实测）' : 'Layer read (pixel-measured)'}</div>
+    <div className="space-y-3 text-[12px] text-slate-200">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {result?.ok ? (
             <div
-              className="text-sm font-bold"
-              style={{ color: result.pixelBased && result.layer ? (result.layer.tone || '#e2e8f0') : '#94a3b8' }}
+              className="text-[16px] font-semibold leading-snug"
+              style={{
+                color:
+                  (typeof result.layer?.color === 'string' && result.layer.color) ||
+                  result.layer?.tone ||
+                  '#e2e8f0',
+              }}
             >
-              {!result.inContact
-                ? (zh ? '未形成稳定接触，不输出层次读数' : 'No stable contact, no layer readout')
-                : result.pixelBased && result.layer
-                  ? `${result.layer.label || '—'}, ${result.layer.tHint || ''}`
-                  : (zh ? '像素层界未确认，不输出层次读数' : 'Pixel interfaces not confirmed; no layer readout')}
+              {headline}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] text-slate-500">
-              <span>{zh ? '证据模式' : 'Evidence mode'}:</span>
-              <span className="text-slate-300">
-                {result.pixelBased
-                  ? (result.source?.badge || (zh ? '当前帧回声剖面' : 'Current-frame echo profile'))
-                  : (result.source?.badge || (zh ? '像素未确认' : 'Pixels not confirmed'))}
-              </span>
-              {result.pixelBased ? (
-                <span className="rounded border border-emerald-300/25 bg-emerald-400/10 px-1 text-emerald-200">
-                  {zh ? '像素层界' : 'Pixel interfaces'}
-                </span>
-              ) : (
-                <span className="rounded border border-amber-300/20 bg-amber-400/10 px-1 text-amber-200">
-                  {zh ? '不采用等分/几何假层' : 'No equal-split / geometric fake layers'}
-                </span>
-              )}
+          ) : nextStep ? (
+            <div className="text-[12px] leading-relaxed text-slate-400">{nextStep}</div>
+          ) : error ? (
+            <div className="text-[12px] text-rose-100">{error}</div>
+          ) : (
+            <div className="text-[12px] text-slate-500">{zh ? '框灶并暂停后自动出图' : 'Box the lesion and pause'}</div>
+          )}
+          {result?.ok ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
+              <span>{result.inContact ? (zh ? '贴壁' : 'Against wall') : (zh ? '未贴' : 'Free')}</span>
+              {remainText ? <span className="font-mono text-slate-200">{remainText}</span> : null}
+              {showLineChip ? <span>{serosaLine}</span> : null}
+              {fineVisuals.source ? <span>{fineVisuals.source}</span> : null}
             </div>
-            {!result.pixelBased || !result.layer ? (
-              <div className="mt-1.5 text-[9px] leading-relaxed text-amber-100/85">
-                {result.message
-                  || (zh
-                    ? '当前取样通道未见稳定像素层界，故不给出 L/T 读数；可查看下方回声剖面后换点重算。'
-                    : 'No stable pixel interfaces on this channel, so no L/T readout; review the echo profile and pick another point.')}
-              </div>
-            ) : null}
-          </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          disabled={!canRun || busy}
+          onClick={() => void run(true)}
+          className="inline-flex shrink-0 items-center gap-1 rounded border border-white/15 px-2 py-1 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          {zh ? '重算' : 'Re-run'}
+        </button>
+      </div>
 
-          {stackHtml ? (
+      {result?.ok ? (
+        <p className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-slate-400">
+          {zh
+            ? '下面按黏膜到浆膜逐层放大。这是本帧回声草稿，不是病理五层，也不解锁确定 cT。'
+            : 'Each band below is a magnified echo draft from mucosa to serosa. Not a pathologic five-layer map, and it does not unlock a definite cT.'}
+        </p>
+      ) : null}
+
+      {error && result?.ok ? (
+        <div className="text-[11px] text-rose-200">{error}</div>
+      ) : null}
+
+      {result?.ok ? (
+        <div className="space-y-3">
+          <section className="space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-100">
+              {zh ? '走廊放大' : 'Corridor zoom'}
+            </div>
+            {corridorZoom ? (
+              <img
+                src={corridorZoom}
+                alt={zh ? '病灶到浆膜走廊放大' : 'Lesion-to-serosa corridor zoom'}
+                className="w-full rounded-md border border-white/10 bg-slate-950"
+              />
+            ) : null}
+            {fineVisuals.channelSvg ? (
+              <div
+                className="overflow-hidden rounded-md"
+                dangerouslySetInnerHTML={{ __html: fineVisuals.channelSvg }}
+              />
+            ) : null}
+            <p className="text-[10px] leading-relaxed text-slate-500">
+              {zh
+                ? '青点是灶前缘，橙点是几何外缘。中间走廊才是分层采样区。'
+                : 'Cyan is the lesion front, orange is the geometric outer edge. Layers are sampled in the corridor between them.'}
+            </p>
+          </section>
+
+          {fineVisuals.profileSvg ? (
+            <section className="space-y-1">
+              <div className="text-[11px] font-semibold text-slate-100">
+                {zh ? '回声剖面，灶到浆膜' : 'Echo profile, lesion to serosa'}
+              </div>
+              <div
+                className="overflow-hidden rounded-md"
+                dangerouslySetInnerHTML={{ __html: fineVisuals.profileSvg }}
+              />
+              <p className="text-[10px] leading-relaxed text-slate-500">
+                {zh
+                  ? '黄实线是浆膜亮峰。橙虚线是几何外缘。亮带偏黄，暗带偏蓝。假想分层表示本帧像素不够，只是等分参考。'
+                  : 'Solid gold is the serosal bright peak. Dashed orange is the geometric outer edge. Bright bands are gold, dark bands are blue. Imaginary layers mean this frame was split evenly because pixels were unclear.'}
+              </p>
+            </section>
+          ) : null}
+
+          {!fineVisuals.profileSvg && fineVisuals.remainSvg ? (
             <div
-              className="overflow-hidden rounded-lg border border-white/10 bg-black/40 p-1"
-              // ContactGeom returns trusted static SVG markup from local vendor copy
-              dangerouslySetInnerHTML={{ __html: stackHtml }}
+              className="overflow-hidden rounded-md"
+              dangerouslySetInnerHTML={{ __html: fineVisuals.remainSvg }}
             />
           ) : null}
 
-          {fineVisuals.channelSvg || fineVisuals.profileSvg || fineVisuals.remainSvg ? (
-            <details open className="rounded-lg border border-cyan-300/20 bg-slate-950/40">
-              <summary className="cursor-pointer list-none px-2 py-1.5 text-[10px] font-semibold text-cyan-100">
-                <span className="inline-flex items-center gap-1.5">
-                  <Activity size={11} />
-                  {zh ? '细粒度胃壁通道' : 'Fine-grained wall channel'}
-                </span>
-                <span className="float-right text-[9px] font-normal text-slate-500">
-                  {fineVisuals.source || (zh ? '当前帧' : 'Current frame')}
-                </span>
-              </summary>
-              <div className="space-y-2 border-t border-white/10 p-2">
-                {fineVisuals.channelSvg ? (
-                  <div>
-                    <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-slate-400">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-1.5 w-4 rounded-full bg-orange-400" />
-                        {zh ? '胃壁参考边界' : 'Wall reference'}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-1.5 w-4 rounded-full bg-cyan-300" />
-                        {zh ? '病灶前沿' : 'Lesion front'}
-                      </span>
-                      <span>{zh ? '彩线=局部层界' : 'Color lines = local interfaces'}</span>
-                    </div>
-                    <div
-                      className="overflow-hidden rounded-lg"
-                      dangerouslySetInnerHTML={{ __html: fineVisuals.channelSvg }}
-                    />
-                  </div>
-                ) : null}
-                {fineVisuals.profileSvg ? (
-                  <div>
-                    <div className="mb-1 text-[9px] text-slate-500">
-                      {zh ? '局部回声剖面, 腔侧 → 浆膜侧' : 'Local echo profile, lumen → serosa'}
-                    </div>
-                    <div
-                      className="overflow-hidden rounded-lg"
-                      dangerouslySetInnerHTML={{ __html: fineVisuals.profileSvg }}
-                    />
-                  </div>
-                ) : null}
-                {!fineVisuals.profileSvg && fineVisuals.remainSvg ? (
-                  <div>
-                    <div className="mb-1 text-[9px] text-slate-500">
-                      {zh ? '局部剩余壁厚剖面' : 'Local remaining-wall profile'}
-                    </div>
-                    <div
-                      className="overflow-hidden rounded-lg"
-                      dangerouslySetInnerHTML={{ __html: fineVisuals.remainSvg }}
-                    />
-                  </div>
-                ) : null}
-                <div className="grid grid-cols-4 gap-1 text-[9px]">
-                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
-                    <div className="text-slate-500">{zh ? '局部余厚' : 'Remain'}</div>
-                    <div className="font-mono text-slate-200">
-                      {fineVisuals.remain != null ? `${fineVisuals.remain.toFixed(1)} px` : '—'}
-                    </div>
-                  </div>
-                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
-                    <div className="text-slate-500">{zh ? '占壁厚' : 'Pen.'}</div>
-                    <div className="font-mono text-cyan-100">
-                      {Number.isFinite(result.pen?.ratio) ? `${Math.round(Number(result.pen?.ratio) * 100)}%` : '—'}
-                    </div>
-                  </div>
-                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
-                    <div className="text-slate-500">SNR</div>
-                    <div className="font-mono text-amber-100">
-                      {fineVisuals.snr != null ? fineVisuals.snr.toFixed(1) : '—'}
-                    </div>
-                  </div>
-                  <div className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-1">
-                    <div className="text-slate-500">{zh ? '清晰度' : 'Clarity'}</div>
-                    <div className="font-mono text-emerald-100">
-                      {fineVisuals.clarity != null ? fineVisuals.clarity.toFixed(1) : '—'}
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[9px] leading-relaxed text-slate-500">
-                  {zh
-                    ? '该局部通道用于定位可疑层界和接触弧，不是组织学切片，也不单独作为病理浸润结论。'
-                    : 'This local channel locates candidate interfaces and contact arcs. It is not histology and is not a standalone pathology conclusion.'}
-                </p>
+          <section className="space-y-2">
+            <div>
+              <div className="text-[11px] font-semibold text-slate-100">
+                {zh ? '逐层放大与医学说明' : 'Per-layer zoom and medical reading'}
               </div>
-            </details>
-          ) : null}
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                {zh ? '点一层看放大图。默认打开浆膜。' : 'Tap a layer for its zoom. Serosa is open by default.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {layerRows.map((row) => (
+                <button
+                  key={row.guide.code}
+                  type="button"
+                  onClick={() => setSelectedLayer(row.guide.code)}
+                  className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                    selectedLayer === row.guide.code
+                      ? 'border-white/40 bg-white/10 text-white'
+                      : 'border-white/10 text-slate-400 hover:bg-white/5'
+                  }`}
+                  style={{ color: selectedLayer === row.guide.code ? row.guide.color : undefined }}
+                >
+                  {zh ? row.guide.shortZh : row.guide.shortEn}
+                </button>
+              ))}
+            </div>
+            {layerRows.map((row) => {
+              const open = selectedLayer === row.guide.code;
+              const zoom = layerZooms[row.guide.code];
+              const kind = row.band?.kind;
+              const isSerosa = row.guide.code === 'L5';
+              return (
+                <article
+                  key={row.guide.code}
+                  className={`rounded-lg border px-2.5 py-2 ${
+                    open ? 'border-white/20 bg-white/[0.04]' : 'border-white/10 bg-transparent'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLayer(row.guide.code)}
+                    className="flex w-full items-center justify-between gap-2 text-left"
+                  >
+                    <span className="font-semibold" style={{ color: row.guide.color }}>
+                      {row.guide.code} {zh ? row.guide.zh : row.guide.en}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {kind === 'bright'
+                        ? (zh ? '亮带' : 'Bright')
+                        : kind === 'dark'
+                          ? (zh ? '暗带' : 'Dark')
+                          : (zh ? '本帧未单独分出' : 'Not split on this frame')}
+                    </span>
+                  </button>
+                  {open ? (
+                    <div className="mt-2 space-y-2">
+                      {zoom ? (
+                        <img
+                          src={zoom}
+                          alt={zh ? `${row.guide.zh}放大` : `${row.guide.en} zoom`}
+                          className="w-full rounded-md border border-white/10 bg-slate-950"
+                        />
+                      ) : (
+                        <div className="rounded-md border border-dashed border-white/10 px-2 py-6 text-center text-[10px] text-slate-500">
+                          {zh ? '这一层的放大图还在生成' : 'Layer zoom is still building'}
+                        </div>
+                      )}
+                      <p className="text-[11px] leading-relaxed text-slate-300">
+                        {zh ? row.guide.echoZh : row.guide.echoEn}
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-slate-400">
+                        {zh ? row.guide.lookZh : row.guide.lookEn}
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        {zh ? row.guide.stagingZh : row.guide.stagingEn}
+                      </p>
+                      {isSerosa ? (
+                        <div className="rounded-md border border-rose-300/20 bg-rose-400/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-rose-50/90">
+                          <div className="font-semibold text-rose-100">
+                            {zh ? `浆膜本帧：${serosaLine}` : `Serosa this frame: ${serosaLine}`}
+                          </div>
+                          <p className="mt-1">{serosaDetail}</p>
+                          {serosa?.continuityFrac != null ? (
+                            <p className="mt-1 font-mono text-[10px] text-rose-100/80">
+                              {zh
+                                ? `接触弧亮线保留 ${Math.round(Number(serosa.continuityFrac) * 100)}%`
+                                : `Bright-line kept on ${Math.round(Number(serosa.continuityFrac) * 100)}% of the contact arc`}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-slate-500">
+                      {zh ? row.guide.echoZh : row.guide.echoEn}
+                    </p>
+                  )}
+                </article>
+              );
+            })}
+          </section>
 
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-            <div className="flex justify-between gap-2">
-              <span className="text-slate-400">{zh ? '接触' : 'Contact'}</span>
-              <strong>{result.inContact ? (zh ? '接触弧内' : 'In contact') : (zh ? '未接触' : 'No')}</strong>
+          <section className="space-y-1.5 border-t border-white/10 pt-2">
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <span>{zh ? '外推' : 'Offset'}</span>
+              <button
+                type="button"
+                className="rounded border border-white/15 px-2 py-0.5 text-slate-200"
+                onClick={() => setOffset((v) => Math.max(8, (v || Math.round(result.offsetPx || 24)) - 8))}
+              >
+                −
+              </button>
+              <span className="font-mono text-slate-200">{Math.round(offset || result.offsetPx || 0)} px</span>
+              <button
+                type="button"
+                className="rounded border border-white/15 px-2 py-0.5 text-slate-200"
+                onClick={() => setOffset((v) => (v || Math.round(result.offsetPx || 24)) + 8)}
+              >
+                +
+              </button>
             </div>
-            <div className="flex justify-between gap-2">
-              <span className="text-slate-400">{zh ? '占壁厚' : 'Penetration'}</span>
-              <strong>{penText}</strong>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span className="text-slate-400">{zh ? '接触弧' : 'Arc'}</span>
-              <strong>
-                {Number.isFinite(result.geom?.contact_ratio)
-                  ? `${Math.round(Number(result.geom?.contact_ratio) * 100)}%`
-                  : '—'}
-              </strong>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span className="text-slate-400">{zh ? '层界' : 'Edges'}</span>
-              <strong>{result.analysis?.edgeFracs?.length || result.plan?.edgeFracs?.length || 0}</strong>
-            </div>
-            <div className="flex justify-between gap-2 col-span-2">
-              <span className="text-slate-400">{zh ? '胃壁来源' : 'Wall source'}</span>
-              <strong className="text-right">
-                {result.source?.badge
-                  || (result.wallEstimated
-                    ? (zh ? '分割外推胃壁' : 'Estimated wall')
-                    : (zh ? '手绘/预置胃壁' : 'Manual wall'))}
-              </strong>
-            </div>
-            <div className="flex justify-between gap-2 col-span-2">
-              <span className="text-slate-400">{zh ? '外侧边界代理' : 'Outer-boundary proxy'}</span>
-              <strong className="text-right">
-                {result.analysis
-                  ? result.analysis.imaginary
-                    ? (zh ? '层界为几何/假想参考, 需回看原始回声' : 'Geometric/inferred reference, review raw echo')
-                    : (result.analysis.stable
-                      ? (zh ? '当前帧回声层界相对稳定' : 'Current-frame echo interfaces relatively stable')
-                      : (zh ? '当前帧层界稳定性有限' : 'Current-frame interface stability is limited'))
-                  : (zh ? '未提供像素层界, 仅作几何参考' : 'No pixel-derived interfaces, geometric reference only')}
-              </strong>
-            </div>
-            <div className="flex justify-between gap-2 col-span-2">
-              <span className="text-slate-400">{zh ? '当前帧几何要点' : 'Current-frame geometry'}</span>
-              <strong className="text-right text-[9px] leading-snug">
-                {zh
-                  ? [
-                      result.inContact ? '与胃壁参考边界形成接触弧' : '未形成稳定接触弧',
-                      Number.isFinite(result.pen?.ratio)
-                        ? `局部占壁厚几何代理 ${Math.round(Number(result.pen?.ratio) * 100)}%`
-                        : '局部占壁厚代理待测',
-                      result.analysis?.imaginary
-                        ? '层界为推断参考'
-                        : result.analysis
-                          ? '含当前帧回声剖面'
-                          : '未使用像素层界',
-                    ].join('; ')
-                  : 'current-frame contour, contact, and layer proxies; not tissue or pathology findings'}
-              </strong>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-[10px] text-slate-400">{zh ? '壁偏移' : 'Offset'}</span>
-            <button
-              type="button"
-              className="rounded border border-white/15 px-2 py-0.5"
-              onClick={() => setOffset((v) => Math.max(8, (v || Math.round(result.offsetPx || 24)) - 8))}
-            >
-              −
-            </button>
-            <span className="font-mono text-[10px]">{Math.round(offset || result.offsetPx || 0)} px</span>
-            <button
-              type="button"
-              className="rounded border border-white/15 px-2 py-0.5"
-              onClick={() => setOffset((v) => (v || Math.round(result.offsetPx || 24)) + 8)}
-            >
-              +
-            </button>
-          </div>
+            <p className="text-[10px] leading-relaxed text-slate-500">
+              {zh
+                ? '外推只改几何参考外缘，不改 Assist 数字。假想分层时用它把参考壁挪近或挪远。'
+                : 'Offset only moves the geometric outer edge. It does not change Assist numbers. Use it when layers are imaginary.'}
+            </p>
+          </section>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

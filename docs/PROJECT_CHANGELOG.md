@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-28, Public workbench: Detailed per-layer wall dock
+
+- Scope: `WallFeatureAnalysisCard.tsx`, `lib/human-assist/wall-layer-medical.ts`, `app/page.tsx`, `lib/reader/layout.ts`. Public Next required.
+- Reason: The wall-layer dock only showed a short headline, a tiny profile, and offset buttons. Doctors asked for magnified reading and medical notes on each band, especially serosa.
+- Key changes: The dock now has a corridor zoom, a labeled echo profile, and five expandable layer cards (mucosa through serosa) with a local zoom plus echo / look-for / staging notes. Serosa adds the current-frame continuity sentence. Offset still only moves the geometric edge. Does not unlock cT or change Assist.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Public smoke after deploy.
+- Deployment: public Next BUILD `3RRUyNi8v_qYdWxaRYXqg`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
 ## 2026-08-28, Public workbench: DINO box uses the same path as SAM 3.1
 
 - Scope: `InteractiveSegPanel.tsx`, `app/api/agent/lesion-segmentation/route.ts`, `scripts/serve_dino_segmentation.py`. Public Next required.

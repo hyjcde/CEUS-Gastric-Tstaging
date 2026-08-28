@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import { Header } from '@/components/Header';
 import { PatientList } from '@/components/PatientList';
 import { UltrasoundViewer } from '@/components/UltrasoundViewer';
-import { ConceptReasoning } from '@/components/ConceptReasoning';
 import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { DoctorReportStudio } from '@/components/DoctorReportStudio';
 import { StatisticsPanel } from '@/components/StatisticsPanel';
@@ -18,14 +17,15 @@ import {
   type UnifiedAgentCapture,
   type WorkflowTraceStep,
 } from '@/components/InteractiveSegPanel';
-import { ReaderAgentResultCard } from '@/components/ReaderAgentResultCard';
 import { ReaderStudyQueuePanel } from '@/components/ReaderStudyQueuePanel';
-import { ReaderEvidencePanel } from '@/components/reader/ReaderEvidencePanel';
+import { SimilarCaseReferencePanel } from '@/components/reader/SimilarCaseReferencePanel';
+import { GuidelineTracePanel } from '@/components/reader/GuidelineTracePanel';
+import { DoctorDecisionTracePanel } from '@/components/DoctorDecisionTracePanel';
 import { BenignTissueObservationCard } from '@/components/BenignTissueObservationCard';
-import { AssistHub } from '@/components/AssistHub';
 import { GcUsImagingReportCard } from '@/components/GcUsImagingReportCard';
-import { GcUsEvidencePanel, mergeFreshEvidence } from '@/components/GcUsEvidencePanel';
-import { BmEvidencePanel } from '@/components/BmEvidencePanel';
+import { ClinicalHistoryCard } from '@/components/ClinicalHistoryCard';
+import { analysisAuthErrorMessage } from '@/lib/reader/login-error';
+import { mergeFreshEvidence } from '@/components/GcUsEvidencePanel';
 import {
   commitBmUsTemplateReport,
   createBmUsReportState,
@@ -35,6 +35,7 @@ import {
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, LumenOverride, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDoctorAccount } from '@/contexts/DoctorAccountContext';
+import { useOpsRecorder } from '@/contexts/OperationRecorderContext';
 import toast from 'react-hot-toast';
 import type { SamReport } from '@/lib/reader/types';
 import {
@@ -66,9 +67,10 @@ import {
   READER_ROUND2_VERSION_FIELDS,
 } from '@/lib/reader/study-contract';
 import { getAssistFiveClass, getAssistOpinionStage } from '@/lib/reader/assist-display-stage';
+import { overlayAssistOnReport } from '@/lib/reader/assist-report-overlay';
 import { coerceAssistSignValue, defaultAssistSigns, type AssistSignKey } from '@/lib/reader/assist-sign-defaults';
 import { CaseGoldReveal } from '@/components/CaseGoldReveal';
-import { ChevronLeft, ChevronRight, Users, BarChart2, FileText, X, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Users, BarChart2, X, Layers } from 'lucide-react';
 import { MobilePaneNav, MobileSheetHeader, type WorkbenchMobilePane } from '@/components/MobilePaneNav';
 import { useMobileLayout } from '@/lib/reader/use-mobile-layout';
 import { getConceptStateFromPatient, countPopulatedConceptFields } from '@/lib/patient-utils';
@@ -89,10 +91,9 @@ import {
 import {
   WORKBENCH_EVIDENCE_WIDTH,
   WORKBENCH_PATIENT_LIST_REM,
+  WORKBENCH_WALL_DOCK_WIDTH,
 } from '@/lib/reader/layout';
 
-const EMPTY_READER_CLINICAL: Record<string, unknown> = {};
-const EMPTY_POLYGON: number[][] = [];
 const EVIDENCE_PANEL_WIDTH = WORKBENCH_EVIDENCE_WIDTH;
 const PATIENT_LIST_WIDTH = `${WORKBENCH_PATIENT_LIST_REM}rem`;
 
@@ -100,37 +101,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
-}
-
-function positiveClinicalNumber(value: unknown): number | null {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
-}
-
-function clinicalMeasurementMm(
-  clinical: Record<string, unknown>,
-  mmKeys: string[],
-  cmKeys: string[],
-  nestedKey: 'length' | 'thickness',
-): number | null {
-  const records = [
-    clinical,
-    asRecord(clinical.measurements),
-    asRecord(clinical.measurement),
-  ].filter((value): value is Record<string, unknown> => Boolean(value));
-  for (const record of records) {
-    for (const key of mmKeys) {
-      const value = positiveClinicalNumber(record[key]);
-      if (value != null) return value;
-    }
-    for (const key of cmKeys) {
-      const value = positiveClinicalNumber(record[key]);
-      if (value != null) return value * 10;
-    }
-  }
-  const nested = asRecord(clinical.tumorSize);
-  const value = positiveClinicalNumber(nested?.[nestedKey]);
-  return value == null ? null : value * 10;
 }
 
 function mergeReportEvidenceImages(
@@ -187,51 +157,23 @@ function normalizeAgentStage(value: unknown): string | null {
   return null;
 }
 
-function getReaderAgentStage(result: AgentAnalysisResponse | null): string | null {
-  if (!result) return null;
-  return getAssistFiveClass(result) || getAssistOpinionStage(result) || 'T2';
-}
-
-function getReaderAgentConfidence(result: AgentAnalysisResponse | null): number | null {
-  if (!result) return null;
-  const hypotheses = (result.belief_state?.hypotheses || [])
-    .filter((item) => normalizeAgentStage(item.label) && typeof item.probability === 'number')
-    .sort((a, b) => Number(b.probability) - Number(a.probability));
-  const beliefConfidence = hypotheses[0]?.probability;
-  if (typeof beliefConfidence === 'number' && Number.isFinite(beliefConfidence)) return beliefConfidence;
-  const classifierConfidence = result.tool_evidence?.classification?.top1_prob;
-  if (typeof classifierConfidence === 'number' && Number.isFinite(classifierConfidence)) {
-    return classifierConfidence;
-  }
-  const answer = normalizeAgentStage(result.report?.recommended_t_stage);
-  const binaryEvidence = (result.belief_state?.evidence || result.evidence || [])
-    .filter((item) => item.source_type === 'binary_gate')
-    .map((item) => ({
-      label: item.feature === 'p_benign' ? 'benign' : item.feature === 'p_malignant' ? 'malignant' : null,
-      confidence: typeof item.confidence === 'number'
-        ? item.confidence
-        : typeof item.value === 'number' ? item.value : null,
-    }))
-    .filter((item): item is { label: string; confidence: number } => (
-      Boolean(item.label) && item.confidence != null && Number.isFinite(item.confidence)
-    ))
-    .sort((a, b) => b.confidence - a.confidence);
-  return binaryEvidence.find((item) => item.label === answer)?.confidence
-    ?? binaryEvidence[0]?.confidence
-    ?? null;
-}
-
 export default function Home() {
-  const { dataset, cohortYear, queueId, language, readerOnly } = useSettings();
+  const { dataset, cohortYear, queueId, language } = useSettings();
   const reportLocale = resolveGcUsReportLocale(language !== 'en');
   const { readerId: accountReaderId, authHeaders } = useDoctorAccount();
+  const { recordOp, setOpsCase, setOpsPage } = useOpsRecorder();
   const [conceptState, setConceptState] = useState<ConceptState>(DEFAULT_STATE);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [readerStudyMode, setReaderStudyMode] = useState<ReaderStudyMode>('benign_malignancy');
   const [systemReport, setSystemReport] = useState<SamReport | null>(null);
   const [dinoFeature, setDinoFeature] = useState<DinoFeatureResult | null>(null);
   const [researchInitialJudgmentReady, setResearchInitialJudgmentReady] = useState(false);
+  const [workbenchInitialJudgmentReady, setWorkbenchInitialJudgmentReady] = useState(false);
   const isReaderStudyQueue = selectedPatient?.phase === 'reader_v150';
+  const isEvaluationSession = (() => {
+    if (typeof window === 'undefined') return false;
+    return readerEnvironmentFromSearchParams(new URLSearchParams(window.location.search)) === 'research';
+  })();
   const isBenignQueue = selectedPatient?.phase === 'benign';
   const researchAiLocked = (() => {
     if (typeof window === 'undefined') return false;
@@ -324,6 +266,7 @@ export default function Home() {
   const [readerUnifiedAgentResult, setReaderUnifiedAgentResult] = useState<AgentAnalysisResponse | null>(null);
   const [readerUnifiedAgentBusy, setReaderUnifiedAgentBusy] = useState(false);
   const [readerUnifiedAgentError, setReaderUnifiedAgentError] = useState<string | null>(null);
+  const [lesionReady, setLesionReady] = useState(false);
   const [readerWorkflowTrace, setReaderWorkflowTrace] = useState<WorkflowTraceStep[]>([]);
   const [readerReportOpen, setReaderReportOpen] = useState(false);
   const [generatedReport, setGeneratedReport] = useState<GcUsReportState | null>(null);
@@ -353,11 +296,18 @@ export default function Home() {
     });
   }, [reportLocale]);
 
+  const wasMobileRef = useRef<boolean | null>(null);
   useEffect(() => {
-    if (!isMobile) return;
-    setIsSidebarOpen(false);
-    setIsEvidencePanelOpen(false);
+    const previous = wasMobileRef.current;
+    wasMobileRef.current = isMobile;
+    if (previous === false && isMobile) {
+      setIsSidebarOpen(false);
+      setIsEvidencePanelOpen(false);
+    }
   }, [isMobile]);
+
+  // Do not force-open evidence whenever an AI result exists: that fights bottom-nav
+  // reopen of the cases sheet after the doctor records a call / Assist finishes.
 
   const mobilePane: WorkbenchMobilePane = isSidebarOpen
     ? 'cases'
@@ -368,15 +318,46 @@ export default function Home() {
   const setMobilePane = useCallback((pane: WorkbenchMobilePane) => {
     setIsSidebarOpen(pane === 'cases');
     setIsEvidencePanelOpen(pane === 'evidence');
-  }, []);
+    recordOp('page_nav', { op: 'mobile_pane', value: pane }, { page: 'workbench' });
+  }, [recordOp]);
 
-  const selectPatient = useCallback((patient: Patient) => {
-    setSelectedPatient(patient);
-    if (isMobile) {
+  const handleStudyInitialJudgmentChange = useCallback((
+    ready: boolean,
+    meta?: { source?: 'user' | 'restore' | 'reset' },
+  ) => {
+    setResearchInitialJudgmentReady(ready);
+    // Only jump to the viewer after a fresh tap — never on resume/re-render.
+    if (isMobile && ready && meta?.source === 'user' && !readerUnifiedAgentResult) {
       setIsSidebarOpen(false);
       setIsEvidencePanelOpen(false);
     }
-  }, [isMobile]);
+  }, [isMobile, readerUnifiedAgentResult]);
+
+  const selectPatient = useCallback((patient: Patient) => {
+    setSelectedPatient(patient);
+    setOpsCase(patient.id, patient.patient_id);
+    recordOp('case_select', {
+      op: 'case_select',
+      value: patient.id,
+      label: patient.patient_id || patient.id,
+    }, {
+      caseId: patient.id,
+      patientId: patient.patient_id,
+      page: 'workbench',
+    });
+    if (isMobile) {
+      setIsSidebarOpen(false);
+      setIsEvidencePanelOpen(true);
+    }
+  }, [isMobile, recordOp, setOpsCase]);
+
+  useEffect(() => {
+    setOpsPage('workbench');
+  }, [setOpsPage]);
+
+  useEffect(() => {
+    setOpsCase(selectedPatient?.id || null, selectedPatient?.patient_id || null);
+  }, [selectedPatient?.id, selectedPatient?.patient_id, setOpsCase]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -442,6 +423,7 @@ export default function Home() {
 
   useEffect(() => {
     setAgentAnalysis(null);
+    setWorkbenchInitialJudgmentReady(false);
     setReaderUnifiedAgentResult(null);
     setReaderUnifiedAgentError(null);
     setReaderWorkflowTrace([]);
@@ -539,7 +521,17 @@ export default function Home() {
     setResearchInitialJudgmentReady(false);
     setReaderUnifiedAgentResult(null);
     setReaderUnifiedAgentError(null);
+    setLesionReady(false);
   }, [selectedPatient, selectedPatient?.id]);
+
+  useEffect(() => {
+    const onLesionReady = (event: Event) => {
+      const ready = Boolean((event as CustomEvent<{ ready?: boolean }>).detail?.ready);
+      setLesionReady(ready);
+    };
+    window.addEventListener('gastric:lesion-ready', onLesionReady);
+    return () => window.removeEventListener('gastric:lesion-ready', onLesionReady);
+  }, []);
 
   const conceptPopulatedCount = useMemo(
     () => countPopulatedConceptFields(conceptState),
@@ -555,6 +547,10 @@ export default function Home() {
     });
     if (!patients.length || (selectedPatient && !patients.some((item) => item.id === selectedPatient.id))) {
       setSelectedPatient(patients[0] || null);
+      if (isMobile && patients[0]) {
+        setIsSidebarOpen(false);
+        setIsEvidencePanelOpen(true);
+      }
       setAgentAnalysis(null);
       setMaskOverride(null);
       setLumenOverride(null);
@@ -568,7 +564,7 @@ export default function Home() {
       setIsDirty(false);
       setSaveStatus('idle');
     }
-  }, [selectedPatient]);
+  }, [isMobile, selectedPatient]);
 
   const handleReaderUnifiedAgent = useCallback(async (capture: UnifiedAgentCapture) => {
     if (!selectedPatient || !isReaderStudyQueue) return;
@@ -583,7 +579,7 @@ export default function Home() {
     }
     const lesionReady = capture.mask_polygon.length >= 3 || Boolean(capture.roi_bbox);
     if (!lesionReady) {
-      const message = '请先标记关键帧并框选病灶';
+      const message = '请先框选病灶';
       setReaderUnifiedAgentError(`Agent 未运行：${message}`);
       toast.error(`Agent 未运行：${message}`);
       return;
@@ -594,6 +590,15 @@ export default function Home() {
     readerAgentAbortRef.current = controller;
     setReaderUnifiedAgentBusy(true);
     setReaderUnifiedAgentError(null);
+    recordOp('agent_run', {
+      op: 'assist',
+      video_time_sec: capture.current_time,
+      status: 'start',
+    }, {
+      caseId: selectedPatient.id,
+      patientId: selectedPatient.patient_id,
+      page: 'workbench',
+    });
     try {
       const primaryFrame = capture.frames.reduce((best, frame) => (
         Math.abs(frame.timestamp_sec - capture.current_time) < Math.abs(best.timestamp_sec - capture.current_time)
@@ -627,6 +632,7 @@ export default function Home() {
             ? capture.workflow_trace
             : readerWorkflowTrace,
           gc_us_report: gcUsReport || undefined,
+          bm_report: bmReport || undefined,
           mask_override: capture.mask_polygon.length
             ? {
                 patientId: selectedPatient.patient_id,
@@ -673,14 +679,20 @@ export default function Home() {
           assist_profile: capture.assist_profile || 'contour_anchored_fast',
         }),
       });
-      const data = await response.json() as {
+      const data = await response.json().catch(() => null) as {
         ok?: boolean;
         error?: string;
+        auth?: string;
+        code?: string;
         result?: AgentAnalysisResponse;
-      };
+      } | null;
       if (controller.signal.aborted || selectedPatientRef.current?.id !== caseId) return;
-      if (!response.ok || !data.ok || !data.result) {
-        throw new Error(data.error || `Unified Agent HTTP ${response.status}`);
+      if (!response.ok || !data?.ok || !data.result) {
+        throw new Error(
+          analysisAuthErrorMessage(response, data, language !== 'en')
+          || data?.error
+          || `Unified Agent HTTP ${response.status}`,
+        );
       }
       const frameImage = primaryFrame?.frame_png_b64;
       if (frameImage) {
@@ -693,9 +705,8 @@ export default function Home() {
           source_video_url: selectedPatient.video_urls?.[0]?.url || null,
         });
       }
-      if (capture.mask_polygon.length >= 3) {
-        setSystemReport(
-          buildModelAssistReport(
+      const geometric = capture.mask_polygon.length >= 3
+        ? buildModelAssistReport(
             selectedPatient,
             capture.mask_polygon,
             capture.image_width,
@@ -703,10 +714,12 @@ export default function Home() {
             'sabm_sam2_guided',
             undefined,
             language !== 'en',
-          ),
-        );
-      }
+          )
+        : null;
       setReaderUnifiedAgentResult(data.result);
+      setSystemReport(
+        overlayAssistOnReport(geometric, data.result, selectedPatient.study_mode || readerStudyMode),
+      );
       try {
         handleAgentAnalysisRef.current(data.result);
       } catch (renderError) {
@@ -742,14 +755,48 @@ export default function Home() {
       }).catch(() => {
         // Audit failure must not interrupt the reading workflow.
       });
+      recordOp('ai_suggestion', {
+        op: 'assist',
+        status: 'ok',
+        value: data.result.report?.recommended_t_stage || null,
+        label: String(data.result.report?.confidence ?? ''),
+        video_time_sec: capture.current_time,
+      }, {
+        caseId: caseId,
+        patientId: selectedPatient.patient_id,
+        page: 'workbench',
+      });
+      void fetch('/api/reader/case-state', {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          case_id: caseId,
+          patient_id: selectedPatient.patient_id,
+          study_mode: selectedPatient.study_mode || readerStudyMode,
+          progress: 'in_progress',
+          assist_run: true,
+        }),
+      }).catch(() => {
+        // Progress flag must not interrupt Assist.
+      });
       // Keep evidence panel open, but do not auto-popup the full report window
       // while CN/EN draft mixing is still being cleaned up.
+      setIsSidebarOpen(false);
       setIsEvidencePanelOpen(true);
       toast.success(language !== 'en' ? '辅助诊断意见已更新' : 'Assisted diagnosis updated');
     } catch (error) {
       if (controller.signal.aborted || selectedPatientRef.current?.id !== caseId) return;
       const message = error instanceof Error ? error.message : '统一 Agent 分析失败';
       setReaderUnifiedAgentError(message);
+      recordOp('error', {
+        op: 'assist',
+        status: 'fail',
+        error: message,
+      }, {
+        caseId: caseId,
+        patientId: selectedPatient.patient_id,
+        page: 'workbench',
+      });
       toast.error(message);
     } finally {
       if (readerAgentAbortRef.current === controller) {
@@ -757,7 +804,7 @@ export default function Home() {
         setReaderUnifiedAgentBusy(false);
       }
     }
-  }, [accountReaderId, authHeaders, gcUsReport, imagingAssist, isReaderStudyQueue, language, lumenOverride, readerStudyMode, readerWorkflowTrace, researchInitialJudgmentReady, selectedPatient]);
+  }, [accountReaderId, authHeaders, gcUsReport, imagingAssist, isReaderStudyQueue, language, lumenOverride, readerStudyMode, readerWorkflowTrace, recordOp, researchInitialJudgmentReady, selectedPatient]);
 
   const handleGcUsEvidenceState = useCallback((next: GcUsReportState) => {
     const currentPatient = selectedPatientRef.current;
@@ -785,7 +832,6 @@ export default function Home() {
               },
       };
     });
-    if (currentPatient.phase !== 'reader_v150') return;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const sessionId = gcUsAuditSessionRef.current || `gcus-${currentPatient.id}`;
     const environment = readerEnvironmentFromSearchParams(params);
@@ -796,13 +842,15 @@ export default function Home() {
     for (const action of next.doctor_actions || []) {
       if (gcUsActionIdsRef.current.has(action.action_id)) continue;
       gcUsActionIdsRef.current.add(action.action_id);
+      const nestedType = String(action.action_type || 'doctor_action');
+      const eventType = nestedType === 'stage_override' ? 'stage_override' : 'doctor_action';
       void fetch('/api/reader-audit/events', {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...READER_ROUND2_VERSION_FIELDS,
           event_id: action.action_id,
-          event_type: 'doctor_action',
+          event_type: eventType,
           session_id: sessionId,
           case_id: currentPatient.id,
           ...(readerId ? { reader_id: readerId } : {}),
@@ -813,6 +861,9 @@ export default function Home() {
           patient_id: currentPatient.patient_id,
           payload: {
             action,
+            action_type: nestedType,
+            before_value: action.before_value ?? null,
+            after_value: action.after_value ?? null,
             report_schema_version: next.schema_version,
             template_id: next.template_id,
             reference_stage: next.reference_stage,
@@ -829,11 +880,50 @@ export default function Home() {
       }).catch(() => {
         // Audit failure must not interrupt the reading workflow.
       });
+      void fetch('/api/reader/operations', {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          events: [{
+            event_type: eventType,
+            session_id: sessionId,
+            case_id: currentPatient.id,
+            patient_id: currentPatient.patient_id,
+            account_id: readerId,
+            page: 'workbench',
+            op: nestedType,
+            t_client_ms: Date.now(),
+            payload: {
+              action_type: nestedType,
+              before_value: action.before_value ?? null,
+              after_value: action.after_value ?? null,
+            },
+          }],
+        }),
+      }).catch(() => {
+        // Ops mirroring must not interrupt the reading workflow.
+      });
     }
   }, [accountReaderId, authHeaders, readerStudyMode]);
 
   const handleGenerateFullReport = useCallback(() => {
     if (!selectedPatient) return;
+    recordOp('report_open', {
+      op: 'report_open',
+      value: readerStudyMode,
+    }, {
+      caseId: selectedPatient.id,
+      patientId: selectedPatient.patient_id,
+      page: 'workbench',
+    });
+    recordOp('report_generate', {
+      op: 'report_open',
+      value: readerStudyMode,
+    }, {
+      caseId: selectedPatient.id,
+      patientId: selectedPatient.patient_id,
+      page: 'workbench',
+    });
     if (readerStudyMode === 'benign_malignancy') {
       const current = bmReport || createBmUsReportState({
         case_id: selectedPatient.patient_id || selectedPatient.id,
@@ -841,10 +931,6 @@ export default function Home() {
       });
       setBmReport(commitBmUsTemplateReport(current, reportLocale === 'en' ? 'en' : 'zh'));
       setReaderReportOpen(true);
-      return;
-    }
-    if (!readerUnifiedAgentResult && !gcUsReport) {
-      toast.error(language !== 'en' ? '请先点「辅助分析」，再生成完整报告' : 'Generate assist first, then the full report');
       return;
     }
     const current = gcUsReport || createGcUsReportState({
@@ -861,7 +947,7 @@ export default function Home() {
       },
     });
     setReaderReportOpen(true);
-  }, [bmReport, gcUsReport, language, readerStudyMode, readerUnifiedAgentResult, reportLocale, selectedPatient]);
+  }, [bmReport, gcUsReport, readerStudyMode, recordOp, reportLocale, selectedPatient]);
 
   const handleWorkflowStep = useCallback((step: WorkflowTraceStep) => {
     setReaderWorkflowTrace((previous) => [...previous, step].slice(-160));
@@ -1183,8 +1269,6 @@ export default function Home() {
   }, [selectedPatient, allPatients]);
 
   const imagingNarrative = gcUsReport?.report.prose || null;
-  const readerAssistantStage = getReaderAgentStage(readerUnifiedAgentResult);
-  const readerAssistantConfidence = getReaderAgentConfidence(readerUnifiedAgentResult);
   const readerReportImages = useMemo<GcUsReportImage[]>(
     () => mergeReportEvidenceImages(
       reportEvidenceImages,
@@ -1206,47 +1290,6 @@ export default function Home() {
     ),
     [language, readerFrameImage, readerFrameImageMeta, reportEvidenceImages],
   );
-  const readerClinical = useMemo(() => {
-    const clinical = selectedPatient?.clinical;
-    if (!clinical) return EMPTY_READER_CLINICAL;
-    const clinicalRecord = clinical as unknown as Record<string, unknown>;
-    const lengthMm = clinicalMeasurementMm(
-      clinicalRecord,
-      ['tumor_size_mm', 'length_mm', 'tumorSizeMm', 'tumor_length_mm', 'long_diameter_mm', 'maximum_diameter_mm'],
-      ['length_cm', 'tumor_size_cm', 'tumor_length_cm', 'long_diameter_cm', 'maximum_diameter_cm'],
-      'length',
-    );
-    const thicknessMm = clinicalMeasurementMm(
-      clinicalRecord,
-      ['tumor_thickness_mm', 'thickness_mm', 'tumorThicknessMm', 'tumor_depth_mm', 'maximum_thickness_mm'],
-      ['thickness_cm', 'tumor_thickness_cm', 'tumor_depth_cm', 'maximum_thickness_cm'],
-      'thickness',
-    );
-    const nestedTumorSize = asRecord(clinicalRecord.tumorSize) || {};
-    return {
-      ...clinicalRecord,
-      location: clinical.location
-        || String(clinicalRecord.tumor_location || clinicalRecord.site || '').trim()
-        || '',
-      tumorSize: {
-        ...nestedTumorSize,
-        length: lengthMm == null ? nestedTumorSize.length : lengthMm / 10,
-        thickness: thicknessMm == null ? nestedTumorSize.thickness : thicknessMm / 10,
-      },
-      biomarkers: clinical.biomarkers,
-      tumor_size_mm: lengthMm ?? undefined,
-      tumor_thickness_mm: thicknessMm ?? undefined,
-      length_cm: lengthMm == null ? undefined : lengthMm / 10,
-      thickness_cm: thicknessMm == null ? undefined : thicknessMm / 10,
-      differentiation: clinical.differentiation,
-      lauren: clinical.lauren,
-      concept_features: clinical.concept_features,
-      cea: clinical.biomarkers?.cea ?? undefined,
-      cea_positive: clinical.biomarkers?.cea_positive ?? undefined,
-      ca199: clinical.biomarkers?.ca199 ?? undefined,
-      ca199_positive: clinical.biomarkers?.ca199_positive ?? undefined,
-    };
-  }, [selectedPatient?.clinical]);
 
   const applyConceptState = useCallback((patientId: string, state: ConceptState, markDirty = false) => {
     setConceptState(state);
@@ -1486,11 +1529,12 @@ export default function Home() {
 
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
         <aside
-          className={`workbench-aside-cases relative z-20 flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-white/10 bg-[#0b0b0d] transition-[width,transform] duration-300 ease-in-out ${
+          className={`workbench-aside-cases relative z-[70] flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-white/10 bg-[#0b0b0d] transition-[width,transform] duration-300 ease-in-out ${
             isSidebarOpen ? (isMobile ? 'mobile-open' : '') : 'pointer-events-none w-0 border-none'
           }`}
           style={isMobile ? undefined : { width: isSidebarOpen ? PATIENT_LIST_WIDTH : 0 }}
           aria-hidden={!isSidebarOpen}
+          inert={!isSidebarOpen ? true : undefined}
         >
           <div className="flex h-full min-h-0 flex-col" style={{ width: isMobile ? '100%' : PATIENT_LIST_WIDTH }}>
             <MobileSheetHeader
@@ -1498,7 +1542,7 @@ export default function Home() {
               onClose={() => setMobilePane('viewer')}
               language={language}
             />
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <PatientList
               key={`${dataset}-${queueId}-${cohortYear}-${readerStudyMode}`}
               readerStudyMode={readerStudyMode}
@@ -1538,8 +1582,8 @@ export default function Home() {
               onExplainableComplete={handleExplainableComplete}
             />
           ) : null}
-          {!isReaderStudyQueue && !isBenignQueue ? <AssistHub patient={selectedPatient} /> : null}
           {!isReaderStudyQueue && !isBenignQueue ? (
+            workbenchInitialJudgmentReady ? (
             <AgentWorkbenchPanel
               patient={selectedPatient}
               maskOverride={maskOverride}
@@ -1548,6 +1592,13 @@ export default function Home() {
               gcUsReport={gcUsReport}
               onAnalysisComplete={handleAgentAnalysis}
             />
+            ) : (
+              <div className="border-t border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-[11px] text-sky-100">
+                {language !== 'en'
+                  ? '请先在右侧记录医生判断，再运行 AI 判断；最后确认是否接受。'
+                  : 'Record the physician judgment in the right panel first, then run AI, then accept or reject.'}
+              </div>
+            )
           ) : null}
           <InteractiveSegPanel
             patient={selectedPatient}
@@ -1565,89 +1616,6 @@ export default function Home() {
             onReportEvidenceImages={handleReportEvidenceImages}
             inline={Boolean(selectedPatient)}
           />
-          {!isReaderStudyQueue && !isBenignQueue && (
-          <ReaderAgentResultCard
-            patient={selectedPatient}
-            onApplyStage={(stage) => {
-              handleExplainableComplete({
-                success: true,
-                predicted_stage: stage,
-                confidence: 'reader-agent',
-                composite_score: 0.55,
-              });
-            }}
-            onImportMaskPolygon={(polygon) => {
-              if (!selectedPatient || !Array.isArray(polygon) || polygon.length < 3) return;
-              const apply = (w: number, h: number) => {
-                const next: MaskBoundaryOverride = {
-                  patientId: selectedPatient.patient_id,
-                  frameId: selectedPatient.id,
-                  imageWidth: w,
-                  imageHeight: h,
-                  mask_polygon: polygon.map((p) => [Number(p[0]), Number(p[1])]),
-                  wall_polygon: maskOverride?.wall_polygon,
-                  source: 'imported',
-                  updated_at: new Date().toISOString(),
-                };
-                void fetch('/api/patients/mask-overrides', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ override: next }),
-                }).then(async (res) => {
-                  if (!res.ok) return;
-                  const data = await res.json();
-                  if (data.override) setMaskOverride(data.override);
-                });
-              };
-              const img = new Image();
-              img.crossOrigin = 'anonymous';
-              img.onload = () => apply(img.naturalWidth || 1024, img.naturalHeight || 768);
-              img.onerror = () => apply(1024, 768);
-              img.src = selectedPatient.image_url;
-            }}
-            onImportWallPolygon={(polygon) => {
-              if (!selectedPatient || !Array.isArray(polygon) || polygon.length < 3) return;
-              const existingMask = maskOverride?.mask_polygon;
-              if (!existingMask || existingMask.length < 3) {
-                // Need a lesion contour for schema; open editor so doctor can SAM/edit after wall import.
-                window.dispatchEvent(new CustomEvent('gastric:open-boundary-edit', { detail: { sam: true } }));
-              }
-              const apply = (w: number, h: number) => {
-                const next: MaskBoundaryOverride = {
-                  patientId: selectedPatient.patient_id,
-                  frameId: selectedPatient.id,
-                  imageWidth: w,
-                  imageHeight: h,
-                  mask_polygon:
-                    existingMask && existingMask.length >= 3
-                      ? existingMask
-                      : polygon.map((p) => [Number(p[0]), Number(p[1])]),
-                  wall_polygon: polygon.map((p) => [Number(p[0]), Number(p[1])]),
-                  source: 'imported',
-                  updated_at: new Date().toISOString(),
-                  note:
-                    existingMask && existingMask.length >= 3
-                      ? undefined
-                      : 'wall_import_without_lesion — please edit green lesion contour',
-                };
-                void fetch('/api/patients/mask-overrides', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ override: next }),
-                }).then(async (res) => {
-                  if (!res.ok) return;
-                  const data = await res.json();
-                  if (data.override) setMaskOverride(data.override);
-                });
-              };
-              const img = new Image();
-              img.crossOrigin = 'anonymous';
-              img.onload = () => apply(img.naturalWidth || 1024, img.naturalHeight || 768);
-              img.onerror = () => apply(1024, 768);
-              img.src = selectedPatient.image_url;
-            }}
-          />
-          )}
         </div>
 
         {/* Right evidence drawer docks beside the canvas so the current frame stays visible */}
@@ -1656,17 +1624,24 @@ export default function Home() {
             isEvidencePanelOpen ? (isMobile ? 'mobile-open' : '') : 'pointer-events-none border-none'
           }`}
           style={isMobile ? undefined : {
-            width: isEvidencePanelOpen ? EVIDENCE_PANEL_WIDTH : '0px',
+            width: isEvidencePanelOpen
+              ? (isWallLayerDockOpen ? WORKBENCH_WALL_DOCK_WIDTH : EVIDENCE_PANEL_WIDTH)
+              : '0px',
           }}
           aria-hidden={!isEvidencePanelOpen}
+          inert={!isEvidencePanelOpen ? true : undefined}
         >
           <div className="flex min-w-0 shrink-0 flex-col gap-2 border-b border-white/10 px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 text-[12px] font-semibold text-gray-200">
                 {isWallLayerDockOpen ? <Layers size={13} className="shrink-0 text-orange-300" /> : null}
                 {isWallLayerDockOpen
-                  ? (language === 'en' ? 'Wall layers' : (language === 'zh-HK' ? '壁層' : '壁层'))
-                  : (language === 'en' ? 'Evidence' : (language === 'zh-HK' ? '證據面板' : '证据面板'))}
+                  ? (language === 'en' ? 'Layer detail' : (language === 'zh-HK' ? '壁層詳析' : '壁层详析'))
+                  : isMobile
+                    ? (readerUnifiedAgentResult
+                      ? (language === 'en' ? 'AI result' : (language === 'zh-HK' ? 'AI 結果' : 'AI 结果'))
+                      : (language === 'en' ? 'Your call' : (language === 'zh-HK' ? '你的判斷' : '你的判断')))
+                    : (language === 'en' ? 'Evidence' : (language === 'zh-HK' ? '證據面板' : '证据面板'))}
               </div>
               <div className="flex items-center gap-1.5">
               {isWallLayerDockOpen ? (
@@ -1683,25 +1658,21 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setMobilePane('viewer')}
-                className="workbench-sheet-bar items-center rounded border border-white/15 px-2 py-1 text-[11px] text-gray-200"
+                className="workbench-sheet-bar items-center rounded border border-white/15 px-2 py-1 text-[11px] text-gray-200 max-md:min-h-11 max-md:px-3"
               >
                 {language === 'en' ? 'Done' : (language === 'zh-HK' ? '完成' : '完成')}
               </button>
               </div>
             </div>
-            {!isBenignQueue && !isWallLayerDockOpen ? (
+            {!isBenignQueue && !isWallLayerDockOpen && !isReaderStudyQueue ? (
               <button
                 type="button"
                 disabled={!selectedPatient}
-                onClick={() => {
-                  if (isReaderStudyQueue) handleGenerateFullReport();
-                  else window.dispatchEvent(new CustomEvent('gastric:open-full-report'));
-                }}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-emerald-400/50 bg-emerald-500/20 px-3 py-2.5 text-[13px] font-bold text-emerald-50 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-40"
-                title={language === 'en' ? 'Confirm and open the full report' : (language === 'zh-HK' ? '確認並打開完整報告' : '确认并打开完整报告')}
+                onClick={() => window.dispatchEvent(new CustomEvent('gastric:open-full-report'))}
+                className="text-[11px] text-slate-500 underline-offset-2 hover:text-slate-300 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                title={language === 'en' ? 'Open the full report' : (language === 'zh-HK' ? '打開完整報告' : '打开完整报告')}
               >
-                <FileText size={14} />
-                {language === 'en' ? 'Generate report' : (language === 'zh-HK' ? '生成報告' : '生成报告')}
+                {language === 'en' ? 'Report' : (language === 'zh-HK' ? '報告' : '报告')}
               </button>
             ) : null}
           </div>
@@ -1713,65 +1684,16 @@ export default function Home() {
               {language !== 'en' ? '当前队列没有可用病例；请选择其他队列或检查数据入口。' : 'No cases in this queue. Pick another queue or check the data source.'}
             </div>
           ) : isReaderStudyQueue ? (
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 max-md:overflow-y-auto">
               {researchAiLocked ? (
-                <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/[0.08] p-2.5 text-[10px] leading-relaxed text-sky-100">
+                <div className="mb-3 shrink-0 rounded-lg border border-sky-500/30 bg-sky-500/[0.08] p-2.5 text-[11px] leading-relaxed text-sky-100">
                   {language === 'en'
-                    ? 'Research mode: AI evidence panels and Agent analysis stay hidden until the physician initial judgment is recorded below.'
-                    : '研究模式：请先在下方记录医生初始判断；完成前不展示 AI 证据面板，也不运行 Agent 分析。'}
+                    ? 'Choose your call below first. AI stays hidden until then.'
+                    : '请先给出你的判断，然后再点辅助分析。'}
                 </div>
-              ) : (
-                <>
-                  <ReaderEvidencePanel
-                    result={readerUnifiedAgentResult}
-                    loading={readerUnifiedAgentBusy}
-                    zh={language !== 'en'}
-                    onOpenFullReport={handleGenerateFullReport}
-                    goldPatientId={selectedPatient.patient_id}
-                    goldCaseId={selectedPatient.id}
-                    goldPhase={selectedPatient.phase}
-                    goldGroup={selectedPatient.group}
-                    studyMode={selectedPatient.study_mode || readerStudyMode}
-                  />
-                  {readerStudyMode === 'benign_malignancy' ? (
-                    <BmEvidencePanel
-                      caseId={selectedPatient.patient_id || selectedPatient.id}
-                      clinical={readerClinical}
-                      assistNature={
-                        readerUnifiedAgentResult
-                          ? (getAssistFiveClass(readerUnifiedAgentResult) === 'benign' ? 'benign' : 'malignant')
-                          : null
-                      }
-                      compact
-                      onStateChange={setBmReport}
-                    />
-                  ) : (
-                    <GcUsEvidencePanel
-                      caseId={selectedPatient.patient_id || selectedPatient.id}
-                      showBiomarkers
-                      frameId={selectedPatient.id}
-                      frameTime={maskOverride?.video_time_sec ?? 0}
-                      clinical={readerClinical}
-                      lesionPolygon={imagingAssist?.lesionPolygon || maskOverride?.mask_polygon || EMPTY_POLYGON}
-                      wallPolygon={imagingAssist?.wallPolygon || maskOverride?.wall_polygon || EMPTY_POLYGON}
-                      lumenPolygon={imagingAssist?.lumenPolygon || EMPTY_POLYGON}
-                      lumenBBox={imagingAssist?.lumenBBox || null}
-                      frameSize={imagingAssist?.frameSize || (maskOverride ? { width: maskOverride.imageWidth, height: maskOverride.imageHeight } : null)}
-                      layerResult={imagingAssist?.layerResult || null}
-                      productStage={null}
-                      assistantStage={readerAssistantStage}
-                      assistantConfidence={readerAssistantConfidence}
-                      signAnalysis={readerUnifiedAgentResult?.tool_evidence?.gc_us_signs || null}
-                      initialState={gcUsReport}
-                      zh={language !== 'en'}
-                      compact
-                      onStateChange={handleGcUsEvidenceState}
-                    />
-                  )}
-                </>
-              )}
+              ) : null}
               {readerUnifiedAgentError ? (
-                <div className="mt-2 rounded-lg border border-rose-400/20 bg-rose-400/5 px-2.5 py-2 text-[10px] leading-relaxed text-rose-200">
+                <div className="mb-2 shrink-0 rounded-lg border border-rose-400/20 bg-rose-400/5 px-2.5 py-2 text-[10px] leading-relaxed text-rose-200">
                   {readerUnifiedAgentError}
                 </div>
               ) : null}
@@ -1781,38 +1703,115 @@ export default function Home() {
                 compact
                 studyMode={readerStudyMode}
                 onStudyModeChange={setReaderStudyMode}
-                onSelectPatient={setSelectedPatient}
+                onSelectPatient={selectPatient}
                 systemReport={researchAiLocked ? null : systemReport}
                 onSystemReportChange={setSystemReport}
-                onInitialJudgmentChange={setResearchInitialJudgmentReady}
+                onInitialJudgmentChange={handleStudyInitialJudgmentChange}
+                onGoViewer={isMobile ? () => setMobilePane('viewer') : undefined}
                 hideTaskChrome
-                publicReaderOnly={readerOnly}
+                publicReaderOnly={isEvaluationSession}
+                assistBusy={readerUnifiedAgentBusy}
+                assistResult={researchAiLocked ? null : readerUnifiedAgentResult}
+                lesionReady={lesionReady || Boolean(maskOverride?.mask_polygon && maskOverride.mask_polygon.length >= 3)}
+                onAssist={() => window.dispatchEvent(new CustomEvent('gastric:run-assist'))}
+                onOpenReport={handleGenerateFullReport}
+                onBmReportChange={setBmReport}
+                queryPreviewUrl={selectedPatient.image_url}
+                queryMaskPolygon={maskOverride?.mask_polygon}
+                queryImageWidth={maskOverride?.imageWidth}
+                queryImageHeight={maskOverride?.imageHeight}
               />
             </div>
           ) : isBenignQueue ? (
             <div className="flex-1 overflow-y-auto p-3">
+              {!isEvaluationSession ? (
+                <ClinicalHistoryCard patient={selectedPatient} />
+              ) : null}
+              <SimilarCaseReferencePanel
+                caseId={selectedPatient.id}
+                patientId={selectedPatient.patient_id || selectedPatient.id}
+                studyMode={selectedPatient.study_mode || 'benign_malignancy'}
+                enabled={!isEvaluationSession}
+                zh={language !== 'en'}
+                compact
+                allowOpenWorkbench={!isEvaluationSession}
+                queryPreviewUrl={selectedPatient.image_url}
+                queryMaskPolygon={maskOverride?.mask_polygon}
+                queryImageWidth={maskOverride?.imageWidth}
+                queryImageHeight={maskOverride?.imageHeight}
+              />
+              <div className="mt-2">
+                <GuidelineTracePanel
+                  caseId={selectedPatient.id}
+                  patientId={selectedPatient.patient_id || selectedPatient.id}
+                  studyMode={selectedPatient.study_mode || 'benign_malignancy'}
+                  originalTop1={
+                    String(readerUnifiedAgentResult?.report?.recommended_t_stage || '').trim() || null
+                  }
+                  zh={language !== 'en'}
+                  compact
+                />
+              </div>
               <BenignTissueObservationCard patient={selectedPatient} />
             </div>
           ) : (
-            <>
-              <div className="flex h-[35%] min-h-0 shrink-0 flex-col border-b border-white/10 bg-panel-bg">
-                <ConceptReasoning
-                  state={conceptState}
-                  onChange={handleStateChange}
-                  onReset={handleResetConceptState}
-                  onSave={handleSaveConceptState}
-                  populatedCount={conceptPopulatedCount}
-                  agentFilledCount={agentFilledCount}
-                  fieldSources={fieldSources}
-                  hasClinicalData={Boolean(selectedPatient?.clinical)}
-                  isDirty={isDirty}
-                  saveStatus={saveStatus}
-                  autoSaveEnabled
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-bg-dark">
+                <DoctorDecisionTracePanel
+                  caseId={selectedPatient.id}
+                  patientId={selectedPatient.patient_id}
+                  studyMode={selectedPatient.study_mode || readerStudyMode}
+                  readerId={accountReaderId}
+                  authHeaders={authHeaders}
+                  aiStage={
+                    normalizeAgentStage(agentAnalysis?.report?.recommended_t_stage)
+                    || normalizeAgentStage(systemReport?.recommended_stage)
+                    || (isConcreteGcUsStage(gcUsReport?.reference_stage)
+                      ? (gcUsReport?.reference_stage?.requested_band || gcUsReport?.reference_stage?.band || null)
+                      : null)
+                  }
+                  aiConfidence={agentAnalysis?.report?.confidence || systemReport?.calibrated_confidence || null}
+                  suggestionId={agentAnalysis?.report?.status || systemReport?.schema_version || null}
+                  maskReady={Boolean(maskOverride?.mask_polygon && maskOverride.mask_polygon.length >= 3)}
+                  zh={language !== 'en'}
+                  onInitialJudgmentChange={setWorkbenchInitialJudgmentReady}
                 />
-              </div>
-
-              <div className="relative flex min-h-0 flex-1 flex-col bg-bg-dark">
-                <div className="shrink-0 border-b border-white/10 p-2">
+                {!isEvaluationSession ? (
+                  <ClinicalHistoryCard patient={selectedPatient} />
+                ) : null}
+                <div className="border-b border-white/10 p-2">
+                  {!isEvaluationSession ? (
+                    <SimilarCaseReferencePanel
+                      caseId={selectedPatient.id}
+                      patientId={selectedPatient.patient_id || selectedPatient.id}
+                      studyMode={selectedPatient.study_mode || 't_staging'}
+                      enabled
+                      zh={language !== 'en'}
+                      compact
+                      allowOpenWorkbench
+                      queryPreviewUrl={selectedPatient.image_url}
+                      queryMaskPolygon={maskOverride?.mask_polygon}
+                      queryImageWidth={maskOverride?.imageWidth}
+                      queryImageHeight={maskOverride?.imageHeight}
+                    />
+                  ) : null}
+                  <div className={!isEvaluationSession ? 'mt-2' : ''}>
+                    <GuidelineTracePanel
+                      caseId={selectedPatient.id}
+                      patientId={selectedPatient.patient_id || selectedPatient.id}
+                      studyMode={selectedPatient.study_mode || 't_staging'}
+                      originalTop1={
+                        normalizeAgentStage(agentAnalysis?.report?.recommended_t_stage)
+                        || normalizeAgentStage(systemReport?.recommended_stage)
+                        || (isConcreteGcUsStage(gcUsReport?.reference_stage)
+                          ? (gcUsReport?.reference_stage?.requested_band || gcUsReport?.reference_stage?.band || null)
+                          : null)
+                      }
+                      zh={language !== 'en'}
+                      compact
+                    />
+                  </div>
+                </div>
+                <div className="border-b border-white/10 p-2">
                   <GcUsImagingReportCard
                     patient={selectedPatient}
                     assist={imagingAssist}
@@ -1842,9 +1841,14 @@ export default function Home() {
                   onGcUsReportChange={handleGcUsEvidenceState}
                   imagingNarrative={imagingNarrative}
                   onExpandedChange={setIsReportExpanded}
+                  similarCasesEnabled={false}
+                  studyMode={selectedPatient.study_mode || 't_staging'}
+                  queryPreviewUrl={selectedPatient.image_url}
+                  queryMaskPolygon={maskOverride?.mask_polygon}
+                  queryImageWidth={maskOverride?.imageWidth}
+                  queryImageHeight={maskOverride?.imageHeight}
                 />
               </div>
-            </>
           )}
           </div>
         </aside>
@@ -1852,7 +1856,12 @@ export default function Home() {
           type="button"
           onClick={() => setIsEvidencePanelOpen((value) => !value)}
           className="workbench-desktop-toggle absolute right-0 top-1/2 z-50 -translate-y-1/2 rounded-l-lg border border-white/20 bg-neutral-800/95 px-1.5 py-2 text-gray-100 shadow-lg backdrop-blur transition-[right] duration-300 hover:border-orange-400/50 hover:bg-orange-500/20 hover:text-white"
-          style={{ right: isEvidencePanelOpen ? EVIDENCE_PANEL_WIDTH : '0px', zIndex: 100 }}
+          style={{
+            right: isEvidencePanelOpen
+              ? (isWallLayerDockOpen ? WORKBENCH_WALL_DOCK_WIDTH : EVIDENCE_PANEL_WIDTH)
+              : '0px',
+            zIndex: 100,
+          }}
           title={isEvidencePanelOpen
             ? (language === 'en' ? 'Collapse evidence panel' : (language === 'zh-HK' ? '收起證據面板' : '收起证据面板'))
             : (language === 'en' ? 'Expand evidence panel' : (language === 'zh-HK' ? '展開證據面板' : '展开证据面板'))}
@@ -1861,19 +1870,6 @@ export default function Home() {
             : (language === 'en' ? 'Expand evidence panel' : (language === 'zh-HK' ? '展開證據面板' : '展开证据面板'))}
         >
           {isEvidencePanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
-        {/* Top-right text entry survives browser translation widgets that cover the mid-right chevron. */}
-        <button
-          type="button"
-          onClick={() => setIsEvidencePanelOpen((value) => !value)}
-          className="workbench-assist-chip absolute top-3 z-[120] inline-flex items-center gap-1.5 rounded-lg border border-sky-300/50 bg-sky-500/25 px-3 py-1.5 text-[11px] font-semibold text-sky-50 shadow-lg backdrop-blur transition hover:bg-sky-500/40"
-          style={{ right: isEvidencePanelOpen ? `calc(${EVIDENCE_PANEL_WIDTH} + 0.75rem)` : '0.75rem' }}
-          title={language === 'en' ? 'Toggle assisted evidence panel' : '打开/收起辅助分析与证据面板'}
-        >
-          <FileText size={13} />
-          {isEvidencePanelOpen
-            ? (language === 'en' ? 'Hide assist' : '收起辅助分析')
-            : (language === 'en' ? 'Show assist' : '打开辅助分析')}
         </button>
 
         {showStatistics && (
@@ -1897,7 +1893,11 @@ export default function Home() {
                 </button>
               </div>
               <div className="flex-1 overflow-hidden">
-                <StatisticsPanel patients={allPatients} conceptStates={patientConceptStates} />
+                <StatisticsPanel
+                  patients={allPatients}
+                  studyMode={readerStudyMode}
+                  queueId={queueId}
+                />
               </div>
             </div>
           </div>
@@ -1910,7 +1910,7 @@ export default function Home() {
                 aria-modal="true"
                 aria-label={language !== 'en' ? '病例报告工作台' : 'Case report workspace'}
               >
-                <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-black px-4 pt-[env(safe-area-inset-top)] sm:px-5">
+                <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-black px-4 pt-[env(safe-area-inset-top)] sm:px-5 max-md:h-auto max-md:min-h-14 max-md:py-2">
                   <div>
                     <div className="text-sm font-bold text-white">
                       {language !== 'en' ? '病例报告工作台' : 'Case report workspace'}
@@ -1923,22 +1923,25 @@ export default function Home() {
                         recordId={selectedPatient.id}
                         phase={selectedPatient.phase}
                         group={selectedPatient.group}
+                        queueId={selectedPatient.queue_id}
                         available={selectedPatient.gold_available !== false}
+                        knownLabel={selectedPatient.gold_five_class || null}
                         zh={language !== 'en'}
                         compact
+                        autoReveal
                       />
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setReaderReportOpen(false)}
-                    className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[11px] text-slate-200 hover:border-rose-300/40 hover:bg-rose-300/10"
+                    className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[11px] text-slate-200 hover:border-rose-300/40 hover:bg-rose-300/10 max-md:min-h-11 max-md:px-4 max-md:text-sm"
                     aria-label={language !== 'en' ? '关闭病例报告工作台' : 'Close case report workspace'}
                   >
                     {language !== 'en' ? '关闭' : 'Close'}
                   </button>
                 </div>
-                <div className="min-h-0 flex-1 overflow-hidden bg-black">
+                <div className="min-h-0 flex-1 overflow-hidden bg-black max-md:overflow-auto">
                   <DoctorReportStudio
                     patient={selectedPatient}
                     analysis={readerUnifiedAgentResult}
@@ -1960,6 +1963,11 @@ export default function Home() {
         onChange={setMobilePane}
         language={language}
         caseLabel={selectedPatient ? patientDisplayLabel(selectedPatient, language) : null}
+        evidenceLabel={
+          readerUnifiedAgentResult
+            ? (language !== 'en' ? '结果' : 'Result')
+            : (language !== 'en' ? '判断' : 'Call')
+        }
       />
     </main>
   );
