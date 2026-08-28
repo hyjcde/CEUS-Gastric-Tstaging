@@ -1,0 +1,240 @@
+{
+  "created_at": "2026-08-28T20:42:14",
+  "note": "GT-box / oracle-box upper bound. Not deployable. Do not replace Assist.",
+  "box_scale": 1.1,
+  "dino_roi_ckpt": "/data/research/gastric/GastricTstaging/experiments/segmentation/dinov3_vitb16_roi_lora_mlp_512_m025_20260828_full/checkpoints/best.pt",
+  "dino_full_run": "/data/research/gastric/GastricTstaging/experiments/segmentation/segmentation_dinov3_vitb16_last2blocks_holdout_cropui_dataset_v20260409_20260511_r001",
+  "sam_status": {
+    "available": true,
+    "ready": true,
+    "loaded_at": 1787882010.5491645,
+    "load_error": null,
+    "model": "sam3.1_image_detector_lora",
+    "checkpoint": "/data/research/gastric/GastricTstaging/external/sam3.1/sam3.1_multiplex.pt",
+    "lora_checkpoint": "/data/research/gastric/GastricTstaging/artifacts/sam31_training/sam31_gastric_lora_full_components_5epoch_run2/best_lora_weights.pt",
+    "lora_loaded": true,
+    "device": "cuda",
+    "multiplex_count": 16,
+    "video_role": "sam3.1_native_multiplex_memory",
+    "native_video_ready": false,
+    "native_video_error": null,
+    "native_video_lora_loaded": false,
+    "gpu_busy": false,
+    "gpu_job": null,
+    "gpu_busy_seconds": 0.0,
+    "gpu_waiters": 0,
+    "gpu_queue_length": 0,
+    "gpu_queue_limit": 8,
+    "gpu_lock_timeout_sec": 180.0,
+    "video_users": 0,
+    "video_last_used": null,
+    "video_idle_unload_sec": 180.0,
+    "vram": {
+      "device": "cuda",
+      "allocated_mb": 3453,
+      "reserved_mb": 4902
+    }
+  },
+  "init_info": {
+    "lora_modules": 8,
+    "trainable": 1277185,
+    "total": 86934529
+  },
+  "splits": {
+    "external_eval": {
+      "n": 2856,
+      "elapsed_seconds": 129.86,
+      "dino_full_published_image_mean": 0.6819525374032698,
+      "dino_roi_m025": {
+        "n_images": 2856.0,
+        "n_patients": 479.0,
+        "image_mean": 0.8548335259687454,
+        "patient_mean": 0.8478773859525598,
+        "zero_dice": 0.00035014005602240897
+      },
+      "dino_roi_m025_x110": {
+        "n_images": 2856.0,
+        "n_patients": 479.0,
+        "image_mean": 0.8311442931998503,
+        "patient_mean": 0.8228046843427262,
+        "zero_dice": 0.0
+      },
+      "dino_full_recomputed": {
+        "n_images": 2856.0,
+        "n_patients": 479.0,
+        "image_mean": 0.6819525374573037,
+        "patient_mean": 0.6563835840905617,
+        "zero_dice": 0.01715686274509804
+      },
+      "dino_full_inside_gt_x110": {
+        "n_images": 2856.0,
+        "n_patients": 479.0,
+        "image_mean": 0.7458798193294249,
+        "patient_mean": 0.7295911625199213,
+        "zero_dice": 0.01715686274509804
+      },
+      "panel": "/data/research/gastric/GastricTstaging/results/visualizations/segmentation/sam_dino_roi_compare_external_eval_20260828.png",
+      "shown": [
+        {
+          "bucket": "worst",
+          "case_id": "lumen_莆田1胃癌直接手术_直接手术_pt169_3",
+          "dice_roi": 7.680491550869393e-11,
+          "dice_roi_x110": 0.026672252546664416,
+          "dice_full": 0.7597722960379723,
+          "dice_sam": 0.0005075369305580184
+        },
+        {
+          "bucket": "worst",
+          "case_id": "lumen_肿瘤医院直接手术_肿瘤原图_366136_4",
+          "dice_roi": 0.009174511402718123,
+          "dice_roi_x110": 0.756863032796466,
+          "dice_full": 0.2659545078491615,
+          "dice_sam": 0.8762820513217044
+        },
+        {
+          "bucket": "median",
+          "case_id": "lumen_莆田1胃癌直接手术_直接手术_pt112_4",
+          "dice_roi": 0.8748975879372489,
+          "dice_roi_x110": 0.8164399851383659,
+          "dice_full": 0.44334975403734617,
+          "dice_sam": 0.8654690619299524
+        },
+        {
+          "bucket": "median",
+          "case_id": "lumen_肿瘤医院直接手术_肿瘤原图_1530_1",
+          "dice_roi": 0.8749444661361228,
+          "dice_roi_x110": 0.8395197019296535,
+          "dice_full": 0.675300789357399,
+          "dice_sam": 0.7648020935750081
+        },
+        {
+          "bucket": "best",
+          "case_id": "lumen_莆田1胃癌直接手术_直接手术_pt129_23",
+          "dice_roi": 0.9643743240666998,
+          "dice_roi_x110": 0.9377704321348793,
+          "dice_full": 0.6250659166977911,
+          "dice_sam": 0.9522418771380889
+        },
+        {
+          "bucket": "best",
+          "case_id": "lumen_莆田1胃癌直接手术_直接手术_pt235_2",
+          "dice_roi": 0.9702613047782255,
+          "dice_roi_x110": 0.9568953568957836,
+          "dice_full": 0.4960819058936001,
+          "dice_sam": 0.952690387512146
+        }
+      ]
+    },
+    "prospective_eval": {
+      "n": 2430,
+      "elapsed_seconds": 120.22,
+      "dino_full_published_image_mean": 0.7143639390571934,
+      "dino_roi_m025": {
+        "n_images": 2430.0,
+        "n_patients": 502.0,
+        "image_mean": 0.8873000885523289,
+        "patient_mean": 0.8838110296639328,
+        "zero_dice": 0.0
+      },
+      "dino_roi_m025_x110": {
+        "n_images": 2430.0,
+        "n_patients": 502.0,
+        "image_mean": 0.8633012035384547,
+        "patient_mean": 0.8592689344262305,
+        "zero_dice": 0.0
+      },
+      "dino_full_recomputed": {
+        "n_images": 2430.0,
+        "n_patients": 502.0,
+        "image_mean": 0.7143639390762325,
+        "patient_mean": 0.6960368051932461,
+        "zero_dice": 0.018518518518518517
+      },
+      "dino_full_inside_gt_x110": {
+        "n_images": 2430.0,
+        "n_patients": 502.0,
+        "image_mean": 0.7863072311699313,
+        "patient_mean": 0.7729123048877119,
+        "zero_dice": 0.018518518518518517
+      },
+      "panel": "/data/research/gastric/GastricTstaging/results/visualizations/segmentation/sam_dino_roi_compare_prospective_eval_20260828.png",
+      "shown": [
+        {
+          "bucket": "worst",
+          "case_id": "lumen_2025直接手术_Z0214975_2",
+          "dice_roi": 0.39144011758856356,
+          "dice_roi_x110": 0.3427779636225917,
+          "dice_full": 0.27106169749173736,
+          "dice_sam": 0.5070254620193285
+        },
+        {
+          "bucket": "worst",
+          "case_id": "lumen_2025直接手术_1507541_1",
+          "dice_roi": 0.3950199521213619,
+          "dice_roi_x110": 0.27456540174800503,
+          "dice_full": 0.5270848062564878,
+          "dice_sam": 0.7348590883348807
+        },
+        {
+          "bucket": "median",
+          "case_id": "lumen_2025直接手术_Z0240188_11",
+          "dice_roi": 0.9012684176835037,
+          "dice_roi_x110": 0.8615492464113346,
+          "dice_full": 0.9078059340438173,
+          "dice_sam": 0.9395408163303864
+        },
+        {
+          "bucket": "median",
+          "case_id": "lumen_2025直接手术_Z0220260_1",
+          "dice_roi": 0.9012849482321981,
+          "dice_roi_x110": 0.890792932940693,
+          "dice_full": 0.5521176213403296,
+          "dice_sam": 0.8543226685315444
+        },
+        {
+          "bucket": "best",
+          "case_id": "lumen_2025直接手术_Z0211992_5",
+          "dice_roi": 0.9735280315789003,
+          "dice_roi_x110": 0.9690086705836918,
+          "dice_full": 0.9655685880582293,
+          "dice_sam": 0.9581613381484306
+        },
+        {
+          "bucket": "best",
+          "case_id": "lumen_2025直接手术_13609055_4",
+          "dice_roi": 0.9839701361441665,
+          "dice_roi_x110": 0.9800630514804763,
+          "dice_full": 0.9724512366784572,
+          "dice_sam": 0.9803274927593082
+        }
+      ]
+    }
+  },
+  "sam_registry_x110": {
+    "summary": {
+      "protocol": "frozen_registry_static_sam31_oracle_box_v1",
+      "box_scale": 1.1,
+      "n_results": 3046,
+      "n_valid": 3046,
+      "n_errors": 0,
+      "elapsed_seconds": 2903.44,
+      "groups": {
+        "external": {
+          "n_images": 2812.0,
+          "n_patients": 461.0,
+          "image_mean": 0.8638159507579388,
+          "patient_mean": 0.8603580864042001,
+          "zero_dice": 0.0010668563300142249
+        },
+        "prospective": {
+          "n_images": 234.0,
+          "n_patients": 46.0,
+          "image_mean": 0.879828362969582,
+          "patient_mean": 0.881104244197235,
+          "zero_dice": 0.0
+        }
+      }
+    },
+    "n_rows": 3046
+  }
+}

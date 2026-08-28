@@ -1,0 +1,36 @@
+{
+  "summary": {
+    "n": 2856,
+    "elapsed_seconds": 129.86,
+    "dino_full_published_image_mean": 0.6819525374032698,
+    "dino_roi_m025": {
+      "n_images": 2856.0,
+      "n_patients": 479.0,
+      "image_mean": 0.8548335259687454,
+      "patient_mean": 0.8478773859525598,
+      "zero_dice": 0.00035014005602240897
+    },
+    "dino_roi_m025_x110": {
+      "n_images": 2856.0,
+      "n_patients": 479.0,
+      "image_mean": 0.8311442931998503,
+      "patient_mean": 0.8228046843427262,
+      "zero_dice": 0.0
+    },
+    "dino_full_recomputed": {
+      "n_images": 2856.0,
+      "n_patients": 479.0,
+      "image_mean": 0.6819525374573037,
+      "patient_mean": 0.6563835840905617,
+      "zero_dice": 0.01715686274509804
+    },
+    "dino_full_inside_gt_x110": {
+      "n_images": 2856.0,
+      "n_patients": 479.0,
+      "image_mean": 0.7458798193294249,
+      "patient_mean": 0.7295911625199213,
+      "zero_dice": 0.01715686274509804
+    }
+  },
+  "n": 2856
+}

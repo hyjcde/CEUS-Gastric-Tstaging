@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-28, SAM vs DINO contact sheets and ROI x1.10 Dice
+
+- Scope: `scripts/compare_sam_dino_roi_panel_expand10.py`. Report `pipeline/experiments/reports/sam_dino_roi_expand10_20260828/`. Panels under `results/visualizations/segmentation/sam_dino_roi_compare_{external,prospective}_eval_20260828.png`.
+- Reason: Need the same black / Times mosaic for SAM3.1 oracle, DINOv3 full-image last-2, and DINOv3 ROI m025, plus an external / prospective score when the current ROI box is scaled by 1.10.
+- Key changes: x1.10 is width/height scale on the method's current box (SAM oracle box, DINO m025 crop). DINO ROI Dice stays on letterbox 512. SAM stays on the frozen registry, full image, patient-mean. DINOv3 full also reports Dice inside GT box x1.10; that is a scoring window, not a new model. Not deployable. Do not replace Assist.
+- Validation: Recomputed ROI m025 matches 0.855 / 0.887. ROI x1.10 image-mean: external 0.831 (n=2856), prospective 0.863 (n=2430). SAM oracle x1.10 patient-mean: external 0.860 (461 patients / 2812 images), prospective 0.881 (46 / 234). Zero SAM errors. Panels: worst / median / best, two patients each.
+- Deployment: none (research figures only).
+- Follow-up: Do not rank 0.855 against 0.854. A 10% looser DINO crop drops Dice; SAM 1.10 is nearly flat.
+
 ## 2026-08-28, Public workbench: Detailed per-layer wall dock
 
 - Scope: `WallFeatureAnalysisCard.tsx`, `lib/human-assist/wall-layer-medical.ts`, `app/page.tsx`, `lib/reader/layout.ts`. Public Next required.
