@@ -292,6 +292,8 @@ class DinoFeaturesRequest(BaseModel):
     roi_bbox: DinoRoiBBox | None = None
     layer_index: int = 11
     layer_indices: list[int] = Field(default_factory=list)
+    compact: bool = False
+    warmup: bool = False
 
 
 def dino_assets_status() -> dict[str, Any]:
@@ -370,6 +372,46 @@ def _encode_png_bgr(image_bgr: np.ndarray) -> str:
     return f"data:image/png;base64,{base64.b64encode(encoded.tobytes()).decode('ascii')}"
 
 
+def _encode_jpeg_bgr(image_bgr: np.ndarray, quality: int = 76) -> str:
+    ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+    if not ok:
+        return ""
+    return f"data:image/jpeg;base64,{base64.b64encode(encoded.tobytes()).decode('ascii')}"
+
+
+def dino_roi_overlay_jpeg(
+    image_rgb: np.ndarray,
+    feature_map: np.ndarray,
+    roi_box: tuple[int, int, int, int] | None,
+    cmap: int,
+    max_side: int = 280,
+) -> str:
+    if roi_box is None:
+        return ""
+    x1, y1, x2, y2 = roi_box
+    crop = image_rgb[y1:y2, x1:x2]
+    if crop.size == 0:
+        return ""
+    height, width = image_rgb.shape[:2]
+    grid_h, grid_w = feature_map.shape[:2]
+    gx1 = int(max(0, min(grid_w - 1, round(x1 * grid_w / max(width, 1)))))
+    gx2 = int(max(gx1 + 1, min(grid_w, round(x2 * grid_w / max(width, 1)))))
+    gy1 = int(max(0, min(grid_h - 1, round(y1 * grid_h / max(height, 1)))))
+    gy2 = int(max(gy1 + 1, min(grid_h, round(y2 * grid_h / max(height, 1)))))
+    fmap = feature_map[gy1:gy2, gx1:gx2]
+    crop_h, crop_w = crop.shape[:2]
+    if max(crop_h, crop_w) > max_side:
+        scale = max_side / float(max(crop_h, crop_w))
+        crop_w = max(8, int(round(crop_w * scale)))
+        crop_h = max(8, int(round(crop_h * scale)))
+        crop = cv2.resize(crop, (crop_w, crop_h), interpolation=cv2.INTER_AREA)
+    heat = cv2.normalize(fmap, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    heat = cv2.resize(heat, (crop.shape[1], crop.shape[0]), interpolation=cv2.INTER_CUBIC)
+    heatmap = cv2.applyColorMap(heat, cmap)
+    overlay = cv2.addWeighted(cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), 0.48, heatmap, 0.52, 0)
+    return _encode_jpeg_bgr(overlay)
+
+
 def resolve_dino_roi_box(
     req: DinoFeaturesRequest,
     image_width: int,
@@ -435,6 +477,7 @@ def build_dino_layer_result(
     wall: np.ndarray | None,
     boundary: np.ndarray | None,
     roi_box: tuple[int, int, int, int] | None = None,
+    compact: bool = False,
 ) -> dict[str, Any]:
     channels, grid_height, grid_width = feature_map.shape
     tokens = feature_map.reshape(channels, grid_height * grid_width).T
@@ -460,7 +503,6 @@ def build_dino_layer_result(
         "wall_minus_lesion",
         "boundary_minus_lesion",
     ]
-    feature_vector = np.concatenate(vectors).astype(np.float32)
     lesion_affinity = dino_cosine_map(tokens, pooled["lesion"]).reshape(grid_height, grid_width)
     wall_evidence = (
         dino_cosine_map(tokens, pooled["wall"])
@@ -472,14 +514,6 @@ def build_dino_layer_result(
         "layer_index": int(layer_index),
         "input_size": DINO_IMAGE_SIZE,
         "token_grid": [grid_height, grid_width],
-        "feature_dim": int(feature_vector.size),
-        "feature_names": [f"{name}_{index}" for name in names for index in range(channels)],
-        "feature_vector": np.round(feature_vector, 6).tolist(),
-        "vector_stats": {
-            "mean": float(feature_vector.mean()),
-            "std": float(feature_vector.std()),
-            "l2_norm": float(np.linalg.norm(feature_vector)),
-        },
         "scalars": {
             "cos_wall_lesion": dino_cosine(pooled["wall"], pooled["lesion"]),
             "cos_boundary_lesion": dino_cosine(pooled["boundary"], pooled["lesion"]),
@@ -487,17 +521,47 @@ def build_dino_layer_result(
             "wall_token_fraction": float(0.0 if wall is None else wall.mean()),
             "boundary_token_fraction": float(0.0 if boundary is None else boundary.mean()),
         },
-        "feature_overlay_png": dino_overlay_png(image_rgb, lesion_affinity, cv2.COLORMAP_MAGMA),
-        "wall_evidence_overlay_png": dino_overlay_png(image_rgb, wall_evidence, cv2.COLORMAP_TURBO),
+        "roi_feature_overlay_png": dino_roi_overlay_jpeg(image_rgb, lesion_affinity, roi_box, cv2.COLORMAP_MAGMA),
+        "roi_wall_evidence_overlay_png": dino_roi_overlay_jpeg(image_rgb, wall_evidence, roi_box, cv2.COLORMAP_TURBO),
     }
-    payload["roi_feature_overlay_png"] = crop_overlay_png(payload["feature_overlay_png"], roi_box)
-    payload["roi_wall_evidence_overlay_png"] = crop_overlay_png(payload["wall_evidence_overlay_png"], roi_box)
+    if compact:
+        payload["feature_dim"] = int(channels)
+        payload["vector_stats"] = {
+            "mean": float(tokens.mean()),
+            "std": float(tokens.std()),
+            "l2_norm": float(np.linalg.norm(pooled["lesion"])),
+        }
+    else:
+        feature_vector = np.concatenate(vectors).astype(np.float32)
+        payload["feature_dim"] = int(feature_vector.size)
+        payload["feature_names"] = [f"{name}_{index}" for name in names for index in range(channels)]
+        payload["feature_vector"] = np.round(feature_vector, 6).tolist()
+        payload["vector_stats"] = {
+            "mean": float(feature_vector.mean()),
+            "std": float(feature_vector.std()),
+            "l2_norm": float(np.linalg.norm(feature_vector)),
+        }
+        payload["feature_overlay_png"] = dino_overlay_png(image_rgb, lesion_affinity, cv2.COLORMAP_MAGMA)
+        payload["wall_evidence_overlay_png"] = dino_overlay_png(image_rgb, wall_evidence, cv2.COLORMAP_TURBO)
+        if not payload["roi_feature_overlay_png"]:
+            payload["roi_feature_overlay_png"] = crop_overlay_png(payload["feature_overlay_png"], roi_box)
+        if not payload["roi_wall_evidence_overlay_png"]:
+            payload["roi_wall_evidence_overlay_png"] = crop_overlay_png(payload["wall_evidence_overlay_png"], roi_box)
     if roi_box is not None:
         payload["roi_box"] = {"x1": roi_box[0], "y1": roi_box[1], "x2": roi_box[2], "y2": roi_box[3]}
     return payload
 
 
 def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
+    if req.warmup:
+        model, hub_model = get_dino_model()
+        return {
+            "available": True,
+            "model": hub_model,
+            "warmup": True,
+            "layer_indices": [],
+            "layers": [],
+        }
     image_rgb = decode_frame_b64(req.frame_png_b64)
     actual_height, actual_width = image_rgb.shape[:2]
     model, hub_model = get_dino_model()
@@ -541,6 +605,7 @@ def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
             wall=wall,
             boundary=boundary,
             roi_box=roi_box,
+            compact=bool(req.compact),
         )
         for layer_index, layer_output in zip(requested_layers, outputs)
     ]
@@ -2027,7 +2092,12 @@ def sam_video_status() -> dict[str, Any]:
 
 
 @app.get("/api/sam/dino-status")
-def sam_dino_status() -> dict[str, Any]:
+def sam_dino_status(load: int = 0) -> dict[str, Any]:
+    if int(load or 0):
+        try:
+            get_dino_model()
+        except Exception:
+            pass
     return dino_assets_status()
 
 

@@ -2,6 +2,2617 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-28, Public workbench: ROI DINO layers in a collapsible dialog
+
+- Scope: `DinoRoiLayerDialog.tsx`, `InteractiveSegPanel.tsx`, `app/api/agent/dino/features/route.ts`, `scripts/serve_interactive_sam_agent.py`. Public Next required.
+- Reason: The previous ROI DINO strip sat in the already crowded bottom dock and felt slow. Doctors asked for an openable, collapsible dialog instead.
+- Key changes: `ROI DINO层` now opens a modal. Esc, 收起, or a click on the dim overlay closes it. Compact sidecar path skips full-frame PNGs and giant feature vectors, returns small ROI JPEGs, and uses a 512-pixel capture. Same-frame results are cached. Opening the 150-case workbench warms the DINO weights. Draft only; does not unlock cT or change Assist.
+- Validation: `npx tsc --noEmit`; Python compile of the SAM helper; public smoke after deploy.
+- Deployment: public Next BUILD `nr-eaZ1QJ3qV7PKHntkwO`. Smoke: `public_root=200`, `public_clinical=200`. Restarted `gastric-sam-agent` with DINO already loaded. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: This is still feature inspection, not wall-layer clustering.
+
+## 2026-08-28, Public Assist: DINO box-lesion masker, warm-loaded
+
+- Scope: `InteractiveSegPanel.tsx`, `app/api/agent/lesion-segmentation/route.ts`, `scripts/serve_dino_segmentation.py`, `scripts/systemd/gastric-dino-segmentation.service`, workstation start/install units, `COMPUTE_LINKAGE.md`. Public Next required.
+- Reason: The previous public picker isolated DINO from Assist. Doctors need DINO segmentation on the public workbench with no product difference from SAM except the model inside 框选病灶, and the first box must not wait for a cold Python load.
+- Key changes: SAM 3.1 / DINO sit inside the box-lesion control. Either mask feeds the same contour-anchored Assist. Dual four-class weights stay frozen. A warm `:8773` process keeps DINOv3 loaded; the Next route prefers that service and only spawns Python if it is down. Opening the workbench pings SAM, DINO seg, and DINO features.
+- Validation: `npx tsc --noEmit`; Python compile of the warm service; public smoke after deploy.
+- Deployment: public Next BUILD `VgqaovnRzrwukefNe560R`. Smoke: `public_root=200`, `public_clinical=200`. Workstation `gastric-dino-segmentation.service` on `:8773` ready; `:3300` restarted with `DINO_SEG_UPSTREAM`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; stop the DINO unit to fall back to spawn.
+- Follow-up: Do not hot-swap Dual Assist numbers to DINO MLP / TabPFN / BETA unless explicitly asked.
+
+## 2026-08-28, Workbench button: ROI DINO layers on the current frame
+
+- Scope: `InteractiveSegPanel.tsx`, `lib/dino-roi-preview.ts`, `DiagnosisPanel.tsx`, `scripts/serve_interactive_sam_agent.py`. Public Next required.
+- Reason: Doctors need to inspect DINOv3 layers 2 / 5 / 8 / 11 near the current-frame lesion/wall ROI. The old region-feature button was hidden on the 150-case rail.
+- Key changes: Amber tool `ROI DINO层` after deepest-echo. Sends peri-lesion `roi_bbox` with the existing `/api/agent/dino/features` call. Sidecar crops each layer overlay to that ROI. Dock shows L2/L5/L8/L11 affinity and wall-vs-lesion maps. Draft only; does not unlock cT or change Assist weights.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Python compile of the SAM helper. Public smoke after deploy.
+- Deployment: public Next BUILD `wFmDnSVyPOOyh3q5RhfyJ`. Smoke: `public_root=200`, `public_clinical=200`. Restarted `gastric-sam-agent` for ROI crops. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: This is feature inspection, not wall-layer clustering. Clustering on the same grid is still the research plan.
+
+## 2026-08-28, Public lesion mask picker: SAM 3.1 or DINO
+
+- Scope: `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: DINO embedding / wall-layer / Gate C stay research and must not enter frozen Assist. Doctors still need to pick which masker draws the lesion.
+- Key changes: The 150-case rail has SAM 3.1 / DINO. A box uses that masker. DINO auto-find is full-image, not an oracle box. Assist still uses the current contour and frozen four-class weights.
+- Validation: `npx tsc --noEmit`. Next production build during deploy.
+- Deployment: public Next BUILD `e--32grgYSnpGJKCaSXQd`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Do not write DINO ROI Dice as catching SAM; those queues and crops are not aligned.
+
+## 2026-08-28, Plan: DINO wall-layer features bound to the live workbench
+
+- Scope: `docs/plans/DINO_WALL_LAYER_EMBEDDING_20260828.md` (rewritten to reuse public workbench objects).
+- Reason: The live root-page workbench already has the serosal trajectory, 1/2/3 interface chips, visibility, anchors, focus points, gray M0 clarify, four-way interrupt chips, keyframe propagate, and classify-only Assist. The gap is that `wall_polygon` is saved but not sent, and the corridor still clusters gray only.
+- Key changes: Workbench objects only set the corridor and k. Actual layers must come from clustering gray pixels or DINO tokens on the same 56 x 28 grid, ordered by wall-normal depth, then written back to `wallLayerBands`. Parallel offsets are not layers. M2 template match is only an interrupt helper.
+- Validation: Read `InteractiveSegPanel`, `ReaderStudyQueuePanel`, `page.tsx` mask_override, and `_analyze_classify_only`. No new run.
+- Deployment: none (docs only).
+- Follow-up: Gate 0 on real `doctor_keyframes` lines; then Gate 1 M2 panels.
+
+## 2026-08-28, Gate C DINO mask pooling plus TabPFN-2.5 and BETA
+
+- Scope: `scripts/run_dino_gatec_tab_beta_20260828.py`. Report `pipeline/experiments/reports/dino_gatec_tab_beta_20260828/`.
+- Reason: Continue-LoRA overfit and BETA on CLS+GAP stayed below Dual. Next logical step is mask-aligned lesion/peri pooling, then the same table to Logistic/MLP, TabPFN-2.5, and BETA. Mix with frozen clin-11 is val-locked, not prospective-scanned.
+- Key changes: crop_ui + mask cropped together (0.25 / 16). Coverage-weighted CLS / GAP / lesion / peri (3072-d). No extra PCA. Do not replace Assist.
+- Validation: training started.
+- Deployment: none.
+- Follow-up: Compare prospective ACC/AUC to frozen MLP 0.541 / Dual 0.678 / mix w=0.3 0.704.
+
+## 2026-08-28, Mix w=0.3 AUC and Dual vs DINO encoding note
+
+- Scope: `docs/references/dinov3/mix_w03_vs_dino_encoding_20260828.md`. Pointers in dinov3 I/O, TabPFN plan, BETA README, references index.
+- Reason: Need one place for mix w=0.3 AUC on every split, and to stop mixing Dual 512-d cross-attention with DINO CLS+GAP.
+- Key changes: Recomputed 4-class macro OVR AUC from fusion/gated prediction CSVs. Mix w=0.3: val 0.550 / 0.737 (n=140), prospective 0.704 / 0.845 (n=425), external 0.478 / 0.710 (n=456). Dual encoding is GAP plus ROI-query cross-attention to 512-d. DINO encoding is CLS+GAP 1536-d. Mix is late probability fusion, not TabPFN on 512-d.
+- Validation: Checked against `tabpfn25_fusion_acc80_20260820` metrics.csv ACC 0.7035 and gated `H_mix_w0.3_ref`.
+- Deployment: none.
+- Follow-up: Do not promote. Do not describe mix as PCA or as eating Dual 512-d inside TabPFN.
+
+## 2026-08-28, Continue m025 ROI LoRA on T-stage with full-coverage ROI
+
+- Scope: `scripts/train_dinov3_roi_lora_mlp.py` (`--continue-lora`, `--full-coverage-roi`). Report dir `pipeline/experiments/reports/dinov3_roi_lora_mlp/phase0_m025_continue_fullcov_20260828/`.
+- Reason: Frozen m025 plus BETA/TabPFN cannot rescue a segmentation embedding. Next gate is to keep m025 LoRA and train T-stage on every labeled patient (mask box or CSV crop when official crop_roi is missing).
+- Key changes: Shared `load_roi_rgb` / `row_has_roi`. `--continue-lora` injects LoRA, loads m025 `lora_A/B`, trains LoRA + last-block LayerNorms + MLP. Head lr 1e-4, LoRA lr 5e-5.
+- Validation: Early stop epoch 9. Best val patient AUC 0.675 at epoch 4. Train/val/test frames 7874 / 904 / 1659 (val n=140). Prospective ACC 0.522 AUC 0.727 (n=425). External ACC 0.445 AUC 0.697 (n=485). Below first class LoRA 0.567 and frozen MLP 0.541. Train loss fell 1.12 to 0.08 (overfit). Do not promote.
+- Deployment: none.
+- Follow-up: Do not retry BETA. Next image gate is mask-token pooling (Gate C), not a higher LoRA lr.
+
+## 2026-08-28, BETA full table no PCA and fill missing ROI
+
+- Scope: `scripts/run_beta_m025_phase0.py`. New report `pipeline/experiments/reports/beta_m025_phase0_fulltab_20260828/`.
+- Reason: Train coverage was 1064 because official `crop_roi` lookup dropped CSV crops. User asked to include every patient (mask box or existing crop) and not PCA-compress before BETA.
+- Key changes: Full 1536-d CLS+GAP plus clin-11 (1547 columns). Missing `crop_roi` uses official crop_ui mask box (0.25 / 16) or the Phase-0 image crop. BETA encoder still maps to ~100-d internally.
+- Validation: Train/val/test patients 1234 / 140 / 425 (full Phase-0 labeled rows). Features 1547-d. Best val log-loss epoch 2. Prospective ACC 0.485 AUC 0.780 (n=425). External ACC 0.474 AUC 0.748 (n=485). Better than PCA-512 prosp ACC 0.438; still below Dual 0.678 and mix 0.704. Do not promote.
+- Deployment: none.
+- Follow-up: Do not replace Assist. Author Drive data still not downloaded.
+
+## 2026-08-28, Run official BETA on frozen m025 embeddings
+
+- Scope: `scripts/run_beta_m025_phase0.py`, Phase-0 patient-mean CLS+GAP, `external/BETA` (unchanged), report under `pipeline/experiments/reports/beta_m025_phase0_20260828/`.
+- Reason: User asked to run the on-disk ICML 2025 BETA code against this DINOv3 line, not to swap public Assist.
+- Key changes: Wrapper exports frozen m025 embeddings from official `crop_roi`, train-only PCA-512, concat clin-11 (523 columns, Dual-512 plus clinical layout), writes BETA numpy splits, calls official `BetaMethod`. TabPFN-2.5 remains the tabular mainline. Official v1 TabPFN ckpt placed under `external/BETA/model/models/models_diff/` (gitignored).
+- Validation: Official BetaMethod, PCA-512 + clin-11 (523-d). Train/val/test patients 1064 / 128 / 425. Best val log-loss epoch 1. Prospective ACC 0.438 AUC 0.740 (n=425). External ACC 0.482 AUC 0.757 (n=485). Below frozen MLP prosp ACC 0.541 and TabPFN-2.5 mix 0.704. Do not promote.
+- Deployment: none. No Next / Assist / UNet change.
+- Follow-up: Do not replace Assist. Author Drive benchmark data still not downloaded. Encoder selected by log-loss (patience 50), not ACC.
+
+## 2026-08-28, Local BETA / TabPFN Unleashed paper and code
+
+- Scope: `docs/references/beta/`, `docs/references/related_literature/articles/arxiv2025_beta_tabpfn_unleashed*`, `external/BETA` (gitignored clone), pointer in `docs/references/README.md` and the DINOv3 TabPFN plan.
+- Reason: Need the ICML 2025 high-dimensional TabPFN adaptation paper and official code on disk.
+- Key changes: arXiv `2502.02527` PDF (24 pages). Git clone `LAMDA-Tabular/BETA` at `441e374`. Filed in Zotero `GastricTstaging-review` as `3ZGUVU8N`. No inference or product change.
+- Validation: PDF magic `%PDF-1.5`; clone `git log -1` matches upstream.
+- Deployment: none.
+- Follow-up: Author benchmark data on Google Drive not downloaded. Do not swap public Assist / TabPFN-2.5 for BETA without a gated experiment.
+
+## 2026-08-28, Hide video filename and similar-case essays
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `InteractiveSegPanel.tsx`, `SimilarCaseReferencePanel.tsx`, `AssistLoopStrip.tsx`. Public Next required.
+- Reason: The right rail showed the mp4 name and a paragraph about same-type / hard-counter cases before Assist, which doctors do not need.
+- Key changes: Video filenames stay off the call panel and footer. Similar-case copy waits until Assist returns cases. Group titles stay; the essays do not. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`. Next production build during deploy.
+- Deployment: public Next BUILD `pDtcQGwNmS5sjpi7-KtkK`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-28, Slim the reader footer status chips
+
+- Scope: `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: 病灶待框选, 胃腔可选, and the keyframe-restore line sat in extra footer rows and ate cine space.
+- Key changes: Those chips are gone in the 150-case reader. Restoring keyframes is silent. The remaining footer is shorter. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`. Next production build during deploy.
+- Deployment: public Next BUILD `FpNbD3gQ3IdFd-LOBkZRn`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-28, Drop paint essays and slim the wall dock
+
+- Scope: `wall-prompt.ts`, `WallFeatureAnalysisCard.tsx`, `InteractiveSegPanel.tsx`, `ReaderStudyQueuePanel.tsx`, `DoctorTutorialModal.tsx`. Public Next required.
+- Reason: The expected-line paragraph and the wall dock repeated the same labels, so doctors had to scan past copy to see the chart.
+- Key changes: Live hints are just the line name. The paint banner keeps chips only. The wall dock is one verdict line, remain, a bare echo plot, and the local cut. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`; `npx tsx scripts/test_wall_prompt.mjs`. Next production build during deploy.
+- Deployment: public Next BUILD `LazcPq2IxnLkTIHoPObBc`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-28, Cine scrub bar stays smooth while dragging
+
+- Scope: `CineScrubBar.tsx`, `InteractiveSegPanel.tsx`, `globals.css`. Public Next required.
+- Reason: Dragging the ~20–30s cine bar felt sticky. Each pointer sample recorded ops, sought the video, and redrew the overlay canvas.
+- Key changes: Pointer-to-time mapping is unchanged. The bar and clock update immediately. Video seek is throttled while dragging and snapped once on release. Overlay canvas and React keyframe state wait until pointer up. Start/end scrub events still record; per-move `cine_scrub` does not. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`. Next production build during deploy.
+- Deployment: public Next BUILD `JeJde67_wIRB_DIdqofGu`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Wheel and arrow keys still step one frame.
+
+## 2026-08-28, BM gold shows malignant when T is absent
+
+- Scope: `five-class.ts`, `cases-server.ts`. Public Next required.
+- Reason: All 25 malignant BM cases have nature only, no pT. The gold reader treated malignant as missing, so BM048 showed 无病理真值.
+- Key changes: Nature-only gold is 良性 / 恶性. If a T label exists it still wins. BM048 / BM048 compact ids both resolve. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`; `npx tsx scripts/test_five_class.mjs`; lookup BM-048 / BM048 / BM-001.
+- Deployment: public Next BUILD `ueuAugX5eNew-qKzEg-BY`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-28, Queue stats use the full 150 and both tasks
+
+- Scope: `StatisticsPanel.tsx`, `queue-review-stats.ts`, `PatientList.tsx`, `page.tsx`. Public Next required.
+- Reason: Cohort stats used only the first loaded page (80) and the current task, so 50 BM + 100 T looked like 80 cases, Assist stayed 0, and T-stage bars were missing.
+- Key changes: Stats fetch the full queue and all case-states. Progress is overall plus 良恶性 / T 分期. Both doctor-call charts are shown. Assist counts a real run, accept/modify activity, or saved judgment. New analyzes write `assist_run`. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`; `npx tsx scripts/test_queue_review_stats.mjs`. Next production build during deploy.
+- Deployment: public Next BUILD `vENJ4LukTsepJ1Vt9Jg7c`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Historical Assist=0 cases stay 0 until they re-run Assist or the activity log already has accept/modify.
+
+## 2026-08-28, Show AI call after analyze
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `ReaderDoctorFirstBar.tsx`, `assist-display-stage.ts`. Public Next required.
+- Reason: After Assist finished, the giant AI call showed English Unavailable and 0% because the reader treated the classifier stub as the answer. The title also carried a long parenthetical.
+- Key changes: Title is now  AI 判断 . Unavailable / 0% stubs are ignored; the panel reads a real frozen four-class label, then the report display stage. Missing confidence says 置信度未返回 instead of 0%. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit`; `npx tsx scripts/test_read_assist_stage.mjs`. Next production build during deploy.
+- Deployment: public Next BUILD `RNp8BYeG-nJlKS5zonwuI`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: If a new analyze still has no T1–T4, check the sidecar classifier log; this change only fixes display.
+
+## 2026-08-28, Wall guides stay on the current frame
+
+- Scope: `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: Assist sat on the same toolbar row as wall tools. Wall drawings followed the doctor when they scrubbed away. There was no explicit clear or save for the expected-serosa line, and propagate-to-keyframes was still offered.
+- Key changes: Assist is on a second toolbar row. The wall propagate button is hidden; auto-propagate no longer copies wall. Wall polygon, bands, paint, focus, and echo overlays hide off the open keyframe, same as the lesion. New 保存胃壁 / 清除胃壁 write or clear only the current keyframe. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Next production build during deploy.
+- Deployment: public Next BUILD `ycfXZNSNxuPHmNzN-YdkY`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Restore propagate later if doctors ask. Cine-bar lesion propagate is still there.
+
+## 2026-08-28, Hide paint memo; drop interface caption
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: The 7-step paint memo was always on the right rail and crowded the call panel. The toolbar caption restated the interface rule in the way.
+- Key changes: Memo is a small 备忘 button that opens a compact dialog. The toolbar no longer shows the interface-vs-depth caption. Frozen Assist weights unchanged.
+- Validation: Next production build during deploy.
+- Deployment: public Next BUILD `EfiZb-lXG6KLcASMjarLx`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-28, frozen m025 embedding into T-stage MLP
+
+- Scope: research only. Plug m025 ROI LoRA backbone into Phase-0 4-class MLP. No public Next.
+- Reason: user asked to connect the new embeddings to MLP. Previous T-stage run trained LoRA+head from 20260511 and overfit by epoch 1.
+- Key changes: `scripts/train_dinov3_roi_lora_mlp.py --frozen-embedding` injects LoRA first, loads m025 `backbone.*` including `lora_A/B`, freezes them, trains CLS+GAP MLP only.
+- Validation: pending full Phase-0 run `pipeline/experiments/reports/dinov3_roi_lora_mlp/phase0_m025_frozen_20260828`.
+- Deployment: skipped. Official `crop_roi` is GT box, not predicted-mask 1.25x.
+- Follow-up: fill patient ACC/AUC; do not promote over acc_boost2.
+
+## 2026-08-28, DINOv3 ROI LoRA tighter crop 0.25 finished
+
+- Scope: research only. `dinov3_vitb16_roi_lora_mlp_512_m025_20260828_full` early-stopped epoch 31; best epoch 23.
+- Results (ROI letterbox 512, GT-box margin 0.25/16): val 0.8684 (n=754); holdout 0.8665 (n=853); external 0.8548 (n=2856); prospective 0.8873 (n=2430). Above v1 0.75/32 (0.820 / 0.823 / 0.814 / 0.848) but crops are tighter, not a fair architecture gain.
+- Validation: trainer finished; `dinov3_run_manifest.json` matches stdout.
+- Deployment: skipped. Still GT-box upper bound. Do not replace UNet.
+- Follow-up: none for this run.
+
+## 2026-08-28, DINOv3 ROI LoRA tighter crop 0.25
+
+- Scope: research only. Rebuild GT lesion-crop with `margin_ratio=0.25`, `min_margin=16`, then same last-4 LoRA + Dice trainer.
+- Reason: v1 0.75/32 crops left too much context; user asked to test the tighter 0.25 setting shown on the external-6 compare panel.
+- Key changes: `data/processed/sms/gt_lesion_crop_upper_bound_v2_m025` (v1 kept), `configs/segmentation/dinov3/vitb16_roi_lora_mlp_512_m025.yaml`. Run: `dinov3_vitb16_roi_lora_mlp_512_m025_20260828_full`.
+- Validation: pending prepare + full train. Compare to v1 LoRA holdout/ext/prosp 0.823 / 0.814 / 0.848.
+- Deployment: skipped. Still GT-box upper bound, not deployable.
+- Follow-up: fill Dice when the run ends.
+
+## 2026-08-28, DINOv3 ROI LoRA seg finished
+
+- Scope: research only. `dinov3_vitb16_roi_lora_mlp_512_20260828_full` early-stopped epoch 30; best epoch 22.
+- Reason: fill locked Dice into the I/O note and registry after the full run ended.
+- Results (ROI letterbox 512, GT-box crops): val 0.8195 (n=754); holdout 0.8225 (n=853); external 0.8144 (n=2856); prospective 0.8482 (n=2430). Above frozen GT-crop 20260515 (0.800 / 0.790 / 0.830).
+- Validation: trainer exit 0; `dinov3_run_manifest.json` and report README match stdout.
+- Deployment: skipped. Not deployable (GT boxes). Do not replace UNet.
+- Follow-up: none for this run.
+
+## 2026-08-28, DINOv3 ROI LoRA I/O: letterbox and LoRA
+
+- Scope: docs only. Front sections in `docs/references/dinov3/roi_lora_io_20260828.md`.
+- Reason: val mosaics look square; need to record that disk crops stay native size and only `letterbox_pair` pads to 512, plus how the in-house `LoRALinear` is injected.
+- Validation: checked against `letterbox_pair` / `inject_lora` / `LoRALinear` and `vitb16_roi_lora_mlp_512.yaml`.
+- Deployment: skipped.
+- Follow-up: unchanged; wait for holdout / external / prospective Dice.
+
+## 2026-08-28, DINOv3 ROI LoRA I/O note
+
+- Scope: docs only. `docs/references/dinov3/roi_lora_io_20260828.md` lists every input and output for the ROI LoRA seg run and the earlier T-stage mix-up.
+- Reason: the two runs share "ROI LoRA" in the name but one is CE classification and one is Dice segmentation.
+- Validation: paths and counts checked against `gt_lesion_crop_upper_bound_v1/dataset_manifest.json` (13515) and the live trainer/config.
+- Deployment: skipped.
+- Follow-up: fill final holdout/external/prospective Dice into the note when the 20260828_full run ends.
+
+## 2026-08-28, DINOv3 ROI LoRA segmentation (Dice)
+
+- Scope: rebuild ROI segmentation trainer. Research only. No public Next.
+- Reason: The 16:00 run was T-stage classification on Phase-0 `crop_roi` (7874 frames, CE, ~5 min). User asked for ROI LoRA segmentation and Dice. Old `run_dinov3_segmentation.py` trainer is gone.
+- Key changes: `scripts/train_dinov3_roi_lora_seg.py`, `configs/segmentation/dinov3/vitb16_roi_lora_mlp_512.yaml`. Data: `data/processed/sms/gt_lesion_crop_upper_bound_v1` (7376 train crops from crop_ui + roi_masks, GT box expand). Init 20260511 backbone. Last-4 LoRA r=8 + MLP decoder. Loss 0.5 Dice + 0.5 BCE.
+- Validation: smoke 24/12, 1 epoch, val Dice 0.56, exit 0.
+- Deployment: skipped. Full run: `experiments/segmentation/dinov3_vitb16_roi_lora_mlp_512_20260828_full/`. Compare to frozen GT-crop Dice 0.80/0.79/0.83. Not deployable (GT boxes).
+- Follow-up: wait for holdout / external / prospective Dice. Do not promote over UNet fulldata.
+
+## 2026-08-28, DINOv3 ROI LoRA + MLP training
+
+- Scope: research T-stage trainer only. No public Next / Agent / UNet change.
+- Reason: Skip BETA. Train a ROI DINOv3 with LoRA and a two-layer MLP on the existing full-frame segmentation checkpoint.
+- Key changes: `scripts/train_dinov3_roi_lora_mlp.py`. Phase-0 CSVs; official `crop_roi` remap (legacy `roi_path` is missing on disk). Init `20260511` last-2 adapter. Last 4 blocks LoRA r=8 on qkv/proj. Letterbox 512, no stretch.
+- Validation: smoke 16/8/8 then full Phase-0. Early-stop epoch 6; best val patient AUC 0.727 at epoch 1. Locked tests: prosp n=425 ACC 0.567 / AUC 0.763; ext n=485 ACC 0.433 / AUC 0.709. Below acc_boost2 prosp ACC 0.678.
+- Deployment: skipped (training). Report: `pipeline/experiments/reports/dinov3_roi_lora_mlp/phase0_20260828_full/`.
+- Follow-up: LoRA overfit after epoch 1. Next useful step is frozen-backbone Linear/MLP on the same ROI, not more epochs. Do not promote.
+
+## 2026-08-28, DINOv3 ROI then TabPFN plan
+
+- Scope: research plan only. Maps the proposed full-image → ROI → LoRA → mask pooling → BETA sequence onto repo assets.
+- Reason: BETA is not implemented; the existing DINOv3 checkpoint is a segmentation backbone; Phase-0 splits and TabPFN-2.5 already exist.
+- Key changes: `docs/references/dinov3/roi_lora_tabpfn_plan_20260828.md`. Tabular ICL is TabPFN-2.5. First gate is frozen Linear on crop_ui vs ROI 1.0/1.25/1.5.
+- Validation: cross-checked against the 2026-08-28 DINOv3 inventory, Phase-0 split contract, and `tabpfn25_fusion_acc80_20260820` (prospective mix ACC 0.704).
+- Deployment: skipped (docs only).
+- Follow-up: do not start LoRA, 512-d compression, and TabPFN in one run. Do not replace public Assist.
+
+## 2026-08-28, DINOv3 experiment inventory
+
+- Scope: docs-only inventory of embedding, segmentation, and MLP/tabular DINOv3 runs. No product, Agent, or public Next change.
+- Reason: experiment trees are split across `experiments/segmentation/` and `pipeline/experiments/reports/`; registry only lists the anatomic adapter.
+- Key changes: `docs/references/dinov3/experiment_inventory_20260828.md` records training view (`crop_ui` full frame, not lesion ROI), Dice/AUC, smoke vs full, and promotion status.
+- Validation: numbers checked against `evaluation/overall_summary.md` and report `README.md` / `summary.json`.
+- Deployment: skipped (docs only).
+- Follow-up: do not promote DINOv3 over UNet fulldata from this inventory.
+
+## 2026-08-28, Doctor T is not a model input
+
+- Scope: Assist gate, headline, coarse anatomic screen, analyze research gate, wall-prompt, tutorial. Public Next required. Analyze Python wall-draft wording.
+- Reason: Requiring T1–T4 before Assist, then rewriting the headline from an adjacent-pair lock, made the model look like it was echoing the doctor.
+- Key changes: Assist runs after a lesion box. Giant AI call is the frozen four-class only. Coarse screen is clear-shallow / clear-outer / unclear, not a T call, and is not a core-model input. Doctor T stays as an independent record for later comparison. Adjacent lock no longer rewrites the headline. Analyze no longer requires initial_judgment. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `test_adjacent_stage_lock.mjs`, `test_wall_layer_interrupt.mjs` in `apps/gastric_scan_next`. `npx tsc --noEmit` exit 0.
+- Deployment: public Next BUILD `yK43mhwQm7TUVvAyai61K`. Smoke: `public_root=200`, `public_clinical=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor-prior fusion is a later experiment. Do not use the same doctor's T as both input and gold.
+
+## 2026-08-28, Expected serosal trajectory prompt
+
+- Scope: reader wall paint, adjacent lock copy, tutorial, T-staging memo, `wall-prompt.ts`, interrupt verdicts. Public Next required.
+- Reason: Training has lesion masks and T labels but no wall labels. The doctor line must be an anatomical prior, not a continuity answer. Abstract 1/2/3 layer chips invited circular T4 painting.
+- Key changes: Toolbar is Serosa / MP / Shallow. Paint is one expected trajectory through the suspicion zone; doctors are told not to stop at a suspected break. Analysis-focus clicks (max 3) are look-here points, not breach marks. Visibility is clear / blurry / not seen. Verdicts are continuous / suspected / interrupted / cannot judge. Not seen is not interruption. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT. Protocol: `docs/meetings/2026-08-28_浆膜预期走行线协议.md`.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `test_wall_layer_interrupt.mjs`, `test_adjacent_stage_lock.mjs` in `apps/gastric_scan_next`. `npx tsc --noEmit` exit 0.
+- Deployment: public Next BUILD `A7HodMzeT4ph7rUqOMj6Y`. Smoke: `public_root=200`, `public_clinical=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Do not merge these strokes into the same 150-case train. Path-level test-time reasoning and a later fusion head stay on a separate development set.
+
+## 2026-08-28, Assist-loop demo page
+
+- Scope: public Next `/loop-demo` (browser URL `/workbench/loop-demo`), Header entry, live critic/EXP/rank cues on the 150-case rail.
+- Reason: The retrieve / critic / one-repair / candidate-memory loop was already live but invisible. Need a scripted T2/T3 case that shows locked probabilities, a thin critic, REF-E5 rising 5 to 2, and an EXP candidate that does not enter the neighbor table.
+- Key changes: `AssistLoopDemo` auto-plays DEMO-T2T3. `EvidenceFusionReport` prints critic adequacy. Accept/modify shows an EXP receipt. Similar-case refine shows rank moves. Public proxy allows `/loop-demo` after the `/workbench` strip.
+- Validation: LAN Playwright: critic, REF-E5 5→2, EXP-DEMO-T2T3, candidate. Public `/workbench/loop-demo` 200, HTML BUILD matches. `public_root` / `public_clinical` 200. Live rail note shows critic sufficient / skip when evidence is enough.
+- Deployment: `bash scripts/deploy_public_next.sh` BUILD `KCJDHFNc-SldKmdyJ9u5U`. Hard-refresh http://47.106.33.102 then open 闭环演示. Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: EXP rows stay `candidate`. Do not call this self-evolving. Do not rebuild the neighbor table from the demo.
+
+## 2026-08-28, Gold labels for zml, admin, and test
+
+- Scope: `gold-reveal-access.ts`, `/api/patients/gold`, patients list, `CaseGoldReveal`, workbench header and case list. Public Next required.
+- Reason: zml, admin, and test need to see pathology gold on every reader case. The public video workbench had hidden the gold control.
+- Key changes: Those three accounts see gold on the current case and as a list chip. Other accounts get 403 on the gold API and no label in the case list. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsx scripts/test_gold_reveal_access.mjs` in `apps/gastric_scan_next`.
+- Deployment: public Next BUILD `GdOG31ww6_mKfFgI39PNh`. Smoke: `public_root=200`, `public_clinical=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Do not use gold to filter similar cases.
+
+## 2026-08-28, Doctor reader flowchart (draw.io)
+
+- Scope: `docs/product/医生阅片流程图.drawio`, pointers in `DOCUMENT_MAP.md`, `docs/apps/gastric_scan_next/README.md`, and `apps/gastric_scan_next/README.md`.
+- Reason: Need one product-facing picture of the live public reader path, not the old HTML pack or research Agent workbench.
+- Key changes: Two-page draw.io. Page 1 is login through save-and-next and report confirm. Page 2 is adjacent-stage lock, wall draft, Assist headline, similar cases, guideline note, and evidence contrast. Steps follow `DoctorTutorialModal.tsx` and `ReaderStudyQueuePanel.tsx`.
+- Validation: XML well-formed, no middle-dot, two diagrams present.
+- Deployment: None. Docs only.
+
+## 2026-08-28, Pointer-mapped cine scrub bar
+
+- Scope: `CineScrubBar.tsx`, `cine-time.ts`, `InteractiveSegPanel.tsx`, `globals.css`. Public Next required.
+- Reason: The native range slider jumped and lagged the pointer. Doctors still could not drag to the frame they wanted.
+- Key changes: Thick track and a large thumb. Pointer X maps straight to time, so the bar moves with the hand. Video seek is coalesced to the next frame. Wheel / arrows still step one cine frame. Frozen Assist weights unchanged.
+- Validation: `npx tsx scripts/test_cine_time.mjs` in `apps/gastric_scan_next`.
+- Deployment: public Next BUILD `n1A9AvUfihKjuiAuv1V0E`. Smoke: `public_root=200`, `public_clinical=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor still accepts W4 tomorrow evening.
+
+## 2026-08-28, ROI expanded 50% and ConvNeXt-Small on that crop
+
+- Scope: train locked `roi50_only_v1` as `convnext_tiny_roi50` / `roi50_v1`, and add `convnext_small_roi50` / `small_v1` as the backbone comparison.
+- Reason: deep-side crops did not beat ROI25. Next one-factor is a wider lesion ROI, then a larger network on the same crop.
+- Validation: Tiny `roi50_v1` and Small `small_v1` both best validation exact ACC 0.5938 at epoch 5 (T2 recall 0), tied with ROI25. Tiny prospective 0.4565, Small 0.4424. Both overfit to train about 0.99.
+- Deployment: None. Research training only.
+
+## 2026-08-28, Workbench fullscreen; light launcher starts fullscreen
+
+- Scope: `Header.tsx`, profile copy, Mac/Windows light launchers. Public Next required.
+- Reason: Electron is a second Chromium and feels slower. Doctors asked whether the frontend is frozen, and whether the browser can go fullscreen.
+- Key changes: Header has a Fullscreen button. Light launchers pass `--start-fullscreen`. Electron still only loads the live public URL; it does not bundle Next. Frozen Assist weights unchanged.
+- Validation: Next production build during deploy.
+- Deployment: public Next BUILD `EG6JP8zYPoaHKmCqk5hV9`. Smoke: `public_root=200`, `public_clinical=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Prefer the light launcher or Chrome/Edge when speed matters.
+
+## 2026-08-28, Frame-step seek for the cine bar
+
+- Scope: `cine-time.ts`, `InteractiveSegPanel.tsx`, tutorial and T-staging memo. Public Next required.
+- Reason: The 8-27 todo W4 still said the seek bar jumped too far. A short range slider cannot land on one frame by drag alone.
+- Key changes: Wheel or arrow keys step one cine frame. Pause snaps to the nearest frame. Drag stays coarse. Frozen Assist weights unchanged.
+- Validation: `npx tsx scripts/test_cine_time.mjs` in `apps/gastric_scan_next`.
+- Deployment: public Next BUILD `9Ar0vz8wTsSXgo1EExwi3`. Smoke: `public_root=200`, `public_clinical=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor still accepts W1–W6 tomorrow evening.
+
+## 2026-08-28, Harmony live window shell
+
+- Scope: `apps/public_shell/harmony/`, `scripts/build_public_shell.sh`, Header / profile / tutorial download links. Public Next required.
+- Reason: The Harmony pack has to be a window shell of the public site. A static frontend copy would miss later Next updates.
+- Key changes: Zip ships `shell.html` (iframe + 硬刷新) and an ArkTS WebView project that only loads http://47.106.33.102 . No Next build inside the zip. Avatar menu and profile offer the download. This machine cannot sign a HAP.
+- Validation: `bash scripts/build_public_shell.sh` then `apps/public_shell/scripts/test_public_shell.sh`. Zip asserts live URL, 硬刷新, and no `.next`.
+- Deployment: public Next BUILD `Czsa2ZvuNMlDZsF8vhNBl`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`, `public_harmony=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Signed HAP still needs DevEco on a machine with Huawei credentials.
+
+## 2026-08-28, Stop inventing wall layers after boxing
+
+- Scope: `InteractiveSegPanel.tsx`, `wall-extension.ts`, `wall-pixel-extend.ts`. Public Next required.
+- Reason: The meeting replaced「自动延长分层」with 1/2/3 and painting from adjacent wall. Boxing a lesion still auto-joined a 3-layer wall through the mass, and the old button remained.
+- Key changes: Lesion auto-seg no longer paints a wall. One-click join needs two flanks or an already painted wall. The Auto-extend button is gone. Copy tells doctors to start on adjacent visible wall. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0. `test_wall_extension.mjs` including `canAutoJoinWall`.
+- Deployment: public Next BUILD `Uyq0rHPPX8yVefw7LWp1y`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries tomorrow evening.
+
+## 2026-08-28, Wall report names thinning and local echo
+
+- Scope: `analyze_case_lib.py`, `InteractiveSegPanel.tsx`, `assist-judgment-prose.ts`. Public Next required so the request carries `wall_ticks`; analyze already tunnels here.
+- Reason: The transcript asked the draft report to name 黏膜浅层变薄, 固有肌变薄, blur, and peri-lesion ROI. Interrupt-only sentences still omitted those ticks.
+- Key changes: Painted-layer ticks and deepest-band echo go into contour context, judgment signs, and the report side channel. Peri-lesion ROI is quoted as local, not a full-frame crop of the frozen classifier. Wall ticks stay stripped from the late-stage gate. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT. P1 one-pager is `docs/meetings/2026-08-27_论文叙事一页.md`.
+- Validation: `npx tsc --noEmit` exit 0. `test_adjacent_stage_lock.mjs` and `test_research_stage_gate.py` ok, including thinning / local-echo draft.
+- Deployment: public Next BUILD `I88_6iqAIlaLbOGxuP-WC`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries tomorrow evening. Harmony, painted-wall retrieve, and merging new walls into the same 150-case train stay later.
+
+## 2026-08-28, Guideline text follows the lock headline
+
+- Scope: `assist_judgment.py`, `evidence_fusion.py`, `ReaderStudyQueuePanel.tsx`, `assist-judgment-prose.ts`, `DoctorTutorialModal.tsx`. Public Next required; analyze already tunnels here.
+- Reason: After a T1/T2 or T3/T4 lock the giant AI call was already in-pair, but guideline explanation and evidence fusion still lectured from frozen four-class T4 and T4-seeded serosa signs.
+- Key changes: `original_top1` is the lock headline. Frozen four-class goes as `frozen_top1` contrast only. Wall draft fills `layer_structure` / `serosa_change`; a frozen T4 serosa seed is dropped after a non-T4 lock. Guideline retrieval uses the headline, not T4. Tutorial says lock and paint wall first. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0. `test_adjacent_stage_lock.mjs`, `test_evidence_fusion.mjs`, `test_llm_info.py` AssistJudgmentLockTest ok.
+- Deployment: public Next BUILD `xcO1OxE54mP6JMDVgvXga`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries tomorrow evening. Harmony, painted-wall retrieve, and merging new walls into the same 150-case train stay later.
+
+## 2026-08-28, Wall draft is report-only, not a T4 unlock
+
+- Scope: `analyze_case_lib.py`, `InteractiveSegPanel.tsx`, `ReaderStudyQueuePanel.tsx`. Public Next required for the request payload; analyze already tunnels here.
+- Reason: Painting a wall wrote「浆膜中断」into contour_context. The late-stage gate treated that as definite serosa breach and could keep fusion at T4. The report also ignored multi-frame interrupt.
+- Key changes: Wall draft fields are stripped before the late-stage gate. Report and supporting evidence now quote 1/2/3 layers, interrupt chips, and keyframe continuity as a side channel. Frozen four-class probabilities unchanged. Assist copy asks for lock and wall first, but does not block a four-class run.
+- Validation: `npx tsc --noEmit` exit 0. `test_research_stage_gate.py` including wall-draft-does-not-unlock-explicit-late.
+- Deployment: public Next BUILD `7g_FyvSq4MgaBE78MQX7n`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Wall draft still does not unlock definite cT.
+
+## 2026-08-28, Sculpt wall bands, recheck after propagate, real cine fps
+
+- Scope: `InteractiveSegPanel.tsx`, `cine-time.ts`, `wall-layer-interrupt.ts`, `doctor-keyframes.ts`, `keyframe-propagate.ts`. Public Next required.
+- Reason: The transcript still needed doctor-scale edits on imaginary layers, interrupt re-check on every copied keyframe without opening each one, and frame numbers from the real cine rate instead of a hard 25 fps.
+- Key changes: Imaginary layer curves can be dragged after zoom; the new line re-samples interrupt. Propagate shifts those curves and seeks each dest frame to re-check on that frame's pixels. Progress and keyframe labels snap fps to 15/20/24/25/30 after a few decoded frames. P3 one-pager is in `docs/meetings/2026-08-27_博后分工一页.md`. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0. `test_cine_time.mjs`, `test_wall_layer_interrupt.mjs`, `test_doctor_keyframes.mjs`, `test_adjacent_stage_lock.mjs` ok.
+- Deployment: public Next BUILD `yGONsjzUps1CzzuvZW_Mi`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Harmony still later. Native Apple-silicon Electron zip still later.
+
+## 2026-08-28, Adjacent lock is the Assist headline
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `InteractiveSegPanel.tsx`, `assist-judgment-prose.ts`, `wall-layer-interrupt.ts`, `mask-override.ts`. Public Next required.
+- Reason: After a T1/T2 or T3/T4 lock the giant AI call still showed frozen four-class T4. Bright-dark-bright also missed dim TAUS serosa. The analyze payload still sent a tight lesion box instead of peri-lesion ROI.
+- Key changes: Locked pair becomes the headline and the Accept target; frozen four-class stays as a small contrast. Interrupt is relative, not an absolute white threshold. Assist gets peri-lesion ROI plus extra-lesion / wall context; frozen weights unchanged. Opening a propagated keyframe re-samples that frame. Judgment prose names wall interrupts and the lock. Right-rail chips can flip 中断 / 连续 and keep the doctor override.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_layer_interrupt.mjs` and `test_adjacent_stage_lock.mjs` ok (dim serosa interrupt, lock prose, peri-lesion ROI).
+- Deployment: public Next BUILD `daqGJ4dFzGnq114g3zJdC`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Frozen four-class weights stay. Wall draft still does not unlock definite cT.
+
+## 2026-08-28, Electron shell of the public workbench
+
+- Scope: `apps/public_shell/electron/`, `scripts/build_public_electron.sh`, Header / profile / tutorial download links. Public Next required.
+- Reason: The 19 KB launcher felt too small. Doctors asked for a real desktop window that still only opens the public site.
+- Key changes: Electron window loads http://47.106.33.102. No local model, no credentials in the pack. Avatar menu downloads the Electron zip (about 100 MB). Profile page keeps the light launcher as a second option. Menu has reload / hard reload. Frozen Assist weights unchanged.
+- Validation: `npx tsc --noEmit` exit 0. `bash apps/public_shell/scripts/test_public_electron.sh` ok. Windows zip about 112 MB, Mac zip about 102 MB (Intel; Apple silicon uses Rosetta).
+- Deployment: public Next BUILD `Sf1DJHpzYcCihyyk6bKl1`. Smoke: `public_root=200`, Electron zips 200 (Windows 117972687 B, Mac 107334838 B). Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Harmony still later. Apple silicon native zip can be packed on a Mac if Rosetta is a problem.
+
+## 2026-08-28, Persist adjacent lock; hide TENT on T-staging
+
+- Scope: `doctor-case-state-store.ts`, `adjacent-stage-lock.ts`, `InteractiveSegPanel.tsx`, `ReaderStudyQueuePanel.tsx`. Public Next required.
+- Reason: Refreshing mid-case dropped the adjacent-pair lock and 1/2/3 chip. The T-staging rail still showed a TENT before/after line, which fights the meeting decision that TENT is a research control, not the doctor path.
+- Key changes: Case state stores `adjacent_lock` and `wall_target_layers` and restores them on reopen. Overlay and evidence-rail locks stay in sync. T-staging Assist card no longer shows the TENT adaptation line. Frozen Assist numbers unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_adjacent_stage_lock.mjs` ok.
+- Deployment: public Next BUILD `eU2RV7VoCNNx3gL0gXfUA`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries tomorrow evening. Harmony installer and merging new walls into the same 150-case train stay later.
+
+## 2026-08-28, Trial-night wall workflow polish
+
+- Scope: `InteractiveSegPanel.tsx`, `ReaderStudyQueuePanel.tsx`, `DoctorTutorialModal.tsx`. Public Next required.
+- Reason: Tomorrow-night trial would hit Space marking extra keyframes, a redraw that kept the old box, 1/2/3 that did not recompute, lock overwriting a painted layer count, and interrupt copy only under the video.
+- Key changes: Space pauses first and marks only when already paused. Play/Pause snaps the current frame. Box lesion replaces; 再框一灶 keeps the previous (teal); 去掉上一灶 drops the last extra. Changing 1/2/3 recomputes the draft. Adjacent lock no longer overwrites a painted layer count. Right-rail 胃壁草稿 shows 中断 / 连续 chips. Tutorial and 7-step memo say Assist stays gray until T1–T4+ is tapped. Frozen Assist weights unchanged. Wall draft still does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0.
+- Deployment: public Next BUILD `VHJhRajrbCz9iw-3L45r-`. Smoke: `public_root=200`, `public_clinical=200`, `public_desktop_mac=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries the 7-step paint tomorrow evening. Harmony installer, painted-wall retrieve, and merging new walls into the same 150-case train stay later.
+
+## 2026-08-28, Public download for the desktop shell
+
+- Scope: `Header.tsx`, `DoctorTutorialModal.tsx`, `profile/page.tsx`, `proxy.ts`, `public/desktop/`, `build_public_shell.sh`. Public Next required.
+- Reason: The Mac/Windows shell is only useful if doctors can fetch it from the live site instead of a side-channel zip.
+- Key changes: Avatar menu and profile page link to `/desktop/gastric-reader-macos.zip` and `...-windows.zip`. Tutorial adds an optional desktop-shell step. Public reader proxy allows `/desktop/`. Pack script copies the zips into Next `public/desktop`. Still a thin public-site icon; no local model.
+- Validation: `npx tsc --noEmit` exit 0. `bash apps/public_shell/scripts/test_public_shell.sh` ok.
+- Deployment: public Next BUILD `9aB1OmVMcUj4JuUAzAm8D`. Auth edge `auth_server.mjs` now allows `/desktop/`. Smoke: `public_root=200`, `public_clinical=200`, `public_mac=200` (18880 B), `public_win=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*` and `auth_server.mjs.bak_desktop_20260828`.
+- Follow-up: Harmony still later. Native WKWebView still needs one `swiftc` run on a Mac.
+
+## 2026-08-27, Tiny Mac/Windows shell of the public workbench
+
+- Scope: `apps/public_shell/`, `scripts/build_public_shell.sh`. No public Next change.
+- Reason: Meeting B3 asked for an installer. The product is already the public site, so the package is a desktop icon only.
+- Key changes: Mac zip is `胃超阅片.app` (about 19 KB). It opens Chrome/Edge `--app` of the public workbench, or Safari if neither is installed. On a Mac with `swiftc`, the same script compiles a WKWebView binary into the app. Windows gets a one-file `.cmd`. No Electron, no local model, no credentials.
+- Validation: `bash apps/public_shell/scripts/test_public_shell.sh` ok. Zip stays under 400 KB.
+- Deployment: none. Send `apps/public_shell/dist/胃超阅片-macos.zip`. First launch: right-click Open. Hard-refresh after a site update.
+- Follow-up: Harmony still later. A nicer native window needs one run of the same script on a Mac with Xcode CLT.
+
+## 2026-08-27, Tomorrow-trial 7-step memo and admin multi-reader overlap
+
+- Scope: `DoctorTutorialModal.tsx`, `ReaderStudyQueuePanel.tsx`, `InteractiveSegPanel.tsx`, `lib/ops/types.ts`, `lib/ops/multi-reader-overlap.ts`, `/admin/ops`, `/api/admin/ops-stats`. Public Next required.
+- Reason: Evening reader meeting leftover P2: doctors need the 7-step wall workflow in the live UI for tomorrow night; multi-reader stats belong in admin only, not as a clinical voting gold standard.
+- Key changes: Tutorial adds adjacent-pair / 1-2-3 layers and paint-from-adjacent-normal-wall. Keyframe copy prefers 2–3 frames. T-staging rail shows a collapsible 试画备忘. Overlay and evidence rail log `adjacent_lock`. `/admin/ops` lists cases where two or more accounts recorded a final stage, with caption 后台对照，不是临床投票金标准. Assist weights unchanged. Wall draft still does not unlock definite cT. No voting UI on the doctor workbench.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_multi_reader_overlap.mjs`, `test_adjacent_stage_lock.mjs` ok.
+- Deployment: public Next BUILD `J9V48JigFPFlWEgdVU76t`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries the 7-step paint tomorrow evening. Windows/Harmony installers, painted-wall retrieve, and merging new walls into the same 150-case train set stay later.
+
+## 2026-08-27, T-staging similar cases default to peritumoral channel, no fake wall index
+
+- Scope: `similar-case-public.ts`, `similar-case-neighbors.ts`, similar-case search route, `SimilarCaseReferencePanel.tsx`, `ReaderStudyQueuePanel.tsx`. Public Next required.
+- Reason: Doctors said morphology neighbors do not help T-staging. The gallery still has no painted gastric wall, so retrieval must not pretend to search by layer interruption or true stage.
+- Key changes: T-staging defaults to the existing `context` (瘤周层次) visual channel. Copy states the gallery has no doctor-drawn wall and cannot filter by interruption or gold T. If this case already has a wall draft, a side note says it was not used to rank neighbors. Assist weights and neighbor embeddings unchanged.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_similar_case_public.mjs` ok.
+- Deployment: public Next BUILD `ZDDZkmj_vOf_mey3_pBgR`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: A real wall-index retrieve still needs a separate painted-wall corpus, not this 150-case gallery.
+
+## 2026-08-27, Deepest-band echo clustering, not full-image super-resolution
+
+- Scope: `wall-echo-clarify.ts`, `InteractiveSegPanel.tsx`, `adjacent-stage-lock.ts`. Public Next required.
+- Reason: Evening reader meeting A3: T-staging looks at the deepest-invasion strip vs remaining wall. Full-image sharpening invents structure. Cluster bright / mid / dark regions on a band narrower than the painted stroke.
+- Key changes: After wall paint or join, cluster echo on a ~44 x 10 px strip at the deepest lesion-wall point. Magenta outline plus 原图 / 三档 inset. Toolbar 最深窄带回声 zooms that box. Pattern (e.g. 亮-暗-亮) feeds the wall draft side-channel and Assist `contour_context` only. Frozen T weights unchanged. Draft only; does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_echo_clarify.mjs`, `test_adjacent_stage_lock.mjs`, `test_wall_layer_interrupt.mjs` ok.
+- Deployment: public Next BUILD `fRuOfnlNR-_HfOq4T-HKf`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries the narrow-band view tomorrow evening. No neural super-res model was named in the meeting.
+
+## 2026-08-27, Adjacent-stage lock, wall side-channel, 2-plus keyframe hint
+
+- Scope: `adjacent-stage-lock.ts`, `InteractiveSegPanel.tsx`, `ReaderStudyQueuePanel.tsx`, `DoctorKeyframeStrip.tsx`. Public Next required.
+- Reason: Evening reader meeting P1: doctors want to lock T1/T2, T2/T3, or T3/T4 so Assist cannot jump to a far stage; wall interruption is a side channel; T-staging should use 2–3 frames.
+- Key changes: Overlay and evidence rail share T1/T2, T2/T3, T3/T4 lock chips. Selecting a pair sets wall layers 3/2/1. After Assist, a side card renormalizes frozen T probs inside the pair only; if four-class top-1 is outside the lock, it warns (the T1/T2 vs T4 case). Frozen 4-class numbers stay on screen and Assist weights are unchanged. Wall ticks/interrupts and multi-frame serosa continuity are shown as draft copy and appended to the local report template. One-keyframe strip/toolbar hint asks for 1–2 more frames. Assist capture may carry `adjacent_lock` / wall interrupt in `contour_context` for later LLM, not for the classifier.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_adjacent_stage_lock.mjs`, `test_wall_layer_interrupt.mjs`, `test_wall_layer_trace.mjs` ok.
+- Deployment: public Next BUILD `HgmGakBlQV3Mqz5mGJ_h4`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Local echo clustering (A3) still later. Do not unlock definite cT from wall draft. Do not hot-swap frozen Assist weights during Reader v150.
+
+## 2026-08-27, Doctor 1/2/3 wall layers, interruption, ms seek, extra lesions
+
+- Scope: `InteractiveSegPanel.tsx`, `DoctorKeyframeStrip.tsx`, `wall-layer-interrupt.ts`, `wall-layer-trace.ts`, `wall-layer-breach.ts`, `cine-time.ts`, `doctor-keyframes.ts`. Public Next required.
+- Reason: Evening reader meeting: T-staging needs remaining wall layers chosen by the doctor, bright-dark-bright interruption, millisecond/frame seek, and more than one lesion box. Assist numbers stay locked.
+- Key changes: Toolbar 1/2/3 (1=serosa, 2=MP+serosa, 3=shallow+MP+serosa). Paint and auto-extend use that count. Longitudinal bright-dark-bright marks 中断/连续 on the draft chips. Cine bar is `m:ss.mmm / frame` at 25 fps estimate, slider step 0.001. A second box keeps the previous lesion (teal). Draft only; does not unlock definite cT.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_layer_interrupt.mjs`, `test_wall_layer_trace.mjs`, `test_wall_pixel_extend.mjs`, `test_wall_extension.mjs` ok.
+- Deployment: public Next BUILD `fxx7e4RePpdrHyvo0CaVh`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Doctor tries tomorrow evening. Adjacent-stage 2-class lock and feeding wall into the frozen classifier stay later.
+
+## 2026-08-27, Clearer echo profile and wheel-zoom on the current frame
+
+- Scope: `WallFeatureAnalysisCard.tsx`, `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: 回声，病灶到浆膜 was a tiny unlabeled strip. Doctors also needed to scroll-zoom the frozen frame.
+- Key changes: Echo chart is taller, labeled mucosa to serosa, with lesion / bright / dark / serosa-peak marks. Wheel zooms the current frame toward the cursor (1-8x). Shift-drag or middle-drag pans. Double-click or 退出放大 resets. Wall-paint and lumen-sculpt wheels still change brush size. Assist numbers stay locked.
+- Validation: `npx tsc --noEmit` exit 0.
+- Deployment: public Next BUILD `3fFw3gcSZGKwspixNucnh`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-27, Paint-span layer cluster, walk along lesion, imagine after vanish
+
+- Scope: `wall-layer-trace.ts`, `wall-layer-breach.ts`, `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: Doctors paint the visible normal wall. The five layers are thin. At the breach the wall may thicken or disappear. The tool must first count layers in the painted ribbon, then continue each layer along the lesion until it vanishes, then complete an imaginary wall and show mucosa-to-serosa status.
+- Key changes: Wall brush (3-22 px, wheel or slider) wraps the painted ribbon. Echo clustering on that ribbon yields 2-5 layers, named from mucosa outward. Each layer is walked along the lesion mask; inside-mass or lost echo marks vanish, then a dashed imaginary parallel continues. Banner ticks show 黏膜浅层 to 浆膜 as 还在 / 变薄 / 消失 / 假想 / 未分出. Assist numbers stay locked.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_layer_trace.mjs` ok (5 painted layers on a synthetic stripe). Existing wall-pixel-extend / wall-extension tests still pass.
+- Deployment: Public Next BUILD `7B420svzYpRZySi9_b9ix`. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Draft ticks do not unlock definite cT.
+
+## 2026-08-27, Thin silky wall layers hug the lesion strip
+
+- Scope: `wall-polyline.ts`, `wall-pixel-extend.ts`, `wall-extension.ts`, `wall-layer-breach.ts`, `WallFeatureAnalysisCard.tsx`, `contact_geometry.js`, `interactive_layer_bridge.js`. Public Next required.
+- Reason: 假想分层 and 局部切面 sat too far from the lesion. The curves used too few points and showed sharp corners.
+- Key changes: Join follows the lesion contour on a few-pixel strip, not a far circular ray. Forced 3-layer bands are hairline parallels of that strip, typically 400-1200 points, Chaikin-smoothed. Local-cut SVG crops to the lesion face and draws from the lesion outward, even when echo edges are imaginary. Vendor cache `?v=20260827hug`. Assist numbers stay locked.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_pixel_extend.mjs` and `test_wall_extension.mjs` ok (dense join, median lesion distance about 2.5 px).
+- Deployment: Public Next BUILD `sEZ4_PSDT_15zy6AOaXgc`. Smoke `public_root` / `public_clinical` 200. `gastric-next-public` (`:3300`) was inactive and not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Draft 3-layer bands do not unlock definite cT.
+
+## 2026-08-27, Bilingual Morandi doctor-model figures
+
+- Scope: `scripts/plot_zml_reader_v150_doctor_model_zh_20260827.py` now writes the same five slim figures in Chinese and English.
+- Reason: the user asked for both language versions of the preferred Morandi pack.
+- Key changes: Shared geometry and colors. Chinese stays in `figures/zh_morandi/`. English is in `figures/en_morandi/` with Times New Roman / DejaVu Serif. Share zip is `zml_reader_v150_doctor_model_bilingual_20260827.zip` (`figures/zh/`, `figures/en/`, tables). Still no L3 / MaskROI / Dual rows, no 150-case gallery, no patient identifiers.
+- Validation: script writes 10 PNG/PDF pairs (5 per language) from the frozen ZML 150 recount.
+- Deployment: None. Research pack only.
+
+## 2026-08-27, Wall join along lesion, forced 3 layers, hide refine rail
+
+- Scope: `wall-pixel-extend.ts`, `wall-extension.ts`, `wall-layer-breach.ts`, `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: After paint, the wall grew into a yellow dashed 360-degree ring. Lesion refine buttons also popped open as soon as a box existed.
+- Key changes: Painted wall stays as the visible span. Only the lesion-facing gap is joined along the pixel ridge / lumen arc. No yellow dashed explosion. Neighborhood is always force-clustered into 3 layers hugging that join, even when contrast is flat. 拖点精修 / 正负点 / 涂改 stay under 更多工具. Assist numbers stay locked. Not a five-layer GT.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_pixel_extend.mjs` and `test_wall_extension.mjs` ok.
+- Deployment: Public Next BUILD `wg76Sq0-nN86LVpOE-mOR`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` on the same standalone. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; standalone bak `.next/standalone.bak_20260827_200009_pre_wall_join3`.
+- Follow-up: Draft 3-layer bands do not unlock definite cT.
+
+## 2026-08-27, Pause on keyframe, lumen, and wall
+
+- Scope: `InteractiveSegPanel.tsx` cine / keyframe / 框选胃腔 / 胃壁. Public Next required.
+- Reason: Space used to mark while the video kept playing. Doctors need to freeze the frame they just chose, then stay on that frame when they pick another keyframe or arm lumen / wall tools.
+- Key changes: Space and 「标记此帧」 pause first, then mark, and stay on that frame. Clicking another keyframe seeks and stays paused on it. 框选胃腔, 画胃壁, 点两侧, and 自动延长分层 also pause on the current frame and bind it as the open keyframe. Right-rail 「胃壁」 sits with 「框选胃腔」; the top bar has 画胃壁 / 自动延长分层 / 点两侧接 / 传到关键帧 / 壁层. Assist numbers stay locked.
+- Validation: `npx tsc --noEmit` exit 0. Localhost workbench: Space while playing paused at t=6.19s and marked that frame; clicking 2.4s stayed paused at 2.37s with that contour; 胃壁 while playing paused and armed paint. Test keyframes removed.
+- Deployment: Public Next BUILD `lcYf6JlIcJ1l9jlAYM7b6`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` on the same standalone. `gastric-next.service` (`:3000` next dev) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; standalone bak `.next/standalone.bak_20260827_195512_pre_pause_kf`.
+- Follow-up: Draft walls still do not unlock definite cT.
+
+## 2026-08-27, Paint wall, pixel grow, layer draft, keyframe copy
+
+- Scope: `lib/wall-pixel-extend.ts`, `lib/wall-layer-breach.ts`, `InteractiveSegPanel`, doctor keyframes / propagate.
+- Reason: Doctors can see a complete wall on the flanks and want to paint that segment, then have the system follow actual pixels past the lesion, estimate how many layers are involved, and copy that class to other keyframes.
+- Key changes: 「画胃壁」 is a hold-to-paint stroke. On release the visible ridge is grown around the lesion. Five-layer draft uses remain / thickness (黏膜浅层 to 浆膜). Colored inward bands show the draft layers. Wall polygon and layer class copy to other keyframes by flow or contour. Assist numbers stay locked. Not a five-layer GT campaign.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_pixel_extend.mjs` and `test_wall_extension.mjs` ok. Localhost workbench still opens without a password.
+- Deployment: Public Next BUILD `zwWVDPZhFmxgvsbghGg_v`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` on the same standalone. `gastric-next.service` (`:3000` next dev) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; standalone bak `.next/standalone.bak_*_pre_wall_paint`.
+- Follow-up: Draft layers do not unlock definite cT. Doctor still ticks 层次 / 浆膜.
+
+## 2026-08-27, Localhost no-password plus doctor wall flanks
+
+- Scope: `LoginGate.tsx`, `DoctorAccountModal.tsx`, account GET, `local-access.ts`, `wall-extension.ts`, `InteractiveSegPanel.tsx`.
+- Reason: Doctors need to mark the two visible wall flanks themselves, then edit the imagined span. Localhost was still showing the public password form.
+- Key changes: `http://127.0.0.1` / `localhost` auto-enters as the last-seen or first reader, no password. Other LAN hosts keep the identity picker, still no password. Public host stays password-only. 「延长胃壁」 now asks the doctor to click both visible flanks; a second button press or 「自动接」 joins without clicks. Dashed span remains draggable. Assist numbers unchanged.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_extension.mjs` ok, including doctor-flank marks. Localhost account GET is `authenticated: true`, `local_access: true`. Fake public Host stays `authenticated: false`. Browser on `http://127.0.0.1:3000/` opened the workbench as AD with no password field; 「延长胃壁」 entered pick mode and 「自动接」 completed. Public account GET without cookie stays unauthenticated.
+- Deployment: Public Next BUILD `XF2ZTA-8gDMZuU3phI22L`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` on the same standalone. `gastric-next.service` (`:3000` next dev) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; standalone bak `.next/standalone.bak_20260827_193439_pre_wall_auth`.
+- Follow-up: Draft walls still do not unlock definite cT. Do not weaken public login.
+
+## 2026-08-27, Wall extension through the lesion sector
+
+- Scope: local workbench first (`InteractiveSegPanel`), `lib/wall-extension.ts`. Public Next if the same rail is live.
+- Reason: Doctors can see the wall on both flanks but must imagine how far it continues through the mass. After box-lesion auto-seg, extend that visible wall along the invasion axis.
+- Key changes: 「延长胃壁」 joins the two visible shoulders through the breach. With a lumen it uses a constant-radius arc around the cavity; without lumen it joins the flanks. Dashed amber is the uncertain span. Auto-runs after keyframe / SAM lesion if no wall exists yet. Doctor drag clears the draft flag. Assist probabilities unchanged. Not a five-layer GT.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_wall_extension.mjs` ok. Public smoke `public_root` / `public_clinical` 200; public HTML includes this BUILD.
+- Deployment: Public Next BUILD `lFGuOEbnsCX5UNHZqNPLf`. Workstation `:3300` on the same standalone. `gastric-next.service` (`:3000` next dev) was not restarted. Hard-refresh http://47.106.33.102 . LAN workbench also has the source via `:3000`. Rollback: Aliyun `.next-public-deploy-dist.bak_*`; standalone bak `.next/standalone.bak_20260827_192717_pre_wall_ext`.
+- Follow-up: A lumen still makes the arc stabler. Do not treat the dashed span as accepted wall for `wall_gate`. Logged-in box-then-extend click-through was not run here.
+
+## 2026-08-27, Public reader BioMedAgent-style assist loop
+
+- Scope: public 150-case rail now auto-runs guideline note + evidence contrast after Assist. A structured critic may trigger one similar-case refine, then contrast runs once more. Tent vs frozen is shown only when top-1 flips. Accept/modify writes an EXP candidate JSONL. Public `proxy.ts` now admits assist-judgment, evidence-fusion, llm, and experience APIs.
+- Reason: map Bu et al. (Nat Biomed Eng 2026) retrieve/explore/critic/repair onto the workbench without opening LangGraph or rewriting Assist probabilities.
+- Validation: `npm run test:evidence-fusion` (critic: no cases / T-boundary unmarked / useful marks). Python `build_evidence_critic` matches. Assist numbers stay locked; refine max = 1. Logged-in LAN workbench (`:3000`) box-then-Assist on a study case: 分类 / 指南 / 相似例 / 对照 all done; 再检索 skipped because critic did not recommend repair. Public HTML BUILD later became `lFGuOEbnsCX5UNHZqNPLf` (wall extension) and still ships the loop copy.
+- Deployment: `bash scripts/deploy_public_next.sh` BUILD `gBh6t0zo_kCnslhwgwoH4` (prior `ye96VB0D8yeGwB2oBnBUd`). Restarted `gastric-next-public.service` so proxied LLM-info and experience routes pick up the new worker. Hard-refresh http://47.106.33.102. A later patch clears the restore skip when Assist runs again.
+- Follow-up: EXP rows stay `candidate`. Do not rebuild the neighbor table from them. Do not call this self-evolving.
+
+## 2026-08-27, Continuous gastric-wall delineation plan
+
+- Scope: methodology / product plan only. No public Next, no Assist change.
+- Reason: Lesion and lumen segmentation still leave the remaining wall imaginary. T-stage on TAUS is decided on the wall opposite the lumen.
+- Key changes: New `docs/plans/GASTRIC_WALL_DELINEATION_TOOL_20260827.md`. V0 is a third rail object (outer-wall polyline / wall band) on the existing workbench, drafted from lumen + ContactGeom, saved as `wall_polygon`. Not a five-layer GT campaign. Draft walls do not unlock definite cT.
+- Validation: Docs only. Confirmed public simple rail has lesion + lumen only; research `InteractiveSegPanel` already stores `wall_polygon`.
+- Deployment: None.
+- Follow-up: Implement V0 on the public rail only after the user asks. Do not start a wall UNet or 5-layer labels this round.
+
+## 2026-08-28, Worst-frame aggregation on the deep-side crop
+
+- Scope: add experiment `convnext_tiny_deepside_worst` on `deep_side_v1`. Only the patient aggregation changes: mean of frame features to the frame with the highest expected T class.
+- Reason: mean pooling mixes shallow and deep planes and encourages memorizing the patient. The clinical call is the worst remaining-wall plane.
+- Validation: `worst_v1` best validation exact ACC 0.5242 at epoch 27 (T2 recall 0.09). Prospective 197 ACC 0.5381, T2 recall 0. Below mean-pool Tiny 0.5484 / 0.5584. Train still reached 0.95.
+- Deployment: None. Research training only.
+
+## 2026-08-27, ConvNeXt-Small deep-side backbone
+
+- Scope: add experiment `convnext_small_deepside` on the same `deep_side_v1` crop. Only the backbone changes: Tiny to Small.
+- Reason: Tiny may lack capacity to read remaining-wall thickness on the lumen-directed crop.
+- Validation: Small `small_v1` best validation exact ACC 0.5403 at epoch 20 (T2 recall 0), below Tiny 0.5484 and ROI25 0.5938. Train reached about 0.99. Audit: validation 124 ACC 0.5403; prospective 197 ACC 0.5076, T2 recall 0.
+- Deployment: None. Research training only.
+
+## 2026-08-27, Lumen-directed deep-side crop protocol
+
+- Scope: add `deep_side_v1` and experiment `convnext_tiny_deepside`. The crop is the deep tumor half plus outward remaining wall, using a lumen box to define direction.
+- Reason: T-stage on filled transabdominal US is decided on the wall opposite the lumen. Training may drop frames without a box; inference can take a doctor-drawn lumen box.
+- Coverage of the joined sidecar: train 1051/1062 patients, validation 124/128, prospective 197/425. External stems do not match, so external audit is skipped.
+- Frames whose lumen and lesion centers are closer than 1 pixel are dropped. That removed 2 training frames and no patients. `deepside_v1` failed on this case and stays on disk; the comparable run is `deepside_v2`.
+- Validation: Tiny `deepside_v2` best validation exact ACC 0.5484 at epoch 3 (T2 recall 0). That is below ROI25 0.5938. Train reached about 0.999 by epoch 26. Audit on lumen-available patients: validation 124 ACC 0.5484; prospective 197 ACC 0.5584, T2 recall 0. External skipped.
+- Deployment: None. Research training only.
+
+## 2026-08-27, Slim Chinese Morandi doctor-model figures
+
+- Scope: replace the large white English gallery with five Chinese key figures in a Morandi palette: recall by gold, case label strip, agree strip, accept/modify by gold, and four-way by gold.
+- Reason: the previous pack had too many images, bright colors, and English captions. The user asked for Morandi colors, clearer Chinese figures, and only the useful summaries.
+- Validation: 5 PNG/PDF pairs under `figures/zh_morandi/`. Pack `zml_reader_v150_doctor_model_zh_20260827.zip` now also prints Accept AI versus reserved-opinion counts on the recall, strip, and button figures. No patient identifiers. No 150-case gallery.
+- Deployment: None.
+- Follow-up: use this pack for sharing. Keep the older English/black sets as archive.
+
+## 2026-08-27, White doctor-model figures plus per-case charts
+
+- Scope: redraw the doctor-final versus model recount on a white background, add a case scoreboard / label tracks / confidence-by-button panels, and write one chart for each of the 150 zml cases.
+- Reason: the previous pack was black-background summaries only. The user asked for white figures, more detail, and a statistical chart per case.
+- Validation: 150/150 case PNGs; white pack `zml_reader_v150_doctor_model_agreement_white_20260827.zip` is 14 MB and contains the summaries plus `cases/`. No hospital IDs.
+- Deployment: None. Research pack only.
+- Follow-up: keep official black figures in `figures/official/` for the repo style; use `figures/white/` for this share pack.
+
+## 2026-08-27, Detailed doctor-model visuals and agreement pack
+
+- Scope: add per-gold, distance, four-way-by-class, case-strip, and gold-confusion figures for doctor final versus model, then zip a share pack without patient identifiers.
+- Reason: the first recount was aggregate only. The user asked for a full visual recount and a downloadable pack.
+- Validation: zml 150 per-class and distance tables match the case rows. Pack `zml_reader_v150_doctor_model_agreement_20260827.zip` is 2.4 MB, 65 files, no hospital IDs.
+- Deployment: None. Research pack only.
+- Follow-up: do not retune on this overlapping reader set.
+
+## 2026-08-27, Doctor-final agree/disagree with the model on frozen ZML 150
+
+- Scope: recount every completed reader-v150 final by operating doctor, then plot accept/modify, label match, and four-way versus gold.
+- Reason: SUMMARY only had doctor Acc versus gold. The workbench records Accept AI versus Save my call, and the frozen scores already have doctor_final versus L3 / MaskROI / Dual.
+- Cohort: complete dump `zml_rereview_20260826_232057`. Primary totals are zml 150. admin has 6 completed smoke cases, listed separately. jmr / why / wzw have no completed v150 finals.
+- Validation: zml explicit Accept AI 88/150 (T 56/100, BM 32/50). Label agree with shown AI 56/100 T and 31/50 BM; with frozen L3 61/100; with Dual 30/50. Figures under `pipeline/experiments/reports/zml_reader_v150_frozen_20260827/figures/official/doctor_*`.
+- Deployment: None. Research recount only. No Next change.
+- Follow-up: do not mix admin smoke cases into the 150 totals. Do not retune on this overlapping reader set.
+
+## 2026-08-27, Official episodic Tent on frozen ZML 150 plus training figures
+
+- Scope: add official episodic Tent to the frozen reader pack for MaskROI-25 only, and plot training plus source/Tent results. Assist wrapper now avoids BatchNorm batch-stat updates when the case batch is 1.
+- Reason: Tent is test-time adaptation, not training. Official BN Tent is invalid on a single reader frame. MaskROI-25 uses LayerNorm/GroupNorm, so affine Tent can run per case and reset.
+- Protocol: frozen keyframe + mask + ROI-25; episodic, steps=2, Adam `lr=1e-3`; L3 and Dual stay source-only.
+- Validation: MaskROI-25 source and Tent Acc/QWK both 0.430 / 0.291; 0 of 100 hard labels flipped; mean absolute top-1 probability shift 0.092. Training last Acc 0.999 versus best validation 0.625 versus ZML 0.430. Figures under `pipeline/experiments/reports/zml_reader_v150_frozen_20260827/figures/official/`.
+- Deployment: restart `gastric-reader-analyze.service` so Assist uses `force_batch_stats=False` and restored BN buffers. No Next rebuild.
+- Follow-up: do not promote Tent. Do not search Tent hyperparameters on this overlapping reader set.
+
+## 2026-08-27, Freeze ZML reader v150 keyframe/mask/ROI-25 and score
+
+- Scope: lock the complete zml 150 doctor keyframes to disk, derive ROI from each mask, and score those frozen files. Research only; no public Next change.
+- Reason: live workstation case-state was stale (11 T + 50 BM). T had no on-disk keyframe/mask/ROI pack, so models were still seeking video at test time.
+- Inputs: complete dump `runtime/gastric_scan_next/backups/zml_rereview_20260826_232057/doctor_case_state.json`. One usable polygon keyframe per case (deepest, then refined, then time). Mask is the rasterized doctor polygon. ROI expands each side of the exclusive mask box by 25%, matching `maskroi25_clinical_v1`.
+- Pack: `pipeline/data/zml_reader_v150_frozen_20260827/` with 150/150 images, masks, ROI-25 crops, `frames.csv`, and `LOCK.json`. Scoring reads this pack only.
+- Validation: freeze exported T 100 + BM 50 with zero skips. Source inference (Tent off) on the locked files: T L3 Acc 0.530 / adjacent 0.810; maskroi `lesionrgb_v1` Acc 0.430 / adjacent 0.820; doctor Acc 0.530. BM Dual Acc 0.680 (34/50); doctor Acc 0.760 (38/50). maskroi clinical-11 matched 85/100 T cases; unmatched cases used an all-missing vector.
+- Deployment: None. Descriptive reader-set numbers only. T 100 overlaps official prospective and external cases and must not be used to retune.
+- Follow-up: keep scoring on the locked pack. Do not seek reader videos again for this test.
+
+## 2026-08-27, ROI-25 plus aligned mask protocol
+
+- Scope: add `roi25_mask_v1` and experiment `convnext_tiny_roi25_mask`. The only added input is a binary mask cropped from the same 25% expanded box as the ROI RGB.
+- Reason: T-stage is about how the annotated tumor sits against remaining gastric wall. A full-canvas mask loses that registration after resize.
+- Isolation: new protocol and run directory. Existing `roi25_v1` / `lesionrgb_v1` artifacts are not overwritten.
+- Deployment: None. Research training only.
+
+## 2026-08-27, ROI-50-only ConvNeXt-Tiny protocol
+
+- Scope: add `roi50_only_v1` and experiment `convnext_tiny_roi50`. Same ROI-only ConvNeXt-Tiny path as `roi25_only_v1`, but the box is expanded 50% on every side.
+- Reason: the 25% ROI covers about 37% of the full crop and never hit the image border in a 200-frame sample. A wider band tests whether extra gastric-wall context helps.
+- Geometry: `pad = round(lesion_side x 0.50)`, then clamp. The same 200-frame sample had 46/200 edge clamps; mean ROI covered about 48% of the full crop.
+- Deployment: None. Research training only.
+
+## 2026-08-27, ROI-25-only ConvNeXt-Tiny protocol
+
+- Scope: add `roi25_only_v1` and experiment `convnext_tiny_roi25`. The model sees only the lesion box expanded by 25% on every side.
+- Reason: the five-input ConvNeXt overfit quickly. This run tests whether the local ROI already carries the T-stage signal.
+- Geometry: `pad_x = round(lesion_width x 0.25)`, `pad_y = round(lesion_height x 0.25)`, then clamp. A 200-frame train sample had 0 edge clamps; mean ROI covered about 35% of the full crop.
+- Deployment: None. Research training only.
+
+## 2026-08-27, Call the 128-patient split the validation set
+
+- Scope: user-facing labels in `tstaging_lab/` now say 验证集 / validation set instead of dev. File names such as `dev.csv` stay unchanged so the running Small job and existing manifests are not moved.
+- Reason: the 128-patient split is the ordinary validation set used to pick checkpoints. WADI is only the frozen patient list, not a separate training system.
+- Deployment: None. Research labels only. The current `small_v1` process still prints the old `dev` wording until it exits.
+
+## 2026-08-27, ConvNeXt-Small mask/ROI/clinical backbone comparison
+
+- Scope: add `convnext_small_maskroi25_clinical` as a separate backbone-only experiment under the existing `maskroi25_clinical_v1` input and split contract.
+- Reason: test whether the shared ConvNeXt-Tiny visual encoder is capacity-limited without changing whole image, mask shape, masked-lesion RGB, 25% ROI, clinical-11, frame pooling, or training settings.
+- Implementation: added an isolated ConvNeXt-Small model/card, per-experiment protocol lock support, and `--experiment-id` selection to the existing train/evaluate CLIs. No segmentation, handcrafted features, audit feedback, or public product code was added.
+- Validation: pretrained ConvNeXt-Small weights downloaded to the external Torch cache; multimodal GPU dry-run passed with full/ROI/lesion tensors `[2,6,3,224,224]`, mask `[2,6,1,224,224]`, clinical `[2,22]`, and logits `[2,4]`. A full `small_v1` run started on GPU 1.
+- Deployment: None. Research training only.
+- Follow-up: select only by the locked dev cohort. Prospective and external cohorts remain descriptive audits after the checkpoint is frozen.
+
+## 2026-08-27, Official GitHub Tent test-time adaptation
+
+- Scope: replace the previous custom entropy loop with the [DequanWang/tent](https://github.com/DequanWang/tent) API. Research evaluator plus live Assist wrapper. No public Next UI change.
+- Reason: Tent is online test-time adaptation of a finished source checkpoint, not a training recipe. The previous evaluator adapted then ran a second forward; that is not the GitHub `forward_and_adapt` contract.
+- Implementation: `pipeline/lib/tent.py` ports `configure_model`, `collect_params`, `Tent`, and Adam `lr=1e-3`. ConvNeXt has no BatchNorm, so LayerNorm / GroupNorm affine parameters are collected. Dropout / DropPath stay off. `eval_tstage_tent_20260827.py` defaults to continual, `steps=1`. Assist stays episodic and restores source weights after each case.
+- Validation: official self-check confirmed `steps=1` returns pre-update logits and only LayerNorm affine is trainable. Wrapper self-check restored shared weights. CPU 2-patient smoke passed. Official continual eval on frozen dev 128 wrote `tent_github_dev_continual.json`: source ACC / QWK 0.5391 / 0.6382 versus Tent 0.4688 / 0.4802; entropy fell 0.8064 to 0.7273. Not promoted.
+- Deployment: restart `gastric-reader-analyze.service` so Assist imports the official wrapper. No Aliyun Next rebuild. Rollback: `GASTRIC_TENT=0` or revert `pipeline/lib/tent.py` and `pipeline/lib/tent_adapt.py`.
+- Follow-up: do not tune Tent on 425 / 485. Keep source inference as the reported number unless a frozen protocol later beats source on the development set.
+
+## 2026-08-27, Direct ConvNeXt mask/ROI/clinical classification protocol
+
+- Scope: replace the planned segmentation-dataset scaffold in `tstaging_lab/` with one patient-level classification protocol on the existing WADI manifests, then launch the first locked run.
+- Reason: keep the experiment explicit and reproducible: whole `crop_ui` image, existing lesion-mask shape, normalized image pixels inside that mask, lesion-mask bounding-box ROI expanded by 25% on every side, and the existing clinical-11 values with missing indicators.
+- Model: one shared ImageNet ConvNeXt-Tiny encodes the whole image, ROI, and masked-lesion RGB; a small CNN encodes the binary mask; a two-layer MLP encodes the 22-wide clinical value/missingness vector; valid frame features are averaged before a four-class T-stage head. Masked-lesion RGB exposes lesion interior pixels and the natural mask edge. No separate boundary ring, perilesional statistic/loss, segmentation model, SDF, morphology scalar, radial/region feature, or cached embedding is used.
+- Data boundary: optimization remains WADI train 1,062 and selection remains dev 128. Prospective/external cohorts remain descriptive audit. The protocol requires an existing lesion mask and clinical row at inference and is therefore annotation-assisted. Lauren type and differentiation may be pathology-derived, so this is not a purely preoperative deployment claim.
+- Records: added `maskroi25_clinical_v1`, experiment card `convnext_maskroi25_clinical`, dedicated train/evaluate CLIs, an independent lock, and a module-by-module `METHOD.md`. Removed the unused segmentation scaffold and its script/registry entries.
+- Validation: actual WADI data built `full [1,6,3,224,224]`, `ROI [1,6,3,224,224]`, `mask [1,6,1,224,224]`, `lesion RGB [1,6,3,224,224]`, and `clinical [1,22]`; CPU ConvNeXt forward/backward dry-run produced `[1,4]` logits without a saved run. Python compile passed; 36 lab tests passed; 1,062/128/425/485/205 counts and both protocol locks passed. All 10,894 WADI masks exist, are non-empty, and have binary 0/255 extrema.
+- Run: `lesionrgb_v1` started on GPU 0 with the locked 30-epoch schedule. The ledger is `running`; startup acquired GPU memory and wrote config, clinical normalization statistics, protocol lock, and `train.log`. No development or audit result exists yet.
+- Repository checks: all canonical path checks and sampled manifest paths passed. The aggregate command remains non-zero only because root hygiene reports 16 pre-existing unexpected directories, unrelated to this change.
+- Deployment: None. Research code only; no public Next or inference-service change.
+- Commit: not created in this turn because no Git commit was requested; changes remain in the working tree.
+- Follow-up: run formal training only after reviewing the annotation-assisted and pathology-field limitations. Select by dev exact accuracy only.
+
+## 2026-08-27, Repository root loose-file cleanup
+
+- Scope: move 18 loose root files into the meeting archive, GastricUS implementation package, clinical validation templates, restricted staging review, and local artifact quarantine. Update generators and references so the files do not return to the root.
+- Reason: the repository root mixed canonical documents with report and weight duplicates, meeting downloads, macOS resource forks, and restricted reader crosswalks.
+- Safety: no file was deleted. Exact duplicates and AppleDouble metadata were retained under `artifacts/tmp/root_cleanup_20260827/`; the differing clinical workbook copy was retained separately under an ignored review folder. Restricted reader tables are now under `data/staging_review/reader_v150_source_crosswalk/` and excluded from Git.
+- Key changes: the GastricUS plan now lives beside `pipeline/medsiglip_gastricus/`; report generation no longer copies outputs to the repository root; the reader crosswalk builder writes only to its controlled staging directory; meeting and report-template indexes point to canonical locations.
+- Validation: all 18 logged migrations have no remaining old file and an existing destination; modified Python files compile; the reader crosswalk rebuild completed with 150 reader rows and wrote only to the new directory; the asset manifest and script registry were refreshed; canonical path verification has zero failed checks. Root hygiene now reports zero unexpected files and zero discouraged assets, while 16 pre-existing directories remain for a separate risk-reviewed pass.
+- Deployment: None. No public Next, reader UI, request payload, or inference path changed.
+- Rollback: use the 2026-08-27 rows in `data/metadata/path_migration_log.csv`; move retained files back and restore the previous generator constants.
+- Follow-up: review active runtime, worktree, cache, result, temporary, and human-AI comparison directories separately before any directory migration.
+
+## 2026-08-27, T-staging lab experiment ledger
+
+- Scope: expand `tstaging_lab/` into one-experiment-one-directory management. Research only; no public Next change.
+- Reason: keep data, trainer, metrics, and evaluation locked while making runs, figures, and SwanLab reusable. Clinical-11 was checked before later fusion work.
+- Data: WADI 1,062 / 128 / 425 / 485 patients match `maincenter_retrospective_v20260821`. Clinical-11 is a sidecar only. It is not complete: train 1058/1062 matched, 138/1062 have all 11 fields; prospective length/thickness about 57%/61%; 2019 marker values are absent; 2024 has no CA19-9 binary; 29 Fujian Cancer Hospital IDs do not match.
+- Experiment layer: cards under `experiments/`, `ledger.csv` state machine, run directories refuse overwrite, official/debug figures, and an env-only SwanLab sidecar. `resnet18_meanpool/lab_v1` is closed as `do_not_promote`.
+- Validation: compile, pytest, lab verify, clinical sidecar write, plot from `lab_v1`, ledger parse, repo path check.
+- Deployment: None.
+- Follow-up: do not join clinical columns into image-only v1. Do not retune from audit scores.
+
+## 2026-08-27, Isolated T-staging model lab
+
+- Scope: new root workspace `tstaging_lab/`. Research training only; no public Next change.
+- Reason: keep data, training, and evaluation fixed so later experiments only add a model file.
+- Data: copied the WADI v20260827 contract; rebuilt a 13,763-sample three-asset pack as crop_ui image, 0/255 binary mask, and crop_roi image under train/dev/prospective/external centers. Loaders read only the 10,894-row WADI manifests; the extra 2,869 frames are listed in `data/integrity/excluded_physical_rows.csv`.
+- Protocol: image-only v1 uses crop_ui bags of 6 frames, weighted CE, AdamW, 30 epochs, and locked hashes in `protocols/image_only_v1/LOCK.json`. Mask and crop_roi stay on disk but do not enter this protocol.
+- First model: `models/resnet18_meanpool.py`. CPU dry-run passed on 1,062 / 128. GPU 1 run `lab_v1` finished 30/30. Best dev ACC 0.5156 at epoch 9. Audit: prospective 0.5624, external 0.3918, unseen 0.4829.
+- Validation: 16 pytest tests passed; prepare reported exact 13,763 / 10,894 / 2,869 counts; verify checked patient leaks and 400 masks; lock written.
+- Deployment: None.
+- Follow-up: add later models only under `tstaging_lab/models/`. Do not edit locked core files or use audit scores to retune v1.
+
+## 2026-08-27, WADI image-only ResNet18 mean-pool baseline
+
+- Scope: align `scripts/train_t_stage.py` to the frozen WADI primary development contract and launch `r18_mean_wadi_v1` on GPU 1. Training only; no public Next change.
+- Reason: retain one reproducible baseline without GUS ablations, masks, clinical variables, aggregation comparisons, or audit-cohort access.
+- Data and model contract: default inputs are `development/train_maincenter_1062.csv` and `development/dev_maincenter_128.csv`; patient overlap and expected counts are enforced. Each patient contributes up to K randomly sampled training frames or deterministic development frames; ResNet18 frame features are averaged over valid frames before weighted four-class cross-entropy.
+- Training behavior: fixed full epoch schedule without early stopping; ImageNet initialization, class weights, label smoothing, validation ACC/QWK/per-class recall, last checkpoint and best-development-ACC checkpoint. A CPU/no-pretrained dry-run is available and custom split counts require explicit opt-in.
+- Validation: Python compile and CLI help passed; the full frozen contract loaded exactly 1,062 train / 128 dev patients with no overlap; CPU forward/backward dry-run passed with image bags `[2,2,3,64,64]` and logits `[2,4]`; script registry refreshed. Repository path checks retained their pre-existing root-hygiene findings noted below.
+- Run result: `r18_mean_wadi_v1` completed 30/30 epochs on GPU 1 without OOM. Best dev ACC was 0.5078 at epoch 14; final epoch ACC was 0.4766. It loaded 1,062 train / 128 dev patients and wrote artifacts to `pipeline/experiments/reports/tstage_resnet18_meanpool_wadi_20260827/runs/r18_mean_wadi_v1/`.
+- Descriptive audit: after architecture selection, `eval_t_stage.py` evaluated the frozen best checkpoint once. Temporal 2025 n=425: ACC 0.4776, balanced ACC 0.3817, QWK 0.4494. External n=485: ACC 0.4392, balanced ACC 0.3771, QWK 0.3739. Predictions and center summaries are under `r18_mean_wadi_v1/audit_eval/`. These numbers are audit-only and must not drive further model choices.
+- Regularized follow-up: after the baseline showed train ACC 0.965 versus final dev ACC 0.477, added opt-in partial-backbone training, stronger image augmentation, dropout control, and cosine LR without changing baseline defaults. CPU forward/backward dry-run passed. Started `r18_mean_wadi_reg_v1` for 60 epochs on GPU 1 with only `layer4` trainable, strong augmentation, dropout 0.5, and cosine LR; audit cohorts remain unavailable during tuning.
+- Deployment: None. Training-only.
+- Rollback: revert the trainer and registry/documentation entries; the prior completed `tstage_resnet18_meanpool_20260826` run remains unchanged.
+- Follow-up: select only on the fixed 128-patient development cohort. Do not use temporal or external audit results to revise this baseline.
+
+## 2026-08-27, Doctor-facing RAG retrieval trace
+
+- Scope: public workbench similar-case panel, 循证 panel, reader v150 and year-queue. Public Next required.
+- Reason: Doctors could not naturally see how RAG retrieved cases or guideline clauses. The trace sat behind LLM assist-judgment prose, or only in researcher docks.
+- Key changes: 循证 title is now 循证（检索轨迹）. After Assist, the panel sits under the locked AI number, not inside the LLM draft. Each clause shows why it was retrieved (current T, keyword match, or always-on guardrail). Similar-case cards show 本次怎么检索到的 (visual neighbor table, channel, count, refine). LLM source chips scroll to the matching clause. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit` exit 0. `npx tsx scripts/test_similar_case_public.mjs` ok. `:3300` `POST /api/reader/guideline-trace` for T3 returns 6 cards, query.inferred_cT=T3, first why `按当前 T3 取出`, 3 local sources. Neighbor search returns `retrieval_trace.corpus=visual_similar_neighbors_v2`, n_shown=5. Public smoke `public_root` / `public_clinical` 200; public HTML includes this BUILD.
+- Deployment: Public Next BUILD `TEoplYbRdRH5Ck6iWuvMv`. Workstation `:3300` (`gastric-next-public`) on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; workstation standalone bak `.next/standalone.bak_20260827_105749_pre_rag_trace`.
+- Follow-up: Logged-in doctor click-through was not run here (public login required). After hard-refresh, confirm 本次怎么检索到的 is visible without waiting for LLM.
+
+## 2026-08-27, TENT evaluator and mask-clinical training launch
+
+- Scope: new `scripts/eval_tstage_tent_20260827.py` and background run `maskclin_setmil_tentbase_v1`; training/evaluation only, no public Next change.
+- Reason: measure whether entropy-minimization test-time adaptation improves the fixed mask + clinical Ordinal Set-MIL without introducing precomputed features.
+- TENT contract: source versus TENT is compared on dev 128 by default. ConvNeXt uses LayerNorm, so adaptation updates normalization affine parameters only; episodic mode resets for every batch. Non-dev evaluation requires an explicit override. PyPI `tent==0.0.3` was rejected because it is an unrelated GitHub automation package.
+- Training: GPU 0, 60 fixed epochs, batch 2, accumulation 4, max 12 frames, 256 px, AMP, no early stopping. Output under `pipeline/experiments/reports/tstage_maskclin_ordinal_setmil_20260827/runs/maskclin_setmil_tentbase_v1/`. The first background process was externally aborted after epoch 2; checkpoint resume support was added and validated through epoch 3, then the run continued from epoch 4.
+- Validation: realistic CUDA forward/backward smoke passed before launch with RGB, mask, clinical, categorical and ordinal tensors at production dimensions. End-to-end source/TENT CPU smoke passed and adapted 17,900 normalization-affine parameters. Resume restored model, optimizer, scheduler and scaler; epoch 3 completed successfully. Best through epoch 3 was dev QWK 0.606 at epoch 2.
+- Deployment: None.
+- Result: training completed 60/60. Best dev QWK was 0.638 at epoch 45; best dev ACC was 0.594 at epoch 41; final train ACC 0.950 showed substantial overfitting. On the best-QWK checkpoint, one-step episodic TENT changed ACC 0.5391 to 0.5469 and balanced ACC 0.4815 to 0.4876, but QWK fell 0.6382 to 0.6307, MAE and T2 recall were unchanged. This TENT preset is not promoted.
+- Documentation: added the detailed Chinese report `pipeline/experiments/reports/tstage_maskclin_ordinal_setmil_20260827/DETAILED_METHOD_AND_RESULTS_ZH.md` and English companion `FULL_METHOD_AND_RESULTS.md`, covering frozen membership, input-policy deviation, preprocessing, architecture, objectives, resume procedure, key metrics, confusion matrices, TENT method, limitations, reproduction commands, and next-step priorities.
+- Follow-up: do not tune TENT steps or LR on 425 / 485. Address overfitting and T2 supervision inside train/dev before any audit run.
+
+## 2026-08-27, Mask + clinical Ordinal Set-MIL trainer
+
+- Scope: new `scripts/train_tstage_ordinal_setmil_20260827.py`; training script only, no model run and no public Next change.
+- Reason: prepare a new end-to-end T-stage architecture using lesion mask and raw clinical variables, but no handcrafted geometry or precomputed features.
+- Architecture: ConvNeXt-Tiny feature maps feed learned global, mask-region, and strongest-response pooling; patient frames enter a position-free Set Transformer; 11 raw clinical values plus missingness are standardized from train only and fused by a learned gate; categorical and monotonic ordinal heads are trained jointly with consistency loss.
+- Data contract: defaults to the official main-center rows and verifies exact membership against frozen train 1,062 / dev 128. Input loading keeps only image, mask, raw clinical/missingness and target columns; it discards `clinical_22`, every `*_norm`, region patches, SDF and geometry caches. No prospective/external audit CLI is exposed.
+- Training behavior: full fixed epoch schedule without early stopping; patient bags, deterministic dev frame sampling, AMP, gradient accumulation with correct tail rescaling, separate backbone/head learning rates, class/ordinal weighting, and best-ACC / best-QWK checkpoints.
+- Validation: Python compile and IDE lint passed; full 1,062 / 128 membership, all image/mask paths and train-only clinical statistics passed; CPU forward/backward dry-run passed with RGB `[B,F,3,H,W]`, mask `[B,F,1,H,W]`, clinical `[B,22]`, class `[B,4]` and ordinal `[B,3]`. No full training started.
+- Deployment: None.
+- Follow-up: this is a manual-mask and clinical-assisted research model. Confirm which clinical fields are available preoperatively before any deployment claim; do not inspect 425 / 485 during architecture selection.
+
+## 2026-08-27, WADI T-stage clean development and audit freeze
+
+- Scope: new `wadi_research_freeze_v20260827` task pack and reproducible builder. Training/evaluation governance only; no public Next change.
+- Reason: lock the data contract before pursuing 75% exact accuracy. Existing prospective 425 and external 485 are patient-disjoint from development but have already been repeatedly inspected, so they are now explicitly audit-only rather than described as untouched tests.
+- Data roles: primary clean baseline is fixed main-center train 1,062 / dev 128; secondary three-center domain-adaptation is train 1,300 / dev 170; temporal audit 425; full external audit 485; unseen-center audit 205. Sensitivity cohorts are temporal 273 / 228 and external 399 / 374 after sequential legacy-train and reader exclusions. A genuinely untouched final test remains pending new post-freeze or new-center cases.
+- Leakage controls: T-stage inference input is image only; manual masks are explicitly renamed `gt_lesion_mask_path` and limited to training supervision; any mask-dependent route requires training-patient OOF predicted masks. Clinical/postoperative fields are removed; all train-dev-audit patient overlaps required by each route are 0; image and mask paths complete; source and generated outputs frozen with SHA-256.
+- Validation: builder completed; all generated rows have image and mask files; strict train-dev-audit patient overlaps are all zero; generated SHA-256 verification passed; Python compile and lints passed. `audit_task_datasets.py` passed but continued to warn about the separate legacy parent pack. Repository-path checks found 0 missing canonical paths, but returned nonzero because the pre-existing root-hygiene audit lists 39 unexpected entries and 1 discouraged entry.
+- Deployment: None. Dataset/training-only.
+- Rollback: remove the new versioned freeze directory and builder; prior `maincenter_retrospective_v20260821` and `threecenter_joint_unseen_v20260826` packs are unchanged.
+- Follow-up: model selection must use the fixed 128-patient dev only. The 118 image-linked, no-indexed-exposure candidates remain quarantine because exposure completeness is unprovable and T2 count is only 7. Collect and independently seal the future confirmatory cohort before claiming untouched 75% validation.
+
+## 2026-08-26, ResNet18 mean-pool T-stage baseline
+
+- Scope: new trainer `scripts/train_t_stage.py` and report dir `pipeline/experiments/reports/tstage_resnet18_meanpool_20260826/`. Training only. No public Next.
+- Reason: strip GUS ablations and run one patient-level line: multi-frame crop_ui, ResNet18, mean pool, T1/T2/T3/T4+ CE. Official 1062/128 split. No early stop.
+- Validation: official 1062/128 loaded; no train/val leak. `r18_mean_p0` finished 40/40 on GPU 0. Best val acc 0.5391 at epoch 15.
+- Deployment: None.
+- Follow-up: do not promote. Locked prospective/external not scored.
+
+## 2026-08-27, GUS m4a4o3_p0 locked-split eval
+
+- Scope: `--eval` of `runs/m4a4o3_p0/best_qwk.pth` (epoch 40) on val 128, prospective 425, external 485. No public Next.
+- Reason: First complete locked look after P0 training stopped at late-unfreeze OOM.
+- Key numbers (argmax): val QWK 0.654; prospective QWK 0.610 ACC 0.541; external QWK 0.420 ACC 0.505. T2 recall 0.27 / 0.12 / 0.15. Ranking AUROC stays higher than 4-class argmax.
+- Validation: complete n on all three splits.
+- Deployment: None.
+- Follow-up: Late-unfreeze resume still needs a memory fix. Do not retune decode on these locked tables.
+
+## 2026-08-26, GUS P0 fresh train without early stop
+
+- Scope: trainer CLI only. `--early-stopping 0` disables patience stop; default YAML stays 12. New background run `m4a4o3_p0` on GPU 1.
+- Reason: Restart after P0 with a full 80-epoch schedule. Do not cut mid/late unfreeze because val QWK plateaus.
+- Validation: CLI override; old `m4a4o3_from_ep12` stopped; new nohup job started.
+- Deployment: None.
+
+## 2026-08-26, GUS-Mask2Stage P0 training-correctness fixes
+
+- Scope: `pipeline/lib/gus_mask2stage.py`, `scripts/run_gus_mask2stage_20260826.py`, YAML. Training / eval only. No public Next.
+- Reason: Static review found alt-mask crop mismatch, leftover grad-accum, `deepest_invasion` leakage, mixed patient IDs, empty-bag loss, and Phase 1/3 score overwrite.
+- Key changes: Alt consistency now reuses the primary context crop box. Epoch-end flush of leftover accumulation, scaled by `accum / remainder`. Frame select is keyframe / mask area only. A5 star requires `allow_invasion_oracle`. Patient key is `patient_id_unique` or `source::patient_id`. Empty eval bags raise; train drops empty patients. Phase matrix tags use run-id. Preflight checks all split pairs and pack sizes. `--eval` / `--phase2` require `--run-id` or `--ckpt`. Incomplete locked n fails unless `--limit-eval`.
+- Validation: `--preflight` plus a crop-box / patient-key unit check. In-flight `m4a4o3_from_ep12` was not stopped.
+- Deployment: None.
+- Follow-up: New formal train needs a new `--run-id`. Phase 4 path / true train OOF / geom-cache fingerprint / full ckpt architecture restore remain P1.
+
+## 2026-08-26, BioMedAgent-aligned controlled EvoAssist plan
+
+- Scope: methodology SSOT only. No public Next, no Assist change.
+- Reason: Bu et al., Nat Biomed Eng 2026 (DOI 10.1038/s41551-026-01634-6) is the method paper for tool-aware multi-agent orchestration, interactive exploration, memory retrieval, and cross-task evolution. The live workbench must stay a controlled clinical assist system, not an online self-modifying agent.
+- Key changes: New `docs/plans/BIOMEDAGENT_CONTROLLED_EVOASSIST_20260826.md` maps five memories and six evolution layers onto current files. `SELF_EVOLVING_RETRIEVAL` and `DUAL_TIMESCALE_EVOASSIST` now point at that plan. Corpus key `biomedagent2026` registered; local PDF already on disk.
+- Validation: Docs only. Live Assist remains L3 plus Dual BM. RAG output still cannot become Tent-LN labels. Unreviewed experience still cannot enter production memory.
+- Deployment: None.
+- Follow-up: Keep collecting `rag_evaluations.jsonl`. Write EXP units offline with `release_status=candidate`. Do not ship eight autonomous agents.
+
+## 2026-08-26, 循证 local AJCC / NCCN copies
+
+- Scope: guideline panel copy, local source files, public Next. Public Next required.
+- Reason: The panel was labeled 寻证. Doctors need 循证, and they need to see where AJCC / NCCN live, with a local copy that opens without the official site.
+- Key changes: Title is now 循证（指南出处）. The panel lists 指南在哪里 for AJCC 8th Stomach (local PDF), NCCN patient 2026 (local PDF), and NCCN Gastric 3.2026 (local clause HTML; full clinical text stays on nccn.org). Clause chips say 出自 / 本机. `GET /api/reader/guideline-source` serves the local files. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit` exit 0. `:3300` guideline-trace returns 3 library sources, all `local_available`. Source API returns AJCC PDF, NCCN patient PDF, and NCCN clinical HTML. Public smoke `public_root` / `public_clinical` 200; public HTML includes this BUILD.
+- Deployment: Public Next BUILD `kGkKHRdc5Ip3aa7EGZyyD`. Workstation `:3300` (`gastric-next-public`) on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, Fix public historical-queue 401 for jmr
+
+- Scope: `lib/reader/local-access.ts`, `queue-access-server.ts`, `/api/patients`.
+- Reason: Public `jmr` (and other whitelist accounts) could open the queue tree, but switching to a year / external / benign queue toasted `surgery 队列请求失败（HTTP 401）`. Aliyun already admitted the session, then tunneled to workstation `:3300`. That READER_ONLY standalone checked the queue gate before the `x-agent-upstream-admit` bypass, and the public session file is not on the workstation.
+- Key changes: Shared `isTrustedPublicUpstream`. Local tunnel requests with the admit header skip the public-queue gate and the later session-store check. Public hosts still require a real login plus the whitelist.
+- Validation: `npx tsc --noEmit`. `npx tsx scripts/test_public_upstream_admit.mjs`. Live `:3300` `internal:2018` surgery is 200 (`total=3638`) with admit headers; same URL without admit stays 401. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `pXlph4oBU6UDwWueH183Q`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` (`gastric-next-public`) restarted on the same standalone. Previous standalone kept as `.next/standalone.bak_20260826_224732_pre_queue_admit`. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*` plus that standalone bak.
+- Follow-up: Evaluation sessions remain locked to the reader-study queue. Commit not created because a commit was not requested.
+
+## 2026-08-26, Guideline traces and detailed RAG ratings
+
+- Scope: public workbench similar-case panel, guideline RAG display, case-state / evaluation log. Public Next required.
+- Reason: Doctors asked for Feature-embedding similar cases plus traceability: show the specific AJCC / NCCN clause and a source link, not only LLM prose. Public also needed to persist detailed ratings of that RAG, including year-queue T / BM, not only reader v150.
+- Key changes: New 寻证 panel lists retrieved guideline cards with publisher, version, and official URLs. Local `/api/reader/guideline-trace` serves the locked corpus on the edge. Assist-judgment still explains, but cards and URLs stay locked. Similar-case marks now write from the panel itself. Session ratings cover 有帮助 / 没帮助 / 不确定 / 有误导, judgment effect, and a note. Events append to `rag_evaluations.jsonl` and case-state. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit` exit 0. Python retrieve for T3 returns 6 cards and AJCC / NCCN URLs. `:3300` `POST /api/reader/guideline-trace` 200 with 6 cards and 3 http citations. Public smoke `public_root` / `public_clinical` 200; public HTML includes this BUILD.
+- Deployment: Public Next BUILD `ZdVq1pVh4DWDBx1VNDqnN`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` (`gastric-next-public`) on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, Score acc_boost2 on ZML T keyframes
+
+- Scope: `scripts/score_zml_tstage_accboost2_20260826.py`, report under `pipeline/experiments/reports/zml_tstage_accboost2_20260826/`.
+- Reason: User asked to take the official 72% T model and score it on current doctor T-staging keyframes and records.
+- Key changes: Pulled public zml CASE-* state (23 completed, one refined polygon each). Ran acc_boost2 and live L3 on those frames. Assist unchanged.
+- Validation: 23/23 frames scored. vs zip `reference_pt`: acc_boost2 9/23, L3 14/23, doctor 12/23. vs catalog `src_pT`: 10/23 / 14/23 / 12/23. No similar-case marks on these 23.
+- Deployment: None. Do not swap `:8772` to acc_boost2 on this evidence.
+- Follow-up: Finish the remaining T 100 before claiming a reader Acc. Keep L3 as the live T head until a video-keyframe model beats it on this pack.
+
+## 2026-08-26, T-stage RAG, benign memory, session refine
+
+- Scope: similar-case index, search, T/BM workbench, Tent-LN left as-is. Public Next required.
+- Reason: Doctors only saw always-on RAG on the benign browse queue. BM queries could not retrieve benign history because memory was T-train malignant only. The dual-timescale plan needs a real T panel plus a session-level retrieval loop that does not change Assist numbers.
+- Key changes: T year-queue shows the similar-case panel in the right rail. Memory appends train-benign frames (PCA not refit). BM packs live in `by_hash_nature` and sort by nature; T packs stay on T bands. Letterful IDs no longer collapse onto short-digit cancer hashes. Cards add reason chips and「根据反馈继续查找」(channel-pool rerank, not a new encoder). Named `PILOT_READER_V1_TENT_PREF` plus this retrieval slice. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit` exit 0. `PYTHONPATH=pipeline python3 pipeline/similar_cases/test_retrieve.py` ok. Neighbor table: T CASE-042 available; BM-010 nature pack returns 3 benign + 2 malignant. Public smoke `public_root` / `public_clinical` 200; public HTML includes this BUILD.
+- Deployment: Public Next BUILD `UCZxcpmb3D7Ga7-KuTvCL`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` (`gastric-next-public`) on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`. Index rollback: `runtime/gastric_scan_next/backups/visual_similar_v1_20260826_221828`.
+
+## 2026-08-26, Tent-LN Assist and preference rerank
+
+- Scope: live Assist `:8772`, similar-case search, case-state snapshot. Public Next required for the rerank copy.
+- Reason: Ship the requested test-time adaptation and doctor-mark retrieval update. Classic BN TENT does not apply to ConvNeXt; retrieval must not use pathology labels or change Assist probabilities.
+- Key changes: Assist runs 2-step LayerNorm entropy min per case, then restores cached weights. Frozen probabilities are stored beside adapted ones. Similar-case lists add a λ=0.05 useful/unlike bias from `doctor_case_state` (`similar_case_preference_v1.json`). Named `PILOT_READER_V1_TENT_PREF`. This starts a new pilot slice; V0 freeze files stay.
+- Validation: CPU Tent-LN restore self-check; preference snapshot rebuild from current case-state. `:8772` status `ready` with `tent.method=tent_ln`.
+- Deployment: Public Next BUILD `-CconCgYFwHoYK5TMvhS6`. Smoke `public_root` 200. `gastric-reader-analyze` (`:8772`) restarted with `GASTRIC_TENT=1`. Workstation `:3300` on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: `GASTRIC_TENT=0` plus Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, Pilot freeze and O3-first execution plan
+
+- Scope: meeting note, execution plan, overlap audit, live-weight manifest. No public UI change.
+- Reason: 2026-08-26 discussion mixed live Assist, O3 autopsy, 150 vs 100, TENT, and self-evolving. Those need a frozen pilot name and a patient-level overlap check before more training or narrative claims.
+- Key changes: Named `PILOT_READER_V0_20260826`. Recorded live L3 T-stage and Dual BM hashes; O3 is research-only. Reader v150 T arm overlaps official prospective 425 (70 cases) and external 485 (20 cases); official val 128 is 0. Current doctor rounds stay a pilot. Priority is ordinal decode, then ensemble, then TENT or retrieval updates.
+- Validation: `python3 scripts/audit_reader_cohort_overlap_20260826.py`. Runtime JSON/JSONL copied under `runtime/gastric_scan_next/backups/`.
+- Deployment: None. Public BUILD remains `QrgZkl_XhsjPkvqhi2BIs`. Do not hot-swap Assist during the live T arm.
+
+## 2026-08-26, Queue statistics use review progress
+
+- Scope: `StatisticsPanel`, workbench statistics modal.
+- Reason: The old panel ran CBM rules on the whole queue and showed average confidence, high-risk, T4, and N-stage. Those numbers were not the current reader workflow and often stayed at zero.
+- Key changes: Stats now join the current queue with this account's `/api/reader/case-state`. Cards show queue size, done / in progress / not started, Assist runs, useful similar-case marks, and saved masks. The bar chart is review status plus the doctor's own T or nature calls. No gold labels, no CBM confidence, no invented metastasis rate.
+- Validation: `next build` after Recharts tooltip typing fix. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `QrgZkl_XhsjPkvqhi2BIs`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` (`gastric-next-public`) restarted on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, Drop similar-case pathology collapse
+
+- Scope: `SimilarCaseReferencePanel` card footer.
+- Reason: After revealing historical pathology, the「收起病理」control was unnecessary.
+- Key changes: Reveal stays one-way. Pathology text remains; the collapse button is gone.
+- Validation: Lint clean on the panel. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `wdtEHBfEe_kF1icdrfHTV`. Smoke `public_root` / `public_clinical` 200; public HTML comment matches. Workstation `:3300` restarted on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, Similar-case channel scores and prominent doctor marks
+
+- Scope: `SimilarCaseReferencePanel`, `SimilarCaseInspectViewer`.
+- Reason: The inspect rail hid「有对照价值 / 不太像」under clinical facts, and a single「视觉接近」bar did not say whether the lesion, wall, or whole image matched.
+- Key changes: Doctor mark is a highlighted「你的判断」block at the top of the inspect rail and on each card. Scores split into 病灶形态, 瘤周层次, 全图外观, and 综合. Still relative retrieval scores, not diagnostic probabilities.
+- Validation: Lint clean on the touched files. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `HlV4RBExBjq6H_8XqXRiG`. Smoke `public_root` / `public_clinical` 200; public HTML comment matches. Workstation `:3300` (`gastric-next-public`) restarted on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, GUS trainer resume and run directories
+
+- Scope: `scripts/run_gus_mask2stage_20260826.py`, `pipeline/lib/gus_mask2stage.py`, config YAML. Training only.
+- Reason: The epoch-12 abort could not resume, and a restart would overwrite `best_*.pth` with QWK 0.
+- Key changes: Immutable `runs/<run_id>/` with atomic `last.pth` / `best_qwk.pth`. Full resume stores model, EMA, optimizer, scheduler, scaler, RNG, history, and unfreeze phase. Old shared `best_M4_A4_O3.pth` is not written. Each epoch logs pred counts, threshold rates, and diagnostic 0.5-crossing metrics; selection stays argmax QWK.
+- Validation: `--help` and import of `monitor_patient_outputs` on the epoch-12 val table. No new training run in this change.
+- Deployment: None.
+
+## 2026-08-26, GUS O3 epoch-12 decode autopsy
+
+- Scope: `scripts/diagnose_gus_o3_decode_20260826.py`, reports under `pipeline/experiments/reports/gus_mask2stage_20260826/`. Training analysis only.
+- Reason: Epoch 12 never predicted T2/T3 while T2+/T3+/T4+ AUROC were 0.831 / 0.855 / 0.766. Need to locate the collapse before changing the network.
+- Key changes: Dump a/q/class probs, compare argmax vs 0.5 threshold-crossing vs expected-stage, and re-forward frames. Finding: collapse is in product-to-argmax (already at frame level). Same `q` with 0.5 crossings yields pred counts 36/9/29/54 and QWK 0.609 on this 128-person val (diagnostic only). A4 top-1 overlap is 59–75%, not the main cause. Loss is unmasked BCE on cumulative `q`, not risk-set BCE on `a`.
+- Validation: Script exit 0 on GPU 1 against `best_M4_A4_O3.pth`. Metrics match the epoch-12 history table.
+- Deployment: None. Prospective 425 and external 485 stay locked. Public Assist unchanged.
+
+## 2026-08-26, RAG evaluation DTO strip and score wording
+
+- Scope: similar-case search sanitizer, reader card labels, RAG product/acceptance docs.
+- Reason: Evaluation JSON still returned same-label / counter roles, so hiding the titles in the UI was not enough. Score bars also read like a diagnosis percent.
+- Key changes: Search sanitizes evaluation payloads (no `support_cases` / `counter_cases` / `evidence_role`, no unrevealed pathology). Detects `environment=research` from the body or Referer. Cards say「视觉接近」and「不是诊断概率」. Product note clarifies cache-miss is cached-vector retrieve, not live MedSigLIP. Acceptance follow-up lists remaining HTTPS, signed image access, and server-forced blinding.
+- Validation: `npx tsx scripts/test_similar_case_public.mjs` passed. `npx tsc --noEmit` exit 0. Live `:3300` search: daily still returns 3 support + 2 counter; `environment=research` strips `support_cases` / `counter_cases` / `evidence_role` / unrevealed pathology, and `score_note` includes 不是诊断概率.
+- Deployment: Public Next BUILD `rjUf1z2Zj1gjlRBE_t5a6`. Smoke `public_root` / `public_clinical` 200; public HTML comment matches. Workstation `:3300` (`gastric-next-public`) restarted on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
+## 2026-08-26, Public RAG product note
+
+- Scope: `docs/product/公网RAG相似病例与指南解释说明.md`, `docs/DOCUMENT_MAP.md`.
+- Reason: Collect live similar-case retrieve, overlay v3, in-place inspect, evidence fusion, guideline explanation, and the Aliyun-to-`:3300` tunnel in one doctor-facing note.
+- Key changes: About 5000 Chinese characters. Marks the visual-neighbor path as the public station, and the Agent 28-d memory as research-only. No product code change.
+- Validation: Cross-checked against `retrieve.py`, `assist_judgment.py`, `evidence_fusion.py`, overlay v3, and `agent-upstream.ts`.
+- Deployment: Docs only. Public BUILD unchanged (`jhY79fUmc_jd5_T5S7K1z`).
+
+## 2026-08-26, Shared mask history and in-place RAG inspect toolbar
+
+- Scope: mask-overrides history API, InteractiveSegPanel history list, SimilarCase inspect viewer.
+- Reason: Doctors could only see their own complete-mask versions, and RAG cards still offered a workbench jump.
+- Key changes: History lists every account's saved versions for the case, labeled by account. Delete stays owner-only. RAG open stays in place and uses the same viewer toolbar as other queues: original, overlay, split, detection box, peritumoral, ROI, measure, gain.
+- Validation: Lint clean on the touched files. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `jhY79fUmc_jd5_T5S7K1z`. Smoke `public_root` / `public_clinical` 200; public HTML comment matches. Workstation `:3300` (`gastric-next-public`) restarted on the same standalone. `gastric-next.service` (`:3000`) was not restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Current working mask is still per-account so one doctor does not overwrite another.
+
+## 2026-08-26, GUS-Mask2Stage ordinal loss is AMP-safe
+
+- Scope: `pipeline/lib/gus_mask2stage.py` `gus_loss`. Training only.
+- Reason: First `--train` step crashed because `binary_cross_entropy` on `q` is blocked under autocast.
+- Key changes: O2/O3 use fp32 manual BCE on probabilities. O0/O1 also compute in fp32.
+- Validation: Restart default M4/A4/O3 on GPU 1.
+- Deployment: None.
+
+## 2026-08-26, GUS-Mask2Stage geom from the clean full mask
+
+- Scope: `pipeline/lib/gus_mask2stage.py`, `scripts/run_gus_mask2stage_20260826.py`, `pipeline/configs/tstaging_4class_gus_mask2stage_20260826.yaml`. Training only.
+- Reason: The previous 24-D geom was computed after context crop and square letterbox, so several channels mainly encoded the crop rule (center near 0.5, margin near 0.237, aspect near 1). Circularity, 1-circularity, and compactness were the same variable. Area mixed pixel counts with contour area.
+- Key changes: 12-D geom is now extracted from the original confirmed full-image mask before flip, rotation, scale, mask jitter, or context crop. Features are relative area, perimeter/diagonal, clipped circularity, eccentricity, solidity, convexity, major/minor axis over diagonal, rotated extent, radial CV, radial spread, and centroid offset. Train-fold z-score is cached and reused on val/test. `geom_valid` masks the geom token. Token type embeddings distinguish CLS, views, regions, geom, and radial. M6 omits the geom token. M5 drops frames with invalid geom.
+- Validation: Synthetic circle/ellipse sanity check plus `--smoke --gpu 1`.
+- Deployment: None. Public Assist and Next are unchanged.
+- Follow-up: Geom stays auxiliary. Keep M5 and M6 as shortcut checks. Physical mm sizes need DICOM spacing and are not added here.
+
+## 2026-08-26, GUS-Mask2Stage training entry (image + mask + keyframes)
+
+- Scope: `pipeline/lib/gus_mask2stage.py`, `pipeline/configs/tstaging_4class_gus_mask2stage_20260826.yaml`, `scripts/run_gus_mask2stage_20260826.py`, `pipeline/run_experiment.py` model_type hook.
+- Reason: Live Assist still aggregates as single-frame, and the current T head only uses mask as a 4th channel / three-region pool. Need a patient-bag model that matches the doctor workflow: 1-10 keyframes and a confirmed lesion mask, without clinical fields or similar-case votes.
+- Key changes: Shared ConvNeXt Tiny encoder, full/context views, signed-distance Core/Inner/Outer/Perilesion pool, trans-boundary radial tokens, threshold-specific Top-K fusion, conditional ordinal T1/T2/T3/T4+. Runner covers plan, preflight, smoke, phase0 re-aggregation of the live mask-pool CORAL checkpoint, train/eval, and later M/A/O/tabular matrices.
+- Validation: `--plan` / `--preflight` / `--smoke` on the official maincenter_retrospective_v20260821 pack. Prospective 425 and external 485 stay locked.
+- Deployment: Training-only. Public Assist and Next are unchanged. Do not swap the live L3 checkpoint until phase0 and the new val QWK are reviewed.
+- Follow-up: Run `--phase0` on val first. Train default M4/A4/O3 only after smoke. TabPFN stays optional phase4.
+
+## 2026-08-26, GUS-Mask2Stage P0/P1 review fixes
+
+- Scope: `pipeline/lib/gus_mask2stage.py`, `scripts/run_gus_mask2stage_20260826.py`. Training only.
+- Reason: The first prototype had a broken GPU distance field, treated empty masks as valid frames, let O0/O1/O2 bypass A0-A5, used batch-level class weights, and froze parameters out of the optimizer.
+- Key changes: OpenCV signed distance is computed in the dataset; soft Core/Inner/Outer/Perilesion bands use sigmoid intervals and do not force a partition of the whole image. Bad or empty frames are dropped. All ordinal heads read A-aggregated patient tokens; O1 is a shared-score plus monotone-threshold CORAL. Fold-level pos/neg weights, letterbox resize, full+context geometry, clean vs light-alt masks, valid-masked bottleneck/view loss, and B1a/B1b/B1c phase0 modes.
+- Validation: `python3 -m py_compile` plus `--smoke --gpu 1` after the patch.
+- Deployment: None. Public Assist unchanged.
+- Follow-up: Visualize 100 region overlays before training M3/M4. Do not start the full M0-M6 matrix until `--phase0` on val is reviewed.
+
+## 2026-08-26, T-staging LoRA uses official crop_roi
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/unfreeze.py`, `preprocess.py`. Training only. Four-class T-staging, not BM.
+- Reason: Official `crop_roi` already exists for every row in `maincenter_retrospective_v20260821`. Previous LoRA recomputed a 20% mask box. The BM LoRA that was started by mistake was stopped.
+- Key changes: Full view paints the `crop_ui` mask polygon. ROI is the official `crop_roi` image, with `crop_roi/roi_masks` painted when present. Frozen T-staging encode and its 20% cache stay on the plan 2.2 box.
+- Validation: T-staging train/val/prospective/external official ROI coverage is 6044 / 733 / 1659 / 2458. `test_bm_sign_pack.py` still covers official ROI load.
+- Deployment: None. Public Assist unchanged.
+- Follow-up: Report dir `medsiglip/pipeline/experiments/reports/medsiglip_gastricus_unfreeze_lora_20260826/`. GPU1 already holds `gus_mask2stage` plus public SAM, so this run stays on GPU0 with bag batch 4 and 4 dataloader workers to use the leftover 13 GB. Do not promote until prospective and external exact ACC are in.
+
+## 2026-08-26, Complete masks autosave without the save button
+
+- Scope: `InteractiveSegPanel.tsx` reader video toolbar.
+- Reason: Doctors still had to tap「保存完整遮罩」after the lesion (and lumen) contour was ready.
+- Key changes: Reader queue autosaves the complete mask after SAM / box / refine / workflow. The manual button is a status chip. Video tracking frames are not saved one-by-one.
+- Validation: Typecheck after `LumenOverride.lumen_polygon` fix. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `ZJ7ac_9hnssTIi4ZDq6u8`. Workstation `:3300` restarted on the same standalone. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: History panel still lists versions. Assist probabilities unchanged.
+
+## 2026-08-26, Historical similar-case inspect reuses queue viewer tools
+
+- Scope: `SimilarCaseInspectViewer.tsx`, `SimilarCaseReferencePanel.tsx`.
+- Reason: Opening a card such as REF-D9FCE172 (entire-stomach site, patient closeness 0.82, historical lesion polygon) still used a slim modal. Doctors need the same black queue tools to inspect the historical mark.
+- Key changes: Full-screen black inspect. Same overlay and tool chips as the other-queue viewer: outline, peritumoral ring, ROI zoom, measure, gain/contrast, reset, sibling-plane filmstrip. Clinical facts stay on the right rail. Pathology and workbench jump unchanged.
+- Validation: Overlay table `similar_case_overlays_v3` (12895 cases, polygons capped at 128 vertices). Workstation `:3300` now serves that table so public retrieve no longer hydrates the old 36-point outlines. `tsc --noEmit` clean. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `y0_nuSTGERw4cEW1frfSw`. Overlay v3 copied onto Aliyun `data/` and workstation `:3300` standalone; `gastric-next-public` restarted. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`; restore standalone overlay to v2 if needed.
+
+## 2026-08-26, Shorten public Next stop so deploy 503s do not last 90s
+
+- Scope: `scripts/deploy_public_next.sh`, Aliyun `gastric-next.service.d/stop-timeout.conf`, `docs/technical/GITHUB_ACTIONS_DEPLOY.md`.
+- Reason: Today's 15:12 swap left Aliyun `:3000` down for ~90s (SIGTERM hang, then SIGKILL). Auth edge returned `Next workbench upstream unavailable` while `:80` stayed up.
+- Key changes: Cap stop at 8s, SIGKILL if the unit is still active, wait for `:3000` before smoke. Drop-in applied on Aliyun without restarting the live workbench.
+- Validation: Public `/` and `/workbench/` 200, BUILD `jVBf_R7NYB4PgdhokaX4f`, `gastric-next` / tunnel `18768` / SAM health all reachable. `systemctl show gastric-next -p TimeoutStopUSec` is 8s after daemon-reload.
+- Deployment: No Next rebuild. Live BUILD unchanged. Hard-refresh http://47.106.33.102 if a doctor still sees the 503 JSON. Rollback: remove `stop-timeout.conf` and `systemctl daemon-reload`.
+
+## 2026-08-26, Assist judgment shows LLM guideline explanation and references
+
+- Scope: assist-judgment API, `assist_judgment.py`, reader right-rail template card.
+- Reason: The accept/decline template only restated signs. Doctors need an LLM note that cites AJCC / NCCN cards under the same block, without changing Assist probabilities.
+- Key changes: After Assist, the template stays. A guideline explanation and reference list appear below it. Badge shows LLM vs local template. Public edge tunnels `/api/reader/assist-judgment` to the workstation. No invented papers.
+- Validation: Template validator. Typecheck. Live LLM generate returned `source=llm` with AJCC 8th and NCCN Gastric 3.2026 citations. Incomplete half-sentences are dropped.
+- Deployment: Public Next BUILD `jVBf_R7NYB4PgdhokaX4f`. Smoke `public_root` / `public_clinical` 200. Workstation `:3300` restarted on the same standalone so the public tunnel can run the LLM. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Literature library stays out of the doctor station. This is explanation, not a second diagnosis.
+
+## 2026-08-26, Public all-queue browse for jmr, why, test, admin, zml
+
+- Scope: `apps/gastric_scan_next/lib/reader/queue-access.ts`, `queue-access-server.ts`.
+- Reason: These five public accounts need the full workbench queue tree. Other doctors should stay on the reader-study queue.
+- Key changes: `PUBLIC_QUEUE_BROWSERS` is now admin, jmr, why, test, zml (plus admin aliases). UI and API 403 `public_queue_restricted` both follow this list.
+- Validation: whitelist unit check. Public deploy smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `kFwojWumw7gwYdogxMKog`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Evaluation sessions remain locked to the reader-study queue.
+
+## 2026-08-26, Evidence-fusion report visible as six glass sections
+
+- Scope: `EvidenceFusionReport`, `ReaderStudyQueuePanel`, similar-case panel chrome, `/api/reader/evidence-fusion` `maxDuration`.
+- Reason: Doctors needed to see an LLM contrast report, not a raw pre block that silently stayed on the local template.
+- Key changes: Clicking「基于已选病例做证据对照」first paints a local six-section draft, then swaps in the validated LLM report. Badge shows LLM / template. Right-rail cards use black frosted glass. Original Assist probabilities stay locked.
+- Validation: `npx tsc --noEmit`. `npm run test:evidence-fusion`. Live LLM generate returned `source=llm`, six sections, original T3 50% unchanged.
+- Deployment: Public Next BUILD `4we1xZRyB2aWnMnHLBykH`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: This remains evidence contrast, not a second staging model.
+
+## 2026-08-26, Interactive evidence-fusion MVP (original probs unchanged)
+
+- Scope: `apps/gastric_scan_next` reader right panel, `/api/reader/evidence-fusion`, case-state feedback fields, `pipeline/agent/product/llm_info/evidence_fusion.py`.
+- Reason: Doctors need a traceable support / oppose / conflict paragraph from selected similar cases and structured signs, without turning the system into an LLM re-stager.
+- Key changes: Persist `similar_case_feedback` and `evidence_fusion` on case-state (refresh restores marks). Structured evidence cards hide unrevealed pathology; evaluation sessions strip 同型/反例 roles. New button「基于已选病例做证据对照」and six-section prose titled「证据对照（不改上方分期概率）」. Template fallback when LLM fails. Assist probabilities are copied verbatim and validated; no `revised_probability` / adjusted risk.
+- Validation: `npx tsc --noEmit`. `npm run test:evidence-fusion`. Python CLI template smoke (`run_llm_info_task.py --task evidence_fusion`). Public deploy smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `ewDdw7wbe5fGjy6TeJOeN`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: This is evidence contrast, not a second staging model. MedSigLIP baselines, useful-case reranker training, and interactive T-stage filters stay offline / phase 2.
+
+## 2026-08-26, Add Assist JSON and model configs to the function spec
+
+- Scope: `docs/product/胃充盈超声智能诊断系统_软件功能说明书.docx` V1.2.
+- Reason: The middle chapters needed complete request/response JSON and the live classifier config.json fields, not only prose.
+- Key changes: Added 6.7.4/6.7.5 analyze JSON, 7.2 service registry JSON, 7.3.1/7.3.2 Dual ConvNeXt and mask-pool CORAL configs, 7.4.1 similar-case search JSON. Numbers and paths copied from current tools.
+- Validation: Regenerated DOCX and rendered pages covering the new JSON blocks.
+- Deployment: Docs only.
+
+## 2026-08-26, Expand Assist chapters in the function spec
+
+- Scope: `docs/product/胃充盈超声智能诊断系统_软件功能说明书.docx` V1.1, `scripts/write_reader_workbench_spec_docx.py`.
+- Reason: Assist needed the layered story: own-model classify, template prose for accept or decline, own-model embeddings for lesion and full-image neighbors, doctor marks useful cases, RAG popup remains planned.
+- Key changes: Sections 6.7-6.10 and 7.3-7.5 now name five layers, gate copy, request steps, report-template paragraphs, Dual ConvNeXt embedding channels (lesion 0.50), and the planned post-Assist picker. No product UI change.
+- Validation: Regenerated DOCX. Rendered new Assist pages. No middle-dot characters.
+- Deployment: Docs only.
+
+## 2026-08-26, Doctor workbench software function specification
+
+- Scope: `docs/product/胃充盈超声智能诊断系统_软件功能说明书.docx`, `scripts/write_reader_workbench_spec_docx.py`.
+- Reason: Doctors and coordinators needed one formal spec of the current reading flow, every visible control, and the models behind Assist.
+- Key changes: V1.0 spec in 黑体 headings and 仿宋 body. Covers login, 150-case path, two-round contract, contour tools, classify-only Assist, accept or decline prose, contrastive similar cases, and service ports. Public login page checked live. Inner screens checked against current Next and pipeline source. No product UI change.
+- Validation: Regenerated DOCX (仿宋 / 黑体 eastAsia). Rendered 21 pages and reviewed layout. No middle-dot characters.
+- Deployment: Docs only. No public Next rebuild.
+- Follow-up: Tutorial step 8 still uses older button wording; the spec records the current right-panel labels.
+
+## 2026-08-26, Pin T-stage classifier on CUDA in the warm Assist worker
+
+- Scope: `scripts/serve_reader_analyze.py` on `:8772`.
+- Reason: Assist already kept the 1.1 GB binary Dual ConvNeXt resident. The T-stage mask-pool weights were loaded at startup but not pinned or CUDA-warmed, so the first T-staging click still paid graph compile.
+- Key changes: Keep process-level refs to both tools. Refuse to go ready unless both models sit on CUDA. Run a dummy T-stage forward (and a best-effort binary forward) during warmup. Status now reports `tstage_device`, `tstage_warm_ms`, and CUDA allocated/reserved MB.
+- Validation: Restart `gastric-reader-analyze.service`. Status: `binary_device=cuda:0`, `tstage_device=cuda:0`, dummy binary 2005 ms, dummy T-stage 937 ms, reserved about 738 MB PyTorch / 1172 MiB nvidia-smi. Same dummy T-staging frame on `:8772`: first infer 642 ms, second 33 ms.
+- Deployment: Workstation user systemd only. Public Next still tunnels analyze to `:3300` then `:8772`. No Aliyun UI rebuild. Do not expose `:8772`. Rollback: `systemctl --user restart gastric-reader-analyze.service` onto the previous script.
+- Follow-up: None.
+
+## 2026-08-26, Contrastive similar-case retrieval
+
+- Scope: `pipeline/similar_cases/retrieve.py`, neighbor table v2, `SimilarCaseReferencePanel`, public Next neighbor JSON.
+- Reason: Innovation 2. Flat Top-5 often returned only the same T-stage. Doctors need same-label neighbors and visually close, pathologically different hard counters.
+- Key changes: After patient-prototype ranking, keep 3 same-label cards and 2 different-label cards above the 0.06 floor. Cards carry `evidence_role`. Workbench shows 同型对照 / 困难反例. Evaluation keeps a flat list so the current-case label is not leaked. Assist probabilities are unchanged. No majority vote.
+- Validation: 7 retrieve unit tests. `scripts/test_similar_case_cards.py` on CASE-001 (3 T1 support, 2 T3/T4b counters, pathology hidden). Neighbor table v2: 1948 hashes, 1940 combined packs have both buckets. `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `O9843SpL9k8cTf7CofiJg`. Neighbor JSON rsynced. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*` plus previous neighbor JSON.
+- Follow-up: Benign/malignant counters need a nature-labeled memory; the current index is T-staging malignant only.
+
+## 2026-08-26, Warm Assist classify worker on :8772
+
+- Scope: `scripts/serve_reader_analyze.py`, `pipeline/agent/product/analyze_cli.py` / `analyze_case.py` split, Next reader analyze route, user systemd.
+- Reason: Admin public Assist waited 8-26 s. Trajectory showed classify-only plus one 100 KB frame; the 1.1 GB Dual ConvNeXt was reloaded on every spawn.
+- Key changes: Persistent `:8772` worker keeps binary and T-stage weights in GPU memory. `analyze_case.py` spawned by `:3300` is now a thin sidecar client with local fallback. Next prefers `READER_ANALYZE_UPSTREAM`. Assist probabilities unchanged. Do not expose `:8772` on the public internet.
+- Validation: 18 product tests passed. Sidecar ready in 8.8 s warmup, RSS about 1.0 G. Same BM-041 frame: first warm infer 3.4 s, second 29 ms. Thin `analyze_case.py` hop to the sidecar 70 ms. Yesterday cold public clicks were 8-26 s.
+- Deployment: Workstation `gastric-reader-analyze.service` only. Public Next still tunnels analyze to `:3300`; no Aliyun UI rebuild. Rollback: `systemctl --user stop gastric-reader-analyze.service` (CLI falls back to cold spawn).
+- Follow-up: Rebuild `:3300` standalone later so Next can HTTP the sidecar without the thin Python hop.
+
+## 2026-08-26, BM-001 still zip-only after machine-fingerprint search
+
+- Scope: `benign_malignant/CASES.md`, `dataset/task_datasets/READER_V150_JOIN.md`, `阅片150_原始对照总表` note, `scripts/build_reader_clip_patient_map.py`.
+- Reason: User asked to find the hospital-side original for BM-001 (`良恶性鉴别/良性/1.avi`).
+- Key changes: Clip is 800x600 msvideo1, 9.518 s, 324 frames, overlay WC / V9-2 / 34Hz / 6.1cm, no burned-in id. Same Philips Chinese overlay family as Dehua `dh122`, but not that clip. No unique size or first-frame hit in gastritis 144, Dehua stills to dh64, registry, or incoming zips. Do not assign hbyz1 or dh01.
+- Validation: Zip CRC/MD5; ffprobe; ahash vs unused Dehua 800x600 and 34Hz clips (nearest 63+); incoming zip member size scan.
+- Deployment: Docs and lists only.
+
+## 2026-08-26, Template-based assist judgment for doctor accept or decline
+
+- Scope: `ReaderStudyQueuePanel`, `lib/reader/assist-judgment-prose.ts`, public Next.
+- Reason: After Assist, doctors only saw a stage or nature chip. They asked for an explainable paragraph on the existing report template, then decide whether to accept it.
+- Key changes: The right panel now writes a short 超声所见 / 超声提示 (or BM 超声描述 / 超声提示) from the current box and assist signs. Save buttons are 接受这段判断并下一例 and 不接受，按我的判断保存. The paragraph is logged with the doctor action. Similar cases do not vote. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit` during public build.
+- Deployment: Public Next BUILD `V_lDnQ1qqSqDwlsq_kkwt`. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Historical similar-case cards draw lesion polygons
+
+- Scope: overlay precompute, similar-case panel, public Next overlay JSON.
+- Reason: Historical cards only showed a rectangle. Doctors asked to see the previous case lesion polygon, same thin teal stroke as the current boxing line.
+- Key changes: Overlay table now stores a simplified official annotation or mask contour, aligned onto the preview image. Cards and the drawer draw that polygon; the old box is only a fallback when no polygon exists. Assist probabilities unchanged.
+- Validation: Overlay table 12396 / 12895 frames have polygons. `python3 scripts/test_similar_case_cards.py` (4 of 5 CASE-001 cards have a polygon). `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `TJQFbtUr8KkaaE-iEzr3q`. Overlay JSON rsynced. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Reader clip to 200-case patient map at repo root
+
+- Scope: `reader_clip_to_patient_200.csv`, `reader_clip_to_patient_200.md`, `screen200_not_in_reader150.csv`, `scripts/build_reader_clip_patient_map.py`.
+- Reason: Need one list of every reader clip, the exact source video, and whether that hospital id is in the 200-case screening table.
+- Key changes: BM rows point at `良恶性鉴别.zip`. T rows point at `T分期100例.zip`. Master table `阅片150_原始对照总表.csv` / `.xlsx` (150 rows plus 200-case leftover sheet). BM-035 locked to `7207986-4.wmv`. 43 reader rows / 38 patients overlap the 200-case table. No names.
+- Validation: 50 unique BM zip members, 100 unique T zip members. 150 reader clips exist. 149 source videos on disk (BM-001 zip-only).
+- Deployment: Docs and lists only.
+
+## 2026-08-26, BM-034 / BM-035 origin clip mapping
+
+- Scope: `benign_malignant/CASES.md`, `zml50_origin.csv`.
+- Reason: Reader clips still show machine UI. Origin tables pointed BM-035 at the same 24 s clip as BM-040.
+- Key changes: Zip filesize plus duration plus first-frame check. BM-034 = `恶性/9.wmv` = `6391382-4.wmv` (38.28 s). BM-035 = `恶性/10.wmv` = `7207986-4.wmv` (4.80 s). BM-040 stays `恶性/15.wmv` = `7207986-11.wmv`. No folder named 杨百例; source is the Zhuo BM zip plus Foshan legacy videos. Reader `clip_01.mp4` is a remux, not `crop_ui`.
+- Validation: Zip byte sizes match the two WMVs. Clip durations match. First frames of BM-035 match `-4`, not `-11`.
+- Deployment: Docs and origin CSV only. Public reader clips unchanged.
+
+## 2026-08-26, Patient-level similar-case ranking and quieter UI
+
+- Scope: `pipeline/similar_cases/retrieve.py`, neighbor rebuild, SimilarCaseReferencePanel, workbench chip.
+- Reason: Cards were ranking and scoring single frames, so a 0.24 lesion bar still appeared as a reference. The drawer said 匿名, and the 收起辅助分析 chip was noise.
+- Key changes: Each historical patient is one prototype (mean of that patient's frames) compared with the query patient's prototype. Only patients above the closeness floor are listed. The card shows one 病人接近 bar. Drawer says 参考病例. The 收起辅助分析 chip is removed. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit`. `PYTHONPATH=pipeline python3 pipeline/similar_cases/test_retrieve.py`. `python3 scripts/test_similar_case_cards.py`. Neighbors rebuilt, 1948 hashes.
+- Deployment: Public Next BUILD `SNPAu3Im2jU1zqeWIx6Qp`. Neighbor table rsynced. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Similar-case cards show one frame, current mask, and non-negative closeness
+
+- Scope: Similar-case panel, neighbor hydrate, retrieve case grouping, public Next.
+- Reason: Extra thumbnails labeled as same-case frames were other scan planes, and sometimes a different dataset ID that only shared a digit hash. Raw whitened cosine can be negative, which looked like a calculation error. Doctors also needed the current lesion mark next to the historical box.
+- Key changes: List cards show only the closest historical frame and say it is another patient. Extra planes stay in the drawer as 同病人其它切面, filtered to the exact same patient_id. The current boxed mask is drawn in teal at the top. Scores map to 0–1 relative closeness so negatives are not shown. Assist probabilities unchanged.
+- Validation: `npx tsc --noEmit`. `PYTHONPATH=pipeline python3 pipeline/similar_cases/test_retrieve.py`. `python3 scripts/test_similar_case_cards.py`.
+- Deployment: Public Next BUILD `bvPB72tFZ6H4CkxYLR1_K`. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Hide similar-case exam-year chips
+
+- Scope: `SimilarCaseReferencePanel`.
+- Reason: Year plus 内部/外部检查 is not useful on the card and looks like a style label.
+- Key changes: Removed that chip from the list and the drawer. Site, scores, and the historical lesion outline stay.
+- Validation: `npx tsc --noEmit` during public build.
+- Deployment: Public Next BUILD `mrTCUh7_4lRH5WGKtvH_d`. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Similar cases wait for Assist and show historical lesion outlines
+
+- Scope: Reader similar-case panel, DiagnosisPanel gating, overlay precompute, public deploy copy of overlay JSON.
+- Reason: Doctors wanted retrieval only when analysis starts, clearer exam labels instead of scan-style wording, and the historical lesion mark drawn like the current thin boxing line.
+- Key changes: Panel fetches only after Assist is running or finished. Cards say year plus 内部/外部检查, and `病灶在…`. A 1px teal box from the historical ROI is overlaid on each preview. Pathology stays hidden. Assist probabilities unchanged.
+- Validation: Overlay table covers 12892 / 12895 frames; CASE-001 extras all have boxes. `npx tsc --noEmit`. `python3 scripts/test_similar_case_cards.py`.
+- Deployment: Public Next BUILD `ittzVOQhg3NL-Uj-MZ5ws`. Overlay JSON rsynced. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Three-center T-staging split aligned with binary seen hospitals
+
+- Scope: `dataset/task_datasets/t_staging/threecenter_joint_unseen_v20260826/`, `scripts/build_tstaging_threecenter_joint_unseen.py`, DATASET_GUIDE / task_datasets pointers.
+- Reason: Xiehe must stay in T-staging train. Putian College and CNNC 504 already sit in binary train and have both labels; keeping them only in T external left the two tasks on different hospital sets.
+- Key changes: New T contract trains Xiehe retrospective plus Putian and CNNC. Xiehe train/val patients are frozen from `maincenter_retrospective_v20260821`. Tumor hospital and the other externals stay unseen. Binary split is unchanged. The Xiehe-only T pack is not rewritten.
+- Validation: Rebuild script leak checks (no patient overlap across splits; no prospective rows in train/val; Putian/CNNC absent from T external). Inventory written next to the CSVs.
+- Deployment: Docs and CSVs only. No Next or public analyze change. No rollback of the Xiehe-only pack.
+- Follow-up: Train T on this pack only after an explicit run request. Do not point MedSigLIP defaults at it yet.
+
+## 2026-08-26, Enrich similar-case cards and fix short-ID hash collapse
+
+- Scope: `pipeline/similar_cases/ids.py`, metadata hashes, neighbor rebuild, `SimilarCaseReferencePanel`, search hydrate, `DiagnosisPanel` scroll.
+- Reason: Short hospital IDs under 4 digits all hashed to the same bucket, so the first card mixed hundreds of patients. Doctors also asked for more case content on the multi-frame cards.
+- Key changes: Hash short IDs by their own digits. Rebuild `neighbors.json` (1948 hashes). Cards now show scan style, same-case frames, anonymized age/sex/size/site, lesion vs full-image meters, and a visual match hint. Pathology stays hidden. Assist probabilities unchanged.
+- Validation: `PYTHONPATH=pipeline python3 pipeline/similar_cases/test_retrieve.py`; `python3 scripts/test_similar_case_cards.py` (5 distinct cards, previews present, pathology hidden). CASE-001 combined no longer returns a collapsed mega-case. Five of five cards match a clinical table row. `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `vprZEwffVcJKi55PEBXTD`. Neighbor table rsynced. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Similar-case multi-frame cards with style and dual scores
+
+- Scope: `SimilarCaseReferencePanel`, `public_case_card` cohort field.
+- Reason: Doctors need to see scan style plus lesion vs full-image similarity, and the older multi-frame contact cards, so they can decide whether a retrieved case is worth using. This is still retrieval, not an LLM re-diagnosis.
+- Key changes: Contact strip of Top 5; each card shows scan-style chip, main plus same-case extra frames, lesion/full-image meters, and 有对照价值 / 不太像. Pathology stays behind 查看病理结果.
+- Validation: `npx tsc --noEmit`. CASE-001 neighbor cards carry year, source group, extra frames, and both scores.
+- Deployment: Public Next BUILD `ZckGypEkg5Z7sBG0gXZoA`. Hard-refresh http://47.106.33.102 after swap.
+
+## 2026-08-26, Similar-case GeM, PCA-whitening, and reciprocal rerank
+
+- Scope: `pipeline/similar_cases/` encode/whiten/retrieve, `scripts/refine_visual_similar_index.py`, `scripts/eval_visual_similar_retrieval.py`, neighbor precompute, similar-case panel consistency line.
+- Reason: Classification GAP embeddings cluster by T-stage and make almost every pair look similar. Instance-retrieval papers use GeM, train-only PCA-whitening, multi-view concat, and k-reciprocal rerank instead of a second diagnostic model.
+- Key changes: Three crops still go through the global backbone, now with GeM (p=3). PCA-whitening is fit on the train memory only (256-d per view, 512-d concat `multiview`). Combined score adds cross-view consistency, average query expansion, and k-reciprocal Jaccard. Pathology stays hidden; Assist probabilities are unchanged.
+- Validation: `test_retrieve.py` / `test_crops.py` pass. Same-patient R@5 is 0.77 on multiview vs 0.66 on lesion. Foreign-case T-stage purity is lowest on lesion (0.33), so ranking is not just label collapse. CASE-001 combined returns 5 cards. `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `fs6dZ3XNiFVlJg-zwcmOQ`. Neighbor table rsynced. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-26, Similar-case retrieval uses three global-backbone crops
+
+- Scope: `pipeline/similar_cases/` encode/crops/retrieve, extract + neighbor precompute, `SimilarCaseReferencePanel` sort tabs.
+- Reason: DualBranch local-branch tokens had collapsed (pairwise cosine ~0.9998), so v1 could not rank by lesion ROI. The original plan was three views through one encoder: full image, tight ROI, context ROI.
+- Key changes: All three embeddings now come from the global backbone. Tight crop expands the lesion box by 8%, context by 40%. Combined score is `0.20 x global + 0.45 x lesion + 0.35 x context`. Case score is `0.65 x best frame + 0.35 x top-3 mean`, with light MMR. UI default is 综合相似, with 病灶 / 周围组织 / 全图 switches. Still retrieval only; Assist probabilities unchanged.
+- Validation: Lesion pairwise cosine mean 0.40 (was 0.9998). `test_retrieve.py` / `test_crops.py` pass. CASE-001 combined returns 5 cards with differentiated scores. `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `3tDZ0JSJfIKouZ-QaO9I5`. Neighbor table rsynced. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-26, Similar-case retrieval no longer waits on Assist
+
+- Scope: `pipeline/similar_cases/retrieve.py`, `scripts/precompute_visual_similar_neighbors.py`, Next `/api/reader/similar-cases/search`, `SimilarCaseReferencePanel`, `ReaderStudyQueuePanel`, `DiagnosisPanel`.
+- Reason: Doctors saw similar cases only after Assist finished and thought retrieval itself took 10+ seconds. CLI and FAISS search are about 0.3s. The wait was Assist (DualBranch / SAM) plus a Python spawn on the public tunnel.
+- Key changes: Precompute Top-5 neighbors to `neighbors.json` (alias map, not duplicated packs). Public search reads that JSON first and does not spawn Python or wait for Assist. Pathology stays hidden until 查看结果. The similar-case panel mounts after the initial call, above the Assist button. This is still retrieval, not a second diagnosis model.
+- Validation: `PYTHONPATH=pipeline python3 pipeline/similar_cases/test_retrieve.py`; CASE-001 fused lookup returns 5 cards; `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `3LXRN0vGfmx6gsONLk9Na`. Smoke `public_root` / `public_clinical` 200. Neighbor table rsynced to public `data/`. Hard-refresh http://47.106.33.102 .
+- Follow-up: Preview JPEGs still come through the workstation tunnel. Do not rank by lesion-only. Do not let similar cases rewrite Assist probabilities.
+
+## 2026-08-25, Fix 401 on public other-queue patient lists
+
+- Scope: `lib/agent-upstream.ts`, `/api/patients`.
+- Reason: Admin/zml other-queue lists are proxied to workstation `:3300`. The public session token is not in the workstation store, so surgery and NAC both returned 401.
+- Key changes: Proxied requests send `x-agent-upstream-admit`. Workstation admits local tunnel requests that already carry a public session header.
+- Validation: `npx tsc --noEmit` after the edit.
+- Deployment: Workstation `:3300` `dICx8nqzLDrL_TOLD5bB9` (surgery/NAC local 200 with a public session header). Public Next BUILD `OXBL5y8jU08Zkk3n9pli4`. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-25, Public queue tree limited to admin and zml
+
+- Scope: `lib/reader/queue-access.ts`, PatientList, similar-case open-in-workbench, `/api/patients` / images / videos.
+- Reason: Public doctors should stay on the reader-study queue. Only admin and zml may browse other queues on the public site.
+- Key changes: Public UI hides `QueueTreeSelect` unless the signed-in account is admin or zml. Evaluation (`environment=research`) stays locked. API returns 403 `public_queue_restricted` before the workstation proxy. Regular doctors can still open anonymized similar-case drawers, but cannot jump queues.
+- Validation: `npx tsc --noEmit`.
+- Deployment: Public Next BUILD `rhyfeFrQocu84z3XpWtsY`. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 .
+- Follow-up: LAN `:3000` is unchanged and still shows all queues.
+
+## 2026-08-25, Public queues, anonymized similar-case clinical, Assist-time retrieval
+
+- Scope: public workbench queues, `ClinicalHistoryCard`, `DiagnosisPanel`, `SimilarCaseReferencePanel`, `/api/reader/similar-cases/profile`, `/api/patients` clinical attach, public-to-workstation proxy for patients/images/videos.
+- Reason: Public doctors need every queue. Evaluation (`environment=research`) stays locked on the reader-study queue. During Assist, historical similar cases should appear on the right with anonymized age, site, and labs so the doctor can open a reference case and compare. This is still retrieval, not a second diagnosis model.
+- Key changes: `NEXT_PUBLIC_READER_ONLY` no longer hides the queue tree. Research sessions stay on `reader:reader_v150`. Non-evaluation queues attach clinical history (age, sex, size, site, CEA, CA19-9). Similar-case cards open an anonymized drawer; pathology stays behind 查看结果. Evaluation cannot jump queues from a reference case. Public Next proxies other-queue media to workstation `:3300`.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Retrieve public card still omits hospital IDs. Clinical table lookup covers the visual-memory rows that have a queue match.
+- Deployment: Public Next BUILD `0Y0F1xpvvYDrQcVInAa6x`. Workstation `:3300` standalone `b1k9j1yVrFBndzaNWqYQc` (`gastric-next-public` restarted). Local profile/patients 200 with anonymized age/CEA and no hospital ID on the card. Smoke `public_root` / `public_clinical` 200. Hard-refresh http://47.106.33.102 .
+- Follow-up: Do not rank by lesion-only until that embedding is fixed. Do not show cosine as a percentage. Do not let similar cases rewrite Assist T-stage probabilities. Commit not created because a commit was not requested.
+
+## 2026-08-25, Historical similar-case reference (visual embeddings)
+
+- Scope: `pipeline/similar_cases/`, `scripts/extract_visual_similar_case_embeddings.py`, `scripts/retrieve_visual_similar_cases.py`, Next `/api/reader/similar-cases/search` and `/image`, `SimilarCaseReferencePanel` on the reader queue and T-staging evidence rail.
+- Reason: Restore similar-case support as embedding retrieval of historical reference cases, not a second diagnostic RAG. Assist probabilities stay unchanged.
+- Key changes: Phase-0 acc_boost2 DualBranch image-only embeddings; train-only FAISS memory (7874 frames, 830 cases); query cache includes val/prospective/external; same-patient exclusion and case-level max aggregation; scores shown as cosine values, not percentages; pathology hidden until 查看结果; no LLM diagnosis text. Local-branch tokens collapsed (pairwise cosine ~1.0), so v1 ranks by fused then full-image, not lesion-only.
+- Validation: `PYTHONPATH=pipeline python3 pipeline/similar_cases/test_retrieve.py`; retrieve smoke on a mapped reader case; `npx tsc --noEmit` pass.
+- Deployment: Public Next BUILD `auOFck--hYxDSiFvBlQl_`. Workstation `:3300` standalone restarted (`2PN-XZtBMvOfVA25K57CP`) so the public tunnel can search the local index. Smoke `public_root` / `public_clinical` 200; local search/image 200. Hard-refresh http://47.106.33.102 .
+- Follow-up: Doctor blind rating of Top 5 (fused vs full-image vs later MedSigLIP). Do not turn this into a vote that rewrites T-stage probabilities. Commit not created because a commit was not requested.
+
+## 2026-08-25, LLM info / report isolation for Round2 main study
+
+- Scope: `docs/clinical_validation/llm_info_v1/`, `pipeline/agent/product/llm_info/`, `apps/gastric_scan_next/lib/llm-info/`, reader compare/final-judgment UI, `/api/reader/llm/report`, Assist analyze route, `analyze_case._maybe_llm_synthesis`, Round2 export columns, `study-contract` rule/prompt versions.
+- Reason: Keep LLM from becoming a second diagnosis model. Decision-front shows vision probabilities + rule compare only; report text runs after doctor final judgment and must not receive AI probabilities.
+- Key changes: Frozen contracts; deterministic consistency rules; DoctorAiComparePanel + FinalJudgmentPanel (four-tier reference, confidence 1–5); isolated report API with template fallback + forbidden-phrase/schema gates; legacy `llm_reasoning` stripped from doctor-visible Assist; evidence summary API gated off; 100-case offline replay gate passed; shadow report drafts audited by default.
+- Validation: `python3 -m unittest agent.product.llm_info.test_llm_info`; `scripts/llm_info/offline_replay_gate.py --n 100 --shadow` → `pass_gate=true`.
+- Deployment: Public Next via `bash scripts/deploy_public_next.sh` BUILD `s0CNKc_XN6Vw4JTbZpUD5`. Smoke `public_clinical` 200; hard-refresh http://47.106.33.102 .
+- Follow-up: Set `NEXT_PUBLIC_LLM_INFO_SHADOW_MODE=0` only after shadow latency/hallucination review. Do not enable evidence-summary free text in main-study UI.
+
+## 2026-08-25, BM-sign pack and GastricUS BM train
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/bm_sign_pack.py`, `prepare_bm.py`, `encode_bm.py`, `train_bm.py`; Assist payload `bm_report` in Next analyze and `BinaryClassificationTool`.
+- Reason: Benign report ticks (site, max diameter, max thickness, ulcer, wall layers) were form-only. Clinical-11 does not take ulcer or wall, and its location codebook is 4 codes, not 9 sites.
+- Key changes: New 5-field BM-sign pack, encoded as 10 numbers. Assist now sends the filled form. Current Dual weights still ignore it (`bm_sign_used=false`). GastricUS BM encode/train started on the joint-unseen BM split (image + clinical-11 + BM-sign5, 2-class). Do not impute ulcer/wall from the gold label.
+- Validation: `PYTHONPATH=pipeline python3 -m medsiglip_gastricus.test_bm_sign_pack`. Prepare wrote four resolved CSVs. Train fill: size on most malignant rows; 9-site 199 and ulcer 219 (benign US text only); wall layers 0.
+- Deployment: Public Next BUILD `-KDcu9argNULJTkIkIjk5`. Smoke `public_root` / `public_clinical` 200. Dual logits unchanged until the GastricUS BM head is scored and pointed at Assist. Hard-refresh http://47.106.33.102 .
+- Follow-up: Wait for `logs/bm_gastricus_20260825.log`. Promote Assist only after unseen-center patient AUC/Acc. Doctors should fill the five fields before Assist if they want those ticks in the next head.
+
+## 2026-08-25, GastricUS training-log and result figures
+
+- Scope: `medsiglip/scripts/plot_gastricus_training_results.py`, `medsiglip/results/visualizations/tstage/`, pointer in the results note.
+- Reason: Need one place to see train curves, lock epochs, held-out ACC/T2, confusion, seed scatter, AI-v2 OOF vs held-out, and the 10-cell grid.
+- Key changes: Plot from existing `metrics.json` history and eval. Black background, Times New Roman. CLI and models unchanged.
+- Validation: Script exit 0. Eight png/pdf pairs plus FIGURES.md. Numbers match the 20260825 reports.
+- Deployment: Local figures only. No Next rebuild.
+- Follow-up: Rebuild with the same script after E4.
+
+## 2026-08-25, Prefer doctor roi_masks in the BM ZML-holdout pack
+
+- Scope: `scripts/build_binary_zmlholdout_clinmask_20260825.py`, pack under `benign_malignant/`.
+- Reason: Dual trained on GrabCut then tested on ZML doctor polygons. Need the same doctor-mask protocol at train time where `crop_ui/roi_masks` exist.
+- Key changes: Prefer full-frame doctor masks; inflammation rows without them keep box GrabCut. `mask_source` records the choice. Start Dual + mask + age/sex train after rebuild.
+- Validation: Doctor masks match image size. Train still has a mask on every row. ZML leak checks stay zero.
+- Deployment: Local train only. Assist unchanged until `test_zml` Acc @0.5 is scored.
+- Follow-up: Score `test_zml` and `test_external` after `binary_zmlholdout_clinmask_dual_20260825_20260825_212949` finishes. Do not promote Assist until those numbers are in.
+
+## 2026-08-25, AI-v2 Situation A OOF stackers (E1-E3)
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/aiv2_stack.py`, CLI `aiv2`, `GastricUS_AIv2训练方案.md`, results note.
+- Reason: Need a T2-safe ensemble without training on prospective/external or picking a lucky seed.
+- Key changes: 5-fold patient OOF on train 1062 for default, best, and clinical-only. Fit mean / simplex / L2 logit stackers on OOF only. Lock rule prefers T2 recall >= 0.20, then ACC. Picked e3. Held-out after lock: 0.6165 / 0.5381, T2 0.176 / 0.209. CLI unchanged.
+- Validation: OOF oracle default vs clinical-only = 0.707. e1 three-member held-out ACC 0.6471 is not selectable (OOF T2 0.096). No patient IDs in the report.
+- Deployment: Docs and local reports only. No Next rebuild.
+- Follow-up: E4 residual late fusion with threshold and distance losses. Do not reopen 1152-d fusion sweeps.
+
+## 2026-08-25, Phase 1 GastricUS boundary audit
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/phase1_boundary.py`, CLI `phase1`, report `medsiglip_gastricus_phase1_boundary_20260825/`, results note.
+- Reason: Need McNemar, bootstrap, per-center, and hierarchical cuts before changing the default or opening another fusion sweep.
+- Key changes: Audit existing prediction CSVs. Default vs 5.1 x 6.2: prospective p = 0.084, external p = 0.008. External gain is mostly putian_college (213). T2 recall on the best cell stays near 0. Hierarchical T1 vs T2+ is already about 0.84-0.87. CLI default unchanged. Extra-seed retrain started (`--phase1-seeds`).
+- Validation: 9 models, 16 McNemar pairs, 2000-patient bootstrap. Counts match the plan-complete prediction CSVs. No patient IDs in the report.
+- Deployment: Docs and local reports only. No Next rebuild.
+- Follow-up: Extra seeds finished. Default MLP mean 0.5876 / 0.5005; 5.1 x 6.2 mean 0.6182 / 0.5428. The 0.6424 / 0.5856 cell is the 20260821 upper end, not a stable ceiling. Next is token-level representation, not another 1152-d width sweep.
+
+## 2026-08-25, Add GastricUS bottleneck and next-step ledger
+
+- Scope: `medsiglip/GastricUS实验方案_各节实现与结果.md`.
+- Reason: Need one place that separates evidenced bottlenecks from inference, and that does not re-open width / ROI / crude-spatial sweeps.
+- Key changes: Add 瓶颈（8 evidenced, 5 inferred）, 下一步 eight priorities, a three-stage order, and an overall judgment. Record that spatial 2304-d and layers4 means already failed, so the open item is token-level region interaction. 0.6424 / 0.5856 stays a candidate baseline pending McNemar and multi-seed.
+- Validation: Numbers copy the same COMPARE / EXPERIMENT_RECORD cells as the rest of the note. No new training.
+- Deployment: Docs only. No Next rebuild.
+- Follow-up: First stage is stability and error audit, not another xlarge width sweep.
+
+## 2026-08-25, Expand GastricUS ledger with background, data, goals
+
+- Scope: `medsiglip/GastricUS实验方案_各节实现与结果.md`.
+- Reason: The consolidated note still opened at metrics. Need the clinical problem, why this workspace exists, the 0.75 bar, and the full data makeup in the same file.
+- Key changes: Add 问题背景 (CCUS T staging, T2/T3, Dual leak, why freeze MedSigLIP), 研究目标 (0.75 vs human-read 75.5%, success/fail rules), and 数据构成 (2100 patients / 10894 frames, year and 9-center tables, crop_ui extras, full 11-field missing, Phase 0 delta). Later section numbers unchanged.
+- Validation: Patient/frame/T counts match `inventory.json` and EXPERIMENT_RECORD §1. Clinical missing matches that record. Liang 2024 75.5% is the cited human-read reference, not a model score.
+- Deployment: Docs only. No Next rebuild.
+- Follow-up: Keep this file as the results SSOT when new waves land.
+
+## 2026-08-25, Expand GastricUS section-results note into one ledger
+
+- Scope: `medsiglip/GastricUS实验方案_各节实现与结果.md`.
+- Reason: Plan results, data contract, grids, retry sweep, and can/cannot-say claims lived in several MDs. Need one complete note.
+- Key changes: One file now holds sections 1-6, split/clinical contract, default hyperparams, 10-cell grid, historical waves, plan-literal, 2026-08-25 retry, confusion matrices for default and best cells, and command list. Numbers still copied from SUMMARY / COMPARE.
+- Validation: Counts match `plan_complete_20260825/COMPARE.md`, `retry_20260825/COMPARE.md`, and EXPERIMENT_RECORD patient tables.
+- Deployment: Docs only. No Next rebuild.
+- Follow-up: Keep this file as the results SSOT when new waves land.
+
+## 2026-08-25, MedSigLIP retry sweep: new fusion, pool, ROI mixes
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/model.py` (`gate`, `pair`, `mean_u`, `attn_only`, `mid`), `mix_expand.py`, `train.train_retry_sweep`, report `medsiglip_gastricus_retry_20260825/`.
+- Reason: Bigger frozen heads already failed. Need other axes: 15/25% with the winning 5.1 x 6.2 cell, mixed ROI tokens, and lighter structure changes.
+- Key changes: Per-frame view gate and two-token attention; mean-of-fused-u and attention-only pooling; mid-size 2-layer frame transformer (~20M). New caches average or area-pick 15/20/25 ROI tokens. CLI default unchanged.
+- Validation: 12 runs, frozen cache. Best new cell is TabPFN mean on 25% ROI (0.6353 / 0.5649), below the 20% 5.1 x 6.2 cell (0.6424 / 0.5856). Gate/pair/mid did not beat default gated MLP on both ends.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: Do not promote. Frozen 1152-d plus head/ROI remix is not a path to 0.75.
+
+## 2026-08-25, Pack GastricUS code plus parent and workspace results
+
+- Scope: `medsiglip/scripts/pack_gastricus_code_and_results.py`; desktop folder `GastricUS_code_and_results_20260825`.
+- Reason: Need one offline pack with the current plan-aligned code, the 2026-08-25 workspace waves, and the parent-repo ledger that already held Dual and earlier MedSigLIP runs.
+- Key changes: Packer copies workspace package + parent package/scripts/yaml, slim workspace reports (no `.pt` / prediction CSV), and the existing parent `gastricus_ledger`. Index maps plan sections 1-6 to files.
+- Validation: Dest has 12 docs, 31 workspace code files, 71 parent files, 34 workspace result files, 809 ledger files. Zip 2.3 MB. No checkpoints or prediction CSVs.
+- Deployment: Desktop pack only. No Next rebuild.
+- Follow-up: Re-run the packer after new waves. Default dest is `~/Desktop/GastricUS_code_and_results_<date>/`.
+
+## 2026-08-25, MedSigLIP plan section-by-section results note
+
+- Scope: `medsiglip/GastricUS实验方案_各节实现与结果.md`; pointers from `GastricUS实验方案.md` and the section-1 methods MD.
+- Reason: Need one note that maps plan sections 1-6 to what was implemented and the held-out exact ACC already on disk.
+- Key changes: New summary only. No train, encode, or CLI default change.
+- Validation: Numbers copied from `plan_complete_20260825/COMPARE.md`, expand 15/25, plan-literal, and largeclf reports.
+- Deployment: Docs only. No Next rebuild.
+- Follow-up: Default stays xlarge concat + gated + MLP. Best grid cell remains 5.1 x 6.2 (0.6424 / 0.5856). Target 0.75 not reached.
+
+## 2026-08-25, Open benign_malignant workspace and ZML-holdout pack
+
+- Scope: `benign_malignant/`, `scripts/build_binary_zmlholdout_clinmask_20260825.py`, `scripts/run_binary_zmlholdout_clinmask_20260825.py`.
+- Reason: Retrain BM with mask and age/sex. Need a folder like `medsiglip/`, and a pack that does not train on the ZML 50-case reader set.
+- Key changes: Workspace holds README, plan, yaml, and CSVs. Pack copies B box+mask rows, joins age/sex, drops train/val patients that overlap ZML, adds `test_zml`. Images stay in `dataset/`.
+- Validation: Leak checks all zero. Train 5046/1021, val 915/183, test_zml 52/50. Train clinical complete 0.950. Missing image/mask 0. Runner `--dry-run` pending.
+- Deployment: Local data only. Do not start train in this step. Assist unchanged.
+- Follow-up: Train Dual + mask4ch + age/sex when asked. Claim is `test_zml` patient Acc @0.5; still report `test_external` AUC.
+
+## 2026-08-25, MedSigLIP wide classifier vs TabPFN on frozen cache
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/model.py` (`wideclf`), `train.train_largeclf_compare`, report `medsiglip_gastricus_largeclf_tabpfn_20260825/`.
+- Reason: Test whether a larger 6.1 MLP head can beat TabPFN without unfreezing MedSigLIP.
+- Key changes: `wideclf` keeps 4.1/5.3 xlarge widths and widens only the patient MLP (about 25.4M). Four-run compare: xlarge MLP, wideclf MLP, gated TabPFN, mean-view TabPFN.
+- Validation: Same 20% cache. Held-out exact ACC: mean TabPFN 0.6424 / 0.5856; xlarge MLP 0.5812 / 0.5381; wideclf 0.5106 / 0.5093; gated TabPFN 0.5529 / 0.4495. Do not promote wideclf.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: Bigger frozen-head MLPs are not a path to 0.75. CLI default stays xlarge MLP.
+
+## 2026-08-25, MedSigLIP plan section 2/3 preprocess and encode
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/preprocess.py`, `encode.py`, section-1 methods MD, plan §2/§3 pointers.
+- Reason: Plan sections 2 and 3 (official 448 processor, mask-bbox ROI, frozen 1152 cache) lived only as helpers inside `encode.py`. Need a plan-aligned preprocess module and a hard freeze / processor contract.
+- Key changes: New `preprocess.py` owns full-frame RGB, mask bbox, expand/pad, and `assert_processor`. `encode.load_frozen_encoder` sets `eval` plus `requires_grad_(False)`, checks 1152-d, and logs failed rows. `--mask-bbox largest` is available but cannot overwrite the 20% all-nonzero cache.
+- Validation: Dummy bbox and processor-contract checks. Existing 20% npz unchanged.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: Do not re-encode the default cache unless a new dest is intended.
+
+## 2026-08-25, MedSigLIP default head is deep residual + frame transformer
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/model.py`, `train.py`, `scripts/run_medsiglip_gastricus.py`.
+- Reason: The frozen-cache MLP (xlarge, about 12M) was too thin for the 0.75 exact-ACC target. Need more downstream capacity without changing the four CSVs or the 20% encode cache.
+- Key changes: New `--size deep` is the default. Concat fusion stacks two extra 1024 residual blocks. Gated pool first runs a 4-layer 8-head frame transformer, then 8-head gated + mean + max to 1024-d. Patient head is a residual 2048/1024/512 MLP. Reports go to `medsiglip_gastricus_deep_20260825/`. Plan-sweep stays on xlarge so the 10-cell grid is not overwritten.
+- Validation: Dummy forward ok (101,112,844 params). Train locked epoch 49, val exact ACC 0.5547. Held-out: prospective 0.4682 / external 0.4763, worse than xlarge 0.5976 / 0.5216. CLI default stays xlarge.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: Do not promote deep. Extra MLP / transformer width on frozen 1152-d overfits the n=128 val lock and does not reach 0.75.
+
+## 2026-08-25, MedSigLIP workspace crop_ui matches mainline trees
+
+- Scope: `medsiglip/dataset/**/crop_ui`, `medsiglip/scripts/refresh_workspace_copy.py`, `medsiglip/COPY_MANIFEST.json`.
+- Reason: The scratch copy only kept freeze frames listed in the four clean CSVs. Mainline `crop_ui` trees were larger (2018 +548, 2019 +621, 2020_2023 +49, 2024 +234, 2025 +771). Need the trees complete without changing the training contract.
+- Key changes: Rsynced full mainline `crop_ui` (images, masks, overlays, annotations) into the workspace. Refresh now copies whole `**/crop_ui` trees instead of CSV-used files only. Four clean CSVs, 20% encode cache, and train/eval paths are unchanged.
+- Validation: Internal image counts now match mainline (3638 / 2853 / 199 / 1539 / 2430). External `crop_ui` file counts match. `train.csv` / `val.csv` / `test_prospective.csv` / `test_external.csv` byte-equal to mainline (6044 / 733 / 1659 / 2458). Extra internal frames on disk: 2223, none added to the modeling tables.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: Do not rebuild `maincenter_retrospective_v20260821` just to include unused freeze frames.
+
+## 2026-08-25, Export ZML public records to a BM keyframe test pack
+
+- Scope: `scripts/export_zml_reader_testset.py`, pack `pipeline/data/binary_zml_reader_20260825/`.
+- Reason: Public ZML finished BM-001..050. Need the remote case-state, masks, and keyframe polygons on the workstation as a labeled test set with video frames and overlays.
+- Key changes: One script rsyncs Aliyun runtime (ops, case_state, mask/lumen), merges ZML rows into `runtime/gastric_scan_next/`, seeks each keyframe in `clip_01.mp4`, writes image/mask/overlay/ROI plus `test.csv`.
+- Validation: 50/50 BM cases, 52 frames (one case has 3 keyframes), gold 25 benign / 25 malignant, no missing BM ids. Overlay spot-check BM-001 and BM-034.
+- Deployment: Local pack only. Do not train on this split; it is a reader holdout.
+- Follow-up: Score Dual boxmask and 101708 on `test.csv` if a same-frame Assist comparison is needed.
+
+## 2026-08-25, BM Assist uses Dual + mask4ch
+
+- Scope: `pipeline/agent/tools/binary_classification_tool.py`, `pipeline_adapter.py`, `agent_backend_registry.yaml`.
+- Reason: Public zml BM Assist was a 3-channel crop (or full frame before 11:39). Doctors had SAM masks; the head ignored the shape channel. Dual boxmask weights were trained and sitting unused.
+- Key changes: L0 now loads `binary_noshortcut_b_boxmask_dual_20260825` first. Global is full RGB + lesion mask as channel 4; local is the doctor/SAM box. Classify-only also forwards clinical-11 and `patient_id`. These Dual weights have `clinical_dim=0`, so clinical does not enter logits. GastricUS MedSigLIP + clinical-11 stays T-staging, not a BM substitute.
+- Validation: `python3 -m agent.tools.test_binary_classification_tool` and `python3 -m agent.product.test_classify_only_adapter` from `pipeline/`. Dummy Dual forward with a mask reports `used_mask_channel=true`, `clinical_used=false`.
+- Deployment: Analyze is spawned from this repo on each Assist click. No Next rebuild. Next public Assist click uses Dual + mask4ch.
+- Follow-up: A GastricUS-style BM head (frozen MedSigLIP full+ROI + clinical-11) is a new train, not a product switch. Do not point BM Assist at the 4-class T GastricUS checkpoint.
+
+## 2026-08-25, BM box+mask dual finished; unseen AUC 0.774
+
+- Scope: pack `pipeline/data/binary_box_mask_20260825`, run `binary_noshortcut_b_boxmask_dual_20260825_20260825_115508`, `scripts/score_binary_multicenter_unseen.py`.
+- Reason: Live BM ignored the doctor box and had no shape channel. A/B full-frame retrains missed official AUC 0.733.
+- Key changes: GrabCut masks on the B pack (9763, ok_rate 1.0). Dual: local doctor ROI, global full+mask4ch. Official unseen patient @0.5: AUC 0.774, Acc 0.678, Sens 0.562, Spec 0.770.
+- Validation: Same 404-patient `test_external` as 101708. Beats baseline AUC/Acc/Sens. Prospective remains a center lock. Tumor / Foshan still weak.
+- Deployment: Product Assist still uses cropped 101708. Dual weights are not live (tool is 3ch single-branch).
+- Follow-up: Wire dual + mask4ch into `BinaryClassificationTool` before any product switch.
+
+## 2026-08-25, MedSigLIP workspace exposes google/medsiglip-448
+
+- Scope: `medsiglip/google/medsiglip-448`, refresh script hardlink.
+- Reason: Official Google weights were only under `artifacts/model_weights/medsiglip-448/`. Need the Hugging Face id path visible in the scratch workspace.
+- Key changes: Hard-linked the same 3.3G `model.safetensors` (3513309984 bytes) to `google/medsiglip-448/`. Encode still reads `WEIGHT_DIR`.
+- Validation: Same inode as the artifacts copy; `config.json` is `SiglipModel`.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: None.
+
+## 2026-08-25, MedSigLIP section-1 methods add key code
+
+- Scope: `medsiglip/GastricUS实验方案_第1节方法实现.md`.
+- Reason: The methods note needed the live encode / fusion / bag / head snippets next to each flowchart box.
+- Key changes: Added current-file citations for `expand_roi`, `encode_images`, `ConcatFusion` / `FrameFusion`, `MeanViewPool`, `GatedAttentionPool`, `_image`, `PatientBagDataset`, `clinical22_to_nan11`, `PatientHead`, ordinal loss, and CLI defaults.
+- Validation: Line ranges match the files as of this edit.
+- Deployment: Docs only. No Next rebuild.
+- Follow-up: None.
+
+## 2026-08-25, MedSigLIP section-1 methods write-up
+
+- Scope: `medsiglip/GastricUS实验方案_第1节方法实现.md`; links from `medsiglip/README.md`, `GastricUS实验方案.md`, `PLAN_MAPPING.md`.
+- Reason: Need a concrete methods note for plan section 1 (dual view, frozen MedSigLIP, fusion, bag pool, clinical, MLP / TabPFN) with tensor shapes, defaults, and the 10-cell grid numbers.
+- Key changes: Wrote the implementation of the section-1 flowchart from the live encode / model / train / TabPFN code and `plan_complete_20260825/COMPARE.md`.
+- Validation: Counts match the clean four-way split and COMPARE.md. No patient identifiers.
+- Deployment: Docs only. No Next rebuild.
+- Follow-up: None.
+
+## 2026-08-25, MedSigLIP experiment scripts annotated against the plan
+
+- Scope: `medsiglip/scripts/run_medsiglip_gastricus.py`, `medsiglip/pipeline/medsiglip_gastricus/{__init__,constants,encode,model,train,tabpfn_clinical,resolve_frames}.py`.
+- Reason: Need the experiment scripts to cite `GastricUS实验方案.md` sections 2-6 so flags and modules map one-to-one.
+- Key changes: File headers, class/function docstrings, and CLI help now name plan 2/3 encode, 4.1/4.2 fusion, 5.1-5.3 pool, 6.1/6.2 heads. Extras are marked as not in the plan. No behavior change.
+- Validation: `python3 -c` import of `train` / `GastricUSFromScratch` / `encode` and CLI `--help`.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: None.
+
+## 2026-08-25, MedSigLIP plan grid aligned and complete train started
+
+- Scope: `medsiglip/pipeline/medsiglip_gastricus/{train,model,constants}.py`, `medsiglip/scripts/run_medsiglip_gastricus.py`, `PLAN_MAPPING.md`.
+- Reason: CLI default was concat / 2e-4, but `train()` and the model class defaulted to interact / 3e-4. `--plan-sweep` silently downgraded xlarge to large and only ran 4 of the plan cells.
+- Key changes: Defaults now match (4.1 concat, lr 2e-4). `--plan-sweep` trains the 10 unique plan cells (5.1 skips fusion; 4.1/4.2 x 5.2/5.3 x 6.1/6.2) under the current contract and writes `medsiglip_gastricus_plan_complete_20260825/`.
+- Validation: CLI `--help` and import check. 10-cell sweep finished in 6.4 min. Best held-out: `tabpfn_concat_mean` prosp 0.6424 / ext 0.5856. Default `mlp_concat_gated` 0.5976 / 0.5216. All four stats cells collapsed (QWK = 0).
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: McNemar before promoting 5.1 x 6.2. Do not overwrite 20260821 plan/large reports.
+
+## 2026-08-25, MedSigLIP workspace copies official crop_roi
+
+- Scope: `medsiglip/dataset/**/crop_roi`, `medsiglip/scripts/refresh_workspace_copy.py`.
+- Reason: The scratch workspace had freeze `crop_ui` only. Official lesion crops (`crop_roi/images`, `roi_masks`, `overlays`, `annotations`) were missing for browsing and alternative ROI training.
+- Key changes: Rsynced 14 `crop_roi` trees, 55052 files (9 external hospitals + Xiehe 2018-2025). Default encode still computes ROI from `crop_ui` mask bbox.
+- Validation: Dehua `crop_roi` image, mask, and overlay for `图片__dhwa1-1` exist.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: None.
+
+## 2026-08-25, MedSigLIP workspace also copies crop_ui overlays
+
+- Scope: `medsiglip/dataset/**/crop_ui/overlays`, `medsiglip/scripts/refresh_workspace_copy.py`.
+- Reason: The first copy only had images and `roi_masks`. External and internal `crop_ui` also have green-contour overlay JPGs used for browsing.
+- Key changes: Rsynced 14 overlay dirs, 13763 files (9 external hospitals + Xiehe 2018-2025). Refresh script now copies overlays with the rest of the workspace.
+- Validation: Dehua sample `图片__dhwa1-1_overlay.jpg` exists; overlay file counts match the source dirs.
+- Deployment: Local workspace only. No Next rebuild.
+- Follow-up: None.
+
+## 2026-08-25, MedSigLIP scratch workspace at repo root
+
+- Scope: new `medsiglip/` copy of the frozen MedSigLIP-448 GastricUS pack; `START_HERE.md`, `REPO_LAYOUT.md`, `scripts/check_repo_root.py`, `.gitignore`.
+- Reason: Need a clean folder to rethink training without editing the live package or mixing Dual ConvNeXt files.
+- Key changes: Copied code, clean four-way CSVs, used `crop_ui` images/masks (21788 files, 0 missing), 1152-d caches, and `medsiglip-448` weights. Did not copy ~14G old report checkpoints or Dual yaml/scripts. `ROOT` inside the copy points at `medsiglip/`.
+- Validation: Workspace import resolves `ROOT`, dataset, weights, default cache, and a sample frame/mask. CLI `--help` works after escaping `%` in argparse help. `check_repo_root.py` lists `medsiglip` as an allowed root dir.
+- Deployment: Local workspace only. No Next rebuild. Analyze path unchanged.
+- Follow-up: Train from `cd medsiglip && python3 scripts/run_medsiglip_gastricus.py train --device cuda:0`. Copy code back to `pipeline/medsiglip_gastricus/` only if a change should become the mainline.
+
+## 2026-08-25, BM Assist uses doctor box; start box+mask dual retrain
+
+- Scope: `binary_classification_tool.py`, `pipeline_adapter.py`, `scripts/build_binary_box_mask_pack_20260825.py`, dual config `binary_noshortcut_b_boxmask_dual_20260825.yaml`.
+- Reason: Live BM head ate the full frame and ignored the doctor box. A/B full-frame retrains did not beat unseen AUC 0.733. Tumor shape was not in the input.
+- Key changes: Classify-only now crops the current 3-channel head to the doctor box or SAM mask. New pack generates GrabCut masks with the same protocol for both labels. Dual-branch retrain: global full+mask4ch, local doctor ROI.
+- Validation: A/B already scored (AUC 0.702 / 0.722). Box+mask pack: 9763 masks, `ok_rate` 1.0, doctor-box match mean 0.994, missing_mask=0, no patient leak. Dual train started `binary_noshortcut_b_boxmask_dual_20260825_20260825_115508`. Scores pending.
+- Deployment: Analyze Python is live on the next Assist click (crop). Dual weights are not product yet. No Next rebuild required for the crop path.
+- Follow-up: After dual `test_external` patient AUC vs 0.733, decide whether to replace the 101708 single-branch head.
+
+## 2026-08-25, Public test account and LAN evaluation login
+
+- Scope: `docs/clinical_validation/reader_study_v150/users.json`, `LoginGate.tsx`, `app/page.tsx`, `app/api/patients/route.ts`, `Header.tsx`, `PatientList.tsx`, `apps/README.md`.
+- Reason: Public needed a dedicated test reader. LAN evaluation still used a no-password identity picker and showed extra research chrome / clinical history that public hides.
+- Key changes: Added reader `test`. LAN and public now share the password login page. On the reader-study queue, LAN hides clinical history and uses the same evaluation chrome as public. Queue switcher stays available so research queues still work.
+- Validation: Local password verify for `test`; `npx tsc --noEmit` in `apps/gastric_scan_next`. Public smoke after deploy.
+- Deployment: Synced `users.json` to Aliyun reader edge and restarted `gastric-reader`. Public BUILD `8jol8sXETeorrEyURL_Zb` via `bash scripts/deploy_public_next.sh`. Smoke `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 and LAN `:3000`.
+- Follow-up: Sign in with the new test reader on both sites and confirm ops land on that account.
+
+## 2026-08-25, Desktop one-click workstation start
+
+- Scope: `scripts/start_gastric_workstation.sh`, desktop launcher on the workstation, `apps/README.md`, `apps/gastric_scan_next/README.md`, `scripts/README.md`.
+- Reason: Frontend Next and GPU backends were split across systemd, `dev_all.sh`, and `run_lan_merged_system.sh`. Operators needed one desktop icon that brings the full LAN stack up.
+- Key changes: One script starts Next `:3000`, auth `:8766`, SAM2 `:8767`, SAM3.1 `:8768`, nnInteractive `:1527`/`:8770`, and warm YOLO `:8771`. Prefers `gastric-workstation.target` when installed. `install-desktop` writes a trusted GNOME launcher. `stop` leaves public compute `:3300` running unless `--stop-public`.
+- Validation: `bash -n` on the script; `install-desktop` wrote the launcher; `start --no-browser` health-checked the LAN ports.
+- Deployment: Local workstation launcher only. No public Next rebuild.
+- Follow-up: Double-click 启动胃超工作站 on the desktop. If GNOME says untrusted, right-click Allow Launching.
+
+## 2026-08-25, Restore public ops and boot-start public compute
+
+- Scope: `scripts/reconcile_public_ops_pending.py`, `scripts/install_gastric_user_services.sh`, `scripts/systemd/gastric-sam-agent.service`, `scripts/systemd/gastric-ops-reconcile.service`, `scripts/systemd/gastric-ops-reconcile.timer`, `scripts/aliyun_sam_tunnel.service`, `apps/README.md`.
+- Reason: After the workstation reboot, public dual-write leftover events stayed in Aliyun pending, case-state never landed on the GPU box, and a reinstall of user units could drop SAM2 / lumen / the reverse tunnel.
+- Key changes: Idempotent pull-and-merge of public ops, audit, viewing, case-state, and case-order; daily jsonl backfill; linger install now covers SAM2, lumen, `:3300`, the Aliyun tunnel, and a 90s-after-boot reconcile timer.
+- Validation: First reconcile appended 153 leftover ops (151 zml), restored public case-state (47 zml cases, 46 completed) and case-order, backfilled daily shards, and emptied Aliyun pending. User units stay enabled with linger; local SAM / `:3300` / public root all 200.
+- Deployment: Workstation user systemd only. No public Next rebuild.
+- Follow-up: Open `/admin/ops` as admin and confirm the restored public session timeline.
+
+## 2026-08-24, Start BM anti-shortcut A/B retrains
+
+- Scope: `scripts/build_binary_noshortcut_ab_20260824.py`, `scripts/run_binary_noshortcut_ab_20260824.py`, two YAML configs, pack `pipeline/data/binary_noshortcut_ab_20260824/`.
+- Reason: Current BM train locks Xiehe to malignant and other seen centers to most of the benign cases. Unseen-center AUC 0.733 and the 50-case workbench pack both look like a center shortcut.
+- Key changes: A drops Xiehe from train/val. B keeps Xiehe malignant but downsamples to Putian malignant patient n. Same `test_external` / `test_prospective` as 20260820. ConvNeXt-B 384, 80 epochs, early stop 12.
+- Validation: Builder leak check and missing-image count must be 0 before launch.
+- Deployment: Offline train only. Do not switch the live Assist head until unseen-center scores are in.
+- Follow-up: Compare A/B patient AUC / Sens on `test_external` to 0.733 / 0.438. Then decide whether to replace the product checkpoint.
+
+## 2026-08-24, Switch BM Assist to ConvNeXt-B 384
+
+- Scope: `pipeline/agent/tools/binary_classification_tool.py`, `pipeline/agent/config/agent_backend_registry.yaml`.
+- Reason: Workbench BM-001..050 Assist was using clean_audit ConvNeXt-S, which predicted benign on every mid-frame (Acc 0.50, Sens 0.00). Doctors were seeing almost all-benign AI calls.
+- Key changes: Product binary gate now loads `binary_multicenter_joint_unseen_20260820_20260820_101708` (ConvNeXt-B 384). Same 50-case mid-frame score: Acc 0.72, Sens 0.56, Spec 0.88, AUC 0.78. Official unseen-center patient AUC remains 0.733 (n=404).
+- Validation: Local mid-frame sweep of BM-001..050 with both checkpoints; tool smoke import reports the 101708 backend.
+- Deployment: Analyze is spawned from the repo on each Assist click (public tunnels to workstation `:3300`). No Next rebuild. Next Assist click uses the new weights.
+- Follow-up: Still misses some malignant BM cases. Do not treat this as a frozen paper model. MedSigLIP "binary" runs are T4+ / T3-T4, not 良恶性.
+
+## 2026-08-24, Full doctor operation logging
+
+- Scope: `app/api/reader/operations/route.ts`, `doctor-case-state-store.ts`, `lib/ops/types.ts`, `InteractiveSegPanel.tsx`, `useOperationRecorder.ts`, `ReaderStudyQueuePanel.tsx`, `app/page.tsx`, `ReaderWorkbench.tsx`, `app/admin/ops/page.tsx`, `DoctorHistoryPanel.tsx`, `app/api/reader/history/[historyId]/route.ts`.
+- Reason: Many workbench clicks only hit viewing-trace or case-state; public ops often proxy-only. Need timestamped rows in the ops store and case History for ~10-20 doctors.
+- Key changes: Public operations POST dual-writes local jsonl then proxies; `MAX_ACTIVITY` 2000; cine/zoom/freeze/layer also `recordDoctorOp`; keyframe select/delete, deepest toggle, sign edit, stage override, report/tutorial opens; admin ops event-type filter plus `recorded_at` / action / `video_t`; History detail merges ops into case timelines.
+- Validation: `npx tsc --noEmit`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `wX_NxGhcYIKd04itCRUit` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+- Follow-up: Spot-check one doctor session in `/admin/ops` and History after play/pause, deepest, delete keyframe, Assist.
+
+## 2026-08-24, Enable Save my call without retapping
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `DoctorTutorialModal.tsx`.
+- Reason: After Assist, Save my call and next stayed gray until the doctor retapped a stage, even when the first call was already selected.
+- Key changes: Enable the button whenever an initial call exists; save the highlighted first call, not only a post-AI retap.
+- Validation: `npx tsc --noEmit`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `ppG7HWak4pGIYPd0FXnxF` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-24, Plan-section fusion audit and missing 4 x 5 cross cells
+
+- Scope: `pipeline/medsiglip_gastricus/PLAN_MAPPING.md` section 5.4 and section 9; two small frozen-head trains under `medsiglip_gastricus_plan_cross_20260824/`.
+- Reason: Multi-frame fusion in the plan is bag pooling (5.1 / 5.2 / 5.3), not Dual K-frame softmax mean. The original plan sweep skipped concat+stats and interact+mean.
+- Validation: Existing cells copied from SUMMARY.md. New cells write new folders only.
+- Deployment: Offline. No public Next deploy.
+
+## 2026-08-24, GastricUS plan-vs-result report finished past 10k Chinese characters
+
+- Scope: `pipeline/experiments/reports/gastricus_ledger/GastricUS_训练过程与结果报告_20260824.md`, matching Word copies at repo root, ledger, and Desktop; `scripts/finish_gastricus_plan_report.py`.
+- Reason: The plan-section report had to cover sections 1-6 with method, key code, and SUMMARY exact ACC, plus extra experiments and a synthesis, and the body had to exceed 10,000 Chinese characters.
+- Validation: `re.findall(r'[\u4e00-\u9fff]')` on the saved Markdown and Word body; required headings 1-11 present.
+- Deployment: Offline training report only. No public Next deploy.
+- Follow-up: Held-out exact ACC target 0.75 / 0.75 is unchanged and still unmet.
+
+## 2026-08-23, Top-bar doctor tutorial popup
+
+- Scope: `DoctorTutorialModal.tsx`, `Header.tsx`, `ReaderWorkbench.tsx`.
+- Reason: Doctors need a visible, step-by-step walkthrough of the full reading loop, not only a static help page.
+- Key changes: Tutorial button in the top bar opens a popup with 10 steps (login, pick case, first call, box lesion, keyframes, Assist, review, save, report, history/phone). Next/Back and dots per step.
+- Validation: `npx tsc --noEmit`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `hO4HvXj-l4ML0Xuu0InzX` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-23, Assist gating, editable first call, unrated labels, deepest toggle
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `InteractiveSegPanel.tsx`, `PatientList.tsx`, `DoctorKeyframeStrip.tsx`, `doctor-keyframes.ts`, `app/page.tsx`, `ReaderWorkbench.tsx`, `ReaderHelpModal.tsx`.
+- Reason: Assist was clickable before the doctor knew what to do; first call could not be changed after tap; unrated cases/signs had no label; deepest-invasion star could not be cleared.
+- Key changes: Assist stays gray with a 1-2-3 checklist until judgment + lesion box; first call can be retapped before or after AI; feature fields and case list show 未评估/未评; star toggles deepest invasion off.
+- Validation: `npx tsc --noEmit`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `Bg1HUPfRypWWnODDqRVC4` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-23, Fix mobile sidebar reopen after judgment
+
+- Scope: `app/page.tsx`, `ReaderStudyQueuePanel.tsx`, `MobilePaneNav.tsx`, `globals.css`, `ReaderWorkbench.tsx`.
+- Reason: After tapping a stage/nature on phone, cases/evidence sheets would not stay open: an unstable judgment callback re-ran restore and closed panes, and an AI-result effect kept forcing the evidence sheet.
+- Key changes: Judgment callback uses `source` (user/restore/reset) and a ref so restore does not fight bottom nav; remove force-open-evidence effect; exclusive Assist open; higher nav/sheet z-index + `inert`/visibility on closed sheets; next-case uses `selectPatient`.
+- Validation: `npx tsc --noEmit`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `XHeSJkN1FMPDuZeVElDWA` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-23, Admin seeded history and resume highlight
+
+- Scope: public `doctor_case_state` for admin; `ReaderStudyQueuePanel.tsx` restore prefers final judgment for button highlight.
+- Reason: Doctor testing needs ready-made history; reopening a case must show the previously selected stage/nature highlighted.
+- Validation: Seeded 8 admin cases; restore API 8/8; history list/detail OK. Deploy smoke 200.
+- Deployment: Public BUILD `nGkhQuKOvAIFzBW9jwjZ7`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-23, Doctor judgment highlight and full reading history
+
+- Scope: `ReaderStudyQueuePanel.tsx`, `DoctorHistoryPanel.tsx`, `doctor-case-state-store.ts`, `api/reader/case-state`, `api/reader/history`, `InteractiveSegPanel.tsx`.
+- Reason: Selected doctor judgments were too faint; public history list was empty because ops/audit are tunnelled away while resume state lives on-node.
+- Key changes: Strong selected-stage highlight (amber fill + ring + check). Case-state activity log for judgments, keyframes, mask saves. History API merges case-state cards and detail timelines.
+- Validation: `npx tsc --noEmit`. Public history returns case cards with judgment/keyframe traces. Deploy smoke 200.
+- Deployment: Public BUILD `6WZIlhPiS9AiT89MI25d-` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-23, Fix public case-state local store (no agent proxy)
+
+- Scope: `apps/gastric_scan_next/app/api/reader/case-state/route.ts`.
+- Reason: Stability test found public `/api/reader/case-state` returned HTML 404 because `shouldProxyOps()` forwarded to `NEXT_AGENT_UPSTREAM`, which does not serve this path.
+- Key changes: Serve judgments and keyframes on the public node runtime store only; keep ops-ingest as alternate auth, do not proxy.
+- Validation: Public API suite 17/17 (order stable 5x, PUT/GET restore stage+keyframes, auth 401, foreign account rejected).
+- Deployment: Public BUILD `l4gKVnNiE7BvVDX6R3Drj` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
+## 2026-08-23, Reader mark-frame, edit after AI, resume, shuffle
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`, `ReaderStudyQueuePanel.tsx`, `PatientList.tsx`, `lib/reader/round2-order.ts`, `lib/reader/doctor-case-state-store.ts`, `app/api/reader/case-state/route.ts`, `app/api/patients/route.ts`, `proxy.ts`.
+- Reason: Doctors need a visible keyframe mark after pause/scrub, a clear accept/modify-and-next loop after AI, resume of judgments and drawings by account+case, and a shuffled case order that is not CASE-numeric or T-stage-blocked.
+- Key changes: Cine bar「标记此帧」and Space on range scrubber; Accept AI / Save my call and next; `/api/reader/case-state` persist/restore; list Done/Partial badges; keep API order; freeze CSV when present else stable per-account shuffle on disk.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `iY0uRTQqn8Q71qPGhsAeT` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+- Follow-up: Confirm with a doctor account that scrub-mark, modify-save, resume, and non-blocked T order behave as expected.
+
+## 2026-08-23, Queue hist_eq+TabPFN-4 Dual and auto-harvest watcher
+
+- Scope: `scripts/watch_gastricus_dual_finish.py`, `scripts/postprocess_gastricus_dual.py`, `pipeline/configs/tstaging_4class_acc_boost2_gastricus_histeq_tabpfn4_20260823.yaml`.
+- Reason: Live Duals have no held-out SUMMARY yet. After they finish, eval val, harvest, fuse, stack, and T3/T4 recal must go to new folders. Next queued Duals are 12-frame hist_eq then hist_eq+TabPFN-4.
+- Validation: Watcher does not kill GPU PIDs. Launch only if a card has 12 GB free.
+- Deployment: Offline only. No public Next deploy.
+
+## 2026-08-23, Dual frame aggregation and all-Dual linear stack
+
+- Scope: `scripts/run_gastricus_frame_agg.py`, `scripts/run_gastricus_stack_alldual.py`.
+- Reason: Existing Dual eval already averages all frames. Search confidence / top-k aggregation, and an L2 linear stack of frozen plus hist_eq / t2boost Dual.
+- Key changes: Frame agg val-locked top3 Dual-only 0.5694 / 0.5340. All-Dual linear C=0.3: 0.6188 / 0.5732. Neither pair is 0.75.
+- Validation: On-disk SUMMARYs only. Do not promote val or train ACC.
+- Deployment: Offline only. No public Next deploy.
+
+## 2026-08-23, T1/T2 rescue and T1/T2/T3 cascade
+
+- Scope: `scripts/run_gastricus_early_recal.py`, `scripts/run_gastricus_t123.py`, `pipeline/configs/tstaging_4class_acc_boost2_gastricus_frames12_20260823.yaml`.
+- Reason: T3/T4 recal left T2 recall at 0.088 / 0.284. Try thickness-gated early-stage rules and a frozen 3-class head on non-T4+ bags.
+- Key changes: early recal val-locked to `none` (same 0.6329 / 0.5897). T1/T2/T3 cascade val-locked to keep the recal base (same pair). 12-frame Dual queued for the next free GPU.
+- Validation: On-disk SUMMARYs only. Do not promote 3-class val ACC.
+- Deployment: Offline only. No public Next deploy.
+- Follow-up: Finish Dual TabPFN-4 and hist_eq+T2; harvest into new folders.
+
+## 2026-08-23, TabPFN mix, binary graft, T3/T4 recal, hist_eq+T2 Dual
+
+- Scope: `scripts/run_gastricus_tabpfn_mix.py`, `scripts/run_gastricus_binary_graft.py`, `scripts/run_gastricus_t34_recal.py`, `pipeline/configs/tstaging_4class_acc_boost2_gastricus_histeq_t2_20260823.yaml`.
+- Reason: Frozen and Dual fusion still sit at 0.6329 / 0.5814. Try patient-level TabPFN mix, hard binary grafts, and a T3/T4+ score blend; start hist_eq plus T2 Dual on the free GPU.
+- Key changes: TabPFN mix 0.5976 / 0.5216 (val lock preferred Dual+clinical, overfit). Binary graft 0.6094 / 0.5299. T3/T4 recal 0.6329 / 0.5897 (new best external). hist_eq+T2 Dual training on cuda:0.
+- Validation: On-disk SUMMARYs only. Do not promote val ACC or train ACC.
+- Deployment: Offline only. No public Next deploy.
+- Follow-up: Finish Dual TabPFN-4 (cuda:1) and hist_eq+T2 (cuda:0); harvest into new folders.
+
+## 2026-08-23, Sweep Dual late-fusion partners
+
+- Scope: `scripts/run_gastricus_fusion_stack_mix.py`, extra fusion report folders, `gastricus_stack_dual2_20260823`.
+- Reason: hist_eq fusion lifted prospective to 0.6329. Check whether other official-split Duals or a second Dual in the stack beat that.
+- Key changes: t2boost fusion 0.6259 / 0.5443. Official / expand15 / lockbal fusion all worse. Two-Dual stack 0.6141 / 0.5732. Disagreement mix locked to stack (0.6165 / 0.5814). Best pair unchanged.
+- Validation: On-disk SUMMARYs only. Do not promote val ACC.
+- Deployment: Offline only. No public Next deploy.
+- Follow-up: Dual TabPFN-4 still training.
+
+## 2026-08-23, Dual hist_eq late fusion and softmax stack
+
+- Scope: `scripts/eval_gastricus_dualconv_splits.py`, `scripts/ensemble_gastricus_dualconv_frozen.py`, `scripts/run_gastricus_stack_dual.py`.
+- Reason: Fusion was blocked on missing Dual val CSVs. After val eval, mix Dual hist_eq with frozen votes; then stack frozen softmax with Dual.
+- Key changes: Fusion prospective 0.6329 / external 0.5753 (new best prospective). Stack+Dual 0.6165 / 0.5814 (new best external). Neither pair is 0.75.
+- Validation: On-disk SUMMARYs and ledger sync (83+ runs).
+- Deployment: Offline only. No public Next deploy.
+- Follow-up: Dual TabPFN-4 still training on cuda:1. Do not promote these numbers.
+
+## 2026-08-23, Dual val eval so late fusion can lock on val
+
+- Scope: `scripts/eval_gastricus_dualconv_splits.py`, `scripts/harvest_gastricus_dualconv.py`.
+- Reason: Dual trainer only wrote held-out CSVs. Fusion needs val predictions to lock mix weight.
+- Key changes: Eval an existing Dual checkpoint onto `eval/val/test_predictions.csv` without retraining. Harvest now fuses the hist_eq tree when val exists.
+- Validation: hist_eq val eval, then `ensemble_gastricus_dualconv_frozen.py`.
+- Deployment: Offline train / eval only. No public Next deploy.
+- Follow-up: Read fusion SUMMARY only. Do not promote unless both held-out exact ACC are 0.75.
+
+## 2026-08-23, Pack GastricUS experiments without weights
+
+- Scope: `scripts/write_gastricus_zh_report.py`, `scripts/pack_gastricus_experiments.py`, ledger `主报告.md`.
+- Reason: Desktop pack must include Dual ConvNeXt markdown and logs, and open with a Chinese executive report. Weights and prediction CSVs stay out.
+- Key changes: Chinese report now collects `gastricus_*` SUMMARYs. Pack copies official-split Dual `training.log` from the experiment tree. New `主报告.md` is the reading entry.
+- Validation: `python3 scripts/pack_gastricus_experiments.py`.
+- Deployment: Offline docs / desktop pack only. No public Next deploy.
+- Follow-up: Dual TabPFN-4 still training; harvest it when both held-out CSVs exist.
+
+## 2026-08-23, Long-run clin22 T2-cost harvest
+
+- Scope: `pipeline/experiments/reports/medsiglip_gastricus_longrun_tabpfn_20260823/full16_xxlarge_clin22_t2cost/`.
+- Reason: Resume of last-16 xxlarge plus clinical 22 plus T2 off2 0.4 finished (early stop epoch 24, lock epoch 8).
+- Key changes: Patient exact ACC prospective 0.5012 / external 0.4825. Held-out T2 recall 0 / 0. Better than TabPFN-196 (0.4847 / 0.4041), still below frozen votes 0.6188 / 0.5794. Not 0.75.
+- Validation: On-disk SUMMARY plus `sync_gastricus_ledger.py`.
+- Deployment: Offline train only. No public Next deploy.
+- Follow-up: Dual TabPFN-4 on cuda:1. Do not re-run this folder.
+
+## 2026-08-23, Dual T2-boost harvest on the official split
+
+- Scope: `pipeline/experiments/reports/gastricus_dualconv_t2boost_20260823/`, ledger 81 runs.
+- Reason: T2-weighted Dual ConvNeXt finished on the clean GastricUS split; numbers go into the ledger only.
+- Key changes: Patient exact ACC prospective 0.5859 / external 0.5134. T2 recall 0.0882 / 0.1343. Hist_eq Dual remains the best Dual (0.5835 / 0.5381). Votes remain the ledger best (0.6188 / 0.5794). Not 0.75.
+- Validation: `scripts/harvest_gastricus_dualconv.py --all` then `sync_gastricus_ledger.py`. Fusion still skipped: Dual trainer does not write val prediction CSVs.
+- Deployment: Offline train only. No public Next deploy.
+- Follow-up: Dual TabPFN-4 on cuda:1. cuda:0 continues clin22 T2-cost resume.
+
+## 2026-08-23, Admin ops log is a full timestamped event stream
+
+- Scope: `lib/ops/store.ts`, `/api/admin/ops-stats`, `/admin/ops`, workbench `page.tsx`, `ReaderStudyQueuePanel`.
+- Reason: Admin could only see aggregated doctor/case/decision tables. The raw stream existed on disk but was not shown, some clinical actions were not copied into the ops file, and events were not stamped on server receive.
+- Key changes: Every persisted ops event now keeps client time (`recorded_at`, `t_client_ms`) and `server_received_at`. Files append to current, monthly, and daily JSONL. Admin page shows the full event log and can export CSV/JSONL. Workbench also records case select, assist start/result/fail, report open, mobile pane, and initial judgment.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`.
+- Deployment: Public Next BUILD `qKD3Qws0g4XdrzOvoS3bw` on [47.106.33.102](http://47.106.33.102) (previous `nKcqceTQSz-4iL4zqrMGJ`).
+- Follow-up: Hard refresh `/admin/ops`. Logs stay on the workstation under `runtime/gastric_scan_next/` (append-only, not overwritten).
+
+## 2026-08-23, Phone can finish the full reader loop without changing desktop
+
+- Scope: `app/page.tsx`, `ReaderStudyQueuePanel`, report previews, `DoctorReportStudio`, `MobilePaneNav` labels, `use-mobile-layout.ts`, `globals.css`.
+- Reason: On a phone the three desktop columns were split into sheets, but the flow still required the doctor to hunt for judgment, boxing, Assist, and the Word-width report. Desktop layout must stay as-is.
+- Key changes: Phones only auto-switch Cases → Your call → Viewer after judgment → Result after Assist. Evidence tab label is 判断 then 结果. Formal report uses a full-bleed readable page under 768px (print still A4). Close / Assist / select targets are larger. Desktop three-column workbench and 794px Word page are unchanged.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Public smoke `public_root` / `public_clinical` 200.
+- Deployment: Public Next BUILD `nKcqceTQSz-4iL4zqrMGJ` on [47.106.33.102](http://47.106.33.102) (previous `cEbqNnBdBHt6blmAtLVAR`).
+- Follow-up: Hard refresh on the phone. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-23, Thinner contour beads so the lesion edge stays visible
+
+- Scope: `contour-edit.ts`, `InteractiveSegPanel.tsx`, `ReaderViewer.tsx`.
+- Reason: The control beads along the lesion contour were dense and filled, so they covered the ultrasound edge. Doctors could not see the margin or drag it cleanly.
+- Key changes: Beads are now hollow hairline rings, fewer on small lesions (spacing about 52 image pixels, cap 16), and the dark halo around the contour is thinner. Grab distance stays large so the tools remain easy to catch.
+- Validation: TypeScript diagnostics on the touched Next files.
+- Deployment: Public Next BUILD `cEbqNnBdBHt6blmAtLVAR` on [47.106.33.102](http://47.106.33.102) (previous `Cbmj9wbhdLL0kXCXYlhmM`).
+- Follow-up: Hard refresh. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-23, Benign formal report uses BM template; sex and age from original tables
+
+- Scope: `BmTemplateReportPreview`, `DoctorReportStudio`, `us-clinical-server.ts`, `reader_v150_clinical.json` / `.js`.
+- Reason: Opening the formal report on a BM case still used the T-staging wall-layer Word layout. Sex and age were hardcoded empty even though `reader_v150_catalog.csv` and the original clinical tables have them for 148/150 cases. The reader-study HTML already expected `clinical.age` / `clinical.sex`.
+- Key changes: BM queue reports now render the official benign-malignant template (site, diameters, ulcer, wall layers, surface, peristalsis, stenosis, retention, CDFI, nodes, ascites, impression). Header still shows accession, sex, age. Sidecar now carries age/sex from the catalog join. BM-001 remains unmatched in the original tables, so those two header fields stay blank there.
+- Validation: TypeScript diagnostics on the touched Next files.
+- Deployment: Public Next BUILD `Cbmj9wbhdLL0kXCXYlhmM` on [47.106.33.102](http://47.106.33.102) (previous `ItHWvBBV4-Foc3Ykjw-Z_`).
+- Follow-up: Hard refresh. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-23, Assist: T-stage analysis, benign fill-in, hide unpredicted signs
+
+- Scope: `ReaderStudyQueuePanel`, `BmEvidencePanel`, `assist-report-overlay.ts`, `pipeline_adapter.py` classify-only, `app/page.tsx`.
+- Reason: After Assist, T-staging needed the same analysis card. Benign cases should use the previous BM report fill-ins. Wall layers and perigastric tissue are not model-predictable for malignancy, so they should not appear.
+- Key changes: T-staging shows T plus four editable signs (morphology, boundary, growth, serosa). BM benign shows site, diameters, ulcer, and wall-layer fill-ins. BM malignant also runs T-stage and shows that result; wall layers and perigastric stay hidden. BM benign still skips the T-stage checkpoint.
+- Validation: `python3 pipeline/agent/product/test_classify_only_adapter.py`. TypeScript diagnostics on the touched Next files.
+- Deployment: Public Next BUILD `ItHWvBBV4-Foc3Ykjw-Z_` on [47.106.33.102](http://47.106.33.102) (previous `VgVEdk7vUPJm9tFP4INfq`). Workstation Python is live via the analyze tunnel.
+- Follow-up: Hard refresh the public browser. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-23, BM assist skips T-stage load
+
+- Scope: `pipeline_adapter.py` classify-only, `binary_classification_tool.py` process cache.
+- Reason: Reader Assist felt slow because each click spawned Python and loaded both the L0 binary ConvNeXt and the L3 T-stage checkpoint. The binary forward itself is milliseconds.
+- Key changes: `study_mode=benign_malignancy` now runs only the image-level binary head. Headline and confidence come from that head. T-stage weights stay unloaded. Classify-only no longer writes prediction artifacts. Binary weights cache inside one process.
+- Validation: `python3 pipeline/agent/product/test_classify_only_adapter.py`.
+- Deployment: Workstation Python only; public analyze already tunnels here. Public Next unchanged.
+- Follow-up: A warm classify worker is still needed for true one-second Assist; each request still starts a new Python process.
+
+## 2026-08-23, Show AI stage, confidence, and editable signs
+
+- Scope: `ReaderStudyQueuePanel`, `assist-report-overlay.ts`, `app/page.tsx`.
+- Reason: After the right rail was simplified, Assist still ran but the panel no longer showed the model call. The old system report was a geometry/text draft, not the classify-only stage.
+- Key changes: After Assist, show stage or nature plus confidence, then six predicted signs the doctor can edit. Keep AI / Modify both write audit and ops against the logged-in account. Overlay the classify result onto the assist report so the headline is no longer empty.
+- Validation: TypeScript diagnostics on the touched Next files. Public smoke after swap: root 200, clinical 200.
+- Deployment: Public Next BUILD `VgVEdk7vUPJm9tFP4INfq` on [47.106.33.102](http://47.106.33.102) (previous `Gy9gNNccrJ7Qv-ZDHYUyH`).
+- Follow-up: Hard refresh the public browser. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-22, Hide BM report form; box-as-keyframe
+
+- Scope: `app/page.tsx`, `ReaderStudyQueuePanel`, `InteractiveSegPanel`, help copy.
+- Reason: The right panel was dominated by 良恶性鉴别报告 chips (site, diameters, ulcer, wall layers). Doctors want a short read loop: own call, Assist, then open the report after reading. Mark-this-frame was an extra step before boxing.
+- Key changes: Hide the BM / GC-US form on the evidence rail. Doctor judgment stays at the top; Assist is a single button; a large Review and confirm report button sits at the bottom. Boxing a lesion marks the current frame as the keyframe. The Mark this frame button is removed from the public reader video chrome.
+- Validation: TypeScript diagnostics on the touched Next files. Public smoke after swap: root 200, clinical 200.
+- Deployment: Public Next BUILD `Gy9gNNccrJ7Qv-ZDHYUyH` on [47.106.33.102](http://47.106.33.102) (previous `TyyX61IiallYONozmPmn9`).
+- Follow-up: Hard refresh the public browser. Structured report fields remain in the post-read report workspace. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-23, Harvest all Dual GastricUS prefixes and chain the GPU queue
+
+- Scope: `scripts/harvest_gastricus_dualconv.py --all`, `scripts/watch_gastricus_next_gpu.sh`.
+- Reason: Harvest only looked at the official Dual tree, so lockbal / hist_eq / 15% would not write a SUMMARY. The first watcher could also relaunch lockbal every minute after that job exited.
+- Key changes: One report folder per Dual prefix. Official fusion still writes only from the official tree. Watcher order after official held-out CSVs: lockbal, then hist_eq, then 15% ROI. Does not kill live trains.
+- Validation: Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Queue Dual ConvNeXt 15% ROI on the official split
+
+- Scope: `scripts/export_gastricus_dualconv_split.py --expand 0.15`, config `tstaging_4class_acc_boost2_gastricus_expand15_20260823.yaml`, report `gastricus_dualconv_expand15_20260823/`.
+- Reason: Frozen 15% ROI had the best single-model prospective exact ACC (0.6165). Official split CSVs have no doctor-box columns, so Dual still uses mask-bbox. The 15% crops go to a new data_dir.
+- Key changes: New folder only. Does not overwrite the 20% Dual table or the live official run.
+- Validation: Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Auto-queue next GPU jobs after live GastricUS trains
+
+- Scope: `scripts/watch_gastricus_next_gpu.sh`, longrun `COMPARE.md`.
+- Reason: TabPFN-196 unfreeze epoch 2 val exact ACC fell 0.4609 → 0.4297 and T2 recall stayed 0. Dual ConvNeXt val patient ACC is climbing (0.4922 at epoch 6). GPU slots should start the next designed folders instead of idling.
+- Key changes: Watcher harvests, then launches lockbal Dual on cuda:1 after the official Dual writes held-out CSVs, and `--clinical raw --t2-off2-weight 0.4` on cuda:0 after the 196-d job exits. Does not kill or overwrite live runs.
+- Validation: Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Dual ConvNeXt lock patient balanced ACC and every-epoch history
+
+- Scope: `pipeline/lib/trainer.py` `log_every_epoch` plus incremental `training_history.csv`; config `tstaging_4class_acc_boost2_gastricus_lockbal_20260823.yaml`; harvest reads the CSV when present.
+- Reason: The live official Dual run only prints BEST or every 5th epoch, so epoch 4 looked missing. Exact patient ACC lock on val n=128 picked epoch 3 (0.4141) while epoch 5 had higher AUC and less T2/T3-to-T4+ overstaging. Acc_boost locked balanced metrics.
+- Key changes: Default Dual still locks exact patient ACC. The queued lockbal run writes a new folder. Live process is unchanged (already loaded).
+- Validation: Held-out exact ACC from SUMMARY only. Do not promote the lock metric.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Long-run T2 off2 switch and Dual T2-boost queue
+
+- Scope: `longrun.py` `--t2-off2-weight`, `scripts/harvest_gastricus_longrun.py`, `scripts/harvest_gastricus_dualconv.py` now calls late fusion, config `tstaging_4class_acc_boost2_gastricus_t2boost_20260823.yaml`.
+- Reason: Live unfreeze epoch 1 has T2 recall 0. TabPFN-196 may be collapsing to T3. The next unfreeze should keep clinical 22 and add the existing T2-to-T1/T4+ penalty. Dual ConvNeXt is also overstaging T2/T3 toward T4+ on val.
+- Key changes: Default long-run loss is unchanged (`--t2-off2-weight 0`). `--clinical raw --t2-off2-weight 0.4` writes `full16_xxlarge_clin22_t2cost/`. Harvest writes fusion SUMMARY when both held-out CSVs exist.
+- Validation: Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Queue hist_eq / TabPFN-4 Dual ConvNeXt and widen the ledger
+
+- Scope: `pipeline/configs/tstaging_4class_acc_boost2_gastricus_histeq_20260823.yaml`, `tstaging_4class_acc_boost2_gastricus_tabpfn4_20260823.yaml`, `scripts/export_gastricus_dualconv_tabpfn4.py`, `scripts/ensemble_gastricus_dualconv_frozen.py`, `scripts/sync_gastricus_ledger.py`.
+- Reason: Both GPUs are busy. Frozen 1152-d is still 0.6188 / 0.5794. The next Dual ConvNeXt knobs after the live official run are hist_eq (acc_boost #4) and frozen TabPFN 4-class OOF as extra clinical columns, then late fusion with existing frozen votes.
+- Key changes: New configs and a new TabPFN-4 CSV folder. Ledger now also copies `gastricus_*` waves and in-progress HISTORY / PROGRESS / QUEUED files. Originals are not moved or deleted.
+- Validation: Do not promote unless both held-out exact ACC are 0.75. Live Dual ConvNeXt val patient ACC is not a held-out number.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Dual ConvNeXt on official GastricUS split
+
+- Scope: `scripts/export_gastricus_dualconv_split.py`, `pipeline/configs/tstaging_4class_acc_boost2_gastricus_official_20260823.yaml`, report `gastricus_dualconv_official_20260823/`.
+- Reason: Frozen MedSigLIP 1152-d is stuck near 0.62 / 0.58. The 2026-06 jump used trainable Dual ConvNeXt plus mask as a 4th channel. That recipe had not been trained on `maincenter_retrospective_v20260821`.
+- Key changes: New data_dir and config only. No leaked acc_boost2 warm-start. No ext in train. Default MedSigLIP CLI unchanged.
+- Validation: Held-out exact ACC from the new SUMMARY only. Do not promote unless both are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Frozen plan 6.2 TabPFN TIME plus 4-class OOF
+
+- Scope: `--head tabpfn_both` in `train.py` / `run_medsiglip_gastricus.py`. Report `medsiglip_gastricus_tabpfn_both_20260823/`.
+- Reason: The long-run unfreeze already concatenates TIME-192 and 4-class OOF. The frozen-encoder control of that 196-d clinical expert was missing. Default remains `--head mlp --size xlarge`.
+- Key changes: New head only. Image tokens still never enter TabPFN. Writes a new folder.
+- Validation: Train on the official 20% cache. Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Long-run unfreeze + xxlarge + frozen TabPFN
+
+- Scope: `scripts/run_medsiglip_gastricus_longrun.py`, `pipeline/medsiglip_gastricus/longrun.py`, `model.py` size `xxlarge`. Report `medsiglip_gastricus_longrun_tabpfn_20260823/`.
+- Reason: Frozen-head sweeps stalled at 0.62 / 0.58. The written plan's next scale is a trainable encoder plus route 6.2 TabPFN clinical expert. Last-8 full FT at 2e-5 drifted; this run uses last-16, encoder lr 5e-6, 8 frames, and frozen TIME-192 plus 4-class OOF (196-d). Image tokens never enter TabPFN.
+- Key changes: Complete script writes `train.log` / `last.pt` / `command.json`, supports `--resume`, default 48 epochs. `run_medsiglip_gastricus.py` defaults unchanged. 20% black cache and default xlarge report not overwritten.
+- Validation: Train writes a new folder. Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+- Follow-up: If 24 GB OOMs, rerun `--last-n 12 --max-frames 6`. Resume with `--resume`.
+
+## 2026-08-23, Ensemble v4 of lock-macro TIME with 15% heads
+
+- Scope: `ensemble.py` `MEMBERS_V4`; report `medsiglip_gastricus_ensemble4_20260822/`. CLI `ensemble` still writes v1.
+- Reason: Lock-macro TIME recovered T2; 15% TIME still has the best single-model external exact ACC. Vote on existing CSVs only.
+- Validation: New folder. Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-23, Lock val macro-recall on default 20% cache
+
+- Scope: CLI `--lock macro` now writes `medsiglip_gastricus_lockmacro_20260822/` instead of the default 20260821 folder.
+- Reason: Val n=128 lock on exact ACC can drop T2. Acc_boost locked balanced metrics. New folder only; `--lock acc` default unchanged.
+- Validation: Train writes the new folder. Do not promote unless both held-out exact ACC are 0.75.
+- Deployment: Offline. Public Next unchanged.
+
+## 2026-08-22, T2 off2 cost and lesion-only third view
+
+- Scope: `pipeline/medsiglip_gastricus/train.py` (`t2_off2_loss`), `mask_cut.py`, CLI `--t2-off2-weight` / `--mask-cut`.
+- Reason: Acc_boost's +0.18 frame AUC used a T2-to-T1/T4+ cost and a pixel-aligned mask in the image. Those two pieces were not yet a GastricUS switch. Overlay third view already failed; this cut zeros background instead.
+- Key changes: Default weight stays 0. New reports `t2cost_20260822` and `maskcut_20260822`. New cache `..._maskcut`. 20% black cache and CLI default recipe unchanged.
+- Validation: Encodes and trains write new folders only. Held-out exact ACC still required on both splits before any promote.
+- Deployment: Offline train/eval only. Public Next unchanged.
+- Follow-up: Read SUMMARY.md. Do not overwrite existing reports.
+
+## 2026-08-22, Compare GastricUS exact ACC with how acc_boost jumped
+
+- Scope: `pipeline/medsiglip_gastricus/BACKBONE_VS_PLAN.md` §2.16; `scripts/write_gastricus_zh_report.py`; ledger `NEXT.md` / `README.md`.
+- Reason: The pad / frozen-head sweep stalled at 0.62 / 0.58. Readers were mixing product acc_boost2 patient ACC 0.72 / 0.63 with the clean GastricUS exact-ACC contract.
+- Key changes: Wrote how acc_boost actually moved (end-to-end Dual ConvNeXt, mask as 4th channel, doctor ROI, multitask / asymmetric cost, leaked `20260531` train) versus GastricUS real lifts (concat-mean, xlarge gated, TIME-192, 15% ROI, votes). Honest Phase 0 external 0.46 is the comparable Dual ConvNeXt line, not the product 0.63.
+- Validation: Regenerated `gastricus_ledger/中文报告.md`. No training or public UI change.
+- Deployment: Docs and report generator only. Public Next unchanged.
+- Follow-up: Do not promote either line. Target remains both held-out exact ACC 0.75.
+
+## 2026-08-22, Always sync public Next after product code changes
+
+- Scope: `.cursor/rules/public-deploy-sync.mdc`, `CLAUDE.md`, `project-records-and-commits.mdc`.
+- Reason: Doctors use 47.106.33.102. LAN next dev is not the public site; UI work was finishing without a public swap until asked.
+- Key changes: Standing rule: after Next / reader / auth-edge / public sidecar changes, run `bash scripts/deploy_public_next.sh` before handoff, record BUILD, tell users to hard-refresh.
+- Validation: Rule file present; deploy command unchanged (`scripts/deploy_public_next.sh`).
+- Deployment: Docs and Cursor rule only. Live BUILD remains `TyyX61IiallYONozmPmn9` until the next product change.
+- Follow-up: Skip only for docs-only or training/eval-only work that does not ship to the public path.
+
+## 2026-08-22, Reader doctor-first judgment bar
+
+- Scope: `ReaderDoctorFirstBar`, `ReaderEvidencePanel`, `ReaderToolbar`, `ReaderWorkbench`, help copy.
+- Reason: Doctors need a short loop: own call first, then fast AI, then accept or keep their call. The evidence panel was dominated by Generate report / Assist opinion empty states.
+- Key changes: The evidence panel now starts with large 良性/恶性 (or T1–T4+) buttons, then AI analysis, then accept/reject. Generate report moved under More. Full report is a small text link.
+- Validation: TypeScript diagnostics on the touched reader files. Public smoke after swap: root 200, clinical 200.
+- Deployment: Public Next BUILD `TyyX61IiallYONozmPmn9` on [47.106.33.102](http://47.106.33.102) (previous `VOD-953qq6Q9K_aLRbZ7Q`).
+- Follow-up: Hard refresh the public browser. Rollback: Aliyun Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-22, Reader T-stage is classify-only
+
+- Scope: `pipeline/agent/product/pipeline_adapter.py`, `analyze_case.py` wall-mask helper, reader analyze route LLM env.
+- Reason: Reader / workbench Assist was still running the 15-step LangGraph agent, 30 heuristic LLM traces, binary classifier load, and wall artifacts. That was slow and crashed in `cv2.distanceTransform` after the pipeline finished.
+- Key changes: Default fast profiles (`contour_anchored_fast`, `fast`, `classify_only`, `no_agent`, reader payloads) now call the binary head plus the T-stage classifier. LangGraph, wall, DINO, RAG, and remote LLM are skipped. The 良/恶性 card reads `binary_gate` first and no longer treats T-stage top-1 as malignancy probability. `distanceTransform` now squeezes the mask to a contiguous 2D uint8 array.
+- Validation: `python3 pipeline/agent/product/test_classify_only_adapter.py`. Next request uses the new Python path without a Next rebuild.
+- Deployment: Workstation Python only. Public Next still forwards the same payload. Optional Next rebuild if the route env change should also land on `:3300` standalone.
+- Follow-up: Pass `assist_profile=full` only when the full agent is intentionally needed.
+
+## 2026-08-22, Public analyze keeps session across tunnel
+
+- Scope: `lib/agent-upstream.ts`, public edge cookie accept, workstation proxy analyze path.
+- Reason: Public analyze is forwarded to workstation `:3300` via `NEXT_AGENT_UPSTREAM`. The tunnel request dropped the doctor session, so workstation returned `请重新登录` after the doctor had already signed in.
+- Key changes: Forward session headers on the Agent tunnel and inject a fallback token after public auth. Edge also accepts a raw Next cookie. Reader workbench analyze sends auth headers.
+- Validation: Public cookie-only analyze is no longer 401. With a lesion polygon it returns `400` missing frame, not `请重新登录`.
+- Deployment: Auth snapshot `20260822_231550`. Public Next BUILD `VOD-953qq6Q9K_aLRbZ7Q`. Workstation BUILD `7KO-xztEnHr7lamgp2aR0` on `:3300`.
+- Follow-up: Hard refresh. Rollback: Aliyun auth `*.bak_20260822_231550`; Next previous BUILD `sG7KQ68DT79LRoK2bY2-K`.
+
+## 2026-08-22, Analyze uses Next login token
+
+- Scope: public edge `auth_server.mjs`; Next fetch session headers.
+- Reason: Doctors were already signed in on Next but analyze got `请重新登录`. The edge treated skip-auto-login or a missing edge cookie as logged out, and ignored the Next session token header.
+- Key changes: Edge proxies analyze when a Next cookie or `x-doctor-session-token` is present. Skip-auto-login no longer blocks authenticated APIs. The client does not send skip when a token exists.
+- Validation: `node --check` auth snapshot. After swap: public root 200; LAN `:3000` 200; `:3300` contract 200.
+- Deployment: Auth snapshot `20260822_231010`. Public Next BUILD `sG7KQ68DT79LRoK2bY2-K` (previous `5wou4s26tqRft5zQOfyZM`). Workstation BUILD `0RXzoPUNcnsLM0u_90MHS` on `:3300`.
+- Follow-up: Hard refresh. Rollback: Aliyun auth `*.bak_20260822_231010`; Next previous BUILD `5wou4s26tqRft5zQOfyZM`.
+
+## 2026-08-22, Shorten expired-login prompt
+
+- Scope: Next login-error / LoginGate; public edge 401 JSON; proxy auth 401.
+- Reason: Analyze 401 showed a long Chinese sentence about lesions. Any 401 was treated as expired login.
+- Key changes: Prompt is now `请重新登录`. Only `auth_required` / expired-login payloads use that copy.
+- Validation: `node --check` auth snapshot. After swap: public root 200; LAN `:3000` 200; `:3300` contract 200.
+- Deployment: Auth snapshot `20260822_230523`. Public Next BUILD `5wou4s26tqRft5zQOfyZM` (previous `3SmkM5ctWQZu8KHifbHPu`). Workstation BUILD `yGXy42LECklNw5nt6wTod` on `:3300`.
+- Follow-up: Hard refresh. Rollback: Aliyun auth `*.bak_20260822_230523`; Next previous BUILD `3SmkM5ctWQZu8KHifbHPu`.
+
+## 2026-08-22, Public login uses Next only
+
+- Scope: Aliyun auth edge; Next LoginGate / DoctorAccountModal; logout stay-on-page.
+- Reason: Doctors were hitting a separate HTML login that asked for an optional account and advertised a 180-day cookie. Public sign-in should be one Next password form.
+- Key changes: Unauthenticated workbench HTML goes to Next. `/workbench_login.html` redirects to `/`. Public login is password-only. The 180-day copy is removed.
+- Validation: `node --check` on the Aliyun auth snapshot; `npx tsc --noEmit`. After swap: `/workbench_login.html` 302 to `/`; public root 200; LAN `:3000` 200; `:3300` contract 200.
+- Deployment: Auth snapshot `20260822_230137` + `gastric-reader` restart. Public Next BUILD `3SmkM5ctWQZu8KHifbHPu` (previous `dSlP6Z-0eUAbSRDwcLNs_`). Workstation BUILD `iM9WxdOIiInT_KspveA4S` on `:3300` (previous `WaTYsETzaPaM8t8eh2S8O`).
+- Follow-up: Hard refresh public browsers. Rollback: Aliyun auth `*.bak_20260822_230137`; Next previous BUILD `dSlP6Z-0eUAbSRDwcLNs_`.
+
+## 2026-08-22, Logout clears both public sessions
+
+- Scope: public edge `auth_server.mjs` / `workbench_login.html`; Next account GET/POST, LoginGate, doctor session client.
+- Reason: Sign-out only cleared the Next cookie. The edge `reader_session` stayed valid, so the next account GET reminted a doctor session and the workbench looked still logged in.
+- Key changes: Logout now clears `gastric_doctor_session` and `reader_session`. Edge `/api/logout` clears both. Skip-auto-login blocks inherit and remint. Explicit logout returns to the login page (public) or identity picker (LAN) instead of the expiry overlay.
+- Validation: `node --check` on the Aliyun auth snapshot; `node apps/gastric_scan_next/scripts/test_session_cookie.mjs`; `npx tsc --noEmit`. After swap: public login 200, root 302, `/api/logout` 200; LAN `:3000` 200; `:3300` contract 200.
+- Deployment: Auth snapshot `20260822_225723` + `gastric-reader` restart. Public Next BUILD `dSlP6Z-0eUAbSRDwcLNs_` (previous `vo-ueXW6ZbdwsDQdCCqSt`). Workstation BUILD `WaTYsETzaPaM8t8eh2S8O` on `:3300` (previous `mPCc7tCt3Kqj8C0i-Zuiw`).
+- Follow-up: Hard refresh public browsers once. Rollback: Aliyun auth `*.bak_20260822_225723`; Next previous BUILD `vo-ueXW6ZbdwsDQdCCqSt`.
+
+## 2026-08-22, Deploy public login keep-alive and richer admin stats
+
+- Scope: Aliyun auth edge + public Next; workstation `:3000` / `:3300`; `/admin/ops`.
+- Reason: Doctors need a one-login public workbench that does not fail mid-analysis, and admin needs public login / analyze / decision counts in one place.
+- Key changes: Public audit events now ingest to the workstation. Login success/fail is recorded. Heartbeat writes active and wall seconds. Admin summary cards add sign-in, analyze, decided, LAN/public.
+- Validation: `npx tsc --noEmit`; session cookie test. After swap: Aliyun login 200, account JSON 200, clinical 200; LAN `:3000` 200; `:3300` contract 200; tunnel `18768` contract 200.
+- Deployment: Auth snapshot `20260822_224920` + `gastric-reader` restart. Public Next BUILD `vo-ueXW6ZbdwsDQdCCqSt` (previous `n4tUUkqvhbbuEp7hX96G1`). Workstation BUILD `mPCc7tCt3Kqj8C0i-Zuiw` on `:3300` (previous `e31aN8Vuwz1reInNxzyLr`). Imported 9700 Aliyun audit lines into `runtime/gastric_scan_next/reader_audit_events_public.jsonl`.
+- Follow-up: Hard refresh public browsers. Rollback: Aliyun auth `*.bak_20260822_224920`; Next `.next-public-deploy-dist.bak_*` from this stamp.
+
+## 2026-08-22, Public Next login stays alive during analysis
+
+- Scope: public edge `auth_server.mjs` / `workbench_login.html`; Next doctor session cookie, session store, LoginGate, fetch patch.
+- Reason: Doctors sometimes saw English `Login failed` after a valid password, and analyze died with 401 when the edge `reader_session` expired while the Next cookie was still good.
+- Key changes: Edge accepts a still-valid Next session cookie, slides `reader_session`, default 180 days. Login page remembers the account and continues even if Next mint lags. Next cookies carry `aid` so a lost session file can be restored. Session JSON writes are locked. Same-origin `/api` 401s refresh once and retry. Login overlay does not unmount the workbench.
+- Validation: `node apps/gastric_scan_next/scripts/test_session_cookie.mjs`; `node --check` on the Aliyun auth snapshot; `npx tsc --noEmit` in `apps/gastric_scan_next`.
+- Deployment: Swap Aliyun `auth_server.mjs` and `workbench_login.html`, restart `gastric-reader`, then rebuild / swap public Next. Workstation Next can take the same client build.
+- Follow-up: Hard refresh public browsers once. Rollback: restore the previous Aliyun auth snapshot and the previous Next standalone.
+
+## 2026-08-22, GastricUS TabPFN xlarge, pad modes, T2 error
+
+- Scope: `--pad reflect|edge|mean`; `--head tabpfn` on default concat-gated writes `medsiglip_gastricus_tabpfn_xlarge_20260822/` (does not overwrite 20260821); `t2_error.py` / `t2-error`.
+- Reason: Confirm TabPFN on the current default head; black square-pad was the only fill; T2 recall is the unstable class.
+- Key changes: New pad caches. CLI default remains black / 20% / mlp. Expand 15/20/25 reports are not overwritten.
+- Validation: TabPFN xlarge prosp 0.6071 / ext 0.5031, T2 recall 0. T2 write-up is on disk. Pad-reflect encode pending.
+- Deployment: Opt-in flags only.
+- Follow-up: Train pad-reflect after encode. Do not re-run 15/20/25 MLP.
+
+## 2026-08-22, GastricUS mask-overlay third view
+
+- Scope: `mask_view.py`, CLI `--mask-view`; cache `maincenter_retrospective_v20260821_maskview/`; report `medsiglip_gastricus_maskview_20260822/`.
+- Reason: The plan lists lesion masks as an input. Geometry scalars did not help. Encode a highlighted overlay through frozen MedSigLIP and concat to the 20% tokens.
+- Key changes: `e_full = [full20, mask]`, `e_roi = [roi20, mask]`, 2304-d. New cache. CLI default unchanged.
+- Validation: Pending held-out SUMMARY.
+- Deployment: Opt-in flag only.
+- Follow-up: Train concat-gated MLP and TIME-192 after encode.
+
+## 2026-08-22, GastricUS softmax stack and mask geometry
+
+- Scope: `stack.py`, CLI `stack`; `mask_geom.py`, `--mask-geom`. Reports `medsiglip_gastricus_stack_20260822/` and `medsiglip_gastricus_maskgeom_20260822/`.
+- Reason: Hard-label votes peaked at 0.6188 / 0.5794. The plan lists lesion masks as an input; they were only used for ROI boxes.
+- Key changes: Softmax stack of existing frozen heads (new folder). 10-d mask geometry sidecar, not written into embedding npz. CLI train default unchanged. `ensemble` still writes the first vote folder.
+- Validation: Stack `val_mix` prosp 0.6165 / ext 0.5794. Mask-geom MLP 0.5365 / 0.4990; TIME-192 0.5976 / 0.5010. None is 0.75.
+- Deployment: Opt-in command / flag only.
+- Follow-up: Report both held-out exact ACCs. Do not promote without 0.75 on both.
+
+## 2026-08-22, GastricUS ensemble3 vote
+
+- Scope: `ensemble.py` `MEMBERS_V3`; report `medsiglip_gastricus_ensemble3_20260822/`.
+- Reason: Prior votes omitted the best external head (15% TIME-192).
+- Key changes: New folder. Members are default gated, 15% TIME, layers4 TIME, 20% TIME. Does not overwrite ensemble or ensemble2. CLI `ensemble` still writes the first vote folder.
+- Validation: `t3_rescue` prosp 0.6071 / ext 0.5794. Not 0.75.
+- Deployment: Opt-in Python call only.
+- Follow-up: Soft / logit stack is unused. Do not re-run the same hard-vote members.
+
+## 2026-08-22, GastricUS multi-expand 15/20/25 tokens
+
+- Scope: `multi_expand.py`, CLI `--multi-expand`; cache `maincenter_retrospective_v20260821_multi1525/`; report `medsiglip_gastricus_multi1525_20260822/`.
+- Reason: 15% and 20% single-ROI heads are complementary on prospective vs external. Concatenate existing frozen tokens instead of another encoder unfreeze.
+- Key changes: `e_full = [full20, roi15]`, `e_roi = [roi20, roi25]`, 2304-d per view. Does not overwrite 15/20/25 caches. CLI default unchanged.
+- Validation: `mlp_concat_gated` prosp 0.5553 / ext 0.4804; TIME-192 0.5812 / 0.5464. Neither is 0.75.
+- Deployment: Opt-in flag only.
+- Follow-up: Train concat-gated and TIME-192 on the merged cache.
+
+## 2026-08-22, GastricUS Chinese experiment report
+
+- Scope: `scripts/write_gastricus_zh_report.py`; `gastricus_ledger/中文报告.md` and `中文/逐次/`; pack `阅读说明.md` now starts there.
+- Reason: Need one Chinese report that states every training setting and includes every train log, without weights.
+- Key changes: Generator copies SUMMARY numbers, spec, epoch tables, full `train.log`, and cleaned console logs. Checkpoints and prediction CSVs stay out. Pack no longer overwrites existing `NEXT.md` / `IN_PROGRESS.md`.
+- Validation: Scripted generation from on-disk reports only.
+- Deployment: Ledger + Desktop pack. CLI train default unchanged.
+- Follow-up: Re-run the writer after any new SUMMARY.
+
+## 2026-08-22, GastricUS ensemble2 with layers TIME-192
+
+- Scope: `ensemble.py` `MEMBERS_V2` / `ENSEMBLE2_REPORT_DIR`. Old `ensemble_20260822/` is not overwritten.
+- Reason: layers4 + TIME-192 has held-out exact ACC 0.6118 / 0.5773 and T3 recall 0.536 / 0.423. Add it to a new vote.
+- Validation: Val locked `majority_fallback_default`. Held-out exact ACC 0.6024 / 0.5505. Below layers-TIME single head 0.6118 / 0.5773 and below the first vote 0.6188 / 0.5443. Not 0.75.
+- Deployment: New folder only. CLI `ensemble` still writes the original vote.
+- Follow-up: Do not promote without both held-out exact ACCs.
+
+## 2026-08-22, GastricUS last-4 layer tokens
+
+- Scope: `pipeline/medsiglip_gastricus/layers.py`, CLI `--layers`; cache `maincenter_retrospective_v20260821_layers4/`; report `medsiglip_gastricus_layers4_20260822/`.
+- Reason: Spatial lesion/context means did not lift held-out exact ACC. The unused visual axis is intermediate encoder tokens, not another 1152-d width sweep.
+- Key changes: Concat official 1152-d global pool with last-4 vision-layer patch means (5760-d per view). New cache and report folders. Does not overwrite the 20% or spatial caches. CLI default unchanged.
+- Validation: Encode completed (5760-d, four splits; 20% cache intact). concat-gated held-out exact ACC 0.5788 / 0.5464. Not 0.75. Do not promote.
+- Deployment: Opt-in `--layers` on encode/train only.
+- Follow-up: Encode when cuda:0 is free, then train concat-gated xlarge on the new cache.
+
+## 2026-08-22, GastricUS preoperative clinical switch
+
+- Scope: `--clinical preop` in `run_medsiglip_gastricus.py` / `train.py`; report `medsiglip_gastricus_preop_20260822/`.
+- Reason: Lauren and differentiation may be postoperative. The plan still needed a preoperative-only clinical control on the frozen 1152-d cache.
+- Key changes: Force those two fields to missing (norm=0, missing=1). Keep the 22-d layout. New report folder. CLI default stays `raw`.
+- Validation: Pending held-out SUMMARY. Do not promote without prospective and external exact ACC.
+- Deployment: CLI flag only. Default train path unchanged.
+- Follow-up: Compare to default gated 0.5976 / 0.5216 and clinical-only 0.5176 / 0.5649. TIME-192 preop cache is a separate file and does not overwrite `tabpfn_clin11_time192.npz`.
+
+## 2026-08-22, GastricUS plan-experiment pack for Desktop
+
+- Scope: `scripts/pack_gastricus_experiments.py`, `pipeline/experiments/reports/gastricus_ledger/` (MASTER, logs, 阅读说明).
+- Reason: Keep every plan-driven GastricUS SUMMARY and train log in one folder, then copy that pack to the Desktop without moving originals.
+- Key changes: Pack copies markdown, logs, slim metrics, and plan snapshots only. Checkpoints and prediction CSVs (patient IDs) stay in the original report folders. MASTER now includes the plan-item map and a val-ACC digest of every train log.
+- Validation: Scripted pack; no new held-out number. Target remains 0.75 exact ACC on prospective and external.
+- Deployment: Desktop folder + zip. Repo originals unchanged. CLI default unchanged.
+- Follow-up: Re-run the pack after freeze-head LoRA finishes and after `eval-unfreeze`.
+
+## 2026-08-22, GastricUS ledger, label-vote, LoRA last-4
+
+- Scope: `pipeline/experiments/reports/gastricus_ledger/`, `scripts/sync_gastricus_ledger.py`, `pipeline/medsiglip_gastricus/ensemble.py`, `unfreeze.py`, CLI `ensemble` / `--unfreeze-lora`.
+- Reason: Keep every GastricUS SUMMARY in one folder. Frozen 1152-d heads sit near 0.62 / 0.58 exact ACC. The unused plan axis is the encoder. Target remains 0.75 exact ACC on both held-out splits.
+- Key changes: Ledger copies markdown only; originals stay. Label-vote locks the rule on val. LoRA last 4 vision blocks, same concat-gated head, raw crop_ui, max 6 frames. CLI default unchanged.
+- Validation: Ledger copied 33 SUMMARY files. Label-vote `t3_rescue` prosp exact ACC 0.6188 / ext 0.5443. LoRA smoke: 5.4 GB, 13.3M trainable, 5-frame bag on cuda:0. LoRA held-out ACC is pending `medsiglip_gastricus_unfreeze_lora_20260822/`.
+- Deployment: Report folders and CLI flags only. Do not promote LoRA or vote without both held-out exact ACCs and McNemar.
+- Follow-up: Finish LoRA train. If it misses 0.75, last-4 full FT (`--unfreeze-full`) or `--spatial`. Refresh the ledger after each run.
+
+## 2026-08-22, GastricUS spatial tokens and full last-N FT
+
+- Scope: `spatial.py`, `--spatial`, `--unfreeze-full`, warm-head LoRA on cuda:1.
+- Reason: Frozen global 1152-d is the visual ceiling. Cold LoRA relearns the head. Need a warm head, a spatial patch cache, and a full last-N path.
+- Key changes: ROI-masked 32x32 patch means concatenated to 2304-d. Full fine-tune last N vision layers without LoRA. Mask grid stretched to 448 then 32 to match the processor.
+- Validation: Spatial CPU smoke, 2 frames, lesion L2 0.98, dim 2304. Warm-head epoch 1 val exact ACC 0.5625 (default gated val 0.5391). No held-out yet.
+- Deployment: CLI flags only. Default train path unchanged.
+- Follow-up: Full spatial encode when a GPU frees. Do not promote warm-head on val n=128.
+
+## 2026-08-22, GastricUS plan-literal leftovers
+
+- Scope: encode `--expand`, `--frame-sample`, `--pool-out`, `--head tabpfn_time`, `--plan-literal-sweep`; report `pipeline/experiments/reports/medsiglip_gastricus_plan_literal_20260822/`.
+- Reason: The written plan still lacked ROI 15/25 switches, 64/128 gated dim, frame sampling, clinical-only TabPFN, and TIME-192. PLAN_MAPPING was still describing the first-train default.
+- Key changes: Reuse full-frame vectors when re-encoding ROI expand. Clinical-only TabPFN is an independent 4-class baseline. TIME-192 uses official TabPFNEmbedding. Docs rewritten in PLAN_MAPPING / BACKBONE §2.14.
+- Validation: Same 20% frozen cache. Clinical-only ext ACC 0.5649. TIME-192 prosp 0.6000 / ext 0.5711. McNemar vs default: prosp p = 1.00, ext p = 0.032. T2 recall 0.059 / 0.030. CLI default unchanged.
+- Deployment: Report and CLI flags only. Expand 15/25 caches and heads are now on disk.
+- Follow-up: Closed. 15/20/25 McNemar all p > 0.13. TIME-192 external p = 0.032 vs default; do not change the CLI default.
+
+## 2026-08-22, GastricUS serosa binary, T3/T4 subset, and McNemar
+
+- Scope: `pipeline/medsiglip_gastricus/binary.py`, dataset task filter, `--binary-sweep`, report `pipeline/experiments/reports/medsiglip_gastricus_binary_20260822/`.
+- Reason: Pair-mass loss only flipped T3/T4 bias. Need a dedicated serosa head, a T3-vs-T4+ subset head, a 4-class cascade, and paired McNemar on the existing checkpoints.
+- Key changes: 2-class concat heads for T4+ vs rest and T3 vs T4+. Cascade replaces T3/T4+ from the default 4-class gated checkpoint. Exact McNemar on prospective/external prediction CSVs.
+- Validation: Same frozen cache, 115.56 s on cuda:0. Oracle T3/T4 mean prosp ACC 0.737 (majority 0.623), ext 0.612 (majority 0.615). Default 4-class on that subset is 0.616. Cascade prosp ACC 0.565. McNemar default vs pair-loss p = 0.0895. Do not promote.
+- Deployment: Report-only. CLI default unchanged. Encoder still frozen.
+- Follow-up: Reader study or unfreeze the last MedSigLIP block. Downstream heads on the frozen 1152-d tokens are exhausted.
+
+## 2026-08-22, GastricUS T3/T4 lever training
+
+- Scope: `pipeline/medsiglip_gastricus/` train/model/metrics, `scripts/run_medsiglip_gastricus.py`, report `pipeline/experiments/reports/medsiglip_gastricus_t34_20260822/`.
+- Reason: Width and expected-rank SmoothL1 left T3→T4+ as the main error. Need cost ordinal, T3/T4 pair-mass penalty, a serosa auxiliary head, and QWK lock on the same frozen cache.
+- Key changes: `--ordinal-mode cost`, `--t34-weight`, `--aux-serosa-weight`, `--lock qwk|macro`, `--t34-sweep`. Five xlarge concat runs. CLI default stays concat + gated + lock exact ACC.
+- Validation: Same 1062/128/425/485 cache, 196.92 s on cuda:0. Pair-loss prosp ACC 0.548 / T3 0.580, ext ACC 0.538 / T3 0.577. QWK lock ext ACC 0.435 (majority T4+ baseline). Stacking all three levers is worse. Do not promote.
+- Deployment: Report-only. Encoder still frozen.
+- Follow-up: Reader study or unfreeze the last MedSigLIP block. Do not retune 4-class loss weights as the next width-like search.
+
+## 2026-08-21, admin decision stats and workstation plus public deploy
+
+- Scope: `/admin/ops`, `/api/admin/ops-stats`, `lib/ops/store.ts`, workstation standalone, Aliyun reader-only Next.
+- Reason: Accept/reject must be visible in the admin backend, and both the workstation and public site need the new physician-then-AI-then-accept flow.
+- Key changes: Admin now merges ops JSONL with audit decision events. Doctor table adds Initial / Accept / Modify / Reject / Decided. Case table adds Physician / AI / Final / Decision. New accept-reject log and decision CSV. Deployed the workbench panel with the stats page.
+- Validation: `npx tsc --noEmit`. Workstation `:3000/` 200, `:3300/api/agent/contract` 200, `/admin/ops` 200. Aliyun `gastric-next` active, next3000 200, edge login 200, public root 302, clinical 200.
+- Deployment: Workstation BUILD `e31aN8Vuwz1reInNxzyLr` (previous `ycTKpeFl_q36RLx0P9azL`), backup `.next-standalone.bak_20260821_202157_pre_decision_admin`. Aliyun reader-only BUILD `n4tUUkqvhbbuEp7hX96G1` (previous `pApRFA1HX4eGMcJ_Jo7GA`) via `scripts/deploy_public_next.sh`.
+- Follow-up: Hard refresh LAN and the public site. Login as admin and open `/admin/ops` to confirm the new columns.
+
+## 2026-08-21, record physician accept/reject of AI judgment
+
+- Scope: workbench decision panel, reader audit/ops event types, reader study accept path, `scripts/analyze_reader_audit_events.py`.
+- Reason: Mask edits were logged, but whether the physician accepted the AI T-stage was not a first-class event. Everyday workbench also lacked doctor-first then AI then accept.
+- Key changes: Right-panel 3-step trace (physician judgment, AI judgment, accept/modify/reject). New audit/ops types `ai_decision_accept` / `modify` / `reject` / `more_evidence` plus `stage_override`. Regular workbench now audits sign/stage edits, not only `reader_v150`. Agent panel waits until the physician judgment is recorded.
+- Validation: `npx tsc --noEmit` passed in `apps/gastric_scan_next`. Existing `doctor_action` events remain for compatibility.
+- Deployment: Source landed first; workstation and public BUILD ids are in the deploy entry above.
+- Follow-up: Closed by the admin-stats deploy on the same day.
+
+## 2026-08-21, expert reading of GastricUS results
+
+- Scope: `BACKBONE_VS_PLAN.md` §2.7–2.11, `EXPERIMENT_RECORD.md` §6.
+- Reason: Score tables alone invite over-reading 0.598 and 0.87 adjacent ACC. Need prevalence, majority baselines, sampling error on the 0.019 gap, and why gated eats T3.
+- Key changes: Prospective T4+ prior 43.5% vs train 29.9%. Gated predicts T4+ for 62.1% of prospective cases. Majority T4+ baseline 0.435. Always-T3 adjacent baseline 0.779. The 0.019 gated-vs-mean gap is within SE. Next levers ranked: reader study, T3/T4 head, unfreeze encoder.
+- Validation: Counts from patient_bags and the concat-gated confusion matrix. No new training. No number in the reports changed.
+- Deployment: Docs only.
+- Follow-up: McNemar on the two checkpoints if a promotion decision is needed.
+
+## 2026-08-21, GastricUS full experiment record
+
+- Scope: `pipeline/medsiglip_gastricus/EXPERIMENT_RECORD.md` and `pipeline/experiments/reports/medsiglip_gastricus_opt_xlarge_20260821/logs/`.
+- Reason: The backbone-vs-plan note was too short for data counts, module widths, five-round specs, confusion matrices, and epoch logs.
+- Key changes: Record the clean 1062/128/425/485 contract, MedSigLIP cache shapes, fusion/pool/head presets, loss and lock, all five rounds, current concat-gated tables, and exported histories/console log.
+- Validation: Counts from `inventory.json`, split CSVs, `encode_summary.json`, and each `metrics.json`. No new training. No patient names.
+- Deployment: Docs and report logs only.
+- Follow-up: None.
+
+## 2026-08-21, GastricUS backbone vs plan summary
+
+- Scope: `pipeline/medsiglip_gastricus/BACKBONE_VS_PLAN.md`, README / PLAN_MAPPING links.
+- Reason: The first draft listed alignment first and dumped scores late. Need a results-forward note: what the numbers support, T3/T4+ as the main error, and why width and clinical do not lift both held-out sets.
+- Key changes: Lead with the current default and the 0.598 vs 0.579 / 0.522 vs 0.542 trade-off. Add analysis of fusion, pool, lock metric, clinical ablation, and per-center mix. Compact the plan checklist. Academic-humanizer pass: shorter sentences, every claim tied to a report number, no promotion.
+- Validation: Numbers copied from the four COMPARE / SUMMARY reports. No new training. No number changed.
+- Deployment: Docs only.
+- Follow-up: Refresh PLAN_MAPPING stale sections when that file is next edited.
+
+## 2026-08-21, optimize GastricUS then train xlarge heads
+
+- Scope: `pipeline/medsiglip_gastricus/model.py`, `train.py`, `scripts/run_medsiglip_gastricus.py`, report `pipeline/experiments/reports/medsiglip_gastricus_opt_xlarge_20260821/`.
+- Reason: The last width bump locked adjacent ACC and compressed plan 5.1 to 128-d. Need ordinal loss, exact-ACC lock, raw 2304-d means, residual fusion, and the missing concat+gated cell, then a larger head.
+- Key changes: `--size xlarge` (11–34M). Residual fusion. Plan 5.1 stays 2304-d unless `--pool-proj`. Loss = balanced CE + 0.5 expected-rank SmoothL1. Lock = val exact ACC. `--clinical none` image-only. `--opt-sweep` trains concat-mean, concat-gated, interact-gated, image-only.
+- Validation: Four runs on the same frozen cache, early stop 61 / 57 / 31 / 49. Best `mlp_concat_gated` prosp ACC 0.598 / adj 0.868, ext 0.522 / 0.819. Beats small concat-mean exact ACC 0.579 / 0.542. Image-only prosp 0.560. Interact 34M still worse. Gated T3 recall stays low.
+- Deployment: Report-only. CLI default is now concat + gated + xlarge. Do not promote.
+- Follow-up: Encoder is still frozen. Next lever is unfreeze or a different visual token, not another MLP width.
+
+## 2026-08-21, larger GastricUS head and longer cosine training
+
+- Scope: `pipeline/medsiglip_gastricus/model.py`, `train.py`, report `pipeline/experiments/reports/medsiglip_gastricus_large_20260821/`.
+- Reason: The first heads were 0.13-5.3M and stopped after 40 flat epochs. Need a wider MLP and a proper schedule.
+- Key changes: `--size large` (concat 4.6M, gated 13.2M) with LayerNorm. Default 80 epochs, 8-epoch warmup, cosine decay, label smoothing, grad clip, patience-20. Skip the collapsed stats pool.
+- Validation: Early stop at 28 / 35 / 50. Best large gated MLP: prosp ACC 0.520 / adj 0.868, ext 0.520 / 0.852. Does not beat small concat-mean exact ACC 0.579 / 0.542.
+- Deployment: Report-only. Default CLI is now large.
+- Follow-up: Capacity is not the main bottleneck; next lever is the frozen tokens or the ordinal loss, not another width bump.
+
+## 2026-08-21, GastricUS plan variants with adjacent and per-center scores
+
+- Scope: `pipeline/medsiglip_gastricus/` fusion/pool variants, `metrics.py`, report `pipeline/experiments/reports/medsiglip_gastricus_plan_20260821/`.
+- Reason: Plan 4.1 / 5.1 / 5.2 were missing. Training reports needed adjacent T-stage scores and hospital-level ACC.
+- Key changes: Concat fusion, mean-view pool, stats pool. Balanced class weights. Lock on val adjacent ACC. Write confusion, QWK, off-by-2, and per-center tables.
+- Validation: Four runs on the same frozen cache. `mlp_concat_mean` prosp/ext ACC 0.579 / 0.542, adj 0.833 / 0.835. `tabpfn_interact_gated` adj 0.887 / 0.876. Stats pool collapsed. Small external centers remain noisy.
+- Deployment: Report-only. Do not promote.
+- Follow-up: Drop or restabilize stats pooling.
+
+## 2026-08-21, box auto-seg uses SAM3.1 only
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`, `apps/gastric_scan_next/lib/reader/doctor-keyframe-preseg.ts`.
+- Reason: Frozen Dice favors SAM3.1 LoRA over SAM2 r004 on the same prospective 46-patient box protocol (0.8816 vs 0.8788). Doctor box auto-seg had been routed to SAM2 for latency.
+- Key changes: Box, candidate, and keyframe preseg now call SAM3.1 once. SAM2 is not used on the doctor prompt path.
+- Validation: `npx tsc --noEmit`. Workstation `:3000` 200, `:3300` contract 200. Aliyun Next 200, login 200, clinical 200.
+- Deployment: Workstation BUILD `ycTKpeFl_q36RLx0P9azL` (previous `Zy7gG2dEzEmTabwjmoIj2`), backup `.next-standalone.bak_20260821_190452_pre_sam31dice`. Aliyun reader-only BUILD `pApRFA1HX4eGMcJ_Jo7GA` (previous `E-VAjGZuvCYS5aFn6Lk0i`).
+- Follow-up: Hard refresh LAN and the public site.
+
+## 2026-08-21, drop box quality gate and cascade
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`, `apps/gastric_scan_next/lib/reader/doctor-keyframe-preseg.ts`.
+- Reason: Doctor box auto-seg was slow because it tried SAM2, then SAM3.1, then the lesion endpoint, and leftover quality / oversize gates still discarded masks.
+- Key changes: Box auto-seg now makes one SAM2 call. Area, box-IoU, and oversize gates are off for doctor prompts. Keyframe preseg takes the first valid SAM2 polygon instead of scoring a four-backend cascade.
+- Validation: `npx tsc --noEmit`. Workstation `:3000` 200, `:3300` contract 200. Aliyun Next 200, login 200, clinical 200.
+- Deployment: Workstation BUILD `Zy7gG2dEzEmTabwjmoIj2` (previous `ZCyYr6Rh6R1HV4Dz4AjQE`), backup `.next-standalone.bak_20260821_180655_pre_fastbox`. Aliyun reader-only BUILD `E-VAjGZuvCYS5aFn6Lk0i` (previous `aOSveiLkqu0rQ8p0-Bx-S`).
+- Follow-up: Hard refresh LAN and the public site.
+
+## 2026-08-21, GastricUS route B TabPFN clinical head
+
+- Scope: `pipeline/medsiglip_gastricus/tabpfn_clinical.py`, `train.py --head tabpfn`, report `pipeline/experiments/reports/medsiglip_gastricus_tabpfn_20260821/`.
+- Reason: The plan's second head is `[z_image, TabPFN(clinical)] → MLP`. Route A only used raw clinical-22.
+- Key changes: Fit TabPFN-2.5 on clinical-11 with NaN missing flags. Train uses 5-fold OOF probabilities. Image 1152-d tokens never enter TabPFN. Fusion and attention stay the same as route A.
+- Validation: Best val epoch 26, ACC 0.570, T2 recall 0.273. Prospective ACC 0.478. External ACC 0.480. Versus route A: lower ACC, higher T2 recall.
+- Deployment: Report-only. Do not promote.
+- Follow-up: Optional 192-d TabPFN embedding variant if a TIME-style token is wanted.
+
+## 2026-08-21, keep doctor box masks and drop boxing toast
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`.
+- Reason: Box auto-seg often showed 「自动分割未成功」because a quality gate discarded the SAM polygon, and 「正在框选病灶」covered the ultrasound.
+- Key changes: Doctor box prompts no longer go through the preseg quality gate. Polygon coordinates use `scalePolyToFull`. If SAM still fails, the drawn box stays as the contour. The on-canvas 「正在框选病灶」card and button label change are gone.
+- Validation: `npx tsc --noEmit`. Workstation `:3000` 200, `:3300` contract 200. Aliyun Next 200, login 200, clinical 200.
+- Deployment: Workstation BUILD `ZCyYr6Rh6R1HV4Dz4AjQE` (previous `zSYPIOMWh-g1ZjkuNlQIK`). Aliyun reader-only BUILD `aOSveiLkqu0rQ8p0-Bx-S` (previous `9abKzlw7_L72Dt0ZVGJmz`).
+- Follow-up: Hard refresh LAN and the public site.
+
+## 2026-08-21, box-draw cursor stays visible
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`.
+- Reason: After arming 「框选病灶」, the pointer vanished over the ultrasound. The custom SVG cursor was double-encoded (`%23` run through `encodeURIComponent`), so Chromium loaded an empty cursor.
+- Key changes: Box-lesion and box-lumen use the system `crosshair`, which always stays visible.
+- Validation: `npx tsc --noEmit`. Workstation `:3000` 200, `:3300` contract 200. Aliyun Next 200, login page 200, public root 302, clinical 200.
+- Deployment: Workstation BUILD `zSYPIOMWh-g1ZjkuNlQIK` (previous `DIAp02-UsJIS_S3OoIrhG`), backup `.next-standalone.bak_20260821_175257_pre_cursor`. Aliyun reader-only BUILD `9abKzlw7_L72Dt0ZVGJmz` (previous `4R1o3rlE8SCkv3FELcyIM`) via `scripts/deploy_public_next.sh`.
+- Follow-up: Hard refresh LAN and the public site.
+
+## 2026-08-21, workstation deploy for box-lesion UI
+
+- Scope: `apps/gastric_scan_next/.next/standalone`, `gastric-next.service`, `gastric-next-public.service`.
+- Reason: Ship the box-button overlay fix, remove the on-canvas geometry card, and use thinner dimmer contours.
+- Key changes: Rebuilt Next standalone. Previous pack kept at `.next-standalone.bak_20260821_174844_pre_box_ui`.
+- Validation: `npx tsc --noEmit`. `:3000` 200, `:3300` contract 200. Muted stroke `94, 184, 196` present in the new chunk.
+- Deployment: Workstation BUILD `DIAp02-UsJIS_S3OoIrhG` on `:3000` / `:3300` (previous `TMyHqJk2Yh6hcCuHiPBIZ`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
+- Follow-up: Hard refresh the workbench. Roll back by restoring the bak directory and restarting the two units.
+
+## 2026-08-21, thinner and dimmer lesion contours
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`.
+- Reason: The lesion outline was too thick and too bright, so the ultrasound mass was hard to see.
+- Key changes: Contour stroke is 1 px and muted teal. Lumen and wall strokes are also dimmed. The extra dark halo is 1.6 px instead of 4.5 px.
+- Validation: Constants and redraw pass updated; lints clean on the panel file.
+- Deployment: Workstation `:3000` hot reload.
+- Follow-up: None.
+
+## 2026-08-21, remove on-canvas lumen-lesion geometry card
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`.
+- Reason: After boxing a lesion, the smoothness / outward-expansion / editing-logic card covered the ultrasound and was not useful during reading.
+- Key changes: Remove the floating geometry card from the canvas. Geometry is still computed for zoom and analysis; it is no longer drawn over the lesion.
+- Validation: Overlay block removed; typecheck of the Next app.
+- Deployment: Workstation `:3000` hot reload.
+- Follow-up: None.
+
+## 2026-08-21, Box lesion button click was covered by the top tool strip
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`.
+- Reason: Clicking 「框选病灶」often did nothing. The top “Mark frame / Assist” strip was full-width, `pointer-events-auto`, and z-index 180, sitting on top of the right-rail button (z-index 140).
+- Key changes: Only the actual top buttons capture clicks. The lesion rail is z-index 220. Clicking 「框选病灶」always lights the button; keyframe open/create is best-effort and no longer blocks arming.
+- Validation: Typecheck of the Next app.
+- Deployment: Workstation `:3000` hot reload. Public `:3300` still needs a standalone rebuild for the same fix.
+- Follow-up: Rebuild `:3300` when public readers should use this interaction.
+
+## 2026-08-21, lesion box draw no longer drops pointer events
+
+- Scope: `apps/gastric_scan_next/components/InteractiveSegPanel.tsx`.
+- Reason: 「框选病灶」often did nothing after the button lit up. Letterbox clicks returned null, an existing mask or nnInteractive stole the drag, opening a nearby keyframe disarmed the button, and in-flight SAM disabled the control.
+- Key changes: Armed box-lesion starts a new rectangle immediately, including from the black bars. Auto-open keyframe cannot turn the button off. The button stays clickable during segmentation. Drag updates clamp to the image.
+- Validation: Typecheck of the Next app. LAN `:3000` is `next dev` and picks this up on refresh.
+- Deployment: Workstation `:3000` hot reload. Public `:3300` still needs a standalone rebuild if that edge should get the same fix.
+- Follow-up: Rebuild `:3300` when public readers should use this interaction.
+
+## 2026-08-21, first MedSigLIP-448 GastricUS training run
+
+- Scope: `pipeline/medsiglip_gastricus/train.py`, report `pipeline/experiments/reports/medsiglip_gastricus_20260821/`.
+- Reason: Cached frame embeddings were ready. The first train hung because `np.load` re-decompressed the zip on every frame.
+- Key changes: Load each npz array once, then bag by patient. Train 40 epochs on frozen 1152-d embeddings plus clinical-22 MLP. No DualBranch / TabPFN checkpoint.
+- Validation: Best val epoch 28, ACC 0.5859, T2 recall 0.0909. Prospective ACC 0.4941. External ACC 0.4784. Patient counts 1062 / 128 / 425 / 485.
+- Deployment: Report-only. Encoder stays frozen. Do not promote this run.
+- Follow-up: Class-balanced loss or T2-aware sampling if the next run should fix the T2 collapse.
+
+## 2026-08-21, tstaging physical pack matches freeze inventory
+
+- Scope: `tstaging/` images and masks, split CSVs, `COMPLETE.md`, `COVERAGE.md`, `scripts/supplement_tstaging_physical.py`.
+- Reason: The screened pack was 10894 pairs. Official internal + external manifests are 13763 image-mask pairs.
+- Key changes: Copy the remaining 2869 freeze stills into the same English folders. Extra CSV rows marked `supplement=1`. New retrospective patients go to train; existing val patients stay in val. 2025 stays in prospective. External stays under the hospital center. Do not invent T labels.
+- Validation: 13763 unique stems; every row has image and mask; train/val/prospective/external patient overlap is zero; year and center folder counts match freeze `crop_ui`.
+- Deployment: jpg/png remain gitignored. Modeling still uses `maincenter_retrospective_v20260821`. Rebuild leftover stills with the supplement script; do not run the screened copy script alone afterward.
+- Follow-up: None for the physical copy.
+
+## 2026-08-21, tstaging complete-inventory note
+
+- Scope: `tstaging/COMPLETE.md`.
+- Reason: 2100/10894 is the screened pack. Official T-staging stills are the internal + external manifests.
+- Key changes: Record should-have stills: Xiehe 2018-2024 8229 (train/val), Xiehe 2025 2430 (prospective), 9 external hospitals 3104. Total 13763. Current pack is short 2869.
+- Validation: Counts from `dataset/internal/manifest.csv`, `dataset/external/manifest.csv`, and on-disk `crop_ui`.
+- Deployment: Docs only.
+- Follow-up: Done in the physical-pack supplement entry above.
+
+## 2026-08-21, tstaging coverage and per-center tables
+
+- Scope: `tstaging/COVERAGE.md`, `tstaging/centers/*/original.csv`, `tstaging/centers/*/cleaned.csv`, `tstaging/gaps.csv`, `scripts/build_tstaging_center_tables.py`.
+- Reason: Need a patient-level check against clinical master and Phase 0, plus per-center original vs cleaned tables.
+- Key changes: 14 centers. Coverage lists totals, T-stage, freeze vs Phase 0 vs cleaned. No patient names.
+- Validation: Cleaned pack 2100 patients / 10894 frames. Imaging drops: 15 Xiehe 2018 unmapped, 10 Xiehe 2025 train-only leak. Clinical-only patients stay in original.csv.
+- Deployment: Tables and markdown only. Rebuild with the new script.
+- Follow-up: None.
+
+## 2026-08-21, Physical val / prospective / external by center
+
+- Scope: `tstaging/val/`, `tstaging/prospective/`, `tstaging/external/`, matching `*.csv` files.
+- Reason: Evaluation frames should sit in the same physical pack, grouped by Xiehe year or external hospital.
+- Key changes: Copy paired images and masks. Val uses `2018` / `2019` / `2020_2023` / `2024`. Prospective uses `2025`. External uses English center slugs. CSV adds a `center` column.
+- Validation: val 733/128, prospective 1659/425, external 2458/485; every row has image and mask on disk.
+- Deployment: jpg/png gitignored. Rebuild with `scripts/copy_tstaging_physical_train.py`.
+- Follow-up: None for the physical copy.
+
+## 2026-08-21, English tstaging/train with paired masks and CSV
+
+- Scope: `tstaging/train/`, `tstaging/train.csv`, `scripts/copy_tstaging_physical_train.py`.
+- Reason: Physical pack should use English names; each image needs a same-stem mask; CSV paths must match the files.
+- Key changes: Folders are `train` / `val` / `prospective` / `external`. Masks live in `masks/`. `train.csv` leads with `image_path` and `mask_path`.
+- Validation: 6044/6044 image-mask pairs exist; file stems match; `image_exists` and `mask_exists` are 1.
+- Deployment: jpg/png remain gitignored. README and CSV can be committed.
+- Follow-up: Copy val / prospective / external in the same English layout when requested.
+
+## 2026-08-21, Physical tstaging/ train copy at repo root
+
+- Scope: `tstaging/训练/`, `scripts/copy_tstaging_physical_train.py`. Allowed in `check_repo_root.py`.
+- Reason: Browse train frames in one folder named `tstaging`, without dated subpacks.
+- Key changes: Copy Xiehe retrospective train `crop_ui` jpg and `roi_masks` png into `训练/2018|2019|2020_2023|2024`. Write `训练/manifest.csv`. Leave 验证 / 前瞻 / 外部 empty.
+- Validation: Copy script checks source files exist; post-copy counts must match 6044 frames.
+- Deployment: Images are local copies and gitignored. Source freeze files are not moved.
+- Follow-up: Copy val / prospective / external when requested.
+
+## 2026-08-21, Main-center retrospective T-staging dataset
+
+- Scope: `dataset/task_datasets/t_staging/maincenter_retrospective_v20260821/`, `scripts/build_tstaging_maincenter_retrospective.py`, MedSigLIP constants now read this pack.
+- Reason: Train must be Xiehe retrospective only. Phase 0 train/val still mixed `int/prospective`; `t_staging/splits` is the leaked 20260531 pack.
+- Key changes: Four-way tables 训练/验证/前瞻/外部. Drop prospective from train/val, dedup freeze `crop_ui`, majority T, force clinical `-1` to missing, recompute train-only z-scores.
+- Validation: Leak checks all zero. Train 6044/1062, val 733/128, prospective 1659/425, external 2458/485. All images and masks exist.
+- Deployment: Modeling CSVs only; images stay in freeze `crop_ui`. Rebuild with the new script.
+- Follow-up: Encode and train MedSigLIP against this pack after weight SHA256 passes.
+
+## 2026-08-21, Phase 0 clinical-11 audit
+
+- Scope: `pipeline/medsiglip_gastricus/DATA_AUDIT.md` section 4; note in `PLAN_MAPPING.md`.
+- Reason: Labels are not only T-stage. The 11-field pack must be checked for match, missing-flag contract, codebook, within-patient stability, and marker self-consistency.
+- Key changes: Recorded unmatched cohorts, the `_missing=0` plus value `-1` contract bug, 2019/2024 systematic marker gaps, and encode-time repair guidance.
+- Validation: Read-only counts on Phase 0 `*_clinical.csv`. No training change.
+- Deployment: Docs only.
+- Follow-up: Treat sentinel `-1` as missing at encode time before the clinical head sees it.
+
+## 2026-08-21, MedSigLIP GastricUS plan-to-code mapping
+
+- Scope: `pipeline/medsiglip_gastricus/PLAN_MAPPING.md`.
+- Reason: Trace `# GastricUS实验方案.md` onto the from-scratch package, including what is implemented and what is not.
+- Key changes: Section-by-section mapping for preprocess, frozen encode, fusion, pooling, and MLP/TabPFN heads.
+- Validation: Documentation only; no training change.
+- Deployment: Local docs. Linked from `pipeline/medsiglip_gastricus/README.md`.
+- Follow-up: Fill TabPFN and B0/B1/A0 variants if that ablation is requested.
+
+## 2026-08-21, From-scratch MedSigLIP-448 GastricUS trainer
+
+- Scope: new package `pipeline/medsiglip_gastricus/` and `scripts/run_medsiglip_gastricus.py`.
+- Reason: GastricUS plan needs a frozen MedSigLIP-448 encoder plus new fusion / attention / clinical heads. Old DualBranch and TabPFN scripts are not reused.
+- Key changes: Phase 0 path resolver to freeze `crop_ui` and mask; 20% ROI expand; embedding cache; patient-level train from random init.
+- Validation: `prepare` coverage and encoder smoke after weight SHA256 check. Training starts only after `model.safetensors` verifies.
+- Deployment: local scripts only. Weights live in `artifacts/model_weights/medsiglip-448/`.
+- Follow-up: finish weight download, encode all Phase 0 splits, then train.
+
+## 2026-08-21, NAC queue no longer double-counts surgery stills
+
+- Scope: workbench patient list and `/api/patients` NAC path.
+- Reason: Internal queues added surgery `total` plus NAC `total`. NAC reused the same still folders and could resolve to surgery clinical JSON (`_ultimate`).
+- Key changes: NAC reads only `clinical_data_<year>_nac.json` (2019, 2024). Only stills whose PID is in that file are listed. Header is loaded cases / true frame total.
+- Validation: Disk crop_ui stills 10,659. NAC matched stills 4 (2019) + 59 (2024). Internal-all total should be 10,722, not 21,318.
+- Deployment: Source-only; `:3000` is `next dev`.
+- Follow-up: Refresh the LAN workbench. Most NAC table rows still have no stills in the surgery crop tree.
+
+## 2026-08-21, Chinese site labels on the clinical card
+
+- Scope: historical evidence drawer clinical card.
+- Reason: Sidecar locations like Cardia/Fundus stayed English. The fact grid was cramped and truncated.
+- Key changes: Decode English/codebook sites to 贲门 / 胃底 and similar. Prefer the queue table site. Card shows site, pTNM chips, and report blocks as separate sections.
+- Validation: Source-only; `:3000` is `next dev`.
+- Deployment: No standalone rebuild.
+- Follow-up: Refresh the LAN workbench.
+
+## 2026-08-21, Readable clinical card; hide CBM on history
+
+- Scope: historical evidence drawer.
+- Reason: CBM sliders were placeholders. The table dump showed codebook headers and raw 0/1/2 codes.
+- Key changes: Hide ConceptReasoning on historical queues. Clinical card decodes site, pTNM, Lauren, markers, and shows gold as T2 / I.
+- Validation: Source-only; `:3000` is `next dev`.
+- Deployment: No standalone rebuild.
+- Follow-up: Refresh the LAN workbench.
+
+## 2026-08-21, Fix LoginGate hydration text
+
+- Scope: `apps/gastric_scan_next/components/LoginGate.tsx`.
+- Reason: SSR had no `window`, so the splash said public login check; the browser on `127.0.0.1` said LAN opening.
+- Key changes: First paint uses one host-agnostic line. LAN vs public is decided after mount.
+- Validation: Source-only; `:3000` is `next dev`.
+- Deployment: No standalone rebuild. `:3300` / Aliyun unchanged.
+- Follow-up: Hard refresh if the overlay is still up.
+
+## 2026-08-21, LAN :3000 uses Next hot reload
+
+- Scope: `gastric-next.service` on the workstation, `scripts/run_gastric_next_dev.sh`.
+- Reason: `127.0.0.1:3000` was the standalone production pack, so source edits never appeared until a full rebuild.
+- Key changes: `:3000` now runs `next dev`. Saving a file Fast-Refreshs the page. `:3300` stays standalone.
+- Validation: `systemctl --user is-active gastric-next.service` is active; `curl` `:3000/` after first compile.
+- Deployment: Installed user unit from `scripts/systemd/gastric-next.service`. Restarted `gastric-next` only. No Aliyun swap.
+- Follow-up: Hard refresh once after the first compile. Rollback: restore the previous production `ExecStart` on standalone `server.js`.
+
+## 2026-08-21, Unify historical queues: gold, keyframes; hide GIST
+
+- Scope: workbench queue picker, patient list, gold lookup, CBM load copy.
+- Reason: Historical cases already have pathology gold and curated stills. GIST should not appear. CBM defaults (Ki67 45, CPS 5) were shown as loaded IHC.
+- Key changes: Hide GIST from the picker. Historical stills are `case_keyframe`. Gold comes from the per-queue table. CBM says placeholders unless table IHC is present.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`.
+- Deployment: Source ready; live standalone not rebuilt in this step unless a later entry records a BUILD id.
+- Follow-up: Rebuild `:3000` / `:3300` to see the picker and gold chip.
+
+## 2026-08-21, Per-queue clinical JSON for LAN history
+
+- Scope: `dataset/tables/by_queue/`, `scripts/export_clinical_queue_json.py`, LAN workbench evidence panel.
+- Reason: Historical queues needed original-table reports and numeric fields. Loading the 186MB combined registry at runtime is the wrong shape.
+- Key changes: Each workbench queue gets its own JSON from `by_source` CSVs. Empty/unnamed columns and name fields are dropped. `/api/patients` loads only the current queue file on LAN. Evidence panel shows the original-table card.
+- Validation: `python3 scripts/export_clinical_queue_json.py`. `node apps/gastric_scan_next/scripts/test_clinical_history.mjs`. `npx tsc --noEmit` in `apps/gastric_scan_next`.
+- Deployment: Source ready; workstation standalone not rebuilt in this step unless a later entry records a BUILD id.
+- Follow-up: Rebuild `:3000` / `:3300` to show the card. Reader-v150 stays on the blinded sidecar. NAC is still the existing year JSON, not `by_source`.
+
+## 2026-08-21, Fix clipped case sidebar; BM list from 001
+
+- Scope: workbench left case list layout and reader-v150 sort.
+- Reason: The 13rem sidebar was narrower than the queue picker, so the header clipped and the canvas sat over the list. Benign cases were sorted by clinical fields, not BM-001.
+- Key changes: Wider list (15rem), queue picker fits the column, no duplicate queue label, sidebar above the canvas. Reader-v150 groups and auto-select sort by BM-/CASE- number.
+- Validation: `npx tsc --noEmit`. `:3000` 200, `:3300` contract 200.
+- Deployment: Workstation BUILD `TMyHqJk2Yh6hcCuHiPBIZ` on `:3000` / `:3300` (previous `BqAIlk9MQo20Hvb3I-Sfc`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
+- Follow-up: Hard refresh. Benign tab should open at BM-001. Rollback: `.next-standalone.bak_*_pre_sidebar_bm001`.
+
+## 2026-08-21, Drop demo stills from the 150-case sidebar
+
+- Scope: `apps/gastric_scan_next` patient list and `/api/patients` demo-still attach.
+- Reason: The workbench sidebar opened with `1191583` demo stills labeled not scored. The first visible case should be the first scored Round-1 case.
+- Key changes: `shouldAttachPublicDemoStills` is always off. The list no longer merges `demo_stills`, and demo cases are filtered out of grouping and auto-select.
+- Validation: `node --experimental-strip-types scripts/test_public_demo_stills.mjs`. `npx tsc --noEmit`. `:3000` 200, `:3300` contract 200.
+- Deployment: Workstation BUILD `BqAIlk9MQo20Hvb3I-Sfc` on `:3000` / `:3300` (previous `EvkyvQnNoj0ILQ-IcUkor`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
+- Follow-up: Hard refresh the workbench. Rollback: `.next-standalone.bak_*_pre_drop_demo`.
+
+## 2026-08-21, Hide overlay chips; box lesion auto-marks keyframe
+
+- Scope: `apps/gastric_scan_next` main workbench overlays, Header sync chip, 150-case video box tool.
+- Reason: Assist hub, reader/layer write-back, and unsynced-ops sat on the image. The live `:3000` standalone still served the old overlays. Clicking Box lesion in the 150-case queue did nothing unless a keyframe was already open.
+- Key changes: Stop rendering `AssistHub` and `ReaderAgentResultCard`. Hide the Header `未同步` chip. Box lesion now pauses the video, opens a nearby keyframe or marks the current frame, then arms the box so a drag works immediately.
+- Validation: `npx tsc --noEmit`. `node --experimental-strip-types scripts/test_doctor_keyframes.mjs`. `:3000` 200, `:3300` contract 200. Live HTML/chunks no longer contain the overlay copy.
+- Deployment: Workstation BUILD `EvkyvQnNoj0ILQ-IcUkor` on `:3000` / `:3300` (previous `z2pgrHN_tENd9a6AU74x2`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
+- Follow-up: Hard refresh the workstation. Rollback is a rebuild of the previous source; the in-`.next` standalone backup was removed by `cleanDistDir`.
+
+## 2026-08-21, Drop BM template notice; lesion-first assist; box idle
+
+- Scope: `BmEvidencePanel`, assist progress copy, simple-video / reader box idle state.
+- Reason: The BM panel still advertised the docx template vs T-staging wall report. Assist progress listed T-staging before lesion signs. Box lesion looked armed on load, and the live workstation/public builds still had the old rail.
+- Key changes: Removed that notice. Assist steps analyze the lesion first, then assign T stage. Box lesion stays idle (no cyan, no focus ring) until clicked. Auto-arm after keyframe preseg failure is off.
+- Validation: `npx tsc --noEmit`. Workstation `:3000` 200, `:3300` contract 200. Aliyun `gastric-next` active, next3000 200, edge login 200, public clinical 200.
+- Deployment: Workstation BUILD `z2pgrHN_tENd9a6AU74x2` on `:3000` / `:3300` (previous `7qX6PT62-5Vg36BxSPFaH`). Aliyun READER_ONLY BUILD `4R1o3rlE8SCkv3FELcyIM` (previous `ljx6qQ75EhTxw3VG6xH8w`).
+- Follow-up: Hard refresh both workstation and public. Rollback: workstation `.next/standalone.bak_*_pre_box_idle`; Aliyun `.next-public-deploy-dist.bak_*` plus `server.js.bak_*`, then restart `gastric-next`.
+
+## 2026-08-21, Fix Login required after a successful sign-in
+
+- Scope: `apps/gastric_scan_next` doctor session resolve, session cookie, LoginGate client, `proxy.ts`. Aliyun auth snapshot adds `/api/viewing-trace` and `/api/admin` prefixes.
+- Reason: After login the UI could stay signed in while `/api/reader/cases` and other routes returned `Login required`. The fetch patch sent a stale `x-doctor-session-token` from localStorage, and that header won over a valid HttpOnly cookie. A second login also deleted the first browser's token.
+- Key changes: Try every candidate token (header, signed cookie, legacy hex cookie) and use the first that is still in the store. Keep multiple sessions per account. Accept unsigned hex cookies when a signing secret is set. If `/api/reader/account` says not authenticated, drop the stale client token.
+- Validation: Before the swap, stale `x-doctor-session-token` plus a valid cookie returned 401 `Login required`. After BUILD `7qX6PT62-5Vg36BxSPFaH`, the same request is 200 (`count=150`), as are unsigned hex cookies and cookie-only calls. `node scripts/test_session_cookie.mjs`.
+- Deployment: Workstation BUILD `7qX6PT62-5Vg36BxSPFaH` on `:3000` / `:3300` (previous `standalone.bak_20260821_*_pre_login_required`). Restarted `gastric-next` and `gastric-next-public` only. Public Aliyun still needs a reader-only swap plus live `auth_server.mjs` prefix update.
+- Follow-up: Hard refresh once so localStorage picks up the live token.
+
+## 2026-08-21, Arm-to-box, whole-lesion drag, no keyframe re-seg
+
+- Scope: `apps/gastric_scan_next` simple-video box tools, cursor, keyframe mark, lumen auto-seg.
+- Reason: Dragging could start a lesion box without clicking the button. After a mask existed, the next drag still redrew a box and re-ran SAM. Marking a keyframe also auto-segmented. Lumen box had no drag cursor and no auto-seg.
+- Key changes: `lesionBoxArmed` — only an armed 「框选病灶」 starts a box; the button lights up as 「正在框选」. After a mask, drag moves the whole lesion (polygon or padded bbox). Mark this frame / Space only stores a keyframe. Boxing lumen uses a dashed-box cursor and auto-segments on release.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`.
+- Deployment: none yet. Hard refresh after the next workstation / public Next rebuild.
+- Follow-up: Rebuild `:3000` / `:3300` (and public Next if this build is promoted).
+
+## 2026-08-21, Reader tool rail: lesion column first, lumen secondary
+
+- Scope: `apps/gastric_scan_next` simple-video right tool rail and lumen-box hit handling.
+- Reason: The rail mixed lesion and lumen tools in one tall stack. Lumen boxing felt unresponsive because leftover/YOLO boxes covering the frame stole the first drag as a move, and the long rail covered the image.
+- Key changes: Lesion box is the primary column. Refine tools (handles, +/- points, paint, boundary) appear only after a lesion mask exists. Lumen box stays as a secondary button; detect/paint move under More. Clicking Box lumen starts a fresh draw. Corner grab area is larger. Help copy updated.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`.
+- Deployment: none yet. Hard refresh after the next workstation / public Next rebuild.
+- Follow-up: Rebuild `:3000` / `:3300` (and public Next if this build is promoted) so doctors see the shorter rail.
+
+## 2026-08-21, Multi-frame mask-shape retrain script (no missing flags)
+
+- Scope: new patient-bag recipe and launcher. Does not change the locked 0.5 mix.
+- Reason: Phase-0 used 22-D clinical (11 norms + missing flags), single-frame DualBranch, and mask as RGB channel 4. Need a retrain that drops missing flags, packs K frames, and learns mask silhouette / NRL irregularity as its own stream.
+- Key changes: `pipeline/lib/multiframe_maskshape.py`, `pipeline/configs/tstaging_4class_multiframe_maskshape_nomiss_phase0_20260821.yaml`, `scripts/run_multiframe_maskshape_nomiss_20260821.py`. Image DualBranch is Phase-0 RGB, frozen. Mask is 1-ch CNN + NRL aux. Clinical-11 norms only.
+- Validation: `--plan` coverage write-up. Training not launched.
+- Deployment: none. Do not replace the 0.701 mix until scored on official 425 / 485.
+- Follow-up: run `--smoke` then `--train --gpu 1` only after reviewing the plan. Do not `--unfreeze-image`.
+
+## 2026-08-21, Larger mask ConvNeXt-Small and 60-epoch schedule
+
+- Scope: multi-frame mask-shape retrain capacity. Image DualBranch stays frozen.
+- Reason: The first mask stream was a 4-layer CNN and 24 epochs. Need more capacity on the silhouette / NRL path.
+- Key changes: Mask encoder is `convnext_small.in12k_ft_in1k` at 384, mask repeated to 3ch. `mask_dim` 256, `shape_dim` 64, clinical hidden 128. Epochs 60, early-stop 16, cosine after 3-epoch warmup, lr 3e-5. Image Base still frozen.
+- Validation: smoke then train; not a replacement for the locked 0.5 mix until 425 / 485 scores exist.
+- Deployment: none.
+- Follow-up: Do not `--unfreeze-image`.
+
+## 2026-08-21, From-scratch pack: clean train, complete 425/485
+
+- Scope: stop Phase-0 warm-start; rebuild data; train ImageNet DualBranch + mask stream.
+- Reason: Previous job loaded gastric Phase-0. Old train leaked 152 official prospective IDs via `int/prospective`.
+- Key changes: `scripts/prepare_multiframe_scratch_20260821.py` writes `pipeline/data/tstaging_4class_multiframe_scratch_20260821/`. Train/val keep `int/2018-2024` only. Eval is official 425 / 485. Model init is ImageNet, no gastric ckpt. K=4, 60 epochs. Ledger: `DETAILS.html` and `audit.json`.
+- Validation: prepare gate must PASS before train.
+- Deployment: none. Not a replacement for any locked mix until scored.
+- Follow-up: train on GPU 1 after gate pass.
+
+## 2026-08-20, Enrich lumen-optional Assist and verify
+
+- Scope: Assist geometry helper, reader/stream gates, `analyze_case.py` contour status, evidence/report copy.
+- Reason: After dropping the lumen 422, lesion-only runs still looked incomplete and YOLO bbox proxies were treated as a doctor-drawn lumen.
+- Key changes: Shared lesion-only gate. Doctor lumen is box/contour only; YOLO proxy no longer flips `lumen_ready`. Status `contour_ready_lumen_optional`. Evidence cards and the report panel note when lumen was skipped.
+- Validation: `pytest pipeline/agent/product/test_research_stage_gate.py` (8 passed). Live `:3000` login `select_local_identity`, no-lesion analyze 422, lesion-only analyze 200 with `lumen_optional` and display T1. `npm run build`.
+- Deployment: Workstation BUILD `pnlnVqwWRJ9_KxWCVyQyE` on `:3000` / `:3300` (previous `_UijTqtsS805T00WrbXl3`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
+- Follow-up: Hard refresh. Wall SDF remains weaker without a doctor lumen.
+
+## 2026-08-20, Assist no longer requires lumen
+
+- Scope: `apps/gastric_scan_next` Assist geometry gate (reader analyze, agent stream, Agent workbench).
+- Reason: Doctors asked to run assist with only a lesion contour. Lumen was a hard 422 and blocked the Agent launcher.
+- Key changes: Lesion polygon remains required. Lumen box/contour is optional and still used when present. Report layer fallback no longer says to draw the lumen first.
+- Validation: `npm run build`, then `curl` `:3000/` and `:3300/api/agent/contract`.
+- Deployment: Workstation BUILD `_UijTqtsS805T00WrbXl3` on `:3000` / `:3300` (previous `P3gBvxpXag-hY7cEx5Zug`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
+- Follow-up: Hard refresh. Wall-layer SDF proxies stay weaker without lumen; that is expected.
+
 ## 2026-08-20, GitHub Actions auto-deploy for public Next
 
 - Scope: `.github/workflows/deploy-public-next.yml`, `scripts/deploy_public_next.sh`, `docs/technical/GITHUB_ACTIONS_DEPLOY.md`, `.gitignore` (`secrets/`, reader-only dist dirs).
@@ -46,6 +2657,24 @@ This file records material project changes, their validation, and deployment sta
 - Validation: `npm run build`, then `curl` `:3000/` and `:3300/api/agent/contract`. Desktop selectors (`md+`, `workbench-desktop-toggle`) were not restyled.
 - Deployment: Workstation BUILD `RjYt3Ns88S39uC-gHF0et` on `:3000` / `:3300` (previous `W48EqNdjceTftyeDMTBGd`). Restarted `gastric-next` and `gastric-next-public` only. No Aliyun swap.
 - Follow-up: Hard refresh on phone. Contour edit remains better on desktop.
+
+## 2026-08-20, Current TIME architecture HTML and frame-agg compare
+
+- Scope: `pipeline/experiments/reports/time_loop_20260820/architecture.html`; `scripts/run_time_frame_agg_20260820.py`.
+- Reason: The kept system is two frozen experts plus a pre-registered 0.5 probability mix, not DualBranch TIME training. Need one HTML that states that, and a locked frame-aggregation compare.
+- Key changes: Rewrote the architecture page around the kept mix (prospective 0.701). Compared DualBranch frame mean / inv-entropy / low-H half / max-conf, each mixed 0.5 with TabPFN. Mean stays the default. DualBranch-mean mix is 0.704 / 0.532 and does not replace the linear mix 0.701 / 0.538.
+- Validation: Frame script scored official 425 / 485 IDs against existing DualBranch frame CSVs. No prospective threshold search.
+- Deployment: Offline report. Open `architecture.html` locally.
+- Follow-up: Frame-content 12x12 invasion on the frames the mix already uses. Do not resweep entropy aggregation.
+
+## 2026-08-20, TIME T3/T4 geometry specialist (negative)
+
+- Scope: `scripts/run_time_t34_geometry_20260820.py`, report `pipeline/experiments/reports/time_t34_geometry_20260820/`.
+- Reason: Remaining two-expert unique wins sit on T3 vs T4+. Need a specialist that does not use leaked 512-D tokens and does not val-lock.
+- Key changes: Trained logistic T3/T4 on 701 honest train patients (Phase-0 train minus all eval IDs) using mask morphology plus clinical size, optional wall covariates. Applied only when frozen image and TabPFN disagree on T3/T4. Added a train-locked one-way T4-to-T3 thickness rule.
+- Validation: Prospective mix 0.701 vs geom 0.682 vs oneway 0.682. Disagreement subset n=95: mix 0.516, specialist 0.45-0.47. External size-only 0.551 vs mix 0.538; do not lock on that.
+- Deployment: Offline TIME experiment only. Keep pre-registered 0.5 mix as the baseline.
+- Follow-up: Frame-level aggregation or 12x12 invasion pooling. Do not train another patient-median T3/T4 table.
 
 ## 2026-08-20, TIME training path: stop DualBranch unfreeze
 

@@ -12,9 +12,11 @@ export async function GET(request: NextRequest) {
 
   const base = getReadingAgentBaseUrl();
   try {
-    const response = await fetch(`${base}/api/sam/dino-status`, {
+    const load = request.nextUrl.searchParams.get('load');
+    const qs = load ? `?load=${encodeURIComponent(load)}` : '';
+    const response = await fetch(`${base}/api/sam/dino-status${qs}`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(30_000),
     });
     const payload = await response.json();
     return NextResponse.json(payload, { status: response.status });

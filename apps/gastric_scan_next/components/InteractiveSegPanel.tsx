@@ -19,6 +19,7 @@ import { useViewingTraceRecorder } from '@/components/viewing-trace/useViewingTr
 import { ViewingTraceDock } from '@/components/viewing-trace/ViewingTraceDock';
 import { CineSpeedSelect } from '@/components/CineSpeedSelect';
 import { ASSIST_ANALYSIS_STEPS, AssistAnalysisModal } from '@/components/reader/AssistAnalysisModal';
+import { DinoRoiLayerDialog } from '@/components/DinoRoiLayerDialog';
 import { WallFeatureAnalysisCard } from '@/components/WallFeatureAnalysisCard';
 import { ExplainableAnalysis, type ExplainableFramePayload } from '@/components/ExplainableAnalysis';
 import type { ExplainableAnalysisResult } from '@/lib/concept-agent-merge';
@@ -1608,15 +1609,8 @@ export function InteractiveSegPanel({
   const [dinoResult, setDinoResult] = useState<DinoFeatureResult | null>(null);
   const [dinoDockOpen, setDinoDockOpen] = useState(false);
   const [activeDinoLayer, setActiveDinoLayer] = useState<number>(11);
+  const dinoCacheRef = useRef<Map<string, DinoFeatureResult>>(new Map());
   const [segmentationModel, setSegmentationModel] = useState<LesionSegmentationModel>(readStoredLesionSegModel);
-  const chooseLesionSegModel = useCallback((next: 'sam31' | 'dinov3') => {
-    setSegmentationModel(next);
-    try {
-      window.localStorage.setItem(READER_SEG_MODEL_KEY, next);
-    } catch {
-      // Keep the in-memory choice if storage is blocked.
-    }
-  }, []);
   const [segmentationBusy, setSegmentationBusy] = useState(false);
   const [segmentationModelResult, setSegmentationModelResult] = useState<{
     model?: string;
@@ -1636,6 +1630,24 @@ export function InteractiveSegPanel({
   const [sam31RefineTarget, setSam31RefineTarget] = useState<'lesion' | 'lumen' | null>(null);
   const [nnInteractiveAvailable, setNnInteractiveAvailable] = useState<boolean | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const chooseLesionSegModel = useCallback((next: 'sam31' | 'dinov3') => {
+    setSegmentationModel(next);
+    try {
+      window.localStorage.setItem(READER_SEG_MODEL_KEY, next);
+    } catch {
+      // Keep the in-memory choice if storage is blocked.
+    }
+    if (next === 'dinov3') {
+      void fetch('/api/agent/lesion-segmentation', { cache: 'no-store' }).catch(() => undefined);
+    } else {
+      void fetch('/api/agent/sam-interactive', { cache: 'no-store' }).catch(() => undefined);
+    }
+    setMessage(
+      next === 'dinov3'
+        ? (zh ? '框选病灶将用 DINO 画 mask，随后辅助分析相同' : 'Box lesion will use DINO; Assist stays the same after the mask')
+        : (zh ? '框选病灶将用 SAM 3.1 画 mask，随后辅助分析相同' : 'Box lesion will use SAM 3.1; Assist stays the same after the mask'),
+    );
+  }, [zh]);
   const [roiMode, setRoiMode] = useState<'predicted' | 'doctor' | 'auto'>('predicted');
   const [lumenBox, setLumenBox] = useState<LumenBBox | null>(null);
   const [lumenPolygon, setLumenPolygon] = useState<number[][]>([]);
@@ -2298,6 +2310,7 @@ export function InteractiveSegPanel({
     setSamReport(null);
     setDinoResult(null);
     setDinoDockOpen(false);
+    dinoCacheRef.current.clear();
     setSegmentationModelResult(null);
     setSegmentationBusy(false);
     onDinoFeatures?.(null);
@@ -2429,6 +2442,9 @@ export function InteractiveSegPanel({
       } catch {
         if (!cancelled) setSamAvailable(false);
       }
+      // Keep both box-lesion maskers warm so the first drag is not a cold load.
+      void fetch('/api/agent/lesion-segmentation', { cache: 'no-store' }).catch(() => undefined);
+      void fetch('/api/agent/dino/features', { cache: 'no-store' }).catch(() => undefined);
     })();
     return () => { cancelled = true; };
   }, [open]);
@@ -2597,16 +2613,47 @@ export function InteractiveSegPanel({
     void scoreKeyframes();
   }, [keyBusy, mediaMode, pendingKeyframeRequest, scoreKeyframes, videoUrl]);
 
-  const extractDinoFeatures = useCallback(async () => {
+  const dinoCacheKey = useCallback(() => {
+    const time = mediaMode === 'video'
+      ? Number(videoRef.current?.currentTime ?? videoTime)
+      : 0;
+    const lesion = pointsRef.current;
+    const wall = wallPointsRef.current;
+    const tip = (poly: number[][]) => (
+      poly.length
+        ? `${poly[0][0].toFixed(0)},${poly[0][1].toFixed(0)},${poly[poly.length - 1][0].toFixed(0)}`
+        : '0'
+    );
+    return [
+      patient?.patient_id || patient?.id || '',
+      time.toFixed(2),
+      String(lesion.length),
+      String(wall.length),
+      tip(lesion),
+      tip(wall),
+    ].join('|');
+  }, [mediaMode, patient?.id, patient?.patient_id, videoTime]);
+
+  useEffect(() => {
+    if (!simpleVideoMode) return;
+    void fetch('/api/agent/dino/features?load=1', { cache: 'no-store' }).catch(() => undefined);
+  }, [simpleVideoMode]);
+
+  const extractDinoFeatures = useCallback(async (opts?: { compact?: boolean }) => {
     if (!patient || dinoBusy) return;
+    const compact = Boolean(opts?.compact);
     setDinoBusy(true);
-    setMessage(zh ? 'DINO 特征提取中，首次加载可能较慢…' : 'Extracting DINO features; first load may take longer…');
+    if (compact) {
+      setDinoResult(null);
+    } else {
+      setMessage(zh ? 'DINO 特征提取中，首次加载可能较慢…' : 'Extracting DINO features; first load may take longer…');
+    }
     try {
       const frame = await videoOrImageToSamFrame(
         videoRef.current,
         imgRef.current,
         mediaMode === 'video',
-        1024,
+        compact ? 512 : 1024,
       );
       const scale = frame.scale || 1;
       const displayRoi = periLesionRoi({
@@ -2638,6 +2685,7 @@ export function InteractiveSegPanel({
           roi_bbox: frameRoi,
           layer_index: 11,
           layer_indices: DINO_LAYER_INDICES,
+          compact,
         }),
       });
       const payload = await response.json() as { ok?: boolean; result?: DinoFeatureResult; error?: string };
@@ -2645,30 +2693,32 @@ export function InteractiveSegPanel({
         throw new Error(payload.error || payload.result?.error || 'DINO feature extraction unavailable');
       }
       const cropBox = payload.result.roi_box || frameRoi;
-      const layers = await Promise.all(
-        (payload.result.layers?.length ? payload.result.layers : [payload.result]).map((layer) => (
-          attachRoiOverlays(layer, cropBox)
-        )),
-      );
+      const sourceLayers = payload.result.layers?.length ? payload.result.layers : [payload.result];
+      const layers = compact
+        ? sourceLayers
+        : await Promise.all(sourceLayers.map((layer) => attachRoiOverlays(layer, cropBox)));
       const next: DinoFeatureResult = {
         ...payload.result,
         ...layers[layers.length - 1],
         layers,
         roi_box: cropBox,
       };
+      dinoCacheRef.current.set(dinoCacheKey(), next);
       setDinoResult(next);
       setDinoDockOpen(true);
       setActiveDinoLayer(next.layer_indices?.[next.layer_indices.length - 1] ?? 11);
       onDinoFeatures?.(next);
-      if (displayRoi) {
+      if (!compact && displayRoi) {
         setViewFocusBox(displayRoi);
         setViewFocusMode('roi');
       }
-      setMessage(
-        zh
-          ? `已查看 ROI 附近 DINO 层特征：${layers.length} 层（L${(next.layer_indices || DINO_LAYER_INDICES).join(', L')}）。草稿，不定 cT。`
-          : `ROI DINO layer features: ${layers.length} layers (L${(next.layer_indices || DINO_LAYER_INDICES).join(', L')}). Draft only.`,
-      );
+      if (!compact) {
+        setMessage(
+          zh
+            ? `已查看 ROI 附近 DINO 层特征：${layers.length} 层（L${(next.layer_indices || DINO_LAYER_INDICES).join(', L')}）。草稿，不定 cT。`
+            : `ROI DINO layer features: ${layers.length} layers (L${(next.layer_indices || DINO_LAYER_INDICES).join(', L')}). Draft only.`,
+        );
+      }
     } catch (error) {
       const failure: DinoFeatureResult = {
         available: false,
@@ -2680,52 +2730,25 @@ export function InteractiveSegPanel({
     } finally {
       setDinoBusy(false);
     }
-  }, [dinoBusy, mediaMode, onDinoFeatures, patient, videoTime, zh]);
-
-  const dinoLayers = useMemo(() => {
-    if (!dinoResult?.available) return [];
-    const layers = dinoResult.layers?.length ? dinoResult.layers : [dinoResult];
-    return layers.filter((layer) => Number.isFinite(Number(layer.layer_index)));
-  }, [dinoResult]);
-
-  const selectedDinoLayer = useMemo(
-    () => dinoLayers.find((layer) => layer.layer_index === activeDinoLayer) || dinoLayers[dinoLayers.length - 1] || null,
-    [activeDinoLayer, dinoLayers],
-  );
+  }, [dinoBusy, dinoCacheKey, mediaMode, onDinoFeatures, patient, videoTime, zh]);
 
   const toggleRoiDinoLayers = useCallback(() => {
-    if (dinoBusy) return;
     if (pointsRef.current.length < 3) {
       setMessage(zh ? '请先框选当前帧病灶，再看 ROI 附近的 DINO 层特征' : 'Box the lesion first, then inspect ROI DINO layers');
       return;
     }
-    if (dinoResult?.available && dinoDockOpen) {
+    if (dinoDockOpen) {
       setDinoDockOpen(false);
-      if (viewFocusMode === 'roi') {
-        setViewFocusBox(null);
-        setViewFocusMode(null);
-      }
-      setMessage(zh ? '已收起 ROI DINO 层特征' : 'ROI DINO layer dock closed');
       return;
     }
-    if (dinoResult?.available) {
-      setDinoDockOpen(true);
-      const displayRoi = periLesionRoi({
-        lesion: pointsRef.current,
-        extras: extraLesionPolygonsRef.current,
-        wall: wallPointsRef.current,
-        width: videoRef.current?.videoWidth || imgRef.current?.naturalWidth,
-        height: videoRef.current?.videoHeight || imgRef.current?.naturalHeight,
-        margin: 48,
-      });
-      if (displayRoi) {
-        setViewFocusBox(displayRoi);
-        setViewFocusMode('roi');
-      }
+    setDinoDockOpen(true);
+    const cached = dinoCacheRef.current.get(dinoCacheKey());
+    if (cached?.available) {
+      setDinoResult(cached);
       return;
     }
-    void extractDinoFeatures();
-  }, [dinoBusy, dinoDockOpen, dinoResult, extractDinoFeatures, viewFocusMode, zh]);
+    void extractDinoFeatures({ compact: true });
+  }, [dinoCacheKey, dinoDockOpen, extractDinoFeatures, zh]);
 
   const captureFrameDataUrl = useCallback(() => {
     const video = videoRef.current;
@@ -11859,14 +11882,16 @@ export function InteractiveSegPanel({
                         />
                         <FloatingToolButton
                           icon={dinoBusy ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}
-                          label={dinoBusy
-                            ? (zh ? 'DINO层…' : 'DINO…')
-                            : (zh ? 'ROI DINO层' : 'ROI DINO')}
+                          label={dinoDockOpen
+                            ? (zh ? '收起DINO' : 'Hide DINO')
+                            : dinoBusy
+                              ? (zh ? 'DINO层…' : 'DINO…')
+                              : (zh ? 'ROI DINO层' : 'ROI DINO')}
                           title={zh
-                            ? '查看当前帧病灶附近 DINOv3 第 2 / 5 / 8 / 11 层特征。草稿，不定 cT。'
-                            : 'Inspect DINOv3 layers 2 / 5 / 8 / 11 near the current-frame ROI. Draft only.'}
-                          active={Boolean(dinoDockOpen && dinoResult?.available)}
-                          disabled={boxAutoSegBusy || dinoBusy || points.length < 3}
+                            ? '打开对话框查看当前帧 ROI 的 DINOv3 L2 / L5 / L8 / L11。再点一次收起。'
+                            : 'Open a dialog for DINOv3 L2 / L5 / L8 / L11 on the current ROI. Click again to collapse.'}
+                          active={dinoDockOpen}
+                          disabled={boxAutoSegBusy || points.length < 3}
                           onClick={() => toggleRoiDinoLayers()}
                           tone="amber"
                         />
@@ -11924,53 +11949,61 @@ export function InteractiveSegPanel({
                   <div className="workbench-tool-rail-dock pointer-events-none absolute top-2 bottom-2 right-2 z-[220] flex items-start sm:top-3 sm:right-3">
                     <div className="workbench-tool-rail pointer-events-auto max-h-full rounded-lg border border-white/10 bg-black/70 p-1 shadow-2xl shadow-black/40 backdrop-blur-md">
                       <ToolRailSectionTitle>{zh ? '病灶' : 'Lesion'}</ToolRailSectionTitle>
-                      <div className="mx-1 mb-0.5 grid grid-cols-2 gap-0.5 rounded-md border border-white/10 bg-black/40 p-0.5">
-                        {([
-                          { id: 'sam31' as const, zh: 'SAM 3.1', en: 'SAM 3.1' },
-                          { id: 'dinov3' as const, zh: 'DINO', en: 'DINO' },
-                        ]).map((item) => {
-                          const active = publicLesionSegModel(segmentationModel) === item.id;
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              disabled={boxAutoSegBusy}
-                              title={item.id === 'dinov3'
-                                ? (zh ? 'DINO 画病灶 mask，不进辅助分期' : 'DINO draws the lesion mask; not used for Assist staging')
-                                : (zh ? 'SAM 3.1 按框画病灶 mask' : 'SAM 3.1 draws the lesion mask from the box')}
-                              onClick={() => chooseLesionSegModel(item.id)}
-                              className={`rounded px-1 py-1 text-[10px] font-semibold disabled:opacity-40 ${
-                                active
-                                  ? 'bg-cyan-400/40 text-white'
-                                  : 'text-slate-400 hover:bg-white/10 hover:text-slate-200'
-                              }`}
-                            >
-                              {zh ? item.zh : item.en}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <ToolRailButton
-                        icon={boxAutoSegBusy ? <Loader2 size={15} className="animate-spin" /> : <ScanLine size={15} />}
-                        label={zh ? '框选病灶' : 'Box lesion'}
-                        hint={zh ? '点亮后拖框。已有病灶时再拖会替换。多个灶用「再框一灶」' : 'Arm, then drag. A new box replaces the current lesion. Use Add lesion for a second mass'}
-                        active={lesionBoxArmed && !keepExtraLesion}
-                        onClick={() => {
-                          if (lesionBoxArmed && !keepExtraLesion) {
-                            armLesionBox(false);
-                            setKeepExtraLesion(false);
-                            keepExtraLesionRef.current = false;
-                            setMessage(zh ? '已取消框选病灶' : 'Box lesion cancelled');
-                            return;
+                      <div className="mx-1 mb-0.5 rounded-md border border-white/10 bg-black/40 p-0.5">
+                        <div className="grid grid-cols-2 gap-0.5">
+                          {([
+                            { id: 'sam31' as const, zh: 'SAM 3.1', en: 'SAM 3.1' },
+                            { id: 'dinov3' as const, zh: 'DINO', en: 'DINO' },
+                          ]).map((item) => {
+                            const active = publicLesionSegModel(segmentationModel) === item.id;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                disabled={boxAutoSegBusy}
+                                title={
+                                  item.id === 'dinov3'
+                                    ? (zh ? '框选病灶时用 DINO 画 mask，随后辅助分析相同' : 'Box lesion with DINO; Assist is the same after the mask')
+                                    : (zh ? '框选病灶时用 SAM 3.1 画 mask，随后辅助分析相同' : 'Box lesion with SAM 3.1; Assist is the same after the mask')
+                                }
+                                onClick={() => chooseLesionSegModel(item.id)}
+                                className={`rounded px-1 py-1 text-[10px] font-semibold disabled:opacity-40 ${
+                                  active
+                                    ? 'bg-cyan-400/40 text-white'
+                                    : 'text-slate-400 hover:bg-white/10 hover:text-slate-200'
+                                }`}
+                              >
+                                {zh ? item.zh : item.en}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <ToolRailButton
+                          icon={boxAutoSegBusy ? <Loader2 size={15} className="animate-spin" /> : <ScanLine size={15} />}
+                          label={zh ? '框选病灶' : 'Box lesion'}
+                          hint={
+                            zh
+                              ? `当前 ${publicLesionSegModel(segmentationModel) === 'dinov3' ? 'DINO' : 'SAM 3.1'}。点亮后拖框。已有病灶时再拖会替换。多个灶用「再框一灶」`
+                              : `Now ${publicLesionSegModel(segmentationModel) === 'dinov3' ? 'DINO' : 'SAM 3.1'}. Arm, then drag. A new box replaces the current lesion. Use Add lesion for a second mass`
                           }
-                          keepExtraLesionRef.current = false;
-                          setKeepExtraLesion(false);
-                          enterSimpleBoxPrompt();
-                        }}
-                        side="right"
-                        tone={lesionBoxArmed && !keepExtraLesion ? 'cyan' : 'slate'}
-                        prominent={lesionBoxArmed && !keepExtraLesion}
-                      />
+                          active={lesionBoxArmed && !keepExtraLesion}
+                          onClick={() => {
+                            if (lesionBoxArmed && !keepExtraLesion) {
+                              armLesionBox(false);
+                              setKeepExtraLesion(false);
+                              keepExtraLesionRef.current = false;
+                              setMessage(zh ? '已取消框选病灶' : 'Box lesion cancelled');
+                              return;
+                            }
+                            keepExtraLesionRef.current = false;
+                            setKeepExtraLesion(false);
+                            enterSimpleBoxPrompt();
+                          }}
+                          side="right"
+                          tone={lesionBoxArmed && !keepExtraLesion ? 'cyan' : 'slate'}
+                          prominent={lesionBoxArmed && !keepExtraLesion}
+                        />
+                      </div>
                       {points.length >= 3 ? (
                         <ToolRailButton
                           icon={<ScanLine size={15} />}
@@ -12947,75 +12980,6 @@ export function InteractiveSegPanel({
                 <span className="ml-1 text-sky-100/80">{zh ? wallLayerReadout.noteZh : wallLayerReadout.noteEn}</span>
               </div>
             ) : null}
-            {dinoDockOpen && dinoResult?.available && dinoLayers.length ? (
-              <div className="border-t border-violet-400/25 bg-violet-500/10 px-4 py-2 text-[11px] leading-relaxed text-violet-50">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{zh ? 'ROI 附近 DINO 层特征（草稿）' : 'ROI DINO layers (draft)'}</span>
-                  <span className="text-violet-100/80">
-                    {zh
-                      ? '只看当前帧病灶/胃壁附近，不是全图，不定 cT。'
-                      : 'Current-frame lesion/wall neighborhood only. Not a definite cT.'}
-                  </span>
-                  <span className="inline-flex flex-wrap gap-1">
-                    {dinoLayers.map((layer) => {
-                      const index = Number(layer.layer_index);
-                      const selected = selectedDinoLayer?.layer_index === index;
-                      return (
-                        <button
-                          key={`dino-roi-l${index}`}
-                          type="button"
-                          onClick={() => setActiveDinoLayer(index)}
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                            selected
-                              ? 'bg-violet-200 text-slate-900'
-                              : 'bg-black/30 text-violet-100/85 hover:bg-black/50'
-                          }`}
-                        >
-                          {`L${index}`}
-                        </button>
-                      );
-                    })}
-                  </span>
-                  {selectedDinoLayer?.scalars?.cos_wall_lesion != null ? (
-                    <span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-violet-100">
-                      {zh ? '壁/灶' : 'wall/lesion'} {Number(selectedDinoLayer.scalars.cos_wall_lesion).toFixed(2)}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {dinoLayers.map((layer) => {
-                    const index = Number(layer.layer_index);
-                    const feature = layer.roi_feature_overlay_png || layer.feature_overlay_png;
-                    const wall = layer.roi_wall_evidence_overlay_png || layer.wall_evidence_overlay_png;
-                    return (
-                      <button
-                        key={`dino-roi-preview-${index}`}
-                        type="button"
-                        onClick={() => setActiveDinoLayer(index)}
-                        className={`rounded border p-1 ${
-                          selectedDinoLayer?.layer_index === index
-                            ? 'border-violet-200/80 bg-black/40'
-                            : 'border-white/15 bg-black/20'
-                        }`}
-                        title={zh ? `第 ${index} 层：左=病灶亲和，右=壁相对灶` : `Layer ${index}: left=lesion affinity, right=wall vs lesion`}
-                      >
-                        <div className="mb-0.5 text-center font-mono text-[10px] text-violet-100">{`L${index}`}</div>
-                        <span className="inline-flex items-center gap-1">
-                          {feature ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={feature} alt="" className="h-12 w-16 rounded object-cover" />
-                          ) : null}
-                          {wall ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={wall} alt="" className="h-12 w-16 rounded object-cover" />
-                          ) : null}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
             {!hideWallOnOtherFrames && wallEchoClarify?.available ? (
               <div className="border-t border-pink-400/25 bg-pink-500/10 px-4 py-2 text-[11px] leading-relaxed text-pink-50">
                 <span className="font-semibold">{zh ? '最深窄带回声（草稿）' : 'Deepest-band echo (draft)'}</span>
@@ -13121,6 +13085,15 @@ export function InteractiveSegPanel({
         totalSteps={taskProgress?.totalSteps || ASSIST_ANALYSIS_STEPS.length}
         detail={taskProgress?.detail || null}
         elapsedSec={taskElapsedSec}
+      />
+      <DinoRoiLayerDialog
+        open={dinoDockOpen}
+        busy={dinoBusy}
+        zh={zh}
+        result={dinoResult}
+        activeLayer={activeDinoLayer}
+        onSelectLayer={setActiveDinoLayer}
+        onClose={() => setDinoDockOpen(false)}
       />
     </>
   );
