@@ -8,15 +8,19 @@ import {
   DatasetType,
   DEFAULT_DATASET,
   DEFAULT_WORKBENCH_QUEUE,
+  isLocalWallLabQueue,
   parseWorkbenchQueueId,
   queueToCohortYear,
   TreatmentType,
   WorkbenchQueueId,
 } from '@/lib/cohort';
+import { isEvaluationBrowserSession } from '@/lib/reader/evaluation-session';
 
 interface SettingsContextType {
   language: Language;
   readerOnly: boolean;
+  /** Evaluation / research session: stay on the reader-study queue only. */
+  queuesLocked: boolean;
   setLanguage: (lang: Language) => void;
   dataset: DatasetType;
   setDataset: (ds: DatasetType) => void;
@@ -58,9 +62,22 @@ function readStoredLanguage(): Language {
   return 'zh';
 }
 
+function readQueueFromSearch(): WorkbenchQueueId | null {
+  if (typeof window === 'undefined') return null;
+  const raw = new URLSearchParams(window.location.search).get('queue');
+  if (!raw) return null;
+  const parsed = parseWorkbenchQueueId(raw);
+  if (isLocalWallLabQueue(parsed) && READER_ONLY_MODE) return null;
+  return parsed;
+}
+
 function readStoredQueue(): WorkbenchQueueId {
-  if (READER_ONLY_MODE) return DEFAULT_WORKBENCH_QUEUE;
   if (typeof window === 'undefined') return DEFAULT_WORKBENCH_QUEUE;
+  if (isEvaluationBrowserSession()) return DEFAULT_WORKBENCH_QUEUE;
+  const fromSearch = readQueueFromSearch();
+  if (fromSearch) return fromSearch;
+  // Public doctors stay on the reader-study queue until a privileged account switches in the UI.
+  if (READER_ONLY_MODE) return DEFAULT_WORKBENCH_QUEUE;
   return parseWorkbenchQueueId(window.localStorage.getItem('gastric_queue'));
 }
 
@@ -98,8 +115,16 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   const [cohortYear, setCohortYear] = useState<CohortYear>('reader_v150');
   const [queueId, setQueueIdState] = useState<WorkbenchQueueId>(DEFAULT_WORKBENCH_QUEUE);
   const [treatmentType, setTreatmentType] = useState<TreatmentType>('surgery');
+  const [queuesLocked, setQueuesLocked] = useState(false);
 
   useEffect(() => {
+    const locked = isEvaluationBrowserSession();
+    setQueuesLocked(locked);
+    if (locked) {
+      setQueueIdState(DEFAULT_WORKBENCH_QUEUE);
+      setCohortYear('reader_v150');
+      return;
+    }
     const storedQueue = readStoredQueue();
     if (storedQueue === DEFAULT_WORKBENCH_QUEUE) return;
     const timer = window.setTimeout(() => {
@@ -110,10 +135,10 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const setQueueId = (nextQueueId: WorkbenchQueueId) => {
-    if (READER_ONLY_MODE && nextQueueId !== DEFAULT_WORKBENCH_QUEUE) return;
+    if (queuesLocked && nextQueueId !== DEFAULT_WORKBENCH_QUEUE) return;
     setQueueIdState(nextQueueId);
     setCohortYear(queueToCohortYear(nextQueueId));
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !isEvaluationBrowserSession()) {
       window.localStorage.setItem('gastric_queue', nextQueueId);
     }
   };
@@ -157,6 +182,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     <SettingsContext.Provider value={{
       language,
       readerOnly: READER_ONLY_MODE,
+      queuesLocked,
       setLanguage,
       dataset,
       setDataset,

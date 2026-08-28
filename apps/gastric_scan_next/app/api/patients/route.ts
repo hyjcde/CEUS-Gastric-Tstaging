@@ -7,6 +7,7 @@ import {
   TreatmentType,
   getBenignDatasetPaths,
   getClinicalDataPath,
+  getNacClinicalDataPath,
   getDatasetPaths,
   getExternalDatasetPaths,
   parseCohortYear,
@@ -17,6 +18,9 @@ import {
   EXTERNAL_CENTER_OPTIONS,
   GASTRIC_COHORT_YEARS,
   getExternalCenterById,
+  isLocalWallLabQueue,
+  LOCAL_WALL_LAB_CASE_IDS,
+  LOCAL_WALL_LAB_QUEUE,
   parseWorkbenchQueueId,
   WorkbenchQueueId,
 } from '@/lib/cohort';
@@ -28,6 +32,15 @@ import { READER_ROUND2_FREEZE_ID, READER_ROUND2_ORDER_SEED } from '@/lib/reader/
 import { sortReaderRound2Patients } from '@/lib/reader/round2-order';
 import { clinicalFromReaderUsTable } from '@/lib/reader/us-clinical-server';
 import { enrichConceptFeaturesFromClinical } from '@/lib/concept-extract';
+import { buildPublicDemoStillPatients, shouldAttachPublicDemoStills } from '@/lib/public-demo-stills';
+import { goldFromClinicalRecord, goldFromReaderRefs } from '@/lib/reader/five-class';
+import { canRevealCaseGold } from '@/lib/reader/gold-reveal-access';
+import { lookupGoldFiveClass } from '@/lib/reader/five-class-server';
+import { requireAppAuth } from '@/lib/reader/require-app-auth';
+import { isTrustedPublicUpstream } from '@/lib/reader/local-access';
+import { lookupClinicalHistory, mergeClinicalHistory } from '@/lib/clinical-history-server';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
+import { denyLocalWallLabOnPublic, denyPublicQueueUnlessPrivileged } from '@/lib/reader/queue-access-server';
 import { AgentReport, ClinicalData, ConceptFeatures, Patient, PatientReportData } from '@/types';
 
 interface PatientAsset {
@@ -66,6 +79,7 @@ interface CurrentDatasetAssets {
 interface PatientPageOptions {
   offset?: number;
   limit?: number;
+  includeClinicalHistory?: boolean;
 }
 
 interface PatientQueueSource {
@@ -174,7 +188,9 @@ function toPublicReport(clinical: Record<string, unknown> | undefined): PatientR
       'pathology_report',
       '病理报告',
       'pathology_text',
-    ]),
+    ]) || (typeof (clinical.pathology as { type?: unknown } | undefined)?.type === 'string'
+      ? String((clinical.pathology as { type: string }).type).trim() || undefined
+      : undefined),
     report_source: firstTextValue(clinical, ['report_source', 'source_file', 'table_source']),
   };
 
@@ -313,6 +329,24 @@ function readImageFiles(dir: string): string[] {
   return files;
 }
 
+function readInternalDisplayFiles(
+  cohortYear: Exclude<CohortYear, 'gist'>,
+  treatmentType: TreatmentType,
+  dataset: DatasetType,
+): string[] {
+  const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
+  const files = readImageFiles(displayPaths.images);
+  if (treatmentType !== 'nac') return files;
+  const clinicalData = readClinicalDataMap(cohortYear, 'nac');
+  if (!Object.keys(clinicalData).length) return [];
+  const cacheKey = `${displayPaths.images}::nac`;
+  const cached = imageFileCache.get(cacheKey);
+  if (cached) return cached;
+  const matched = files.filter((filename) => Boolean(getClinicalEntryForPatient(clinicalData, extractPatientId(filename))));
+  imageFileCache.set(cacheKey, matched);
+  return matched;
+}
+
 function maybeOverlayFilename(filename: string): string {
   return filename.replace(/\.(jpg|jpeg)$/i, '_overlay.jpg');
 }
@@ -362,7 +396,7 @@ function buildCurrentPatients(
   const originalPaths = getDatasetPaths('original', cohortYear, treatmentType);
   const croppedPaths = getDatasetPaths('cropped', cohortYear, treatmentType);
   const displayPaths = getDatasetPaths(dataset, cohortYear, treatmentType);
-  const imageFiles = readImageFiles(displayPaths.images);
+  const imageFiles = readInternalDisplayFiles(cohortYear, treatmentType, dataset);
   const offset = Math.max(0, page?.offset || 0);
   const limit = Math.max(1, page?.limit || imageFiles.length || 1);
   const selectedImageFiles = page ? imageFiles.slice(offset, offset + limit) : imageFiles;
@@ -403,8 +437,12 @@ function buildCurrentPatients(
 
   for (const [patientId, assets] of grouped.entries()) {
     const rawClinical = getClinicalEntryForPatient(clinicalData, patientId);
-    const clinical = normalizeCurrentClinical(rawClinical);
-    const report = toPublicReport(rawClinical);
+    const history = page?.includeClinicalHistory && treatmentType !== 'nac'
+      ? lookupClinicalHistory(patientId, { queueId: `internal:${cohortYear}` })
+      : null;
+    const merged = mergeClinicalHistory(normalizeCurrentClinical(rawClinical), toPublicReport(rawClinical), history);
+    const clinical = merged.clinical;
+    const report = merged.report;
     const sortedAssets = assets.sort((a, b) => a.imageFilename.localeCompare(b.imageFilename, undefined, { numeric: true, sensitivity: 'base' }));
 
     for (const asset of sortedAssets) {
@@ -461,6 +499,11 @@ function buildCurrentPatients(
         agent_report: buildAgentReport(info, hasAnnotation, hasOverlay, hasRoi),
         clinical,
         report,
+        frame_role: 'case_keyframe',
+        ...(() => {
+          const goldLabel = goldFromClinicalRecord(rawClinical) || goldFromClinicalRecord({ pT: clinical?.pT });
+          return { gold_five_class: goldLabel, gold_available: Boolean(goldLabel) };
+        })(),
       });
     }
   }
@@ -572,6 +615,29 @@ function buildCenterPatients(
           overlay_transparent_url: hasOverlay ? `/api/images/${dataset}/overlays/${encodeURIComponent(overlayFilename)}?${queueQuery}` : '',
         },
         agent_report: buildAgentReport(info, hasAnnotation, hasOverlay, hasRoi),
+        ...(() => {
+          const merged = mergeClinicalHistory(
+            undefined,
+            undefined,
+            page?.includeClinicalHistory
+              ? lookupClinicalHistory(patientId, { queueId: `${queueNamespace}:${centerId}` })
+              : null,
+          );
+          const tableGold = goldFromClinicalRecord({ pT: merged.clinical?.pT });
+          const lookup = lookupGoldFiveClass({
+            patient_id: normalizePatientId(patientId),
+            phase,
+            group,
+            queue_id: `${queueNamespace}:${centerId}`,
+          });
+          const goldLabel = tableGold || lookup.label;
+          return {
+            ...merged,
+            frame_role: 'case_keyframe' as const,
+            gold_five_class: goldLabel,
+            gold_available: Boolean(goldLabel),
+          };
+        })(),
       });
     }
   }
@@ -670,6 +736,7 @@ function buildLegacyGistPatients(dataset: DatasetType): Patient[] {
       },
       clinical,
       report,
+      gold_available: Boolean(goldFromClinicalRecord(clinicalEntry)),
     };
   });
 }
@@ -743,10 +810,23 @@ function buildReaderStudyV150Patients(readerId?: string): { patients: Patient[];
           manual_review_recommended: true,
         },
         clinical,
+        gold_available: Boolean(goldFromReaderRefs(item.reference_pt, item.reference_lesion_nature)),
+        ...(canRevealCaseGold(readerId)
+          ? { gold_five_class: goldFromReaderRefs(item.reference_pt, item.reference_lesion_nature) }
+          : {}),
       };
     });
   const sorted = sortReaderRound2Patients(patients, readerId);
   return { patients: sorted.patients, orderApplied: sorted.orderApplied };
+}
+
+function stripGoldLabels(patients: Patient[]): Patient[] {
+  return patients.map((patient) => {
+    if (patient.gold_five_class == null) return patient;
+    const next = { ...patient };
+    delete next.gold_five_class;
+    return next;
+  });
 }
 
 function mergeUniquePatients(patients: Patient[]): Patient[] {
@@ -766,30 +846,33 @@ function createInternalQueueSource(
   year: Exclude<CohortYear, 'gist' | 'reader_v150'>,
   treatmentType: TreatmentType,
   dataset: DatasetType,
+  includeClinicalHistory = false,
 ): PatientQueueSource {
-  const paths = getDatasetPaths(dataset, year, treatmentType);
-  const count = readImageFiles(paths.images).length;
+  if (treatmentType === 'nac' && !getNacClinicalDataPath(year)) {
+    return { count: 0, build: () => [] };
+  }
+  const count = readInternalDisplayFiles(year, treatmentType, dataset).length;
   return {
     count,
-    build: (offset, limit) => buildCurrentPatients(year, treatmentType, dataset, { offset, limit }),
+    build: (offset, limit) => buildCurrentPatients(year, treatmentType, dataset, { offset, limit, includeClinicalHistory }),
   };
 }
 
-function createExternalQueueSource(centerId: string, dataset: DatasetType): PatientQueueSource {
+function createExternalQueueSource(centerId: string, dataset: DatasetType, includeClinicalHistory = false): PatientQueueSource {
   const paths = getExternalDatasetPaths(dataset, centerId);
   const count = paths ? readImageFiles(paths.images).length : 0;
   return {
     count,
-    build: (offset, limit) => buildExternalPatients(centerId, dataset, { offset, limit }),
+    build: (offset, limit) => buildExternalPatients(centerId, dataset, { offset, limit, includeClinicalHistory }),
   };
 }
 
-function createBenignQueueSource(centerId: string, dataset: DatasetType): PatientQueueSource {
+function createBenignQueueSource(centerId: string, dataset: DatasetType, includeClinicalHistory = false): PatientQueueSource {
   const paths = getBenignDatasetPaths(dataset, centerId);
   const count = paths ? readImageFiles(paths.images).length : 0;
   return {
     count,
-    build: (offset, limit) => buildBenignPatients(centerId, dataset, { offset, limit }),
+    build: (offset, limit) => buildBenignPatients(centerId, dataset, { offset, limit, includeClinicalHistory }),
   };
 }
 
@@ -797,15 +880,19 @@ function getQueueSources(
   queueId: WorkbenchQueueId,
   treatmentType: TreatmentType,
   dataset: DatasetType,
+  includeClinicalHistory = false,
 ): PatientQueueSource[] {
-  const internalSources = GASTRIC_COHORT_YEARS.map((year) => (
-    createInternalQueueSource(year, treatmentType, dataset)
-  ));
+  const internalYears = treatmentType === 'nac'
+    ? GASTRIC_COHORT_YEARS.filter((year) => getNacClinicalDataPath(year))
+    : GASTRIC_COHORT_YEARS;
+  const internalSources = internalYears.map((year) => (
+    createInternalQueueSource(year, treatmentType, dataset, includeClinicalHistory)
+  )).filter((source) => source.count > 0);
   const externalSources = EXTERNAL_CENTER_OPTIONS.map((center) => (
-    createExternalQueueSource(center.id, dataset)
+    createExternalQueueSource(center.id, dataset, includeClinicalHistory)
   ));
   const benignSources = BENIGN_CENTER_OPTIONS.map((center) => (
-    createBenignQueueSource(center.id, dataset)
+    createBenignQueueSource(center.id, dataset, includeClinicalHistory)
   ));
 
   if (queueId === 'all') {
@@ -820,17 +907,18 @@ function getQueueSources(
   if (queueId === 'benign:all') return benignSources;
   if (queueId.startsWith('internal:')) {
     const year = queueId.slice('internal:'.length) as Exclude<CohortYear, 'gist' | 'reader_v150'>;
+    if (treatmentType === 'nac' && !getNacClinicalDataPath(year)) return [];
     return treatmentType === 'surgery' || treatmentType === 'nac'
-      ? [createInternalQueueSource(year, treatmentType, dataset)]
+      ? [createInternalQueueSource(year, treatmentType, dataset, includeClinicalHistory)]
       : [];
   }
   if (queueId.startsWith('external:')) {
     const centerId = queueId.slice('external:'.length);
-    return treatmentType === 'surgery' ? [createExternalQueueSource(centerId, dataset)] : [];
+    return treatmentType === 'surgery' ? [createExternalQueueSource(centerId, dataset, includeClinicalHistory)] : [];
   }
   if (queueId.startsWith('benign:')) {
     const centerId = queueId.slice('benign:'.length);
-    return [createBenignQueueSource(centerId, dataset)];
+    return [createBenignQueueSource(centerId, dataset, includeClinicalHistory)];
   }
   return [];
 }
@@ -842,6 +930,7 @@ function buildQueuePatientsPage(
   offset: number,
   limit: number,
   readerId?: string,
+  includeClinicalHistory = false,
 ): { items: Patient[]; total: number; orderApplied: boolean } {
   if (queueId === 'reader:reader_v150') {
     if (treatmentType !== 'surgery') {
@@ -854,18 +943,35 @@ function buildQueuePatientsPage(
       orderApplied: built.orderApplied,
     };
   }
+  if (isLocalWallLabQueue(queueId)) {
+    if (treatmentType !== 'surgery') {
+      return { items: [], total: 0, orderApplied: false };
+    }
+    const built = buildReaderStudyV150Patients();
+    const byId = new Map(built.patients.map((row) => [row.id, row]));
+    const patients = LOCAL_WALL_LAB_CASE_IDS
+      .map((caseId) => byId.get(caseId))
+      .filter((row): row is Patient => Boolean(row))
+      .map((row) => ({ ...row, queue_id: LOCAL_WALL_LAB_QUEUE }));
+    return {
+      items: patients.slice(offset, offset + limit),
+      total: patients.length,
+      orderApplied: false,
+    };
+  }
   if (queueId === 'legacy:gist') {
     const all = treatmentType === 'surgery' ? buildLegacyGistPatients(dataset) : [];
     return { items: all.slice(offset, offset + limit), total: all.length, orderApplied: false };
   }
 
-  const sources = getQueueSources(queueId, treatmentType, dataset);
+  const sources = getQueueSources(queueId, treatmentType, dataset, includeClinicalHistory);
   const total = sources.reduce((sum, source) => sum + source.count, 0);
   let skip = Math.max(0, offset);
   let remaining = Math.max(1, limit);
   const items: Patient[] = [];
 
   for (const source of sources) {
+    if (source.count <= 0) continue;
     if (skip >= source.count) {
       skip -= source.count;
       continue;
@@ -889,10 +995,28 @@ export async function GET(request: NextRequest) {
     const treatmentTypeParam = searchParams.get('treatment') || 'surgery';
     const queueParam = searchParams.get('queue');
     const environment = searchParams.get('environment') || 'staging';
+    const requestedQueue = queueParam ? parseWorkbenchQueueId(queueParam) : '';
+    const queueDenied = denyPublicQueueUnlessPrivileged(request, requestedQueue);
+    if (queueDenied) return queueDenied;
+    const localLabDenied = denyLocalWallLabOnPublic(request, requestedQueue);
+    if (localLabDenied) return localLabDenied;
+    if (environment !== 'research' && requestedQueue && requestedQueue !== 'reader:reader_v150' && !isLocalWallLabQueue(requestedQueue)) {
+      const forwarded = await proxyAgentRequest(request);
+      if (forwarded) return forwarded;
+    }
+    const includeClinicalHistory = environment !== 'research'
+      && requestedQueue !== 'reader:reader_v150';
     const requestedReaderId = searchParams.get('reader_id') || '';
     const dataset = parseDatasetType(datasetParam);
     const treatmentType: TreatmentType = treatmentTypeParam === 'nac' ? 'nac' : 'surgery';
     let readerId = requestedReaderId || undefined;
+
+    if (environment !== 'research') {
+      const access = requireAppAuth(request);
+      if (!access.ok && !isTrustedPublicUpstream(request.headers)) return access.response;
+      // Prefer logged-in account for Round2 / stable shuffle order (URL reader_id is optional).
+      readerId = (access.ok ? access.accountId : '') || requestedReaderId || undefined;
+    }
 
     if (environment === 'research') {
       const auth = resolveResearchReader(request.headers, requestedReaderId);
@@ -958,20 +1082,29 @@ export async function GET(request: NextRequest) {
     }
 
     if (queueParam || publicReaderOnly) {
-      const queueId = publicReaderOnly
+      const queueId = environment === 'research'
         ? 'reader:reader_v150'
-        : parseWorkbenchQueueId(queueParam);
+        : parseWorkbenchQueueId(queueParam || 'reader:reader_v150');
       const rawOffset = Number.parseInt(searchParams.get('offset') || '0', 10);
       const rawLimit = Number.parseInt(searchParams.get('limit') || '80', 10);
       const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
       const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, rawLimit)) : 80;
-      const page = buildQueuePatientsPage(queueId, treatmentType, dataset, offset, limit, readerId);
+      const page = buildQueuePatientsPage(queueId, treatmentType, dataset, offset, limit, readerId, includeClinicalHistory);
+      const demoStills = (
+        queueId === 'reader:reader_v150'
+        && offset === 0
+        && shouldAttachPublicDemoStills(environment)
+      )
+        ? buildPublicDemoStillPatients()
+        : [];
+      const items = canRevealCaseGold(readerId) ? page.items : stripGoldLabels(page.items);
       return NextResponse.json({
-        items: page.items,
+        items,
         total: page.total,
         offset,
         limit,
         has_more: offset + page.items.length < page.total,
+        demo_stills: demoStills,
         study_contract: queueId === 'reader:reader_v150'
           ? {
               freeze_id: READER_ROUND2_FREEZE_ID,
@@ -984,7 +1117,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (publicReaderOnly || cohortYearParam === 'reader_v150' || cohortYearParam === 'reader-v150') {
-      return NextResponse.json(buildReaderStudyV150Patients(readerId).patients);
+      const built = buildReaderStudyV150Patients(readerId).patients;
+      return NextResponse.json(canRevealCaseGold(readerId) ? built : stripGoldLabels(built));
     }
     const cohortYear = parseCohortYear(cohortYearParam);
 
@@ -992,7 +1126,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(buildLegacyGistPatients(dataset));
     }
 
-    return NextResponse.json(buildCurrentPatients(cohortYear, treatmentType, dataset));
+    return NextResponse.json(buildCurrentPatients(cohortYear, treatmentType, dataset, { includeClinicalHistory }));
   } catch (error) {
     console.error("Error reading patients:", error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

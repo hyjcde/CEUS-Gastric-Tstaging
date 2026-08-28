@@ -66,7 +66,21 @@ export type WorkbenchQueueId =
   | 'benign:all'
   | `benign:${BenignCenterId}`
   | 'reader:reader_v150'
+  | 'reader:local_wall4'
   | 'legacy:gist';
+
+/** Local wall-layer lab: P008 / P019 / P040 / P076. Not the public 150. */
+export const LOCAL_WALL_LAB_QUEUE: WorkbenchQueueId = 'reader:local_wall4';
+export const LOCAL_WALL_LAB_CASE_IDS = ['CASE-008', 'CASE-019', 'CASE-040', 'CASE-076'] as const;
+
+export function isLocalWallLabQueue(queueId: string | null | undefined): boolean {
+  return String(queueId || '').trim() === LOCAL_WALL_LAB_QUEUE;
+}
+
+export function isReaderPackageQueue(queueId: string | null | undefined): boolean {
+  const raw = String(queueId || '').trim();
+  return raw === 'reader:reader_v150' || raw === LOCAL_WALL_LAB_QUEUE;
+}
 
 export interface WorkbenchQueueGroup {
   id: 'internal' | 'external' | 'benign' | 'special';
@@ -114,10 +128,22 @@ export const WORKBENCH_QUEUE_GROUPS: WorkbenchQueueGroup[] = [
     label: '专项队列',
     children: [
       { id: 'reader:reader_v150', label: '阅片任务, 第一轮150例' },
-      { id: 'legacy:gist', label: 'GIST历史队列' },
+      { id: 'reader:local_wall4', label: '本地壁层实验, 4例' },
     ],
   },
 ];
+
+export function visibleWorkbenchQueueGroups(includeLocalLabs: boolean): WorkbenchQueueGroup[] {
+  if (includeLocalLabs) return WORKBENCH_QUEUE_GROUPS;
+  return WORKBENCH_QUEUE_GROUPS.map((group) => (
+    group.id !== 'special'
+      ? group
+      : {
+          ...group,
+          children: group.children.filter((child) => !isLocalWallLabQueue(child.id)),
+        }
+  ));
+}
 
 /** 前端与 API 默认展示 crop_ui（去界面边框） */
 export const DEFAULT_DATASET: DatasetType = 'cropped';
@@ -153,7 +179,8 @@ export const ALL_COHORT_YEARS: CohortYear[] = [...GASTRIC_COHORT_YEARS, ...READE
 
 export function parseWorkbenchQueueId(value: string | null | undefined): WorkbenchQueueId {
   const raw = (value ?? DEFAULT_WORKBENCH_QUEUE).trim();
-  if (raw === 'all' || raw === 'internal:all' || raw === 'external:all' || raw === 'benign:all' || raw === 'reader:reader_v150' || raw === 'legacy:gist') {
+  if (raw === 'legacy:gist' || raw === 'gist') return DEFAULT_WORKBENCH_QUEUE;
+  if (raw === 'all' || raw === 'internal:all' || raw === 'external:all' || raw === 'benign:all' || raw === 'reader:reader_v150' || raw === LOCAL_WALL_LAB_QUEUE) {
     return raw;
   }
   if (raw.startsWith('internal:') && GASTRIC_COHORT_YEARS.includes(raw.slice('internal:'.length) as GastricCohortYear)) {
@@ -194,7 +221,8 @@ export function getQueueDisplayLabel(queueId: WorkbenchQueueId, language: QueueL
       return `Benign cohort · ${ENGLISH_CENTER_LABELS[centerId] || 'Center'}`;
     }
     if (queueId === 'legacy:gist') return 'GIST historical cohort';
-    return 'Reader task · Round 1 · 150 cases';
+    if (isLocalWallLabQueue(queueId)) return 'Local wall-lab, 4 cases';
+    return 'Reader task, Round 1, 150 cases';
   }
 
   if (queueId === 'all') return '全部 T 分期数据';
@@ -211,6 +239,7 @@ export function getQueueDisplayLabel(queueId: WorkbenchQueueId, language: QueueL
     return `良性队列, ${BENIGN_CENTER_OPTIONS.find((center) => center.id === queueId.slice('benign:'.length))?.label || '中心'}`;
   }
   if (queueId === 'legacy:gist') return 'GIST历史队列';
+  if (isLocalWallLabQueue(queueId)) return '本地壁层实验, 4例';
   return '阅片任务, 第一轮150例';
 }
 
@@ -244,6 +273,7 @@ export function getQueueOptionDisplayLabel(
       return getBenignCenterById(queueId.slice('benign:'.length))?.label || '中心';
     }
     if (queueId === 'legacy:gist') return 'GIST历史队列';
+    if (isLocalWallLabQueue(queueId)) return '本地壁层实验, 4例';
     return '阅片任务, 第一轮150例';
   }
 
@@ -259,11 +289,12 @@ export function getQueueOptionDisplayLabel(
     return ENGLISH_CENTER_LABELS[queueId.slice('benign:'.length)] || 'Center';
   }
   if (queueId === 'legacy:gist') return 'GIST historical cohort';
-  return 'Reader task · Round 1 · 150 cases';
+  if (isLocalWallLabQueue(queueId)) return 'Local wall-lab, 4 cases';
+  return 'Reader task, Round 1, 150 cases';
 }
 
 export function queueToCohortYear(queueId: WorkbenchQueueId): CohortYear {
-  if (queueId === 'reader:reader_v150') return 'reader_v150';
+  if (isReaderPackageQueue(queueId)) return 'reader_v150';
   if (queueId === 'legacy:gist') return 'gist';
   if (queueId.startsWith('internal:') && queueId !== 'internal:all') {
     return queueId.slice('internal:'.length) as GastricCohortYear;
@@ -281,6 +312,11 @@ export function isExternalQueue(queueId: WorkbenchQueueId): boolean {
 
 export function isBenignQueue(queueId: WorkbenchQueueId): boolean {
   return queueId === 'benign:all' || queueId.startsWith('benign:');
+}
+
+/** Historical stills: one case, N curated keyframes. Reader-v150 is video plus doctor marks. */
+export function isHistoricalWorkbenchQueue(queueId: WorkbenchQueueId): boolean {
+  return !isReaderPackageQueue(queueId) && queueId !== 'legacy:gist';
 }
 
 export function parseCohortYear(value: string | null | undefined): CohortYear {

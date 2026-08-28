@@ -4,11 +4,48 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Patient, ReaderStudyMode } from '@/types';
 import { Search, Database, ChevronDown, ChevronRight, Folder, FileImage } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
-import { getQueueDisplayLabel, isInternalQueue } from '@/lib/cohort';
+import { useDoctorAccount } from '@/contexts/DoctorAccountContext';
+import {
+  DEFAULT_WORKBENCH_QUEUE,
+  isInternalQueue,
+  isLocalWallLabQueue,
+  isReaderPackageQueue,
+  parseWorkbenchQueueId,
+} from '@/lib/cohort';
+import { canBrowseWorkbenchQueues } from '@/lib/reader/queue-access';
 import { QueueTreeSelect } from './QueueTreeSelect';
 import toast from 'react-hot-toast';
 import { PatientListGroupSkeleton } from './Skeleton';
 import type { Language } from '@/lib/i18n';
+import { localizeCenterLabel, patientDisplayLabel } from '@/lib/patient-display';
+import { isPublicDemoStill } from '@/lib/public-demo-stills';
+import { decodePT } from '@/lib/clinical-history-display';
+import { formatFiveClass } from '@/lib/reader/five-class';
+import { canRevealCaseGold } from '@/lib/reader/gold-reveal-access';
+
+function matchesOpenPatient(patient: Patient, token: string): boolean {
+  const wanted = token.trim().toLowerCase();
+  if (!wanted) return false;
+  const digits = wanted.replace(/^z/i, '').replace(/^0+/, '') || wanted;
+  const keys = [patient.id, patient.patient_id, patient.id_short]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  return keys.some((key) => {
+    if (key === wanted) return true;
+    const keyDigits = key.replace(/^z/i, '').replace(/^0+/, '') || key;
+    return keyDigits === digits;
+  });
+}
+
+function groupStageLabel(group: PatientGroup): string {
+  if (group.groupType === 'Benign') return '';
+  const first = group.items[0];
+  if (!first) return '';
+  const fromTable = decodePT(first.clinical?.pT);
+  if (fromTable) return fromTable;
+  if (first.gold_five_class && first.gold_five_class !== 'benign') return first.gold_five_class;
+  return '';
+}
 
 interface PatientListProps {
   onSelect: (patient: Patient) => void;
@@ -36,6 +73,7 @@ interface PatientPage {
   limit: number;
   hasMore: boolean;
   has_more?: boolean;
+  demo_stills?: Patient[];
 }
 
 const PATIENT_PAGE_SIZE = 80;
@@ -79,15 +117,16 @@ async function fetchPatientPage(
   offset: number,
   signal: AbortSignal,
   language: Language,
+  authHeaders?: (extra?: HeadersInit) => HeadersInit,
 ): Promise<PatientPage> {
   const params = new URLSearchParams({
     dataset,
     queue: queueId,
     treatment,
     offset: String(offset),
-    limit: String(PATIENT_PAGE_SIZE),
+    limit: String(isReaderPackageQueue(queueId) ? 200 : PATIENT_PAGE_SIZE),
   });
-  if (queueId === 'reader:reader_v150' && typeof window !== 'undefined') {
+  if (isReaderPackageQueue(queueId) && typeof window !== 'undefined') {
     const searchParams = new URLSearchParams(window.location.search);
     const environment = searchParams.get('environment') || searchParams.get('env') || (
       searchParams.get('round') === 'qa' ? 'qa' : 'staging'
@@ -98,7 +137,10 @@ async function fetchPatientPage(
       if (readerId) params.set('reader_id', readerId);
     }
   }
-  const response = await fetch(`/api/patients?${params.toString()}`, { signal });
+  const response = await fetch(`/api/patients?${params.toString()}`, {
+    signal,
+    headers: authHeaders ? authHeaders() : undefined,
+  });
   if (!response.ok) {
     throw new Error(language === 'en'
       ? `${treatment === 'nac' ? 'NAC' : 'Surgery'} queue request failed (HTTP ${response.status})`
@@ -129,9 +171,12 @@ async function fetchPatientPage(
 }
 
 export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, onPatientsLoaded, readerStudyMode, onReaderStudyModeChange }) => {
-  const { dataset, cohortYear, queueId, setQueueId, language, readerOnly, t } = useSettings();
+  const { dataset, cohortYear, queueId, setQueueId, language, readerOnly, queuesLocked, t } = useSettings();
+  const { account, authHeaders } = useDoctorAccount();
   const zh = language !== 'en';
-  const publicQueueLabel = zh ? '阅片任务 · 第一轮' : 'Reader task · Round 1';
+  const canBrowseQueues = !queuesLocked && (!readerOnly || canBrowseWorkbenchQueues(account?.account_id));
+  const showGold = canRevealCaseGold(account?.account_id);
+  const publicQueueLabel = zh ? '阅片任务, 第一轮' : 'Reader task, Round 1';
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -139,10 +184,12 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
   const [loadingMore, setLoadingMore] = useState(false);
   const [totalFrames, setTotalFrames] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [progressByCase, setProgressByCase] = useState<Record<string, 'in_progress' | 'completed'>>({});
   const onSelectRef = useRef(onSelect);
   const onPatientsLoadedRef = useRef(onPatientsLoaded);
   const selectedIdRef = useRef(selectedId);
   const hasAutoSelectedRef = useRef(false);
+  const pendingOpenIdRef = useRef<string>('');
   const patientsRef = useRef<Patient[]>([]);
   const nextOffsetsRef = useRef<Record<TreatmentKey, number>>({ surgery: 0, nac: 0 });
   const hasMoreRef = useRef<Record<TreatmentKey, boolean>>({ surgery: true, nac: false });
@@ -154,6 +201,33 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  useEffect(() => {
+    const onOpenReference = (event: Event) => {
+      const detail = (event as CustomEvent<{ queue_id?: string; patient_id?: string }>).detail || {};
+      const nextQueue = detail.queue_id ? parseWorkbenchQueueId(detail.queue_id) : '';
+      const patientId = String(detail.patient_id || '').trim();
+      if (!patientId || !canBrowseQueues) return;
+      pendingOpenIdRef.current = patientId;
+      if (nextQueue && nextQueue !== queueId) {
+        setQueueId(nextQueue);
+        return;
+      }
+      const found = patientsRef.current.find((patient) => matchesOpenPatient(patient, patientId));
+      if (found) {
+        pendingOpenIdRef.current = '';
+        onSelectRef.current(found);
+      }
+    };
+    window.addEventListener('gastric:open-reference-case', onOpenReference);
+    return () => window.removeEventListener('gastric:open-reference-case', onOpenReference);
+  }, [canBrowseQueues, queueId, setQueueId]);
+
+  useEffect(() => {
+    if (!canBrowseQueues && queueId !== DEFAULT_WORKBENCH_QUEUE) {
+      setQueueId(DEFAULT_WORKBENCH_QUEUE);
+    }
+  }, [canBrowseQueues, queueId, setQueueId]);
 
   useEffect(() => {
     onPatientsLoadedRef.current = onPatientsLoaded;
@@ -179,9 +253,9 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       setHasMore(false);
 
       const [surgeryData, nacData] = await Promise.all([
-        fetchPatientPage(dataset, queueId, 'surgery', 0, controller.signal, language),
+        fetchPatientPage(dataset, queueId, 'surgery', 0, controller.signal, language, authHeaders),
         shouldFetchNac
-          ? fetchPatientPage(dataset, queueId, 'nac', 0, controller.signal, language)
+          ? fetchPatientPage(dataset, queueId, 'nac', 0, controller.signal, language, authHeaders)
           : Promise.resolve(emptyPatientPage(0)),
       ]);
 
@@ -204,10 +278,27 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       setLoading(false);
       onPatientsLoadedRef.current?.(merged);
 
-      const visiblePatients = queueId === 'reader:reader_v150' && readerStudyMode
-        ? merged.filter((patient) => patient.study_mode === readerStudyMode)
-        : merged;
+      const visiblePatients = isLocalWallLabQueue(queueId)
+        ? merged.filter((patient) => !isPublicDemoStill(patient))
+        : queueId === 'reader:reader_v150' && readerStudyMode
+        ? merged.filter((patient) => !isPublicDemoStill(patient) && patient.study_mode === readerStudyMode)
+        : merged.filter((patient) => !isPublicDemoStill(patient));
       const currentSelectedId = selectedIdRef.current;
+      const requestedCase = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('case_id')
+        : null;
+      const pendingOpen = pendingOpenIdRef.current;
+      const requested = pendingOpen
+        ? visiblePatients.find((patient) => matchesOpenPatient(patient, pendingOpen))
+        : requestedCase
+          ? visiblePatients.find((patient) => patient.id === requestedCase || patient.patient_id === requestedCase)
+          : undefined;
+      if (requested && pendingOpen) pendingOpenIdRef.current = '';
+      // Keep API presentation order (per-reader shuffle). Do not re-sort by CASE number.
+      const orderedVisible = visiblePatients;
+      const autoPick = requested
+        || orderedVisible.find((patient) => !isPublicDemoStill(patient))
+        || orderedVisible[0];
 
       // Auto-expand the group of the selected patient if exists
       if (currentSelectedId) {
@@ -215,14 +306,14 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
           if (p) {
               const groupKey = getPatientGroupKey(p);
               setExpandedGroups(new Set([groupKey]));
-          } else if (visiblePatients.length > 0 && !hasAutoSelectedRef.current) {
+          } else if (autoPick && !hasAutoSelectedRef.current) {
               hasAutoSelectedRef.current = true;
-              onSelectRef.current(visiblePatients[0]);
+              onSelectRef.current(autoPick);
           }
-      } else if (visiblePatients.length > 0 && !hasAutoSelectedRef.current) {
+      } else if (autoPick && !hasAutoSelectedRef.current) {
           hasAutoSelectedRef.current = true;
-          onSelectRef.current(visiblePatients[0]);
-          const groupKey = getPatientGroupKey(visiblePatients[0]);
+          onSelectRef.current(autoPick);
+          const groupKey = getPatientGroupKey(autoPick);
           setExpandedGroups(new Set([groupKey]));
       }
     };
@@ -239,12 +330,44 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       controller.abort();
       loadMoreControllerRef.current?.abort();
     };
-  }, [dataset, language, queueId, readerStudyMode]);
+  }, [authHeaders, dataset, language, queueId, readerStudyMode]);
 
   useEffect(() => {
     hasAutoSelectedRef.current = false;
   }, [dataset, queueId]);
 
+  useEffect(() => {
+    const accountId = account?.account_id;
+    if (!accountId || !isReaderPackageQueue(queueId)) {
+      setProgressByCase({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const studyMode = readerStudyMode || 't_staging';
+        const response = await fetch(
+          `/api/reader/case-state?study_mode=${encodeURIComponent(studyMode)}`,
+          { cache: 'no-store', headers: authHeaders() },
+        );
+        if (!response.ok || cancelled) return;
+        const data = await response.json() as {
+          states?: Array<{ case_id?: string; progress?: string; completed?: boolean }>;
+        };
+        if (!Array.isArray(data.states)) return;
+        const map: Record<string, 'in_progress' | 'completed'> = {};
+        for (const row of data.states) {
+          const id = String(row.case_id || '').trim();
+          if (!id) continue;
+          map[id] = row.completed || row.progress === 'completed' ? 'completed' : 'in_progress';
+        }
+        if (!cancelled) setProgressByCase(map);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [account?.account_id, authHeaders, queueId, readerStudyMode]);
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || (!hasMoreRef.current.surgery && !hasMoreRef.current.nac)) return;
     loadingMoreRef.current = true;
@@ -257,13 +380,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       if (hasMoreRef.current.surgery) {
         pageRequests.push([
           'surgery',
-          fetchPatientPage(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language),
+          fetchPatientPage(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language, authHeaders),
         ]);
       }
       if (shouldFetchNac && hasMoreRef.current.nac) {
         pageRequests.push([
           'nac',
-          fetchPatientPage(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language),
+          fetchPatientPage(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language, authHeaders),
         ]);
       }
       const pages = await Promise.all(pageRequests.map(async ([treatment, request]) => (
@@ -290,7 +413,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       loadMoreControllerRef.current = null;
       setLoadingMore(false);
     }
-  }, [dataset, language, queueId]);
+  }, [authHeaders, dataset, language, queueId]);
 
   useEffect(() => {
     loadMoreRef.current = loadMore;
@@ -305,9 +428,11 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
   // Grouping Logic - Group by patient_id and treatment type
   const groupedPatients = useMemo(() => {
     const groups: Record<string, PatientGroup> = {};
-    const visiblePatients = queueId === 'reader:reader_v150' && readerStudyMode
-      ? patients.filter((patient) => patient.study_mode === readerStudyMode)
-      : patients;
+    const visiblePatients = isLocalWallLabQueue(queueId)
+      ? patients.filter((patient) => !isPublicDemoStill(patient))
+      : queueId === 'reader:reader_v150' && readerStudyMode
+      ? patients.filter((patient) => !isPublicDemoStill(patient) && patient.study_mode === readerStudyMode)
+      : patients.filter((patient) => !isPublicDemoStill(patient));
     
     visiblePatients.forEach(p => {
         const patientId = p.patient_id || p.id_short.split('(')[0].trim();
@@ -318,15 +443,36 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                 key: groupKey,
                 baseId: patientId,
                 groupType: treatmentType,
-                scopeLabel: p.center_label || (p.phase && p.phase !== 'external' ? p.phase : undefined),
+                scopeLabel: isPublicDemoStill(p)
+                  ? (language === 'en' ? 'Demo stills, not scored' : '演示静图, 不进评分')
+                  : (
+                    localizeCenterLabel(p.center_label, language)
+                    || (p.phase && p.phase !== 'external' ? p.phase : undefined)
+                  ),
                 items: [],
             };
         }
         groups[groupKey].items.push(p);
     });
 
-    // Sort groups: first by clinical data presence (any item in group has clinical), then by patient_id, then by treatment type
     const sortedGroups = Object.values(groups).sort((a, b) => {
+        const aDemo = a.items.some((item) => isPublicDemoStill(item));
+        const bDemo = b.items.some((item) => isPublicDemoStill(item));
+        if (aDemo && !bDemo) return -1;
+        if (!aDemo && bDemo) return 1;
+
+        if (isReaderPackageQueue(queueId)) {
+          // Preserve API order (per-account shuffle), not CASE-001 numeric order.
+          const indexOf = (group: PatientGroup) => {
+            for (const item of group.items) {
+              const idx = patients.findIndex((row) => row.id === item.id);
+              if (idx >= 0) return idx;
+            }
+            return Number.MAX_SAFE_INTEGER;
+          };
+          return indexOf(a) - indexOf(b);
+        }
+
         // 1. Clinical data presence
         const hasClinicalA = a.items.some(i => i.clinical);
         const hasClinicalB = b.items.some(i => i.clinical);
@@ -373,7 +519,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
     );
 
     return result;
-  }, [patients, searchTerm, queueId, readerStudyMode]);
+  }, [patients, searchTerm, queueId, readerStudyMode, language]);
 
   const visibleGroups = groupedPatients;
 
@@ -392,24 +538,32 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
   return (
     <div className="flex flex-col h-full w-full bg-[#0b0b0d]">
       {/* Sidebar Header */}
-      <div className="min-h-12 shrink-0 border-b border-white/5 px-3 py-1.5 bg-[#0b0b0d]">
+      <div className="min-w-0 shrink-0 border-b border-white/5 px-2.5 py-1.5 bg-[#0b0b0d]">
         <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2 text-[11px] font-bold text-gray-300 uppercase tracking-widest">
-            <Database size={12} className="text-blue-500" />
-            {t.cohort.title}
+          <span className="flex min-w-0 items-center gap-2 text-[11px] font-bold text-gray-300 uppercase tracking-widest">
+            <Database size={12} className="shrink-0 text-blue-500" />
+            <span className="truncate">{t.cohort.title}</span>
           </span>
-          <span className="text-[9px] font-mono text-gray-500">
-            {readerOnly
+          <span className="shrink-0 text-[9px] font-mono text-gray-500">
+            {!canBrowseQueues || isReaderPackageQueue(queueId)
               ? (zh ? '当前队列' : 'Current queue')
-              : (zh ? `${groupedPatients.length}组 / ${totalFrames}帧` : `${groupedPatients.length} groups / ${totalFrames} frames`)}
+              : (zh
+                ? `已加载 ${groupedPatients.length} 例 / 共 ${totalFrames} 帧`
+                : `Loaded ${groupedPatients.length} cases / ${totalFrames} frames`)}
           </span>
         </div>
-        <div className="mt-0.5 truncate text-[8px] font-mono text-cyan-300/70" title={readerOnly ? publicQueueLabel : getQueueDisplayLabel(queueId, language)}>
-          {readerOnly ? publicQueueLabel : getQueueDisplayLabel(queueId, language)}
-        </div>
-        {!readerOnly ? (
-          <div className="relative z-[60] mt-1.5">
+        {!canBrowseQueues ? (
+          <div className="mt-0.5 truncate text-[8px] font-mono text-cyan-300/70" title={publicQueueLabel}>
+            {publicQueueLabel}
+          </div>
+        ) : (
+          <div className="relative mt-1.5 min-w-0">
             <QueueTreeSelect value={queueId} onChange={setQueueId} />
+          </div>
+        )}
+        {isLocalWallLabQueue(queueId) ? (
+          <div className="mt-2 rounded-md border border-amber-300/20 bg-amber-300/10 px-2 py-1.5 text-[10px] leading-snug text-amber-100">
+            {zh ? '本地壁层实验, 4例: P008 T1, P019 T2, P040 T3, P076 T4' : 'Local wall-lab, 4 cases: P008 T1, P019 T2, P040 T3, P076 T4'}
           </div>
         ) : null}
         {queueId === 'reader:reader_v150' && readerStudyMode && onReaderStudyModeChange ? (
@@ -417,14 +571,14 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
             <button
               type="button"
               onClick={() => onReaderStudyModeChange('benign_malignancy')}
-              className={`rounded px-2 py-1 text-[10px] font-semibold transition ${readerStudyMode === 'benign_malignancy' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+              className={`rounded px-2 py-1 text-[10px] font-semibold transition max-md:min-h-10 ${readerStudyMode === 'benign_malignancy' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
             >
               {zh ? '良恶性' : 'Benignity'}
             </button>
             <button
               type="button"
               onClick={() => onReaderStudyModeChange('t_staging')}
-              className={`rounded px-2 py-1 text-[10px] font-semibold transition ${readerStudyMode === 't_staging' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+              className={`rounded px-2 py-1 text-[10px] font-semibold transition max-md:min-h-10 ${readerStudyMode === 't_staging' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
             >
               {zh ? 'T 分期' : 'T staging'}
             </button>
@@ -433,13 +587,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       </div>
 
       {/* Search */}
-      <div className="p-3 border-b border-white/5 bg-[#0b0b0d]">
+      <div className="border-b border-white/5 bg-[#0b0b0d] px-2.5 py-2">
         <div className="relative group">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-blue-500 transition-colors" size={12} />
           <input 
             type="text" 
             placeholder={t.cohort.search} 
-            className="w-full bg-[#18181b] border border-border-col text-gray-200 text-xs rounded pl-8 pr-2 py-1.5 focus:outline-none focus:border-blue-500/50 focus:bg-[#202024] transition-all placeholder:text-gray-600 font-mono"
+            className="w-full bg-[#18181b] border border-border-col text-gray-200 text-xs rounded pl-8 pr-2 py-1.5 focus:outline-none focus:border-blue-500/50 focus:bg-[#202024] transition-all placeholder:text-gray-600 font-mono max-md:py-2.5 max-md:text-base"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
           />
@@ -460,18 +614,27 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
           </div>
         ) : (
           <div className="divide-y divide-white/5">
-            {visibleGroups.map(group => {
+            {visibleGroups.map((group, index) => {
               const groupKey = group.key;
               const isExpanded = expandedGroups.has(groupKey);
               const isGroupSelected = group.items.some(i => i.id === selectedId);
+              const isDemoGroup = group.items.some((item) => isPublicDemoStill(item));
+              const showDemoHeader = isDemoGroup && (
+                index === 0 || !visibleGroups[index - 1].items.some((item) => isPublicDemoStill(item))
+              );
               
               return (
                 <div key={groupKey} className="bg-[#0b0b0d]">
+                  {showDemoHeader ? (
+                    <div className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-cyan-300/80">
+                      {zh ? '演示静图, 不进评分' : 'Demo stills, not scored'}
+                    </div>
+                  ) : null}
                   {/* Group Header */}
                   <div 
                     onClick={() => toggleGroup(groupKey)}
                     className={`
-                        flex items-center justify-between px-3 py-2 cursor-pointer select-none transition-colors
+                        flex items-center justify-between px-3 py-2 cursor-pointer select-none transition-colors max-md:min-h-11 max-md:py-2.5
                         ${isGroupSelected ? 'bg-blue-500/5' : 'hover:bg-white/5'}
                     `}
                   >
@@ -482,34 +645,50 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                           <span className={`block truncate text-[11px] font-mono ${isGroupSelected ? 'text-gray-200' : 'text-gray-400'}`}>
                               {cohortYear === 'gist' ? `Patient ${group.baseId}` : group.baseId}
                           </span>
-                          {group.scopeLabel && !readerOnly ? (
+                          {group.scopeLabel && (canBrowseQueues || isDemoGroup) ? (
                             <span className="block truncate text-[8px] font-mono text-gray-600">{group.scopeLabel}</span>
                           ) : null}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {!readerOnly ? (
-                        <>
-                        <span className={`
-                            text-[8px] font-bold px-1 py-0.5 rounded-sm uppercase
-                            ${group.groupType === 'NAC'
-                              ? 'text-pink-500 bg-pink-500/10'
-                              : group.groupType === 'Benign'
-                                ? 'text-emerald-400 bg-emerald-500/10'
-                                : 'text-indigo-500 bg-indigo-500/10'}
-                        `}>
-                            {group.groupType === 'NAC' ? 'NAC' : group.groupType === 'Benign' ? 'BENIGN' : 'SURG'}
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {isDemoGroup ? (
+                        <span className="text-[8px] font-bold uppercase text-cyan-300 bg-cyan-500/10 px-1 py-0.5 rounded-sm">
+                          {zh ? '演示' : 'DEMO'}
                         </span>
-                        {group.items.some(p => p.clinical) && (
-                            <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 py-0.5 rounded border border-blue-500/30" title="Has clinical data">
-                                CLIN
-                            </span>
-                        )}
-                        <span className="text-[9px] text-gray-600 bg-white/5 px-1.5 rounded-full">
-                            {group.items.length}
-                        </span>
-                        </>
                       ) : null}
+                      {canBrowseQueues && queueId !== 'reader:reader_v150' && groupStageLabel(group) ? (
+                        <span className="font-mono text-[10px] font-semibold text-amber-200">
+                          {groupStageLabel(group)}
+                        </span>
+                      ) : null}
+                      {(() => {
+                        const statuses = group.items
+                          .map((item) => progressByCase[item.id])
+                          .filter(Boolean);
+                        if (!statuses.length) {
+                          return (
+                            <span className="text-[8px] font-bold uppercase px-1 py-0.5 rounded-sm text-slate-400 bg-white/5">
+                              {zh ? '未评' : 'Open'}
+                            </span>
+                          );
+                        }
+                        const done = statuses.every((s) => s === 'completed');
+                        const label = done
+                          ? (zh ? '已完成' : 'Done')
+                          : (zh ? '半途' : 'Partial');
+                        return (
+                          <span className={`text-[8px] font-bold uppercase px-1 py-0.5 rounded-sm ${
+                            done
+                              ? 'text-emerald-300 bg-emerald-500/15'
+                              : 'text-amber-200 bg-amber-500/15'
+                          }`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
+                      <span className="font-mono text-[10px] text-gray-500">
+                        {group.items.length}
+                      </span>
                     </div>
                   </div>
 
@@ -525,30 +704,41 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                                     key={uniqueKey}
                                     onClick={() => onSelect(p)}
                                     className={`
-                                        flex items-center gap-3 pl-8 pr-3 py-2 cursor-pointer border-l-2 transition-all
+                                        flex items-center gap-3 pl-8 pr-3 py-2 cursor-pointer border-l-2 transition-all max-md:min-h-11 max-md:py-2.5
                                         ${isSelected 
                                             ? 'border-blue-500 bg-blue-500/10 text-blue-100' 
                                             : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'}
                                     `}
                                 >
                                     <FileImage size={10} />
-                                    <div className="flex flex-col min-w-0 flex-1">
+                                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                                         <span className="text-[10px] font-mono truncate">
-                                            {p.id_short}
+                                            {patientDisplayLabel(p, language)}
                                         </span>
-                                        {p.clinical && (
-                                            <div className="flex items-center gap-2 mt-0.5">
-                                                {p.clinical.biomarkers.cea_positive && (
-                                                    <span className="text-[8px] bg-red-500/20 text-red-400 px-1 rounded border border-red-500/30">CEA+</span>
-                                                )}
-                                                {p.clinical.biomarkers.ca199_positive && (
-                                                    <span className="text-[8px] bg-red-500/20 text-red-400 px-1 rounded border border-red-500/30">CA199+</span>
-                                                )}
-                                                <span className="text-[8px] bg-white/10 text-gray-300 px-1 rounded border border-white/10">
-                                                    F{p.frame_count}
-                                                </span>
-                                            </div>
-                                        )}
+                                        {showGold && p.gold_five_class ? (
+                                          <span className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 font-mono text-[8px] font-bold text-amber-100">
+                                            {formatFiveClass(p.gold_five_class, zh)}
+                                          </span>
+                                        ) : null}
+                                        {(() => {
+                                          const status = progressByCase[p.id];
+                                          const label = status === 'completed'
+                                            ? (zh ? '已完成' : 'Done')
+                                            : status === 'in_progress'
+                                              ? (zh ? '半途' : 'Partial')
+                                              : (zh ? '未评' : 'Open');
+                                          return (
+                                            <span className={`shrink-0 text-[8px] font-bold uppercase px-1 py-0.5 rounded-sm ${
+                                              status === 'completed'
+                                                ? 'text-emerald-300 bg-emerald-500/15'
+                                                : status === 'in_progress'
+                                                  ? 'text-amber-200 bg-amber-500/15'
+                                                  : 'text-slate-400 bg-white/5'
+                                            }`}>
+                                              {label}
+                                            </span>
+                                          );
+                                        })()}
                                     </div>
                                 </div>
                             )

@@ -17,6 +17,7 @@ import {
   getQueueOptionDisplayLabel,
   WorkbenchQueueGroup,
   WorkbenchQueueId,
+  visibleWorkbenchQueueGroups,
   WORKBENCH_QUEUE_GROUPS,
 } from '@/lib/cohort';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -35,7 +36,8 @@ const GROUP_ICONS = {
 } as const;
 
 export function QueueTreeSelect({ value, onChange }: QueueTreeSelectProps) {
-  const { language } = useSettings();
+  const { language, readerOnly } = useSettings();
+  const groups = visibleWorkbenchQueueGroups(!readerOnly);
   const [open, setOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<WorkbenchQueueGroup['id']>>(
     () => new Set(WORKBENCH_QUEUE_GROUPS.map((group) => group.id)),
@@ -72,11 +74,11 @@ export function QueueTreeSelect({ value, onChange }: QueueTreeSelectProps) {
   };
 
   return (
-    <div ref={rootRef} className="relative min-w-[210px]">
+    <div ref={rootRef} className="relative w-full min-w-0">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center gap-2 rounded border border-cyan-500/25 bg-[#111] px-2 py-1 text-left text-[10px] text-gray-200 transition-colors hover:border-cyan-400/50"
+        className="flex w-full items-center gap-2 rounded border border-cyan-500/25 bg-[#111] px-2 py-1 text-left text-[10px] text-gray-200 transition-colors hover:border-cyan-400/50 max-md:min-h-11 max-md:text-[13px]"
         aria-haspopup="tree"
         aria-expanded={open}
         title={language === 'en' ? 'Select study queue' : '选择数据队列'}
@@ -90,7 +92,7 @@ export function QueueTreeSelect({ value, onChange }: QueueTreeSelectProps) {
         <div
           role="tree"
           aria-label={language === 'en' ? 'Study queue tree' : '数据队列树'}
-          className="absolute left-0 top-[calc(100%+0.4rem)] z-[80] w-[290px] overflow-hidden rounded-lg border border-cyan-500/25 bg-[#0d0f12] p-1.5 shadow-2xl shadow-black/60"
+          className="absolute left-0 top-[calc(100%+0.4rem)] z-[80] w-full min-w-0 overflow-hidden rounded-lg border border-cyan-500/25 bg-[#0d0f12] p-1.5 shadow-2xl shadow-black/60"
         >
           <QueueTreeItem
             label={getQueueOptionDisplayLabel('all', language)}
@@ -101,7 +103,7 @@ export function QueueTreeSelect({ value, onChange }: QueueTreeSelectProps) {
             language={language}
             onChoose={choose}
           />
-          {WORKBENCH_QUEUE_GROUPS.map((group) => {
+          {groups.map((group) => {
             const Icon = GROUP_ICONS[group.id];
             const expanded = expandedGroups.has(group.id);
             return (
@@ -109,7 +111,7 @@ export function QueueTreeSelect({ value, onChange }: QueueTreeSelectProps) {
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.id)}
-                  className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                  className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-200 max-md:min-h-10 max-md:text-[13px]"
                   aria-expanded={expanded}
                 >
                   {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -166,7 +168,7 @@ function QueueTreeItem({
       role="treeitem"
       aria-selected={selected}
       onClick={() => onChoose(value)}
-      className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-[10px] transition-colors ${
+      className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-[10px] transition-colors max-md:min-h-10 max-md:text-[13px] ${
         selected
           ? 'bg-cyan-500/20 text-cyan-100'
           : 'text-gray-400 hover:bg-white/5 hover:text-gray-100'

@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Local wall-lab 4-case queue
+
+- Scope: `lib/cohort.ts`, `app/api/patients/route.ts`, `PatientList.tsx`, `QueueTreeSelect.tsx`, `SettingsContext.tsx`, `app/page.tsx`, `lib/reader/queue-access-server.ts`.
+- Reason: Iterate wall-layer experiments on P008 / P019 / P040 / P076 without scrolling the public 150.
+- Key changes: New queue `reader:local_wall4`. LAN picker shows 本地壁层实验, 4例. Order is T1, T2, T3, T4. URL `?queue=reader:local_wall4`. Public `NEXT_PUBLIC_READER_ONLY` and tunneled public requests get 404. Does not change the scored 150 list. Does not unlock cT.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Local `/api/patients?queue=reader:local_wall4` returns the four cases.
+- Deployment: none. Local `next dev` / LAN :3000 only. Do not deploy this picker to the public doctor site.
+- Follow-up: Keep the public 150 default.
+
 ## 2026-08-29, Rematch wall fixtures to public ZML strokes
 
 - Scope: `scripts/pack_wall_layer_fixture_v1.py`, `scripts/eval_lesion_aware_wall_cluster_v1.py`. Fixtures `pipeline/data/wall_layer_fixtures/v1/`. Report `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/`. Plan `docs/plans/LESION_AWARE_WALL_CLUSTER_20260828.md`.

@@ -34,6 +34,7 @@ import {
 // VideoAnalysisUpload 暂隐藏（质量选帧上传入口）
 import { ConceptState, DEFAULT_STATE, Patient, AgentAnalysisResponse, LumenOverride, MaskBoundaryOverride, ReaderStudyMode } from '@/types';
 import { useSettings } from '@/contexts/SettingsContext';
+import { isLocalWallLabQueue } from '@/lib/cohort';
 import { useDoctorAccount } from '@/contexts/DoctorAccountContext';
 import { useOpsRecorder } from '@/contexts/OperationRecorderContext';
 import toast from 'react-hot-toast';
@@ -232,7 +233,8 @@ export default function Home() {
     setSystemReport(null);
     setDinoFeature(null);
     deepLinkCaseAppliedRef.current = null;
-    if (cohortYear === 'reader_v150') setReaderStudyMode('benign_malignancy');
+    if (isLocalWallLabQueue(queueId)) setReaderStudyMode('t_staging');
+    else if (cohortYear === 'reader_v150') setReaderStudyMode('benign_malignancy');
   }, [cohortYear, dataset, queueId]);
 
   useEffect(() => {
