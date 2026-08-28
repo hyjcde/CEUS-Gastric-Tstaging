@@ -3,11 +3,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Bookmark, BrainCircuit, Brain, Check, CircleMinus, CirclePlus, Droplets, Eraser, FileText, History, Layers, Loader2, MoreHorizontal, MousePointer2, PanelTop, Pause, Pencil, Pentagon, Play, Plus, RotateCcw, Save, ScanLine, ScanSearch, Share2, SkipBack, SkipForward, Sparkles, Trash2, Undo2, Video, Workflow, X, ZoomIn, Brush,
+  BrainCircuit, Brain, Check, CircleMinus, CirclePlus, Crosshair, Droplets, Eraser, FileText, Flag, History, Layers, Loader2, MoreHorizontal, MousePointer2, PanelTop, Pause, Pencil, Pentagon, Play, Plus, RotateCcw, Save, ScanLine, ScanSearch, Share2, SkipBack, SkipForward, Sparkles, Spline, Trash2, Undo2, Video, Workflow, X, ZoomIn, Brush,
 } from 'lucide-react';
 import type { LumenOverride, MaskBoundaryOverride, MaskHistoryEntry, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
-import { bboxFromPolygon } from '@/lib/mask-override';
+import { bboxFromPolygon, periLesionRoi } from '@/lib/mask-override';
+import { attachRoiOverlays, clampDinoRoiBox, scaleDinoRoiBox, type DinoRoiBox } from '@/lib/dino-roi-preview';
 import { normalizeLumenBBox, type LumenBBox } from '@/lib/lumen-override';
 import { useSettings } from '@/contexts/SettingsContext';
 import { patientDisplayLabel } from '@/lib/patient-display';
@@ -23,6 +24,55 @@ import { ExplainableAnalysis, type ExplainableFramePayload } from '@/components/
 import type { ExplainableAnalysisResult } from '@/lib/concept-agent-merge';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import { computeLesionLumenGeometry, lumenBoxToPolygon, type LesionLumenGeometry } from '@/lib/lesion-lumen-geometry';
+import { canAutoJoinWall, extendWallThroughLesion } from '@/lib/wall-extension';
+import { extendWallByPixels } from '@/lib/wall-pixel-extend';
+import {
+  clusterLayersAlongWall,
+  judgeWallLayerBreach,
+  type WallLayerReadout,
+} from '@/lib/wall-layer-breach';
+import { readoutFromTrace, traceWallLayersFromPaint } from '@/lib/wall-layer-trace';
+import { clarifyDeepestEcho, grayCropToDataUrl, type WallEchoClarify } from '@/lib/wall-echo-clarify';
+import { applyWallPromptMeta, attachLayerInterrupts, doctorClinicalIds, recheckWallInterruptDraft, ticksFromInterrupts, toggleDoctorInterrupt } from '@/lib/wall-layer-interrupt';
+import {
+  DEFAULT_CINE_FPS,
+  cineFrameIndex,
+  estimateCineFpsFromMediaTimes,
+  formatCineLabel,
+  formatKeyframeTime,
+  snapCineTimeToFrame,
+  stepCineTime,
+} from '@/lib/reader/cine-time';
+import type { WallLayerTarget } from '@/lib/reader/cine-time';
+import {
+  ADJACENT_LOCK_EVENT,
+  WALL_ASSIST_DRAFT_EVENT,
+  WALL_INTERRUPT_OVERRIDE_EVENT,
+  WALL_PROMPT_META_EVENT,
+  DEPTH_SCREEN_EVENT,
+  pairMeta,
+  parseAdjacentPair,
+  parseWallLayerTarget,
+  type AdjacentLockEventDetail,
+  type AdjacentPair,
+  type DepthScreenEventDetail,
+  type WallInterruptOverrideDetail,
+  type WallPromptMetaDetail,
+} from '@/lib/reader/adjacent-stage-lock';
+import {
+  SEROSA_ANCHOR_OPTIONS,
+  WALL_ANATOMY_TARGETS,
+  WALL_VISIBILITY_OPTIONS,
+  addAnalysisFocusPoint,
+  analysisFocusHint,
+  anatomyTargetMeta,
+  paintLineHint,
+  paintToolLabel,
+  suggestedAnatomyFromScreen,
+  verdictLabel,
+  type SerosaAnchorMode,
+  type WallVisibility,
+} from '@/lib/reader/wall-prompt';
 import { buildReportEvidenceImages } from '@/lib/report-evidence-images';
 import type { GcUsReportImage } from '@/lib/gc-us-report-template';
 import {
@@ -37,10 +87,12 @@ import {
   WALL_CTRL_COUNT,
   WALL_SIMPLIFY_TARGET,
   WALL_SOFT_SIGMA,
+  adaptiveHandleCount,
   boxToClosedPolygon,
   clonePoly,
   controlIndices,
   pickOrInsertOnContour,
+  pickSoftAnchor,
   pickVisibleHandle,
   prepareEditableContour,
   softDeform,
@@ -58,13 +110,14 @@ import {
   strokeClosedPolyline,
 } from '@/lib/human-assist/prompt-stroke';
 import { DoctorKeyframeStrip } from '@/components/reader/DoctorKeyframeStrip';
+import { CineScrubBar } from '@/components/reader/CineScrubBar';
 import {
   canAddDoctorKeyframe,
   findDoctorKeyframe,
   findDoctorKeyframeById,
   isDoctorKeyframeOpen,
   laterUnrefinedKeyframes,
-  markDeepestInvasion,
+  toggleDeepestInvasion,
   newDoctorKeyframeId,
   pickAnalysisKeyframes,
   pickPropagateSource,
@@ -73,6 +126,7 @@ import {
   keyframeAnalysisQuality,
   uncorrectedContourNote,
   type DoctorKeyframe,
+  DOCTOR_KEYFRAME_DEDUP_SEC,
   DOCTOR_KEYFRAME_MAX,
   DOCTOR_KEYFRAME_OPEN_EPS_SEC,
 } from '@/lib/reader/doctor-keyframes';
@@ -83,14 +137,14 @@ import {
 import {
   captureDoctorFrameFromVideo,
   presegDoctorKeyframeFromFrame,
-  scoreLesionPolygon,
+  scalePolyToFull,
   type CapturedDoctorFrame,
 } from '@/lib/reader/doctor-keyframe-preseg';
 
 type EditMode = 'soft' | 'hard' | 'add' | 'delete' | 'sam' | 'brush' | 'polygon';
 type MediaMode = 'image' | 'video';
 type ContourLayer = 'lesion' | 'wall';
-type DragLayer = ContourLayer | 'lumen';
+type DragLayer = ContourLayer | 'lumen' | 'band';
 type RefineTarget = 'lesion' | 'lumen';
 type LumenSculptMode = 'brush-add' | 'brush-sub';
 type LesionSegmentationModel = 'sabm_sam2_guided' | 'sam31' | 'dinov3' | 'convnext';
@@ -155,28 +209,17 @@ function capturePointerSafely(target: HTMLCanvasElement, pointerId: number): voi
   }
 }
 
-function formatCineTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return '0:00.0';
-  const totalTenths = Math.round(sec * 10);
-  const m = Math.floor(totalTenths / 600);
-  const s = Math.floor((totalTenths % 600) / 10);
-  const tenth = totalTenths % 10;
-  return `${m}:${String(s).padStart(2, '0')}.${tenth}`;
+function formatCineTime(sec: number, fps = DEFAULT_CINE_FPS): string {
+  return formatCineLabel(sec, fps);
 }
 
-function applyProgressSlider(slider: HTMLInputElement | null, timeSec: number, durationSec: number) {
-  if (!slider) return;
-  const value = String(timeSec);
-  if (slider.value !== value) slider.value = value;
-  if (Number.isFinite(durationSec) && durationSec > 0) {
-    slider.max = String(durationSec);
-  }
+function applyProgressSlider(bar: HTMLElement | null, timeSec: number, durationSec: number) {
+  if (!bar) return;
   const pct = durationSec > 0 ? Math.min(100, Math.max(0, (timeSec / durationSec) * 100)) : 0;
-  const progress = `${pct.toFixed(3)}%`;
-  slider.style.setProperty('--progress', progress);
-  const shell = slider.parentElement;
-  if (shell?.classList.contains('video-progress-shell')) {
-    shell.style.setProperty('--progress', progress);
+  bar.style.setProperty('--progress', `${pct.toFixed(3)}%`);
+  if (bar.getAttribute('role') === 'slider') {
+    bar.setAttribute('aria-valuenow', timeSec.toFixed(3));
+    bar.setAttribute('aria-valuetext', formatCineTime(timeSec));
   }
 }
 
@@ -233,6 +276,9 @@ export type DinoLayerResult = {
   };
   feature_overlay_png?: string;
   wall_evidence_overlay_png?: string;
+  roi_feature_overlay_png?: string;
+  roi_wall_evidence_overlay_png?: string;
+  roi_box?: DinoRoiBox | null;
   error?: string;
 };
 
@@ -242,6 +288,7 @@ export type DinoFeatureResult = DinoLayerResult & {
   frame_time?: number;
   layer_indices?: number[];
   layers?: DinoLayerResult[];
+  roi_box?: DinoRoiBox | null;
 };
 interface InteractiveSegPanelProps {
   patient: Patient | null;
@@ -302,6 +349,20 @@ export type UnifiedAgentCapture = {
     layer_pixel_based?: boolean;
     in_contact?: boolean | null;
     prepared_actions?: string[];
+    adjacent_lock?: AdjacentPair | null;
+    doctor_t_excluded?: boolean;
+    wall_target_layers?: 1 | 2 | 3 | null;
+    wall_interrupts?: Array<{ layer: number; nameZh: string; interrupted: boolean }>;
+    wall_ticks?: Array<{ layer: number; nameZh: string; nameEn?: string; status?: string }>;
+    wall_note?: string | null;
+    echo_pattern?: string | null;
+    echo_note?: string | null;
+    extra_lesion_count?: number;
+    keyframe_interrupts?: Array<{
+      timeSec: number;
+      interrupts?: Array<{ layer: number; nameZh?: string; interrupted?: boolean }>;
+    }>;
+    peri_lesion_roi?: { x1: number; y1: number; x2: number; y2: number } | null;
   };
 };
 
@@ -499,6 +560,20 @@ function pointInPolygon(pt: number[], poly: number[][]): boolean {
   }
   return inside;
 }
+
+function hitWholeShape(pt: number[], poly: number[][], pad = 0): boolean {
+  if (!poly || poly.length < 3) return false;
+  if (pointInPolygon(pt, poly)) return true;
+  const box = bboxFromPolygon(poly);
+  if (!box) return false;
+  return pt[0] >= box.x1 - pad
+    && pt[0] <= box.x2 + pad
+    && pt[1] >= box.y1 - pad
+    && pt[1] <= box.y2 + pad;
+}
+
+const BOX_DRAW_CURSOR_LESION = 'crosshair';
+const BOX_DRAW_CURSOR_LUMEN = 'crosshair';
 
 function minDist2ToPolygon(pt: number[], poly: number[][]): number {
   if (!poly.length) return Number.POSITIVE_INFINITY;
@@ -810,50 +885,60 @@ function geometryQualityText(geometry: LesionLumenGeometry, zh: boolean): string
 type ViewFocusBox = { x1: number; y1: number; x2: number; y2: number };
 type ViewFocusMode = 'roi' | 'overlap';
 
+function clampViewOffset(size: number, canvas: number, scale: number, offset: number): number {
+  const drawn = size * scale;
+  if (drawn <= canvas) return (canvas - drawn) / 2;
+  return Math.min(0, Math.max(canvas - drawn, offset));
+}
+
 function computeDisplayTransform(
   iw: number,
   ih: number,
   cw: number,
   ch: number,
   focus: ViewFocusBox | null,
+  viewZoom = 1,
+  viewCenter: { x: number; y: number } | null = null,
 ): { scale: number; dx: number; dy: number } {
-  if (!focus) {
-    const scale = Math.min(cw / iw, ch / ih);
+  const zoom = Math.max(1, Math.min(8, viewZoom || 1));
+  if (focus && zoom <= 1.02) {
+    const pad = 0.22;
+    const bw0 = Math.max(8, focus.x2 - focus.x1);
+    const bh0 = Math.max(8, focus.y2 - focus.y1);
+    const bx = Math.max(0, focus.x1 - bw0 * pad);
+    const by = Math.max(0, focus.y1 - bh0 * pad);
+    const bw = Math.min(iw - bx, bw0 * (1 + 2 * pad));
+    const bh = Math.min(ih - by, bh0 * (1 + 2 * pad));
+    const scale = Math.min(cw / bw, ch / bh, 4);
     return {
       scale,
-      dx: (cw - iw * scale) / 2,
-      dy: (ch - ih * scale) / 2,
+      dx: (cw - bw * scale) / 2 - bx * scale,
+      dy: (ch - bh * scale) / 2 - by * scale,
     };
   }
-  const pad = 0.22;
-  const bw0 = Math.max(8, focus.x2 - focus.x1);
-  const bh0 = Math.max(8, focus.y2 - focus.y1);
-  const bx = Math.max(0, focus.x1 - bw0 * pad);
-  const by = Math.max(0, focus.y1 - bh0 * pad);
-  const bw = Math.min(iw - bx, bw0 * (1 + 2 * pad));
-  const bh = Math.min(ih - by, bh0 * (1 + 2 * pad));
-  const scale = Math.min(cw / bw, ch / bh, 4);
-  return {
-    scale,
-    dx: (cw - bw * scale) / 2 - bx * scale,
-    dy: (ch - bh * scale) / 2 - by * scale,
-  };
+  const fit = Math.min(cw / iw, ch / ih);
+  const scale = fit * zoom;
+  const cx = viewCenter && Number.isFinite(viewCenter.x) ? viewCenter.x : iw / 2;
+  const cy = viewCenter && Number.isFinite(viewCenter.y) ? viewCenter.y : ih / 2;
+  const dx = clampViewOffset(iw, cw, scale, cw / 2 - cx * scale);
+  const dy = clampViewOffset(ih, ch, scale, ch / 2 - cy * scale);
+  return { scale, dx, dy };
 }
 
-// Distinct contour colors: lesion cyan, wall orange, lumen fuchsia (lighter so they do not hide wall layers).
+// Distinct contour colors: muted so the ultrasound lesion stays readable.
 const COLOR_LESION_FILL = 'transparent';
-const COLOR_LESION_STROKE = 'rgba(34, 211, 238, 0.95)';
+const COLOR_LESION_STROKE = 'rgba(94, 184, 196, 0.58)';
 const COLOR_WALL_FILL = 'transparent';
-const COLOR_WALL_STROKE = 'rgba(251, 146, 60, 0.85)';
+const COLOR_WALL_STROKE = 'rgba(217, 140, 72, 0.55)';
 const COLOR_LUMEN_FILL = 'transparent';
-const COLOR_LUMEN_STROKE = 'rgba(232, 121, 249, 0.90)';
+const COLOR_LUMEN_STROKE = 'rgba(196, 128, 204, 0.50)';
 const COLOR_LUMEN_BOX_FILL = 'transparent';
-const COLOR_LUMEN_BOX_STROKE = 'rgba(232, 121, 249, 0.70)';
-const COLOR_LUMEN_HANDLE = 'rgba(232, 121, 249, 0.55)';
-const COLOR_LESION_HANDLE = 'rgba(34, 211, 238, 0.55)';
-const COLOR_WALL_HANDLE = 'rgba(234, 88, 12, 0.55)';
-const CONTOUR_LINE_WIDTH = 2;
-const HANDLE_STROKE = 'rgba(255, 255, 255, 0.85)';
+const COLOR_LUMEN_BOX_STROKE = 'rgba(196, 128, 204, 0.40)';
+const COLOR_LUMEN_HANDLE = 'rgba(196, 128, 204, 0.22)';
+const COLOR_LESION_HANDLE = 'rgba(94, 184, 196, 0.22)';
+const COLOR_WALL_HANDLE = 'rgba(217, 140, 72, 0.22)';
+const CONTOUR_LINE_WIDTH = 1;
+const HANDLE_STROKE = 'rgba(248, 250, 252, 0.70)';
 
 function bboxFromPointsOrBox(
   points: number[][],
@@ -998,9 +1083,24 @@ function sanitizeSystemCopy(value: unknown): string {
 
 function segmentationModelName(model: LesionSegmentationModel, zh: boolean): string {
   if (model === 'sabm_sam2_guided') return zh ? 'SABM-GUS 引导式模型' : 'SABM-GUS guided model';
-  if (model === 'sam31') return zh ? 'SAM3.1 静态概念模型' : 'SAM3.1 static concept model';
-  if (model === 'dinov3') return 'DINOv3';
+  if (model === 'sam31') return zh ? 'SAM 3.1' : 'SAM 3.1';
+  if (model === 'dinov3') return 'DINO';
   return 'ConvNeXt-UNet';
+}
+
+const READER_SEG_MODEL_KEY = 'gastric_reader_lesion_seg_model';
+
+function readStoredLesionSegModel(): LesionSegmentationModel {
+  if (typeof window === 'undefined') return 'sam31';
+  try {
+    return window.localStorage.getItem(READER_SEG_MODEL_KEY) === 'dinov3' ? 'dinov3' : 'sam31';
+  } catch {
+    return 'sam31';
+  }
+}
+
+function publicLesionSegModel(model: LesionSegmentationModel): 'sam31' | 'dinov3' {
+  return model === 'dinov3' ? 'dinov3' : 'sam31';
 }
 
 export function buildModelAssistReport(
@@ -1149,10 +1249,10 @@ function ToolRailButton({
 }) {
   const toneClasses: Record<typeof tone, string> = {
     cyan: active
-      ? 'bg-cyan-500/30 text-cyan-100'
+      ? 'bg-cyan-400/60 text-white ring-2 ring-cyan-100'
       : 'text-cyan-200/85 hover:bg-white/10 hover:text-cyan-50',
     fuchsia: active
-      ? 'bg-fuchsia-500/30 text-fuchsia-100'
+      ? 'bg-fuchsia-400/60 text-white ring-2 ring-fuchsia-100'
       : 'text-fuchsia-200/85 hover:bg-white/10 hover:text-fuchsia-50',
     emerald: active
       ? 'bg-emerald-500/30 text-emerald-100'
@@ -1176,8 +1276,8 @@ function ToolRailButton({
       ? 'bg-lime-500/30 text-lime-100'
       : 'text-lime-200/85 hover:bg-white/10 hover:text-lime-50',
     slate: active
-      ? 'bg-white/20 text-white'
-      : 'text-slate-300 hover:bg-white/10 hover:text-white',
+      ? 'bg-white/20 text-white ring-2 ring-white/70'
+      : 'bg-transparent text-slate-400 hover:bg-white/10 hover:text-slate-200',
   };
   // Keep hover hints outside the ultrasound canvas so they do not cover the lesion.
   const tooltipPosition = side === 'left'
@@ -1188,14 +1288,19 @@ function ToolRailButton({
       <button
         type="button"
         aria-label={`${label}. ${hint}`}
+        aria-pressed={active}
         title={`${label}: ${hint}`}
         disabled={disabled}
         onClick={onClick}
-        className={`flex w-full items-center justify-center rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-35 ${
+        className={`flex w-full items-center justify-center rounded-md transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-35 ${
           showLabel
             ? 'min-h-10 flex-col gap-0.5 px-1 py-1.5 sm:min-h-[2.75rem]'
             : 'h-9 w-9'
-        } ${toneClasses[tone]} ${prominent ? 'ring-2 ring-emerald-300/80 ring-offset-1 ring-offset-black' : ''}`}
+        } ${toneClasses[tone]} ${
+          prominent && active
+            ? 'ring-2 ring-cyan-100 ring-offset-1 ring-offset-black'
+            : ''
+        }`}
       >
         {icon}
         {showLabel ? (
@@ -1216,6 +1321,14 @@ function ToolRailDivider() {
   return <div className="tool-rail-divider mx-auto my-0.5 h-px w-[85%] bg-white/15" aria-hidden="true" />;
 }
 
+function ToolRailSectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-1 pt-1 pb-0.5 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+      {children}
+    </div>
+  );
+}
+
 
 function FloatingToolGroup({
   children,
@@ -1231,7 +1344,7 @@ function FloatingToolGroup({
           : accent === 'amber' ? 'border-amber-400/25'
             : 'border-white/10';
   return (
-    <div className={`flex items-center gap-0.5 rounded-lg border ${accentBorder} bg-black/70 px-1 py-0.5 backdrop-blur-md`}>
+    <div className={`pointer-events-auto flex items-center gap-0.5 rounded-lg border ${accentBorder} bg-black/70 px-1 py-0.5 backdrop-blur-md`}>
       {children}
     </div>
   );
@@ -1278,7 +1391,7 @@ function FloatingToolButton({
       disabled={disabled}
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-        emphasize ? 'px-2.5 text-[11px] font-extrabold' : 'text-[10px] font-semibold'
+        emphasize ? 'px-2.5 text-[11px] font-extrabold max-md:min-h-11 max-md:px-3.5 max-md:text-[13px]' : 'text-[10px] font-semibold'
       } ${active ? toneActive[tone] : toneIdle[tone]}`}
     >
       {icon}
@@ -1429,6 +1542,12 @@ export function InteractiveSegPanel({
   }, [patient?.id, patient?.patient_id, setOpsCase]);
   const simpleVideoMode = inline && patient?.phase === 'reader_v150';
   const [simplePromptMode, setSimplePromptMode] = useState<ActiveSamPromptMode>('box');
+  const [lesionBoxArmed, setLesionBoxArmed] = useState(false);
+  const lesionBoxArmedRef = useRef(false);
+  const armLesionBox = useCallback((next: boolean) => {
+    lesionBoxArmedRef.current = next;
+    setLesionBoxArmed(next);
+  }, []);
   const [boxAutoSegBusy, setBoxAutoSegBusy] = useState(false);
   const [simpleEditMode, setSimpleEditMode] = useState(false);
   const [simpleEditLayer, setSimpleEditLayer] = useState<ContourLayer>('lesion');
@@ -1447,10 +1566,38 @@ export function InteractiveSegPanel({
   const [activeLayer, setActiveLayer] = useState<ContourLayer>('lesion');
   const [points, setPoints] = useState<number[][]>([]);
   const [wallPoints, setWallPoints] = useState<number[][]>([]);
+  const [wallExtensionNote, setWallExtensionNote] = useState('');
+  const [wallExtensionStats, setWallExtensionStats] = useState<{
+    overshootPx: number | null;
+    remainPx: number | null;
+    source: string;
+  } | null>(null);
+  const [wallPickMode, setWallPickMode] = useState(false);
+  const [wallPickFlanks, setWallPickFlanks] = useState<number[][]>([]);
+  const [wallPaintMode, setWallPaintMode] = useState(false);
+  const [wallPaintStroke, setWallPaintStroke] = useState<number[][]>([]);
+  const [wallLayerReadout, setWallLayerReadout] = useState<WallLayerReadout | null>(null);
+  const [wallLayerBands, setWallLayerBands] = useState<number[][][]>([]);
+  const [wallLayerImaginary, setWallLayerImaginary] = useState<boolean[][]>([]);
+  const [wallBrushRadius, setWallBrushRadius] = useState(8);
+  const [wallLayerTarget, setWallLayerTarget] = useState<WallLayerTarget>(1);
+  const [analysisFocusMode, setAnalysisFocusMode] = useState(false);
+  const [analysisFocusPoints, setAnalysisFocusPoints] = useState<number[][]>([]);
+  const [wallVisibility, setWallVisibility] = useState<WallVisibility>('clear');
+  const [serosaAnchorMode, setSerosaAnchorMode] = useState<SerosaAnchorMode>('bilateral');
+  const [adjacentPair, setAdjacentPair] = useState<AdjacentPair | null>(null);
+  const [wallEchoClarify, setWallEchoClarify] = useState<WallEchoClarify | null>(null);
+  const [extraLesionPolygons, setExtraLesionPolygons] = useState<number[][][]>([]);
+  const [keepExtraLesion, setKeepExtraLesion] = useState(false);
+  const [videoFps, setVideoFps] = useState(DEFAULT_CINE_FPS);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragLayer, setDragLayer] = useState<DragLayer | null>(null);
   const [saving, setSaving] = useState(false);
+  const [completeMaskAutosaved, setCompleteMaskAutosaved] = useState(false);
+  const completeMaskAutosaveTimerRef = useRef<number | null>(null);
+  const lastCompleteMaskSigRef = useRef('');
+  const scheduleCompleteMaskAutosaveRef = useRef<(action?: string) => void>(() => undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [maskHistory, setMaskHistory] = useState<MaskHistoryEntry[]>([]);
@@ -1459,7 +1606,17 @@ export function InteractiveSegPanel({
   const [samReport, setSamReport] = useState<SamReport | null>(null);
   const [dinoBusy, setDinoBusy] = useState(false);
   const [dinoResult, setDinoResult] = useState<DinoFeatureResult | null>(null);
-  const [segmentationModel, setSegmentationModel] = useState<LesionSegmentationModel>('sam31');
+  const [dinoDockOpen, setDinoDockOpen] = useState(false);
+  const [activeDinoLayer, setActiveDinoLayer] = useState<number>(11);
+  const [segmentationModel, setSegmentationModel] = useState<LesionSegmentationModel>(readStoredLesionSegModel);
+  const chooseLesionSegModel = useCallback((next: 'sam31' | 'dinov3') => {
+    setSegmentationModel(next);
+    try {
+      window.localStorage.setItem(READER_SEG_MODEL_KEY, next);
+    } catch {
+      // Keep the in-memory choice if storage is blocked.
+    }
+  }, []);
   const [segmentationBusy, setSegmentationBusy] = useState(false);
   const [segmentationModelResult, setSegmentationModelResult] = useState<{
     model?: string;
@@ -1529,7 +1686,8 @@ export function InteractiveSegPanel({
   const activeDoctorKeyframeIdRef = useRef<string | null>(null);
   const lastAutoPropagateSigRef = useRef('');
   const selectDoctorKeyframeRef = useRef<(kf: DoctorKeyframe) => void | Promise<void>>(() => undefined);
-  const persistOpenKeyframeContoursRef = useRef<(opts?: { refined?: boolean }) => void>(() => undefined);
+  const requireOpenKeyframeForBoxRef = useRef<() => boolean>(() => true);
+  const persistOpenKeyframeContoursRef = useRef<(opts?: { refined?: boolean; clearWall?: boolean; refOnly?: boolean }) => void>(() => undefined);
   const clearKeyframeOverlayRef = useRef<() => void>(() => undefined);
   const maybeAutoPropagateRef = useRef<(sourceId: string) => void>(() => undefined);
   const runPropagateToOtherKeyframesRef = useRef<(opts?: { sourceId?: string; auto?: boolean }) => Promise<void>>(async () => undefined);
@@ -1546,9 +1704,14 @@ export function InteractiveSegPanel({
   const [wallDockEl, setWallDockEl] = useState<HTMLElement | null>(null);
   const [viewFocusBox, setViewFocusBox] = useState<ViewFocusBox | null>(null);
   const [viewFocusMode, setViewFocusMode] = useState<ViewFocusMode | null>(null);
+  const [viewZoom, setViewZoom] = useState(1);
+  const [viewCenter, setViewCenter] = useState<{ x: number; y: number } | null>(null);
   /** Mouse-follow circular magnifier (meeting B6); position kept in a ref to avoid React churn. */
   const [magnifierOn, setMagnifierOn] = useState(false);
   const magnifierPosRef = useRef<{ cx: number; cy: number; ix: number; iy: number } | null>(null);
+  const viewZoomRef = useRef(1);
+  const viewCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const viewPanDragRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
   const [layerPick, setLayerPick] = useState<{ x: number; y: number } | null>(null);
   const [undoLen, setUndoLen] = useState(0);
   const [hasOriginal, setHasOriginal] = useState(false);
@@ -1568,6 +1731,12 @@ export function InteractiveSegPanel({
     setSimpleToolsOpen(true);
     setViewFocusBox(null);
     setViewFocusMode(null);
+    viewZoomRef.current = 1;
+    viewCenterRef.current = null;
+    setViewZoom(1);
+    setViewCenter(null);
+    setAdjacentPair(null);
+    setWallEchoClarify(null);
   }, [inline, patient?.id, patient?.phase]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1585,8 +1754,17 @@ export function InteractiveSegPanel({
   const initializedLumenPatientRef = useRef<string | null>(null);
   const contourInteractionRef = useRef(false);
   const wallPointsRef = useRef<number[][]>([]);
+  const wallExtensionMaskRef = useRef<boolean[]>([]);
+  const wallPickModeRef = useRef(false);
+  const wallPickFlanksRef = useRef<number[][]>([]);
+  const wallPaintModeRef = useRef(false);
+  const wallPaintStrokeRef = useRef<number[][] | null>(null);
+  const wallLayerReadoutRef = useRef<WallLayerReadout | null>(null);
+  const wallLayerBandsRef = useRef<number[][][]>([]);
+  const wallLayerImaginaryRef = useRef<boolean[][]>([]);
   const dragIndexRef = useRef<number | null>(null);
   const dragLayerRef = useRef<DragLayer | null>(null);
+  const dragBandIndexRef = useRef<number | null>(null);
   const dragSoftRef = useRef(true);
   const frameFrozenRef = useRef(false);
   const videoFrameOverridesRef = useRef<VideoMaskFrameOverride[]>([]);
@@ -1596,6 +1774,7 @@ export function InteractiveSegPanel({
     wall: number[][];
     lumen: number[][];
     lumenBox: LumenBBox | null;
+    extras: number[][][];
   }>>([]);
   const originalRef = useRef<{ lesion: number[][]; wall: number[][]; lumen: number[][] } | null>(null);
   const sculptLayerRef = useRef<'lesion' | 'lumen'>('lumen');
@@ -1608,7 +1787,11 @@ export function InteractiveSegPanel({
   const scrubbingRef = useRef(false);
   const scrubPreviewRafRef = useRef<number | null>(null);
   const lastScrubRedrawAtRef = useRef(0);
-  const videoProgressRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const videoProgressRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pendingScrubTimeRef = useRef<number | null>(null);
+  const scrubSeekRafRef = useRef<number | null>(null);
+  const lastScrubSeekAtRef = useRef(0);
+  const scrubSeekTimerRef = useRef<number | null>(null);
   const videoTimeLabelRefs = useRef<Array<HTMLSpanElement | null>>([]);
   const taskProgressStartedAtRef = useRef<number | null>(null);
   const [taskElapsedSec, setTaskElapsedSec] = useState(0);
@@ -1660,6 +1843,7 @@ export function InteractiveSegPanel({
     start: LumenBBox;
     origin: number[];
   } | null>(null);
+  const lumenBoxFreshDrawRef = useRef(false);
   const polyMoveRef = useRef<{ layer: DragLayer; start: number[][]; origin: number[] } | null>(null);
   const lumenPaintStrokeRef = useRef<number[][] | null>(null);
   const lumenPaintBaseRef = useRef<number[][] | null>(null);
@@ -1668,9 +1852,135 @@ export function InteractiveSegPanel({
   const paintRafRef = useRef<number | null>(null);
   const paintRadiusRef = useRef(16);
   paintRadiusRef.current = paintRadius;
+  const wallBrushRadiusRef = useRef(8);
+  wallBrushRadiusRef.current = wallBrushRadius;
+  const wallLayerTargetRef = useRef<WallLayerTarget>(1);
+  wallLayerTargetRef.current = wallLayerTarget;
+  const analysisFocusModeRef = useRef(false);
+  analysisFocusModeRef.current = analysisFocusMode;
+  const analysisFocusPointsRef = useRef<number[][]>([]);
+  analysisFocusPointsRef.current = analysisFocusPoints;
+  const wallVisibilityRef = useRef<WallVisibility>('clear');
+  wallVisibilityRef.current = wallVisibility;
+  const serosaAnchorModeRef = useRef<SerosaAnchorMode>('bilateral');
+  serosaAnchorModeRef.current = serosaAnchorMode;
+  const extraLesionPolygonsRef = useRef<number[][][]>([]);
+  extraLesionPolygonsRef.current = extraLesionPolygons;
+  const keepExtraLesionRef = useRef(false);
+  keepExtraLesionRef.current = keepExtraLesion;
+  const persistCaseDraftRef = useRef<(patch: Record<string, unknown>) => void>(() => undefined);
+  persistCaseDraftRef.current = (patch) => {
+    if (!accountReaderId || !patient?.id) return;
+    void fetch('/api/reader/case-state', {
+      method: 'PUT',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        account_id: accountReaderId,
+        case_id: patient.id,
+        patient_id: patient.patient_id,
+        study_mode: patient.study_mode || undefined,
+        progress: 'in_progress',
+        ...patch,
+      }),
+    }).catch(() => {});
+  };
+  const adjacentPairRef = useRef<AdjacentPair | null>(null);
+  adjacentPairRef.current = adjacentPair;
+  const wallEchoClarifyRef = useRef<WallEchoClarify | null>(null);
+  wallEchoClarifyRef.current = wallEchoClarify;
+  const videoFpsRef = useRef(DEFAULT_CINE_FPS);
+  videoFpsRef.current = videoFps;
   const lumenSculptModeRef = useRef<LumenSculptMode | null>(null);
   lumenSculptModeRef.current = lumenSculptMode;
   const paintCursorRef = useRef<number[] | null>(null);
+
+  const suggestLayersFromAdjacentLock = useCallback((pair: AdjacentPair) => {
+    const layers = pairMeta(pair).layers;
+    if (wallPointsRef.current.length >= 3) {
+      if (wallLayerTargetRef.current !== layers) {
+        setMessage(zh
+          ? `已锁 ${pairMeta(pair).zh}。请画${anatomyTargetMeta(layers).lineZh}；您已画过，目标仍是${anatomyTargetMeta(wallLayerTargetRef.current).shortZh}`
+          : `Locked ${pairMeta(pair).en}. Draw the ${anatomyTargetMeta(layers).lineEn}; painted trajectory kept at ${anatomyTargetMeta(wallLayerTargetRef.current).shortEn}`);
+      }
+      return;
+    }
+    setWallLayerTarget(layers);
+    wallLayerTargetRef.current = layers;
+    persistCaseDraftRef.current({ wall_target_layers: layers });
+  }, [zh]);
+
+  const applyAdjacentLock = useCallback((pair: AdjacentPair | null, source = 'overlay') => {
+    const before = adjacentPairRef.current;
+    setAdjacentPair(pair);
+    adjacentPairRef.current = pair;
+    if (pair) suggestLayersFromAdjacentLock(pair);
+    recordOpRef.current('adjacent_lock', {
+      op: 'adjacent_lock',
+      value: pair || '',
+      after_value: pair || '',
+      before_value: before || '',
+      layer: pair ? String(pairMeta(pair).layers) : null,
+      source,
+    }, {
+      page: 'workbench',
+    });
+    window.dispatchEvent(new CustomEvent(ADJACENT_LOCK_EVENT, {
+      detail: { pair, source } satisfies AdjacentLockEventDetail,
+    }));
+    if (source !== 'restore') persistCaseDraftRef.current({ adjacent_lock: pair });
+  }, [suggestLayersFromAdjacentLock]);
+
+  useEffect(() => {
+    const onLock = (event: Event) => {
+      const detail = (event as CustomEvent<AdjacentLockEventDetail>).detail;
+      if (!detail || detail.source === 'overlay') return;
+      setAdjacentPair(detail.pair);
+      adjacentPairRef.current = detail.pair;
+      if (detail.pair) suggestLayersFromAdjacentLock(detail.pair);
+    };
+    window.addEventListener(ADJACENT_LOCK_EVENT, onLock);
+    return () => window.removeEventListener(ADJACENT_LOCK_EVENT, onLock);
+  }, [suggestLayersFromAdjacentLock]);
+
+  useEffect(() => {
+    const onScreen = (event: Event) => {
+      const detail = (event as CustomEvent<DepthScreenEventDetail>).detail;
+      if (!detail?.screen) return;
+      const next = suggestedAnatomyFromScreen(detail.screen);
+      if (wallPointsRef.current.length >= 3) return;
+      setWallLayerTarget(next);
+      wallLayerTargetRef.current = next;
+      persistCaseDraftRef.current({ wall_target_layers: next });
+    };
+    window.addEventListener(DEPTH_SCREEN_EVENT, onScreen);
+    return () => window.removeEventListener(DEPTH_SCREEN_EVENT, onScreen);
+  }, []);
+
+  useEffect(() => {
+    if (!simpleVideoMode) return;
+    window.dispatchEvent(new CustomEvent(WALL_ASSIST_DRAFT_EVENT, {
+      detail: {
+        targetLayers: wallLayerTarget,
+        visibility: wallVisibility,
+        anchorMode: serosaAnchorMode,
+        focusCount: analysisFocusPoints.length,
+        ticks: wallLayerReadout?.ticks,
+        interrupts: wallLayerReadout?.interrupts,
+        noteZh: wallLayerReadout?.noteZh,
+        noteEn: wallLayerReadout?.noteEn,
+        echoPatternZh: wallEchoClarify?.patternZh,
+        echoPatternEn: wallEchoClarify?.patternEn,
+        echoNoteZh: wallEchoClarify?.noteZh,
+        echoNoteEn: wallEchoClarify?.noteEn,
+        keyframeCount: doctorKeyframes.length,
+        keyframes: doctorKeyframes.map((kf) => ({
+          timeSec: kf.timeSec,
+          interrupts: kf.wallLayerReadout?.interrupts,
+          ticks: kf.wallLayerReadout?.ticks,
+        })),
+      },
+    }));
+  }, [analysisFocusPoints.length, doctorKeyframes, serosaAnchorMode, simpleVideoMode, wallEchoClarify, wallLayerReadout, wallLayerTarget, wallVisibility]);
 
   const recordDoctorOp = useCallback((
     eventType: string,
@@ -1680,10 +1990,13 @@ export function InteractiveSegPanel({
     const knownTrace = [
       'lumen_edit', 'lesion_edit', 'wall_edit', 'contour_drag', 'lumen_paint',
       'tool_switch', 'keyframe_mark', 'polygon_edit',
+      'cine_play', 'cine_pause', 'cine_scrub_start', 'cine_scrub', 'cine_scrub_end',
+      'cine_frame_step', 'frame_freeze', 'zoom_roi', 'zoom_overlap',
+      'layer_pick', 'layer_switch',
     ].includes(eventType);
     if (knownTrace) {
-      viewingTraceRef.current(eventType as 'lumen_edit' | 'lesion_edit' | 'wall_edit' | 'contour_drag' | 'lumen_paint' | 'tool_switch' | 'keyframe_mark' | 'polygon_edit', {
-        video_time_sec: videoTimeSec,
+      viewingTraceRef.current(eventType as 'lumen_edit' | 'lesion_edit' | 'wall_edit' | 'contour_drag' | 'lumen_paint' | 'tool_switch' | 'keyframe_mark' | 'polygon_edit' | 'cine_play' | 'cine_pause' | 'cine_scrub_start' | 'cine_scrub' | 'cine_scrub_end' | 'cine_frame_step' | 'frame_freeze' | 'zoom_roi' | 'zoom_overlap' | 'layer_pick' | 'layer_switch', {
+        video_time_sec: typeof payload.video_time_sec === 'number' ? payload.video_time_sec : videoTimeSec,
         layer: (payload.layer as 'lesion' | 'lumen' | 'wall' | null) || null,
         point_count: typeof payload.point_count === 'number' ? payload.point_count : null,
         tool: typeof payload.tool === 'string' ? payload.tool : null,
@@ -1692,6 +2005,10 @@ export function InteractiveSegPanel({
         keyframe_id: typeof payload.keyframe_id === 'string' ? payload.keyframe_id : null,
         image_x: typeof payload.image_x === 'number' ? payload.image_x : null,
         image_y: typeof payload.image_y === 'number' ? payload.image_y : null,
+        playing: typeof payload.playing === 'boolean' ? payload.playing : null,
+        frozen: typeof payload.frozen === 'boolean' ? payload.frozen : null,
+        step: typeof payload.step === 'number' ? payload.step : null,
+        scale: typeof payload.scale === 'number' ? payload.scale : null,
       });
     }
     maskAuditRef.current('mask_event', {
@@ -1703,7 +2020,7 @@ export function InteractiveSegPanel({
     });
     recordOpRef.current(eventType, {
       ...payload,
-      video_time_sec: videoTimeSec,
+      video_time_sec: typeof payload.video_time_sec === 'number' ? payload.video_time_sec : videoTimeSec,
       op: typeof payload.op === 'string' ? payload.op : (typeof payload.operation === 'string' ? payload.operation : eventType),
     }, {
       caseId: patient?.id || patient?.patient_id || undefined,
@@ -1711,6 +2028,8 @@ export function InteractiveSegPanel({
       page: 'workbench',
     });
   }, [patient?.id, patient?.patient_id]);
+  const recordDoctorOpRef = useRef(recordDoctorOp);
+  recordDoctorOpRef.current = recordDoctorOp;
   // Keep playback listeners attached while React redraws the canvas or tracks a frame.
   // Re-running the source effect on every state change would call video.load() and pause playback.
   const redrawRef = useRef<() => void>(() => {});
@@ -1721,12 +2040,34 @@ export function InteractiveSegPanel({
     pointsRef.current = points;
   }, [points]);
   useEffect(() => {
+    window.dispatchEvent(new CustomEvent('gastric:lesion-ready', {
+      detail: { ready: points.length >= 3 },
+    }));
+  }, [points.length, patient?.id]);
+  useEffect(() => () => {
+    window.dispatchEvent(new CustomEvent('gastric:lesion-ready', { detail: { ready: false } }));
+  }, [patient?.id]);
+  useEffect(() => {
     promptStrokesRef.current = promptStrokes;
   }, [promptStrokes]);
   useEffect(() => {
     if (dragIndexRef.current !== null && dragLayerRef.current === 'wall') return;
     wallPointsRef.current = wallPoints;
   }, [wallPoints]);
+  useEffect(() => {
+    if (dragIndexRef.current !== null && dragLayerRef.current === 'band') return;
+    wallLayerBandsRef.current = wallLayerBands;
+    wallLayerImaginaryRef.current = wallLayerImaginary;
+  }, [wallLayerBands, wallLayerImaginary]);
+  useEffect(() => {
+    wallPickModeRef.current = wallPickMode;
+  }, [wallPickMode]);
+  useEffect(() => {
+    wallPickFlanksRef.current = wallPickFlanks;
+  }, [wallPickFlanks]);
+  useEffect(() => {
+    wallPaintModeRef.current = wallPaintMode;
+  }, [wallPaintMode]);
   useEffect(() => {
     lumenBoxRef.current = lumenBox;
   }, [lumenBox]);
@@ -1858,6 +2199,7 @@ export function InteractiveSegPanel({
       wall: clonePoly(wallPointsRef.current),
       lumen: clonePoly(lumenPolygonRef.current),
       lumenBox: lumenBoxRef.current ? { ...lumenBoxRef.current } : null,
+      extras: extraLesionPolygonsRef.current.map((poly) => clonePoly(poly)),
     });
     if (undoStackRef.current.length > 40) undoStackRef.current.shift();
     setUndoLen(undoStackRef.current.length);
@@ -1870,10 +2212,12 @@ export function InteractiveSegPanel({
     wallPointsRef.current = prev.wall;
     lumenPolygonRef.current = prev.lumen;
     lumenBoxRef.current = prev.lumenBox;
+    extraLesionPolygonsRef.current = prev.extras || [];
     setPoints(prev.lesion);
     setWallPoints(prev.wall);
     setLumenPolygon(prev.lumen);
     setLumenBox(prev.lumenBox);
+    setExtraLesionPolygons(prev.extras || []);
     setUndoLen(undoStackRef.current.length);
     recordDoctorOp('contour_drag', {
       layer: prev.lumen.length ? 'lumen' : 'lesion',
@@ -1918,6 +2262,8 @@ export function InteractiveSegPanel({
       generatedLesionPatientRef.current = patientKey;
       generatedLesionRef.current = [];
       contourInteractionRef.current = false;
+      lastCompleteMaskSigRef.current = '';
+      setCompleteMaskAutosaved(false);
     }
     if (!patientChanged && contourInteractionRef.current) return;
     if (!patient) {
@@ -1939,6 +2285,9 @@ export function InteractiveSegPanel({
       setImgLoaded(false);
       pointsRef.current = [];
       wallPointsRef.current = [];
+      wallExtensionMaskRef.current = [];
+      setWallExtensionNote('');
+      setWallExtensionStats(null);
       originalRef.current = null;
       setHasOriginal(false);
       setViewFocusBox(null);
@@ -1948,12 +2297,14 @@ export function InteractiveSegPanel({
     if (!(inline && patient.phase === 'reader_v150')) setOpen(false);
     setSamReport(null);
     setDinoResult(null);
+    setDinoDockOpen(false);
     setSegmentationModelResult(null);
     setSegmentationBusy(false);
     onDinoFeatures?.(null);
     samClicksRef.current = [];
     setSamClicks([]);
     setSimplePromptMode('box');
+    armLesionBox(false);
     setActiveSamPromptLabel('positive');
     setSimpleEditMode(false);
     setNnInteractiveBusy(false);
@@ -2117,28 +2468,20 @@ export function InteractiveSegPanel({
         setVideoUrl(list[0].url);
         setMediaMode('video');
         setMode('sam');
-        setMessage(
-          zh
-            ? `已打开对应视频：${list[0].filename}。视频自动播放，播放中也可点「标记此帧」或按空格`
-            : `Opened ${list[0].filename}. Cine autoplays; pause, then Mark this frame or press Space`,
-        );
+        if (!simpleVideoMode) {
+          setMessage(
+            zh
+              ? `已打开对应视频：${list[0].filename}。空格先暂停，再按一次才标关键帧`
+              : `Opened ${list[0].filename}. Space pauses first; press again to mark`,
+          );
+        }
       } else if (pendingOpenVideoSam && !list.length) {
         setPendingOpenVideoSam(false);
         setMessage(zh ? '未找到该病例对应视频（crop_ui/阅片库）' : 'No matching patient video on disk');
       }
     })();
     return () => { cancelled = true; };
-  }, [open, patient?.patient_id, patient?.video_urls, pendingOpenVideoSam, zh]);
-
-  useEffect(() => {
-    if (!simpleVideoMode || mediaMode !== 'video' || !videoUrl || !videos.length) return;
-    const filename = videos.find((video) => video.url === videoUrl)?.filename || videos[0].filename;
-    setMessage(
-      zh
-        ? `已打开对应视频：${filename}。先看视频，播放中也可点「标记此帧」或按空格；框选病灶时再暂停`
-        : `Opened ${filename}. Watch first; mark a keyframe while playing, or press Space. Pause only when drawing a box`,
-    );
-  }, [mediaMode, simpleVideoMode, videoUrl, videos, zh]);
+  }, [open, patient?.patient_id, patient?.video_urls, pendingOpenVideoSam, simpleVideoMode, zh]);
 
   const openPatientVideoSam = useCallback(() => {
     if (!videos.length) {
@@ -2149,12 +2492,14 @@ export function InteractiveSegPanel({
     setVideoUrl(url);
     setMediaMode('video');
     setMode('sam');
-    setMessage(
-      zh
-        ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}。视频自动播放，播放中也可点「标记此帧」或按空格`
-        : `Opened patient video. Cine autoplays; pause, then Mark this frame or press Space`,
-    );
-  }, [videos, videoUrl, zh]);
+    if (!simpleVideoMode) {
+      setMessage(
+        zh
+          ? `已打开对应视频：${videos.find((v) => v.url === url)?.filename || 'video'}。空格先暂停，再按一次才标关键帧`
+          : `Opened patient video. Space pauses first; press again to mark`,
+      );
+    }
+  }, [simpleVideoMode, videos, videoUrl, zh]);
 
   const scoreKeyframes = useCallback(async () => {
     if (!videoUrl || keyBusy) return;
@@ -2264,6 +2609,19 @@ export function InteractiveSegPanel({
         1024,
       );
       const scale = frame.scale || 1;
+      const displayRoi = periLesionRoi({
+        lesion: pointsRef.current,
+        extras: extraLesionPolygonsRef.current,
+        wall: wallPointsRef.current,
+        width: videoRef.current?.videoWidth || imgRef.current?.naturalWidth || frame.width,
+        height: videoRef.current?.videoHeight || imgRef.current?.naturalHeight || frame.height,
+        margin: 48,
+      });
+      const frameRoi = clampDinoRoiBox(
+        scaleDinoRoiBox(displayRoi, scale),
+        frame.width,
+        frame.height,
+      );
       const response = await fetch('/api/agent/dino/features', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2277,6 +2635,7 @@ export function InteractiveSegPanel({
           image_height: frame.height,
           lesion_polygon: pointsRef.current.map((point) => [point[0] * scale, point[1] * scale]),
           wall_polygon: wallPointsRef.current.map((point) => [point[0] * scale, point[1] * scale]),
+          roi_bbox: frameRoi,
           layer_index: 11,
           layer_indices: DINO_LAYER_INDICES,
         }),
@@ -2285,12 +2644,30 @@ export function InteractiveSegPanel({
       if (!response.ok || !payload.ok || !payload.result?.available) {
         throw new Error(payload.error || payload.result?.error || 'DINO feature extraction unavailable');
       }
-      setDinoResult(payload.result);
-      onDinoFeatures?.(payload.result);
+      const cropBox = payload.result.roi_box || frameRoi;
+      const layers = await Promise.all(
+        (payload.result.layers?.length ? payload.result.layers : [payload.result]).map((layer) => (
+          attachRoiOverlays(layer, cropBox)
+        )),
+      );
+      const next: DinoFeatureResult = {
+        ...payload.result,
+        ...layers[layers.length - 1],
+        layers,
+        roi_box: cropBox,
+      };
+      setDinoResult(next);
+      setDinoDockOpen(true);
+      setActiveDinoLayer(next.layer_indices?.[next.layer_indices.length - 1] ?? 11);
+      onDinoFeatures?.(next);
+      if (displayRoi) {
+        setViewFocusBox(displayRoi);
+        setViewFocusMode('roi');
+      }
       setMessage(
         zh
-          ? `DINO 多层特征已提取：${payload.result.layers?.length || 1} 个 layer，${payload.result.token_grid?.join(' × ') || '未知'} token 网格`
-          : `DINO multi-layer features extracted: ${payload.result.layers?.length || 1} layers`,
+          ? `已查看 ROI 附近 DINO 层特征：${layers.length} 层（L${(next.layer_indices || DINO_LAYER_INDICES).join(', L')}）。草稿，不定 cT。`
+          : `ROI DINO layer features: ${layers.length} layers (L${(next.layer_indices || DINO_LAYER_INDICES).join(', L')}). Draft only.`,
       );
     } catch (error) {
       const failure: DinoFeatureResult = {
@@ -2304,6 +2681,51 @@ export function InteractiveSegPanel({
       setDinoBusy(false);
     }
   }, [dinoBusy, mediaMode, onDinoFeatures, patient, videoTime, zh]);
+
+  const dinoLayers = useMemo(() => {
+    if (!dinoResult?.available) return [];
+    const layers = dinoResult.layers?.length ? dinoResult.layers : [dinoResult];
+    return layers.filter((layer) => Number.isFinite(Number(layer.layer_index)));
+  }, [dinoResult]);
+
+  const selectedDinoLayer = useMemo(
+    () => dinoLayers.find((layer) => layer.layer_index === activeDinoLayer) || dinoLayers[dinoLayers.length - 1] || null,
+    [activeDinoLayer, dinoLayers],
+  );
+
+  const toggleRoiDinoLayers = useCallback(() => {
+    if (dinoBusy) return;
+    if (pointsRef.current.length < 3) {
+      setMessage(zh ? '请先框选当前帧病灶，再看 ROI 附近的 DINO 层特征' : 'Box the lesion first, then inspect ROI DINO layers');
+      return;
+    }
+    if (dinoResult?.available && dinoDockOpen) {
+      setDinoDockOpen(false);
+      if (viewFocusMode === 'roi') {
+        setViewFocusBox(null);
+        setViewFocusMode(null);
+      }
+      setMessage(zh ? '已收起 ROI DINO 层特征' : 'ROI DINO layer dock closed');
+      return;
+    }
+    if (dinoResult?.available) {
+      setDinoDockOpen(true);
+      const displayRoi = periLesionRoi({
+        lesion: pointsRef.current,
+        extras: extraLesionPolygonsRef.current,
+        wall: wallPointsRef.current,
+        width: videoRef.current?.videoWidth || imgRef.current?.naturalWidth,
+        height: videoRef.current?.videoHeight || imgRef.current?.naturalHeight,
+        margin: 48,
+      });
+      if (displayRoi) {
+        setViewFocusBox(displayRoi);
+        setViewFocusMode('roi');
+      }
+      return;
+    }
+    void extractDinoFeatures();
+  }, [dinoBusy, dinoDockOpen, dinoResult, extractDinoFeatures, viewFocusMode, zh]);
 
   const captureFrameDataUrl = useCallback(() => {
     const video = videoRef.current;
@@ -2450,7 +2872,7 @@ export function InteractiveSegPanel({
     wallPoints,
   ]);
 
-  const persistOpenKeyframeContours = useCallback((opts?: { refined?: boolean }) => {
+  const persistOpenKeyframeContours = useCallback((opts?: { refined?: boolean; clearWall?: boolean; refOnly?: boolean }) => {
     const currentTime = videoRef.current?.currentTime ?? videoTime;
     const open = isDoctorKeyframeOpen(
       doctorKeyframesRef.current,
@@ -2460,34 +2882,185 @@ export function InteractiveSegPanel({
     );
     if (!open) return;
     const lesion = pointsRef.current.length >= 3 ? clonePoly(pointsRef.current) : null;
+    const extras = extraLesionPolygonsRef.current.filter((poly) => poly.length >= 3).map((poly) => clonePoly(poly));
     const lumen = lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : null;
+    const wall = wallPointsRef.current.length >= 3 ? clonePoly(wallPointsRef.current) : null;
+    const focus = analysisFocusPointsRef.current.filter((point) => point.length >= 2).map((point) => point.slice());
+    const bands = wallLayerBandsRef.current.filter((band) => band.length >= 2).map((band) => clonePoly(band));
+    const imaginary = wallLayerImaginaryRef.current.map((mask) => mask.slice());
+    const apply = (prev: typeof doctorKeyframesRef.current) => prev.map((kf) => (
+      kf.id === open.id
+        ? {
+            ...kf,
+            lesionPolygon: lesion || kf.lesionPolygon,
+            extraLesionPolygons: extras.length ? extras : kf.extraLesionPolygons,
+            lumenPolygon: lumen || kf.lumenPolygon,
+            lumenBox: lumenBoxRef.current || kf.lumenBox,
+            wallPolygon: opts?.clearWall ? null : (wall || kf.wallPolygon),
+            analysisFocusPoints: opts?.clearWall ? [] : (focus.length ? focus : kf.analysisFocusPoints),
+            wallVisibility: wallVisibilityRef.current,
+            serosaAnchorMode: serosaAnchorModeRef.current,
+            wallLayerReadout: opts?.clearWall ? null : (wallLayerReadoutRef.current || kf.wallLayerReadout),
+            wallLayerBands: opts?.clearWall ? [] : (bands.length ? bands : kf.wallLayerBands),
+            wallLayerImaginary: opts?.clearWall ? [] : (imaginary.length ? imaginary : kf.wallLayerImaginary),
+            segStatus: lesion || (kf.lesionPolygon && kf.lesionPolygon.length >= 3) ? 'ready' : kf.segStatus,
+            refined: opts?.refined ?? kf.refined,
+          }
+        : kf
+    ));
+    if (opts?.refOnly) {
+      doctorKeyframesRef.current = apply(doctorKeyframesRef.current);
+      return;
+    }
     setDoctorKeyframes((prev) => {
-      const next = prev.map((kf) => (
-        kf.id === open.id
-          ? {
-              ...kf,
-              lesionPolygon: lesion || kf.lesionPolygon,
-              lumenPolygon: lumen || kf.lumenPolygon,
-              lumenBox: lumenBoxRef.current || kf.lumenBox,
-              segStatus: lesion || (kf.lesionPolygon && kf.lesionPolygon.length >= 3) ? 'ready' : kf.segStatus,
-              refined: opts?.refined ?? kf.refined,
-            }
-          : kf
-      ));
+      const next = apply(prev);
       doctorKeyframesRef.current = next;
       return next;
     });
   }, [videoTime]);
   persistOpenKeyframeContoursRef.current = persistOpenKeyframeContours;
 
+  const clearWallDraftOnFrame = useCallback(() => {
+    wallPointsRef.current = [];
+    wallExtensionMaskRef.current = [];
+    setWallPoints([]);
+    setWallLayerReadout(null);
+    wallLayerReadoutRef.current = null;
+    setWallEchoClarify(null);
+    setWallLayerBands([]);
+    wallLayerBandsRef.current = [];
+    setWallLayerImaginary([]);
+    wallLayerImaginaryRef.current = [];
+    analysisFocusPointsRef.current = [];
+    setAnalysisFocusPoints([]);
+    wallPaintStrokeRef.current = null;
+    setWallPaintStroke([]);
+    wallPickFlanksRef.current = [];
+    setWallPickFlanks([]);
+    persistOpenKeyframeContours({ clearWall: true });
+    setMessage(zh ? '已清除本帧胃壁辅助线' : 'Cleared wall guides on this frame');
+    redrawRef.current?.();
+  }, [persistOpenKeyframeContours, zh]);
+
+  const saveWallDraftOnFrame = useCallback(() => {
+    const currentTime = videoRef.current?.currentTime ?? videoTime;
+    const open = isDoctorKeyframeOpen(
+      doctorKeyframesRef.current,
+      activeDoctorKeyframeIdRef.current,
+      currentTime,
+      false,
+    );
+    if (!open) {
+      setMessage(zh ? '请先停在关键帧上，再保存本帧胃壁线' : 'Pause on a keyframe first, then save the wall line');
+      return;
+    }
+    if (wallPointsRef.current.length < 3 && !wallLayerBandsRef.current.length && !analysisFocusPointsRef.current.length) {
+      setMessage(zh ? '本帧还没有可保存的胃壁线' : 'No wall line on this frame to save');
+      return;
+    }
+    persistOpenKeyframeContours({ refined: true });
+    setMessage(zh ? '已保存本帧胃壁辅助线' : 'Saved wall guides on this frame');
+  }, [persistOpenKeyframeContours, videoTime, zh]);
+
+  useEffect(() => {
+    const onOverride = (event: Event) => {
+      const layer = Number((event as CustomEvent<WallInterruptOverrideDetail>).detail?.layer);
+      const current = wallLayerReadoutRef.current;
+      if (!Number.isFinite(layer) || !current?.interrupts?.some((item) => item.layer === layer)) return;
+      const interrupts = toggleDoctorInterrupt(current.interrupts, layer);
+      const target = wallLayerTargetRef.current;
+      const ticks = ticksFromInterrupts(interrupts, target);
+      const flipped = interrupts.find((item) => item.layer === layer);
+      const next = {
+        ...current,
+        interrupts,
+        ticks,
+        noteZh: flipped
+          ? `医生已把${flipped.nameZh}改成${verdictLabel(flipped.verdict, true)}。不定 cT。`
+          : current.noteZh,
+        noteEn: flipped
+          ? `Doctor marked ${flipped.nameEn} as ${verdictLabel(flipped.verdict, false)}. Not a definite cT.`
+          : current.noteEn,
+      };
+      setWallLayerReadout(next);
+      wallLayerReadoutRef.current = next;
+      persistOpenKeyframeContoursRef.current({ refined: true });
+      recordDoctorOp('wall_interrupt_override', {
+        op: 'wall_interrupt_override',
+        layer: String(layer),
+        value: flipped?.verdict || (flipped?.interrupted ? 'interrupted' : 'continuous'),
+      });
+      setMessage(zh
+        ? `已按您的确认改成${verdictLabel(flipped?.verdict, true)}（不定 cT）`
+        : `Marked ${verdictLabel(flipped?.verdict, false)} from your check (not a definite cT)`);
+      redrawRef.current?.();
+    };
+    window.addEventListener(WALL_INTERRUPT_OVERRIDE_EVENT, onOverride);
+    return () => window.removeEventListener(WALL_INTERRUPT_OVERRIDE_EVENT, onOverride);
+  }, [recordDoctorOp, zh]);
+
+  const applyPromptMetaLive = useCallback((
+    visibility: WallVisibility,
+    anchorMode: SerosaAnchorMode,
+  ) => {
+    setWallVisibility(visibility);
+    wallVisibilityRef.current = visibility;
+    setSerosaAnchorMode(anchorMode);
+    serosaAnchorModeRef.current = anchorMode;
+    persistCaseDraftRef.current({
+      wall_visibility: visibility,
+      serosa_anchor_mode: anchorMode,
+    });
+    const current = wallLayerReadoutRef.current;
+    if (current) {
+      const next = applyWallPromptMeta(current, { visibility, anchorMode });
+      setWallLayerReadout(next);
+      wallLayerReadoutRef.current = next;
+      persistOpenKeyframeContoursRef.current({ refined: true });
+    }
+    redrawRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    const onMeta = (event: Event) => {
+      const detail = (event as CustomEvent<WallPromptMetaDetail>).detail || {};
+      const visibility = detail.visibility || wallVisibilityRef.current;
+      const anchorMode = detail.anchorMode || serosaAnchorModeRef.current;
+      applyPromptMetaLive(visibility, anchorMode);
+      recordDoctorOp('wall_prompt_meta', {
+        op: 'wall_prompt_meta',
+        visibility,
+        anchor_mode: anchorMode,
+      });
+    };
+    window.addEventListener(WALL_PROMPT_META_EVENT, onMeta);
+    return () => window.removeEventListener(WALL_PROMPT_META_EVENT, onMeta);
+  }, [applyPromptMetaLive, recordDoctorOp]);
+
   const clearKeyframeOverlay = useCallback(() => {
     pointsRef.current = [];
     generatedLesionRef.current = [];
     setPoints([]);
+    extraLesionPolygonsRef.current = [];
+    setExtraLesionPolygons([]);
     lumenPolygonRef.current = [];
     setLumenPolygon([]);
     lumenBoxRef.current = null;
     setLumenBox(null);
+    wallPointsRef.current = [];
+    wallExtensionMaskRef.current = [];
+    setWallPoints([]);
+    setWallLayerReadout(null);
+    wallLayerReadoutRef.current = null;
+    setWallEchoClarify(null);
+    setWallLayerBands([]);
+    wallLayerBandsRef.current = [];
+    setWallLayerImaginary([]);
+    wallLayerImaginaryRef.current = [];
+    analysisFocusPointsRef.current = [];
+    setAnalysisFocusPoints([]);
+    setAnalysisFocusMode(false);
+    analysisFocusModeRef.current = false;
     setSimpleEditMode(false);
     setViewFocusBox(null);
     setViewFocusMode(null);
@@ -2504,30 +3077,66 @@ export function InteractiveSegPanel({
   }, [activeDoctorKeyframeId, persistOpenKeyframeContours, simpleVideoMode]);
 
   const markDoctorKeyframeDeepest = useCallback((id: string) => {
+    const wasDeepest = doctorKeyframesRef.current.some((kf) => kf.id === id && kf.deepestInvasion);
+    const kf = doctorKeyframesRef.current.find((item) => item.id === id);
     setDoctorKeyframes((prev) => {
-      const next = markDeepestInvasion(prev, id);
+      const next = toggleDeepestInvasion(prev, id);
       doctorKeyframesRef.current = next;
       return next;
     });
-    setMessage(zh ? '已标为浸润最深关键帧，分析将以此帧为主' : 'Marked as deepest-invasion keyframe; analysis prefers this frame');
-  }, [zh]);
+    recordDoctorOp('deepest_frame', {
+      operation: wasDeepest ? 'clear_deepest' : 'mark_deepest',
+      op: wasDeepest ? 'clear_deepest' : 'mark_deepest',
+      keyframe_id: id,
+      video_time_sec: kf?.timeSec ?? null,
+      status: wasDeepest ? 'cleared' : 'marked',
+    });
+    if (accountReaderId && patient?.id) {
+      void fetch('/api/reader/case-state', {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          account_id: accountReaderId,
+          case_id: patient.id,
+          patient_id: patient.patient_id,
+          study_mode: patient.study_mode || undefined,
+          progress: 'in_progress',
+          activity_append: {
+            id: `deep_${Date.now().toString(36)}`,
+            at: new Date().toISOString(),
+            type: 'deepest_frame',
+            label_zh: wasDeepest
+              ? `取消浸润最深 t=${Number(kf?.timeSec || 0).toFixed(2)}s`
+              : `标浸润最深 t=${Number(kf?.timeSec || 0).toFixed(2)}s`,
+            label_en: wasDeepest
+              ? `Cleared deepest t=${Number(kf?.timeSec || 0).toFixed(2)}s`
+              : `Marked deepest t=${Number(kf?.timeSec || 0).toFixed(2)}s`,
+            detail: { keyframe_id: id, cleared: wasDeepest, time_sec: kf?.timeSec ?? null },
+          },
+        }),
+      }).catch(() => {});
+    }
+    setMessage(wasDeepest
+      ? (zh ? '已取消浸润最深标记' : 'Cleared deepest-invasion mark')
+      : (zh ? '已标为浸润最深关键帧，分析将以此帧为主' : 'Marked as deepest-invasion keyframe; analysis prefers this frame'));
+  }, [accountReaderId, authHeaders, patient?.id, patient?.patient_id, patient?.study_mode, recordDoctorOp, zh]);
 
   const ensureActiveDoctorKeyframeForAnalysis = useCallback(async (opts?: {
     seek?: boolean;
   }): Promise<DoctorKeyframe | null> => {
     if (mediaMode !== 'video') return null;
-    if (!doctorKeyframes.length) {
-      setMessage(zh ? '请先空格标记关键帧，再对该帧分析' : 'Mark a keyframe with Space, then analyze that frame');
-      return null;
+    if (pointsRef.current.length >= 3) {
+      requireOpenKeyframeForBoxRef.current();
     }
-    const kf = findDoctorKeyframe(doctorKeyframes, activeDoctorKeyframeId);
+    const kf = findDoctorKeyframe(doctorKeyframesRef.current, activeDoctorKeyframeIdRef.current)
+      || findDoctorKeyframe(doctorKeyframes, activeDoctorKeyframeId);
     if (!kf) {
-      setMessage(zh ? '请先空格标记关键帧，再对该帧分析' : 'Mark a keyframe with Space, then analyze that frame');
+      setMessage(zh ? '请先框选病灶，当前帧会作为关键帧' : 'Box the lesion first; this frame becomes the keyframe');
       return null;
     }
     const hasBox = (kf.lesionPolygon && kf.lesionPolygon.length >= 3) || pointsRef.current.length >= 3;
     if (!hasBox) {
-      setMessage(zh ? '请先打开该关键帧并框选病灶，再分析' : 'Open the keyframe and draw a lesion box first');
+      setMessage(zh ? '请先框选病灶，再分析' : 'Draw a lesion box first, then analyze');
       return null;
     }
     if (opts?.seek !== false) {
@@ -2572,8 +3181,11 @@ export function InteractiveSegPanel({
       boundKeyframe.id,
       {
         lesionPolygon: pointsRef.current,
+        extraLesionPolygons: extraLesionPolygonsRef.current,
         lumenPolygon: lumenPolygonRef.current,
         lumenBox: lumenBoxRef.current,
+        wallPolygon: wallPointsRef.current,
+        wallLayerReadout: wallLayerReadoutRef.current,
       },
     );
     const analysisKeyframes = pickAnalysisKeyframes(snapshot, boundKeyframe.id);
@@ -2645,7 +3257,14 @@ export function InteractiveSegPanel({
           image_width: video.videoWidth,
           image_height: video.videoHeight,
           mask_polygon: pointsRef.current,
-          roi_bbox: bboxFromPolygon(pointsRef.current) || undefined,
+          roi_bbox: periLesionRoi({
+            lesion: pointsRef.current,
+            extras: extraLesionPolygonsRef.current,
+            wall: wallPointsRef.current,
+            width: video.videoWidth,
+            height: video.videoHeight,
+            margin: 48,
+          }) || bboxFromPolygon(pointsRef.current) || undefined,
           lumen_bbox: lumenBoxRef.current || undefined,
           lumen_polygon: lumenPoly,
           workflow_trace: workflowTraceRef.current,
@@ -2661,6 +3280,26 @@ export function InteractiveSegPanel({
             layer_pixel_based: Boolean(layerResult?.pixelBased),
             in_contact: layerResult?.inContact ?? null,
             prepared_actions: contourPrepActionsRef.current,
+            doctor_t_excluded: true,
+            wall_target_layers: wallLayerTargetRef.current,
+            wall_interrupts: wallLayerReadoutRef.current?.interrupts,
+            wall_ticks: wallLayerReadoutRef.current?.ticks,
+            wall_note: wallLayerReadoutRef.current?.noteZh || null,
+            echo_pattern: wallEchoClarifyRef.current?.patternZh || null,
+            echo_note: wallEchoClarifyRef.current?.noteZh || null,
+            extra_lesion_count: extraLesionPolygonsRef.current.filter((poly) => poly.length >= 3).length,
+            keyframe_interrupts: doctorKeyframesRef.current.map((kf) => ({
+              timeSec: kf.timeSec,
+              interrupts: kf.wallLayerReadout?.interrupts || [],
+            })),
+            peri_lesion_roi: periLesionRoi({
+              lesion: pointsRef.current,
+              extras: extraLesionPolygonsRef.current,
+              wall: wallPointsRef.current,
+              width: video.videoWidth,
+              height: video.videoHeight,
+              margin: 48,
+            }) || null,
           },
         });
       } finally {
@@ -2706,14 +3345,23 @@ export function InteractiveSegPanel({
   );
 
   const toggleZoomRoi = useCallback(() => {
-    if (viewFocusMode === 'roi') {
+    if (viewFocusMode === 'roi' || viewZoomRef.current > 1.02) {
+      viewZoomRef.current = 1;
+      viewCenterRef.current = null;
+      viewPanDragRef.current = null;
+      setViewZoom(1);
+      setViewCenter(null);
       setViewFocusBox(null);
       setViewFocusMode(null);
-      setMessage(zh ? '已退出 ROI 放大' : 'Exited ROI zoom');
+      setMessage(zh ? '已回到整帧' : 'Back to the full frame');
       return;
     }
     setMagnifierOn(false);
     magnifierPosRef.current = null;
+    viewZoomRef.current = 1;
+    viewCenterRef.current = null;
+    setViewZoom(1);
+    setViewCenter(null);
     const lesionBox = bboxFromPointsOrBox(pointsRef.current, null);
     const lumenFocus = bboxFromPointsOrBox(lumenPolygon, lumenBoxRef.current);
     const next = unionFocusBoxes(lesionBox, lumenFocus);
@@ -2724,7 +3372,7 @@ export function InteractiveSegPanel({
     setViewFocusBox(next);
     setViewFocusMode('roi');
     setMessage(zh ? '已放大至病灶/胃腔 ROI' : 'Zoomed to lesion/lumen ROI');
-    viewingTraceRef.current('zoom_roi', {
+    recordDoctorOpRef.current('zoom_roi', {
       video_time_sec: videoRef.current?.currentTime ?? null,
       view_focus_mode: 'roi',
       view_box: next,
@@ -2751,7 +3399,7 @@ export function InteractiveSegPanel({
     setViewFocusBox(overlapFocus);
     setViewFocusMode('overlap');
     setMessage(zh ? '已放大病灶与胃腔交叠区域' : 'Zoomed to the lesion-lumen overlap region');
-    viewingTraceRef.current('zoom_overlap', {
+    recordDoctorOpRef.current('zoom_overlap', {
       video_time_sec: videoRef.current?.currentTime ?? null,
       view_focus_mode: 'overlap',
       view_box: overlapFocus,
@@ -2780,7 +3428,7 @@ export function InteractiveSegPanel({
     frameFrozenRef.current = true;
     setTrackOnPlay(false);
     captureFrameDataUrl();
-    viewingTraceRef.current('frame_freeze', {
+    recordDoctorOpRef.current('frame_freeze', {
       video_time_sec: video?.currentTime ?? null,
       frozen: true,
       playing: false,
@@ -2900,102 +3548,158 @@ export function InteractiveSegPanel({
     }
   }, []);
 
-  const paintProgressUi = useCallback((timeSec: number, options?: { forceSlider?: boolean }) => {
-    const text = formatCineTime(timeSec);
+  const paintProgressUi = useCallback((timeSec: number, _options?: { forceSlider?: boolean }) => {
+    const text = formatCineTime(timeSec, videoFpsRef.current);
     for (const label of videoTimeLabelRefs.current) {
       if (label) label.textContent = text;
     }
-    if (scrubbingRef.current && !options?.forceSlider) return;
     const durationSec = videoRef.current?.duration || videoDuration || 0;
     for (const slider of videoProgressRefs.current) {
       applyProgressSlider(slider, timeSec, durationSec);
     }
   }, [videoDuration]);
 
-  const scheduleScrubPreview = useCallback(() => {
-    if (scrubPreviewRafRef.current != null) return;
-    scrubPreviewRafRef.current = requestAnimationFrame(() => {
-      scrubPreviewRafRef.current = null;
-      const now = performance.now();
-      // Keep scrub preview around 20fps so React/canvas do not thrash on every pointer sample.
-      if (now - lastScrubRedrawAtRef.current < 50) return;
-      lastScrubRedrawAtRef.current = now;
-      redrawRef.current();
-    });
+  const setOverlayCanvasVisible = useCallback((visible: boolean) => {
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.visibility = visible ? 'visible' : 'hidden';
   }, []);
 
-  const beginVideoScrub = useCallback((event?: React.PointerEvent<HTMLInputElement>) => {
+  const cancelPendingScrubSeek = useCallback(() => {
+    if (scrubSeekRafRef.current != null) {
+      cancelAnimationFrame(scrubSeekRafRef.current);
+      scrubSeekRafRef.current = null;
+    }
+    if (scrubSeekTimerRef.current != null) {
+      window.clearTimeout(scrubSeekTimerRef.current);
+      scrubSeekTimerRef.current = null;
+    }
+  }, []);
+
+  const applyPendingScrubSeek = useCallback((force: boolean) => {
+    const next = pendingScrubTimeRef.current;
+    const video = videoRef.current;
+    if (next == null || !video) return;
+    const now = performance.now();
+    if (!force && now - lastScrubSeekAtRef.current < 72) {
+      if (scrubSeekTimerRef.current == null) {
+        scrubSeekTimerRef.current = window.setTimeout(() => {
+          scrubSeekTimerRef.current = null;
+          applyPendingScrubSeek(false);
+        }, 72 - (now - lastScrubSeekAtRef.current));
+      }
+      return;
+    }
+    lastScrubSeekAtRef.current = now;
+    if (Math.abs((video.currentTime || 0) - next) > 0.001) {
+      video.currentTime = next;
+    }
+  }, []);
+
+  const beginVideoScrub = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     scrubbingRef.current = true;
+    persistOpenKeyframeContoursRef.current({ refOnly: true });
     video.pause();
-    setFrameFrozen(false);
-    frameFrozenRef.current = false;
-    viewingTraceRef.current('cine_scrub_start', { video_time_sec: video.currentTime || 0, playing: false });
-    if (event) {
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-        // Some browsers reject capture on range inputs; scrubbing still works.
-      }
+    setOverlayCanvasVisible(false);
+    if (frameFrozenRef.current) {
+      frameFrozenRef.current = false;
+      setFrameFrozen(false);
     }
-  }, []);
+    recordDoctorOpRef.current('cine_scrub_start', { video_time_sec: video.currentTime || 0, playing: false });
+  }, [setOverlayCanvasVisible]);
 
   const scrubVideoTo = useCallback((nextTime: number) => {
     const video = videoRef.current;
     if (!video) return;
     const clamped = Math.max(0, Math.min(video.duration || nextTime, nextTime));
-    if (Math.abs(video.currentTime - clamped) > 0.001) {
-      video.currentTime = clamped;
+    pendingScrubTimeRef.current = clamped;
+    paintProgressUi(clamped);
+    if (scrubSeekRafRef.current == null) {
+      scrubSeekRafRef.current = requestAnimationFrame(() => {
+        scrubSeekRafRef.current = null;
+        applyPendingScrubSeek(false);
+      });
     }
-    paintProgressUi(clamped, { forceSlider: true });
-    scheduleScrubPreview();
-    viewingTraceRef.current('cine_scrub', { video_time_sec: clamped, playing: false });
-  }, [paintProgressUi, scheduleScrubPreview]);
+  }, [applyPendingScrubSeek, paintProgressUi]);
 
   const endVideoScrub = useCallback(() => {
     if (!scrubbingRef.current) return;
     const video = videoRef.current;
     scrubbingRef.current = false;
+    cancelPendingScrubSeek();
     if (scrubPreviewRafRef.current != null) {
       cancelAnimationFrame(scrubPreviewRafRef.current);
       scrubPreviewRafRef.current = null;
     }
-    const t = video?.currentTime || 0;
+    const t = pendingScrubTimeRef.current ?? video?.currentTime ?? 0;
+    pendingScrubTimeRef.current = t;
+    applyPendingScrubSeek(true);
+    setOverlayCanvasVisible(true);
     setVideoTime(t);
-    paintProgressUi(t, { forceSlider: true });
+    paintProgressUi(t);
     syncFrameFromVideo({ force: true });
     const activeId = activeDoctorKeyframeIdRef.current;
     const kf = findDoctorKeyframeById(doctorKeyframesRef.current, activeId);
     if (kf && Math.abs(t - kf.timeSec) > DOCTOR_KEYFRAME_OPEN_EPS_SEC) {
       const lesion = pointsRef.current.length >= 3 ? clonePoly(pointsRef.current) : null;
       const lumen = lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : null;
-      setDoctorKeyframes((prev) => {
-        const next = prev.map((item) => (
-          item.id === kf.id
-            ? {
-                ...item,
-                lesionPolygon: lesion || item.lesionPolygon,
-                lumenPolygon: lumen || item.lumenPolygon,
-                lumenBox: lumenBoxRef.current || item.lumenBox,
-              }
-            : item
-        ));
-        doctorKeyframesRef.current = next;
-        return next;
-      });
+      const next = doctorKeyframesRef.current.map((item) => (
+        item.id === kf.id
+          ? {
+              ...item,
+              lesionPolygon: lesion || item.lesionPolygon,
+              lumenPolygon: lumen || item.lumenPolygon,
+              lumenBox: lumenBoxRef.current || item.lumenBox,
+            }
+          : item
+      ));
+      doctorKeyframesRef.current = next;
+      setDoctorKeyframes(next);
       setActiveDoctorKeyframeId(null);
       activeDoctorKeyframeIdRef.current = null;
+    } else {
+      setDoctorKeyframes(doctorKeyframesRef.current);
     }
     redrawRef.current();
-    viewingTraceRef.current('cine_scrub_end', { video_time_sec: t, playing: false });
-  }, [paintProgressUi, syncFrameFromVideo]);
+    recordDoctorOpRef.current('cine_scrub_end', { video_time_sec: t, playing: false });
+  }, [applyPendingScrubSeek, cancelPendingScrubSeek, paintProgressUi, setOverlayCanvasVisible, syncFrameFromVideo]);
+
+  const stepCineFrames = useCallback((deltaFrames: number) => {
+    const video = videoRef.current;
+    if (!video || !videoUrl) return;
+    persistOpenKeyframeContoursRef.current();
+    video.pause();
+    setIsPlaying(false);
+    setTrackOnPlay(false);
+    setFrameFrozen(false);
+    frameFrozenRef.current = false;
+    const nextTime = stepCineTime(
+      video.currentTime || 0,
+      deltaFrames,
+      videoFpsRef.current,
+      video.duration || videoDuration,
+    );
+    if (Math.abs((video.currentTime || 0) - nextTime) > 0.0005) {
+      video.currentTime = nextTime;
+    }
+    setVideoTime(nextTime);
+    paintProgressUi(nextTime, { forceSlider: true });
+    syncFrameFromVideo({ force: true });
+    redrawRef.current();
+    recordDoctorOpRef.current('cine_frame_step', {
+      video_time_sec: nextTime,
+      step: deltaFrames,
+      playing: false,
+    });
+  }, [paintProgressUi, syncFrameFromVideo, videoDuration, videoUrl]);
 
   const onVideoProgressChange = useCallback((nextTime: number) => {
     if (!scrubbingRef.current) {
       // Keyboard / accessibility seeks do not fire pointerdown.
       const video = videoRef.current;
       if (!video) return;
+      persistOpenKeyframeContoursRef.current();
       video.pause();
       video.currentTime = Math.max(0, Math.min(video.duration || nextTime, nextTime));
       const t = video.currentTime || 0;
@@ -3014,11 +3718,20 @@ export function InteractiveSegPanel({
   }, [paintProgressUi, videoTime]);
 
   useEffect(() => {
-    const max = String(Math.max(videoDuration, 0.01));
-    for (const slider of videoProgressRefs.current) {
-      if (slider) slider.max = max;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      stepCineFrames(event.deltaY > 0 ? 1 : -1);
+    };
+    const shells = videoProgressRefs.current.filter((node): node is HTMLDivElement => Boolean(node));
+    for (const shell of shells) {
+      shell.addEventListener('wheel', onWheel, { passive: false });
     }
-  }, [videoDuration]);
+    return () => {
+      for (const shell of shells) {
+        shell.removeEventListener('wheel', onWheel);
+      }
+    };
+  }, [stepCineFrames, videoUrl]);
 
   useEffect(() => {
     if (!taskProgress && !assistOverlayOpen) {
@@ -3047,10 +3760,8 @@ export function InteractiveSegPanel({
       keepEditing?: boolean;
       stayInSam?: boolean;
       llmReport?: boolean;
-      /** Override UI model for one call (e.g. sam2 box auto-seg before sam31 fallback). */
+      /** Override UI model for one call (e.g. sam2 for box auto-seg). */
       model?: LesionSegmentationModel | 'sam2';
-      /** Skip applying mask when it fails area / box-agreement gates. */
-      enforceQualityGate?: boolean;
     },
   ): Promise<number[][] | null> => {
     if (!patient) return null;
@@ -3159,72 +3870,7 @@ export function InteractiveSegPanel({
       const maskAreaRatio = Number.isFinite(maskArea) && frame.width > 0 && frame.height > 0
         ? maskArea / (frame.width * frame.height)
         : null;
-      const maxOversize = opts?.box ? 0.45 : 0.65;
-      if (!opts?.silent && maskAreaRatio != null && maskAreaRatio > maxOversize) {
-        maskAuditRef.current('model_trace', {
-          trace_id: traceId,
-          operation: 'interactive_segmentation',
-          model: activeModel,
-          source: opts?.source || 'manual_prompt',
-          outcome: 'rejected_oversized_mask',
-          frame_time_sec: currentFrameTime,
-          input: {
-            has_box: Boolean(opts?.box),
-            click_count: promptClicks.length,
-            positive_clicks: promptClicks.filter((click) => click.label !== 'negative').length,
-            negative_clicks: promptClicks.filter((click) => click.label === 'negative').length,
-            silent: Boolean(opts?.silent),
-          },
-          output: { mask_area_ratio: maskAreaRatio },
-          duration_ms: Math.round(performance.now() - traceStartedAt),
-        });
-        setSamAvailable(true);
-        setMessage(
-          zh
-            ? `未采用过大的分割区域（${Math.round(maskAreaRatio * 100)}%），请改用框选或补充负点`
-            : `Rejected an oversized region (${Math.round(maskAreaRatio * 100)}%); draw a box or add negative points`,
-        );
-        return null;
-      }
-      const maxCoord = Math.max(...rawPoly.flatMap((p) => p));
-      const polyFull =
-        maxCoord <= 1.5
-          ? rawPoly.map((p) => [p[0] * frame.fullWidth, p[1] * frame.fullHeight])
-          : rawPoly.map((p) => [p[0] / scale, p[1] / scale]);
-      if (opts?.enforceQualityGate) {
-        const quality = scoreLesionPolygon(
-          polyFull,
-          frame.fullWidth,
-          frame.fullHeight,
-          opts.box || null,
-        );
-        if (quality == null) {
-          maskAuditRef.current('model_trace', {
-            trace_id: traceId,
-            operation: 'interactive_segmentation',
-            model: activeModel,
-            source: opts?.source || 'manual_prompt',
-            outcome: 'rejected_quality_gate',
-            frame_time_sec: currentFrameTime,
-            input: {
-              has_box: Boolean(opts?.box),
-              click_count: promptClicks.length,
-              silent: Boolean(opts?.silent),
-            },
-            output: { mask_area_ratio: maskAreaRatio, polygon_points: polyFull.length },
-            duration_ms: Math.round(performance.now() - traceStartedAt),
-          });
-          if (!opts?.silent) {
-            setSamAvailable(true);
-            setMessage(
-              zh
-                ? '分割结果与框选不符或面积异常，已丢弃；请改框或加正/负点重试'
-                : 'Mask failed quality checks vs the box; redraw or add +/- points',
-            );
-          }
-          return null;
-        }
-      }
+      const polyFull = scalePolyToFull(rawPoly, scale, frame.fullWidth, frame.fullHeight);
       const poly = prepareEditableContour(polyFull, LESION_CONTOUR_MAX_POINTS);
       maskAuditRef.current('model_trace', {
         trace_id: traceId,
@@ -3307,6 +3953,15 @@ export function InteractiveSegPanel({
         );
       }
       setSamAvailable(true);
+      if (
+        simpleVideoMode
+        && targetLayer !== 'wall'
+        && opts?.source !== 'video_track'
+        && opts?.source !== 'video_propagate'
+        && poly.length >= 3
+      ) {
+        scheduleCompleteMaskAutosaveRef.current('auto_save');
+      }
       return poly;
     } catch (err) {
       const aborted = (err as Error)?.name === 'AbortError';
@@ -3351,6 +4006,7 @@ export function InteractiveSegPanel({
     freezeCurrentFrame,
     snapshotOriginal,
     onSystemReport,
+    simpleVideoMode,
   ]);
 
   const predictKeyframes = useCallback(async (candidates: KeyframeCandidate[]) => {
@@ -3739,9 +4395,9 @@ export function InteractiveSegPanel({
 
     const cw = canvas.width;
     const ch = canvas.height;
-    const { scale, dx, dy } = computeDisplayTransform(iw, ih, cw, ch, viewFocusBox);
+    const { scale, dx, dy } = computeDisplayTransform(iw, ih, cw, ch, viewFocusBox, viewZoom, viewCenter);
 
-    const nativeVideoPlayback = simpleVideoMode && useVideo && !viewFocusBox;
+    const nativeVideoPlayback = simpleVideoMode && useVideo && !viewFocusBox && viewZoom <= 1.02;
     ctx.clearRect(0, 0, cw, ch);
     if (!nativeVideoPlayback) {
       ctx.fillStyle = '#0a0a0a';
@@ -3777,7 +4433,10 @@ export function InteractiveSegPanel({
     const liveLesion = hideKeyframeSeg
       ? []
       : (pointsRef.current.length >= 3 ? pointsRef.current : generatedLesionRef.current);
-    const liveWall = wallPointsRef.current.length >= 3 ? wallPointsRef.current : wallPoints;
+    const liveWall = hideKeyframeSeg
+      ? []
+      : (wallPointsRef.current.length >= 3 ? wallPointsRef.current : wallPoints);
+    const liveExtraLesions = hideKeyframeSeg ? [] : extraLesionPolygons;
     const liveLumen = lumenPolygonRef.current.length >= 3 ? lumenPolygonRef.current : lumenPolygon;
     const displayPoints = trackingPlayback && trackedFrame?.mask_polygon?.length
       ? trackedFrame.mask_polygon
@@ -3828,8 +4487,11 @@ export function InteractiveSegPanel({
       ctx.setLineDash([]);
     };
 
-    // Small translucent circles: hit target stays larger than the drawn radius.
-    const hr = Math.max(2.0, Math.min(3.6, 2.8 / Math.sqrt(Math.max(scale, 0.15))));
+    // Hairline beads: hit target stays much larger than the drawn radius.
+    const hr = Math.max(1.05, Math.min(1.7, 1.25 / Math.sqrt(Math.max(scale, 0.15))));
+    const handleCountFor = (poly: number[][], cap: number) => (
+      adaptiveHandleCount(poly, Math.min(VISIBLE_HANDLE_COUNT, cap))
+    );
 
     const drawHandles = (
       poly: number[][],
@@ -3838,18 +4500,28 @@ export function InteractiveSegPanel({
       layer: DragLayer,
     ) => {
       if (poly.length < 3) return;
-      controlIndices(poly.length, count).forEach((i) => {
+      controlIndices(poly.length, handleCountFor(poly, count)).forEach((i) => {
         const p = poly[i];
         if (!p) return;
         const { x, y } = map(p[0], p[1]);
         const active = dragLayerRef.current === layer && dragIndexRef.current === i;
         ctx.beginPath();
-        ctx.arc(x, y, active ? hr + 1 : hr, 0, Math.PI * 2);
-        ctx.fillStyle = active ? 'rgba(251, 191, 36, 0.80)' : fill;
-        ctx.fill();
-        ctx.strokeStyle = HANDLE_STROKE;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        ctx.arc(x, y, active ? hr + 0.8 : hr, 0, Math.PI * 2);
+        if (active) {
+          ctx.fillStyle = 'rgba(251, 191, 36, 0.88)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else {
+          ctx.strokeStyle = layer === 'lumen'
+            ? COLOR_LUMEN_STROKE
+            : layer === 'wall'
+              ? COLOR_WALL_STROKE
+              : COLOR_LESION_STROKE;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
       });
     };
 
@@ -3858,6 +4530,9 @@ export function InteractiveSegPanel({
         drawPoly(liveWall, COLOR_WALL_FILL, COLOR_WALL_STROKE);
       }
       drawPoly(displayPoints, COLOR_LESION_FILL, COLOR_LESION_STROKE);
+      liveExtraLesions.forEach((poly) => {
+        if (poly.length >= 3) drawPoly(poly, 'rgba(45, 212, 191, 0.10)', '#5eead4');
+      });
       if (simpleEditMode || mode === 'hard' || mode === 'brush') {
         if (refineTarget === 'lumen' && displayLumenPoly.length >= 3) {
           drawHandles(displayLumenPoly, Math.min(VISIBLE_HANDLE_COUNT, LUMEN_CTRL_COUNT), COLOR_LUMEN_HANDLE, 'lumen');
@@ -3870,15 +4545,20 @@ export function InteractiveSegPanel({
       if (samBoxPreview) {
         const a = map(samBoxPreview.x1, samBoxPreview.y1);
         const b = map(samBoxPreview.x2, samBoxPreview.y2);
-        ctx.fillStyle = 'rgba(34, 211, 238, 0.08)';
+        ctx.fillStyle = 'rgba(94, 184, 196, 0.05)';
         ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
         ctx.strokeStyle = COLOR_LESION_STROKE;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1;
         ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
       }
     } else {
-      drawPoly(liveWall, COLOR_WALL_FILL, COLOR_WALL_STROKE);
+      if (liveWall.length >= 3) {
+        drawPoly(liveWall, COLOR_WALL_FILL, COLOR_WALL_STROKE);
+      }
       drawPoly(displayPoints, COLOR_LESION_FILL, COLOR_LESION_STROKE);
+      liveExtraLesions.forEach((poly) => {
+        if (poly.length >= 3) drawPoly(poly, 'rgba(45, 212, 191, 0.10)', '#5eead4');
+      });
       drawHandles(liveWall, WALL_CTRL_COUNT, COLOR_WALL_HANDLE, 'wall');
       drawHandles(displayPoints, LESION_CTRL_COUNT, COLOR_LESION_HANDLE, 'lesion');
 
@@ -4126,8 +4806,8 @@ export function InteractiveSegPanel({
       ctx.restore();
     }
 
-    // Draw the lesion last so lumen fills, boxes, relation guides, and wall
-    // annotations cannot hide the generated boundary.
+    // Draw the lesion last so lumen fills, boxes, and wall marks stay behind it.
+    // Keep this pass thin; a thick halo hides the ultrasound lesion.
     if (displayPoints.length >= 3 && (
       displayLumenPoly.length >= 3
       || displayLumenBox
@@ -4137,12 +4817,12 @@ export function InteractiveSegPanel({
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       strokeClosedPolyline(ctx, displayPoints, map);
-      ctx.strokeStyle = 'rgba(2, 6, 23, 0.9)';
-      ctx.lineWidth = 4.5;
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.22)';
+      ctx.lineWidth = 0.9;
       ctx.stroke();
       strokeClosedPolyline(ctx, displayPoints, map);
       ctx.strokeStyle = COLOR_LESION_STROKE;
-      ctx.lineWidth = 2.4;
+      ctx.lineWidth = CONTOUR_LINE_WIDTH;
       ctx.stroke();
       if (simpleEditMode && simpleEditLayer === 'lesion') {
         drawHandles(displayPoints, Math.min(VISIBLE_HANDLE_COUNT, LESION_CTRL_COUNT), COLOR_LESION_HANDLE, 'lesion');
@@ -4296,7 +4976,132 @@ export function InteractiveSegPanel({
       }
     }
 
-  }, [points, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius]);
+    const bandCols = ['#7dd3fc', '#c4b5fd', '#86efac', '#fcd34d', '#fb7185'];
+    if (!hideKeyframeSeg && wallLayerBands.length) {
+      wallLayerBands.forEach((band, index) => {
+        if (band.length < 2) return;
+        const mask = wallLayerImaginary[index] || [];
+        let drawing = false;
+        let dashed: boolean | null = null;
+        ctx.strokeStyle = bandCols[index % bandCols.length];
+        ctx.globalAlpha = 0.86;
+        ctx.lineWidth = 0.8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        const flush = () => {
+          if (drawing) ctx.stroke();
+          drawing = false;
+        };
+        band.forEach((point, pointIndex) => {
+          const mapped = map(point[0], point[1]);
+          const nextDash = Boolean(mask[pointIndex]);
+          if (dashed !== nextDash) {
+            flush();
+            ctx.beginPath();
+            ctx.setLineDash(nextDash ? [3.2, 2.4] : []);
+            ctx.moveTo(mapped.x, mapped.y);
+            dashed = nextDash;
+            drawing = true;
+            return;
+          }
+          ctx.lineTo(mapped.x, mapped.y);
+          drawing = true;
+        });
+        flush();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        if (!isPlaying) {
+          const step = Math.max(1, Math.round(band.length / 8));
+          for (let pointIndex = 0; pointIndex < band.length; pointIndex += step) {
+            const handle = map(band[pointIndex][0], band[pointIndex][1]);
+            ctx.beginPath();
+            ctx.arc(handle.x, handle.y, 2.6, 0, Math.PI * 2);
+            ctx.fillStyle = bandCols[index % bandCols.length];
+            ctx.fill();
+          }
+        }
+      });
+    }
+
+    if (!hideKeyframeSeg && wallEchoClarify?.available && wallEchoClarify.quad.length >= 4) {
+      ctx.beginPath();
+      wallEchoClarify.quad.forEach((point, index) => {
+        const mapped = map(point[0], point[1]);
+        if (index === 0) ctx.moveTo(mapped.x, mapped.y);
+        else ctx.lineTo(mapped.x, mapped.y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(244, 114, 182, 0.95)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(244, 114, 182, 0.12)';
+      ctx.fill();
+      const origin = map(wallEchoClarify.origin[0], wallEchoClarify.origin[1]);
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 4.2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251, 113, 133, 0.95)';
+      ctx.fill();
+    }
+    const livePaint = hideKeyframeSeg ? [] : (wallPaintStrokeRef.current || wallPaintStroke);
+    if (livePaint && livePaint.length) {
+      ctx.beginPath();
+      livePaint.forEach((point, index) => {
+        const mapped = map(point[0], point[1]);
+        if (index === 0) ctx.moveTo(mapped.x, mapped.y);
+        else ctx.lineTo(mapped.x, mapped.y);
+      });
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.42)';
+      ctx.lineWidth = Math.max(4, wallBrushRadiusRef.current * 2 * scale);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+
+    const pickMarks = hideKeyframeSeg ? [] : wallPickFlanksRef.current;
+    if (pickMarks.length) {
+      pickMarks.forEach((point, index) => {
+        const mapped = map(point[0], point[1]);
+        ctx.beginPath();
+        ctx.arc(mapped.x, mapped.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(index + 1), mapped.x, mapped.y + 0.5);
+      });
+    }
+
+    const focusMarks = hideKeyframeSeg ? [] : analysisFocusPointsRef.current;
+    if (focusMarks.length) {
+      focusMarks.forEach((point, index) => {
+        const mapped = map(point[0], point[1]);
+        ctx.beginPath();
+        ctx.moveTo(mapped.x, mapped.y - 7);
+        ctx.lineTo(mapped.x + 6, mapped.y);
+        ctx.lineTo(mapped.x, mapped.y + 7);
+        ctx.lineTo(mapped.x - 6, mapped.y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(251, 113, 133, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(254, 226, 226, 0.95)';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(zh ? `分析${index + 1}` : `F${index + 1}`, mapped.x + 8, mapped.y - 4);
+      });
+    }
+
+  }, [points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallEchoClarify, viewZoom, viewCenter, analysisFocusPoints]);
 
   useEffect(() => {
     redrawRef.current = redraw;
@@ -4428,7 +5233,7 @@ export function InteractiveSegPanel({
       syncCanvasLayer();
       if (hasPlaybackOverlay()) startPlaybackLoop();
       else paintProgressUi(video.currentTime || 0);
-      viewingTraceRef.current('cine_play', { video_time_sec: video.currentTime || 0, playing: true, frozen: false });
+      recordDoctorOpRef.current('cine_play', { video_time_sec: video.currentTime || 0, playing: true, frozen: false });
     };
     const onPause = () => {
       if (scrubbingRef.current) {
@@ -4444,7 +5249,7 @@ export function InteractiveSegPanel({
       syncFrameFromVideo({ force: true });
       if (canvasRef.current) canvasRef.current.style.visibility = 'visible';
       redrawRef.current();
-      viewingTraceRef.current('cine_pause', { video_time_sec: t, playing: false });
+      recordDoctorOpRef.current('cine_pause', { video_time_sec: t, playing: false });
     };
     const onEnded = () => {
       setIsPlaying(false);
@@ -4477,6 +5282,44 @@ export function InteractiveSegPanel({
 
   useEffect(() => {
     if (!open || mediaMode !== 'video' || !videoUrl) return;
+    const video = videoRef.current as (HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number;
+      cancelVideoFrameCallback?: (handle: number) => void;
+    } | null);
+    if (!video?.requestVideoFrameCallback) return;
+    setVideoFps(DEFAULT_CINE_FPS);
+    const times: number[] = [];
+    let handle = 0;
+    let done = false;
+    const onFrame = (_now: number, meta: { mediaTime: number }) => {
+      if (done) return;
+      times.push(meta.mediaTime);
+      const fps = estimateCineFpsFromMediaTimes(times);
+      if (fps && times.length >= 6) {
+        done = true;
+        setVideoFps(fps);
+        return;
+      }
+      if (times.length < 16) {
+        handle = video.requestVideoFrameCallback?.(onFrame) || 0;
+      }
+    };
+    const start = () => {
+      if (done) return;
+      times.length = 0;
+      handle = video.requestVideoFrameCallback?.(onFrame) || 0;
+    };
+    video.addEventListener('playing', start);
+    if (!video.paused) start();
+    return () => {
+      done = true;
+      video.removeEventListener('playing', start);
+      if (handle && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(handle);
+    };
+  }, [open, mediaMode, videoUrl]);
+
+  useEffect(() => {
+    if (!open || mediaMode !== 'video' || !videoUrl) return;
     const video = videoRef.current;
     if (!video) return;
     const key = `${patient?.id || ''}::${videoUrl}`;
@@ -4488,8 +5331,8 @@ export function InteractiveSegPanel({
       void video.play().catch(() => {
         setMessage(
           zh
-            ? '请点「播放」看视频，播放中也可点「标记此帧」或按空格；将自动分割病灶'
-            : 'Tap Play, then Mark this frame or press Space while playing; lesion auto-segments',
+            ? '请点「播放」看视频。空格先暂停，再按一次才标关键帧，只看这一帧'
+            : 'Tap Play to watch. Space pauses first; press again to mark',
         );
       });
     };
@@ -4549,7 +5392,15 @@ export function InteractiveSegPanel({
     const scaleY = canvas.height / rect.height;
     const cx = (e.clientX - rect.left) * scaleX;
     const cy = (e.clientY - rect.top) * scaleY;
-    const { scale, dx, dy } = computeDisplayTransform(iw, ih, canvas.width, canvas.height, viewFocusBox);
+    const { scale, dx, dy } = computeDisplayTransform(
+      iw,
+      ih,
+      canvas.width,
+      canvas.height,
+      viewFocusBox,
+      viewZoomRef.current,
+      viewCenterRef.current,
+    );
     const ix = (cx - dx) / scale;
     const iy = (cy - dy) / scale;
     if (ix < 0 || iy < 0 || ix > iw || iy > ih) {
@@ -4558,6 +5409,28 @@ export function InteractiveSegPanel({
     }
     return [ix, iy];
   }, [mediaMode, viewFocusBox]);
+
+  const resetViewZoom = useCallback(() => {
+    viewZoomRef.current = 1;
+    viewCenterRef.current = null;
+    viewPanDragRef.current = null;
+    setViewZoom(1);
+    setViewCenter(null);
+    setViewFocusBox(null);
+    setViewFocusMode(null);
+  }, []);
+
+  const applyViewZoomAt = useCallback((imagePt: number[], nextZoom: number) => {
+    const zoom = Math.max(1, Math.min(8, nextZoom));
+    viewZoomRef.current = zoom;
+    viewCenterRef.current = { x: imagePt[0], y: imagePt[1] };
+    setViewZoom(zoom);
+    setViewCenter({ x: imagePt[0], y: imagePt[1] });
+    if (zoom > 1.02) {
+      setViewFocusBox(null);
+      setViewFocusMode(null);
+    }
+  }, []);
 
   const hitThreshold = useCallback(() => {
     const canvas = canvasRef.current;
@@ -4618,14 +5491,27 @@ export function InteractiveSegPanel({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const onWheel = (event: WheelEvent) => {
-      if (!lumenSculptModeRef.current) return;
+      if (wallPaintModeRef.current) {
+        event.preventDefault();
+        const step = event.deltaY > 0 ? -1 : 1;
+        setWallBrushRadius((value) => Math.max(3, Math.min(22, value + step)));
+        return;
+      }
+      if (lumenSculptModeRef.current) {
+        event.preventDefault();
+        const step = event.deltaY > 0 ? -2 : 2;
+        setPaintRadius((r) => Math.max(6, Math.min(48, r + step)));
+        return;
+      }
       event.preventDefault();
-      const step = event.deltaY > 0 ? -2 : 2;
-      setPaintRadius((r) => Math.max(6, Math.min(48, r + step)));
+      const imgPt = canvasToImage(event, { clamp: true });
+      if (!imgPt) return;
+      const factor = event.deltaY > 0 ? 0.86 : 1.16;
+      applyViewZoomAt(imgPt, viewZoomRef.current * factor);
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, [imgLoaded, mediaMode, videoUrl, open, simpleVideoMode]);
+  }, [applyViewZoomAt, canvasToImage, imgLoaded, mediaMode, videoUrl, open, simpleVideoMode]);
 
   const stopInteractivePrompt = useCallback(() => {
     invalidateNnInteractiveSession({ abort: true });
@@ -4636,33 +5522,107 @@ export function InteractiveSegPanel({
     clearSamPrompts();
   }, [clearSamPrompts, invalidateNnInteractiveSession]);
 
+  const pauseVideoOnCurrentFrame = useCallback((opts?: { timeSec?: number }) => {
+    if (mediaMode !== 'video') return;
+    const video = videoRef.current;
+    if (!video) return;
+    const hold = opts?.timeSec != null && Number.isFinite(opts.timeSec)
+      ? opts.timeSec
+      : snapCineTimeToFrame(video.currentTime || 0, videoFpsRef.current);
+    if (!video.paused) {
+      video.pause();
+    }
+    setIsPlaying(false);
+    setTrackOnPlay(false);
+    if (Math.abs((video.currentTime || 0) - hold) > 0.04) {
+      video.currentTime = hold;
+    }
+    setVideoTime(hold);
+    if (canvasRef.current) canvasRef.current.style.visibility = 'visible';
+  }, [mediaMode]);
+
   const requireOpenKeyframeForBox = useCallback((): boolean => {
     if (!simpleVideoMode || mediaMode !== 'video') return true;
+    pauseVideoOnCurrentFrame();
     const video = videoRef.current;
-    if (video && !video.paused) {
-      video.pause();
-      setIsPlaying(false);
+    const currentTime = video?.currentTime ?? videoTime;
+    const frames = doctorKeyframesRef.current;
+    if (isDoctorKeyframeOpen(frames, activeDoctorKeyframeIdRef.current, currentTime, false)) {
+      return true;
     }
-    if (!doctorKeyframesRef.current.length) {
-      setMessage(zh ? '请先点「标记此帧」或按空格选出关键帧，再框选病灶' : 'Mark a keyframe first, then draw a box');
+    const nearby = frames.find((kf) => Math.abs(kf.timeSec - currentTime) <= DOCTOR_KEYFRAME_DEDUP_SEC);
+    if (nearby) {
+      setActiveDoctorKeyframeId(nearby.id);
+      activeDoctorKeyframeIdRef.current = nearby.id;
+      if (video && Math.abs((video.currentTime || 0) - nearby.timeSec) > DOCTOR_KEYFRAME_OPEN_EPS_SEC) {
+        video.currentTime = nearby.timeSec;
+        setVideoTime(nearby.timeSec);
+      }
+      return true;
+    }
+    if (!video?.videoWidth) {
+      setMessage(zh ? '视频帧未就绪，稍后再框选' : 'Video frame not ready');
       return false;
     }
-    const currentTime = videoRef.current?.currentTime ?? videoTime;
-    const openKf = isDoctorKeyframeOpen(
-      doctorKeyframesRef.current,
-      activeDoctorKeyframeIdRef.current,
-      currentTime,
-      false,
-    );
-    if (!openKf) {
-      setMessage(zh ? '请先点开一条关键帧，再在该帧上框选病灶' : 'Open a marked keyframe, then draw a box on it');
-      return false;
+    const gate = canAddDoctorKeyframe(frames, currentTime);
+    if (!gate.ok) {
+      setMessage(
+        gate.reason === 'full'
+          ? (zh ? `关键帧已满（${DOCTOR_KEYFRAME_MAX}），请先点开一条再框选` : `Keyframe strip full (${DOCTOR_KEYFRAME_MAX}); open one first`)
+          : (zh ? '该时刻已有关键帧，可直接框选' : 'This time already has a keyframe; draw the box'),
+      );
+      return gate.reason === 'duplicate';
     }
+    const timeSec = Number((currentTime || 0).toFixed(3));
+    const id = newDoctorKeyframeId(timeSec);
+    const frame = captureDoctorFrameFromVideo(video);
+    const hasLesion = pointsRef.current.length >= 3;
+    const next: DoctorKeyframe = {
+      id,
+      timeSec,
+      thumbDataUrl: frame?.thumbDataUrl || null,
+      segStatus: hasLesion ? 'ready' : 'idle',
+      lesionPolygon: hasLesion ? clonePoly(pointsRef.current) : undefined,
+      lumenBox: lumenBoxRef.current || undefined,
+      lumenPolygon: lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : undefined,
+      wallPolygon: wallPointsRef.current.length >= 3 ? clonePoly(wallPointsRef.current) : undefined,
+      wallLayerReadout: wallLayerReadoutRef.current,
+      error: null,
+    };
+    persistOpenKeyframeContours();
+    setDoctorKeyframes((prev) => {
+      const sorted = sortDoctorKeyframes([...prev, next]);
+      doctorKeyframesRef.current = sorted;
+      return sorted;
+    });
+    setActiveDoctorKeyframeId(id);
+    activeDoctorKeyframeIdRef.current = id;
+    setSimpleToolsOpen(true);
+    recordDoctorOp('keyframe_mark', {
+      operation: 'keyframe_mark',
+      tool: 'keyframe_mark',
+      keyframe_id: id,
+      source: 'box_lesion',
+    });
+    setMessage(zh ? '已将当前帧作为关键帧，请拖框选病灶' : 'This frame is now the keyframe; drag a box on the lesion');
     return true;
-  }, [mediaMode, simpleVideoMode, videoTime, zh]);
+  }, [mediaMode, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, simpleVideoMode, videoTime, zh]);
+  requireOpenKeyframeForBoxRef.current = requireOpenKeyframeForBox;
 
   const applyDoctorLesionBox = useCallback((box: { x1: number; y1: number; x2: number; y2: number }) => {
     const poly = boxToClosedPolygon(box, 8);
+    const existing = pointsRef.current;
+    const keepExtra = keepExtraLesionRef.current
+      && existing.length >= 3
+      && extraLesionPolygonsRef.current.length < 4;
+    pushEditUndo();
+    if (keepExtra) {
+      const kept = [...extraLesionPolygonsRef.current, clonePoly(existing)];
+      extraLesionPolygonsRef.current = kept;
+      setExtraLesionPolygons(kept);
+    }
+    keepExtraLesionRef.current = false;
+    setKeepExtraLesion(false);
     pointsRef.current = poly;
     generatedLesionRef.current = poly;
     setPoints(poly);
@@ -4672,32 +5632,44 @@ export function InteractiveSegPanel({
     setActiveLayer('lesion');
     setLumenEditMode(false);
     persistOpenKeyframeContours({ refined: true });
-    setMessage(zh ? '已框选病灶，正在自动分割…' : 'Lesion box set; auto-segmenting…');
-  }, [persistOpenKeyframeContours, zh]);
+    const extraCount = extraLesionPolygonsRef.current.length;
+    setMessage(
+      extraCount && keepExtra
+        ? (zh ? `已保留上一处病灶，正在分割第 ${extraCount + 1} 处…` : `Kept the previous lesion; segmenting lesion ${extraCount + 1}…`)
+        : (zh ? '已框选病灶，正在自动分割…' : 'Lesion box set; auto-segmenting…'),
+    );
+  }, [persistOpenKeyframeContours, pushEditUndo, zh]);
 
   const enterSimpleBoxPrompt = useCallback(() => {
-    if (!requireOpenKeyframeForBox()) return;
-    if (boxAutoSegBusy) {
-      setMessage(zh ? '正在分割中，请稍候再画新框' : 'Segmentation in progress; wait before drawing another box');
-      return;
-    }
     stopInteractivePrompt();
     setMode('sam');
     setSimplePromptMode('box');
+    armLesionBox(true);
     setSimpleEditMode(false);
     setLumenEditMode(false);
+    setLumenSculptMode(null);
     setSimpleEditLayer('lesion');
     setActiveLayer('lesion');
     setSimplePromptBox(null);
     setSam31RefineTarget(null);
     setTrackOnPlay(false);
+    setBoxAutoSegBusy(false);
+    let keyframeOk = true;
+    try {
+      keyframeOk = requireOpenKeyframeForBox();
+    } catch {
+      keyframeOk = false;
+    }
     recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'box_lesion' });
+    if (!keyframeOk) return;
     setMessage(
-      zh
-        ? '在当前关键帧上拖出病灶框；松手后自动分割'
-        : 'Drag a lesion box on this keyframe; release to auto-segment',
+      pointsRef.current.length >= 3
+        ? (keepExtraLesionRef.current
+          ? (zh ? '再拖一个框会留下上一处病灶' : 'A new box keeps the previous lesion')
+          : (zh ? '再拖一个框会替换当前病灶。多个灶请先点「再框一灶」' : 'A new box replaces this lesion. Tap Add lesion first for a second mass'))
+        : (zh ? '请拖出矩形框选病灶' : 'Drag a box around the lesion'),
     );
-  }, [boxAutoSegBusy, recordDoctorOp, requireOpenKeyframeForBox, stopInteractivePrompt, zh]);
+  }, [armLesionBox, recordDoctorOp, requireOpenKeyframeForBox, stopInteractivePrompt, zh]);
 
   const enterSimpleContourEdit = useCallback((layer: ContourLayer) => {
     stopInteractivePrompt();
@@ -4719,6 +5691,7 @@ export function InteractiveSegPanel({
     }
     setMode('soft');
     setSimplePromptMode('box');
+    armLesionBox(false);
     setSimpleEditLayer(layer);
     setActiveLayer(layer);
     setSimpleEditMode(true);
@@ -4739,21 +5712,471 @@ export function InteractiveSegPanel({
     enterSimpleContourEdit(points.length >= 3 ? 'lesion' : 'wall');
   }, [enterSimpleContourEdit, markActiveDoctorKeyframeRefined, points.length, simpleEditMode, zh]);
 
+  const applyWallExtension = useCallback((opts?: { silent?: boolean; doctorFlanks?: number[][] | null }) => {
+    pauseVideoOnCurrentFrame();
+    const lesion = pointsRef.current;
+    if (lesion.length < 3) {
+      if (!opts?.silent) {
+        setMessage(zh ? '请先框选并分割病灶，再接胃壁' : 'Box and segment the lesion before joining the wall');
+      }
+      return false;
+    }
+    const doctorFlanks = (opts?.doctorFlanks && opts.doctorFlanks.length >= 2)
+      ? opts.doctorFlanks
+      : (wallPickFlanksRef.current.length >= 2 ? wallPickFlanksRef.current : null);
+    if (!canAutoJoinWall({ flanks: doctorFlanks, paintedWall: wallPointsRef.current })) {
+      if (!opts?.silent) {
+        setMessage(zh
+          ? '请先从邻近看得见的胃壁起笔，或点两侧再接。不要从肿块正中自动空想分层。'
+          : 'Paint from adjacent visible wall, or mark both flanks first. Do not invent layers in the mass center.');
+      }
+      return false;
+    }
+    const result = extendWallThroughLesion({
+      lesion,
+      lumen: lumenPolygonRef.current,
+      lumenBox: lumenBoxRef.current,
+      existingWall: wallPointsRef.current.length >= 3 ? wallPointsRef.current : null,
+      doctorFlanks,
+    });
+    if (!result.available) {
+      if (!opts?.silent) setMessage(zh ? result.noteZh : result.noteEn);
+      return false;
+    }
+    pushEditUndo();
+    wallPointsRef.current = result.wall;
+    wallExtensionMaskRef.current = result.wall.map(() => false);
+    setWallPoints(result.wall);
+    setWallExtensionNote(zh ? result.noteZh : result.noteEn);
+    setWallExtensionStats({
+      overshootPx: result.overshootPx,
+      remainPx: result.remainPx,
+      source: result.source,
+    });
+    setActiveLayer('wall');
+    setSimpleEditLayer('wall');
+    setSimpleEditMode(false);
+    setLumenEditMode(false);
+    setWallPickMode(false);
+    wallPickModeRef.current = false;
+    armLesionBox(false);
+    recordDoctorOp('layer_switch', {
+      layer: 'wall',
+      operation: 'wall_extend',
+      tool: result.source,
+      doctor_flanks: doctorFlanks?.length || 0,
+      overshoot_px: result.overshootPx,
+      remain_px: result.remainPx,
+    });
+    const readout = judgeWallLayerBreach({
+      remainPx: result.remainPx,
+      overshootPx: result.overshootPx,
+      thicknessPx: result.overshootPx != null && result.remainPx != null
+        ? result.overshootPx + result.remainPx + 8
+        : 12,
+      source: 'geometry',
+    });
+    const frame = captureFrameGray();
+    applyWallLayerVisuals(result.wall, readout, frame);
+    refreshWallEchoClarify(frame);
+    persistOpenKeyframeContours({ refined: true });
+    if (!opts?.silent) {
+      const live = wallLayerReadoutRef.current || readout;
+      setMessage(zh ? `${result.noteZh} ${live.noteZh}` : `${result.noteEn} ${live.noteEn}`);
+    }
+    redrawRef.current?.();
+    return true;
+  }, [armLesionBox, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, pushEditUndo, recordDoctorOp, zh]);
+
+  const startWallExtensionTool = useCallback(() => {
+    pauseVideoOnCurrentFrame();
+    if (!requireOpenKeyframeForBox()) return;
+    if (pointsRef.current.length < 3) {
+      setMessage(zh ? '请先框选并分割病灶，再延长胃壁' : 'Box and segment the lesion before extending the wall');
+      return;
+    }
+    if (wallPickModeRef.current) {
+      wallPickModeRef.current = false;
+      setWallPickMode(false);
+      applyWallExtension();
+      return;
+    }
+    armLesionBox(false);
+    setLumenEditMode(false);
+    setLumenSculptMode(null);
+    setSimpleEditMode(false);
+    wallPickFlanksRef.current = [];
+    setWallPickFlanks([]);
+    wallPickModeRef.current = true;
+    setWallPickMode(true);
+    setActiveLayer('wall');
+    setSimpleEditLayer('wall');
+    recordDoctorOp('tool_switch', { layer: 'wall', operation: 'tool_switch', tool: 'wall_flank_pick' });
+    setMessage(zh
+      ? `请点两侧看得见的正常${anatomyTargetMeta(wallLayerTargetRef.current).shortZh}。系统按${anatomyTargetMeta(wallLayerTargetRef.current).lineZh}接过去。再点一次则自动接。`
+      : `Click the two visible flanks. Join uses your ${wallLayerTargetRef.current}-layer setting. Click again to auto-join.`);
+    redrawRef.current?.();
+  }, [applyWallExtension, armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
+
+  const captureFrameGray = useCallback((): { gray: Float32Array; width: number; height: number } | null => {
+    const video = videoRef.current;
+    const img = imgRef.current;
+    const width = mediaMode === 'video' && video?.videoWidth ? video.videoWidth : (img?.naturalWidth || 0);
+    const height = mediaMode === 'video' && video?.videoHeight ? video.videoHeight : (img?.naturalHeight || 0);
+    if (!width || !height) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    if (mediaMode === 'video' && video) ctx.drawImage(video, 0, 0);
+    else if (img) ctx.drawImage(img, 0, 0);
+    else return null;
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const gray = new Float32Array(width * height);
+    for (let index = 0; index < gray.length; index += 1) {
+      const i = index * 4;
+      gray[index] = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+    }
+    return { gray, width, height };
+  }, [mediaMode]);
+
+  const applyWallLayerVisuals = useCallback((
+    wall: number[][],
+    readout: WallLayerReadout,
+    frame?: { gray: Float32Array; width: number; height: number } | null,
+    traced?: { layer: 1 | 2 | 3 | 4 | 5; curve: number[][]; imaginaryMask: boolean[] }[] | null,
+  ) => {
+    const target = wallLayerTargetRef.current;
+    let bands: number[][][] = [];
+    if (traced && traced.length) {
+      bands = traced.map((layer) => layer.curve);
+      setWallLayerBands(bands);
+      wallLayerBandsRef.current = bands;
+      setWallLayerImaginary(traced.map((layer) => layer.imaginaryMask));
+      wallLayerImaginaryRef.current = traced.map((layer) => layer.imaginaryMask);
+    } else {
+      const lumen = lumenPolygonRef.current;
+      const center: [number, number] | null = lumen.length >= 3
+        ? [
+          lumen.reduce((sum, point) => sum + point[0], 0) / lumen.length,
+          lumen.reduce((sum, point) => sum + point[1], 0) / lumen.length,
+        ]
+        : null;
+      bands = clusterLayersAlongWall({
+        wall,
+        center,
+        lesion: pointsRef.current,
+        gray: frame?.gray || null,
+        width: frame?.width,
+        height: frame?.height,
+        thicknessPx: readout.thicknessPx || 12,
+        layerCount: target,
+      });
+      setWallLayerBands(bands);
+      wallLayerBandsRef.current = bands;
+      setWallLayerImaginary([]);
+      wallLayerImaginaryRef.current = [];
+    }
+    const ids = traced?.length
+      ? traced.map((layer) => layer.layer)
+      : doctorClinicalIds(target);
+    const curves = bands.map((curve, index) => ({
+      layer: ids[index] || 5,
+      curve,
+    }));
+    const next = attachLayerInterrupts(
+      readout,
+      frame?.gray,
+      frame?.width,
+      frame?.height,
+      curves,
+      target,
+      {
+        visibility: wallVisibilityRef.current,
+        anchorMode: serosaAnchorModeRef.current,
+      },
+    );
+    setWallLayerReadout(next);
+    wallLayerReadoutRef.current = next;
+  }, []);
+
+  const applyWallLayerTarget = useCallback((count: WallLayerTarget) => {
+    setWallLayerTarget(count);
+    wallLayerTargetRef.current = count;
+    persistCaseDraftRef.current({ wall_target_layers: count });
+    const wall = wallPointsRef.current;
+    const readout = wallLayerReadoutRef.current;
+    if (wall.length < 3 || !readout) return;
+    const frame = captureFrameGray();
+    applyWallLayerVisuals(wall, readout, frame);
+    persistOpenKeyframeContours({ refined: true });
+    setMessage(zh
+      ? `已改按${anatomyTargetMeta(count).lineZh}重算草稿（不定 cT）`
+      : `Recomputed the draft on the ${anatomyTargetMeta(count).lineEn} (not a definite cT)`);
+    redrawRef.current?.();
+  }, [applyWallLayerVisuals, captureFrameGray, persistOpenKeyframeContours, zh]);
+
+  const recheckKeyframesWallPixels = useCallback(async (ids: string[]) => {
+    const video = videoRef.current;
+    if (!video || !ids.length) return 0;
+    const home = video.currentTime;
+    const target = wallLayerTargetRef.current;
+    let count = 0;
+    for (const id of ids) {
+      const kf = findDoctorKeyframeById(doctorKeyframesRef.current, id);
+      if (!kf?.wallPolygon || kf.wallPolygon.length < 3) continue;
+      await seekVideoForAgent(video, kf.timeSec);
+      const frame = captureFrameGray();
+      if (!frame) continue;
+      const next = recheckWallInterruptDraft({
+        wall: kf.wallPolygon,
+        gray: frame.gray,
+        width: frame.width,
+        height: frame.height,
+        targetLayers: kf.wallLayerReadout?.targetLayers || target,
+        readout: kf.wallLayerReadout
+          ? {
+            ...judgeWallLayerBreach({
+              remainPx: kf.wallLayerReadout.remainPx,
+              source: 'propagated',
+            }),
+            layersBreached: kf.wallLayerReadout.layersBreached,
+            deepestZh: kf.wallLayerReadout.deepestZh,
+            deepestEn: kf.wallLayerReadout.deepestEn,
+            ratio: kf.wallLayerReadout.ratio,
+            source: 'propagated',
+            thicknessPx: 12,
+          }
+          : judgeWallLayerBreach({ remainPx: null, source: 'propagated' }),
+        bands: kf.wallLayerBands,
+        lesion: kf.lesionPolygon,
+        lumen: kf.lumenPolygon,
+      });
+      setDoctorKeyframes((prev) => {
+        const frames = prev.map((item) => (
+          item.id === id
+            ? {
+              ...item,
+              wallLayerReadout: { ...next.readout, source: 'propagated' as const },
+              wallLayerBands: next.bands,
+            }
+            : item
+        ));
+        doctorKeyframesRef.current = frames;
+        return frames;
+      });
+      count += 1;
+    }
+    await seekVideoForAgent(video, home);
+    syncFrameFromVideo({ force: true });
+    return count;
+  }, [captureFrameGray]);
+
+  const dropLastExtraLesion = useCallback(() => {
+    const extras = extraLesionPolygonsRef.current;
+    if (!extras.length) return;
+    pushEditUndo();
+    const next = extras.slice(0, -1);
+    extraLesionPolygonsRef.current = next;
+    setExtraLesionPolygons(next);
+    persistOpenKeyframeContours({ refined: true });
+    setMessage(zh
+      ? `已去掉一处额外病灶，还剩 ${next.length + (pointsRef.current.length >= 3 ? 1 : 0)} 处`
+      : `Removed one extra lesion; ${next.length + (pointsRef.current.length >= 3 ? 1 : 0)} remain`);
+    redrawRef.current?.();
+  }, [persistOpenKeyframeContours, pushEditUndo, zh]);
+
+  const refreshWallEchoClarify = useCallback((frame?: { gray: Float32Array; width: number; height: number } | null) => {
+    const pixels = frame || captureFrameGray();
+    if (!pixels || wallPointsRef.current.length < 3) {
+      setWallEchoClarify(null);
+      return null;
+    }
+    const next = clarifyDeepestEcho({
+      gray: pixels.gray,
+      width: pixels.width,
+      height: pixels.height,
+      lesion: pointsRef.current,
+      lumen: lumenPolygonRef.current,
+      wall: wallPointsRef.current,
+      brushRadius: wallBrushRadiusRef.current,
+    });
+    setWallEchoClarify(next.available ? next : null);
+    return next.available ? next : null;
+  }, [captureFrameGray]);
+
+  const echoPreview = useMemo(() => {
+    if (!wallEchoClarify?.available) return { raw: null as string | null, clustered: null as string | null };
+    return {
+      raw: grayCropToDataUrl(wallEchoClarify.original, wallEchoClarify.cropW, wallEchoClarify.cropH),
+      clustered: grayCropToDataUrl(wallEchoClarify.clarified, wallEchoClarify.cropW, wallEchoClarify.cropH),
+    };
+  }, [wallEchoClarify]);
+
+  const hideWallOnOtherFrames = doctorKeyframes.length > 0 && !isDoctorKeyframeOpen(
+    doctorKeyframes,
+    activeDoctorKeyframeId,
+    videoTime,
+    isPlaying,
+  );
+
+  const commitWallPaintStroke = useCallback((stroke: number[][]) => {
+    if (stroke.length < 4) {
+      setMessage(zh ? '笔画太短。请沿看得见的正常胃壁再画一段，笔刷要能包住几层。' : 'Stroke too short. Paint a longer visible wall span so the brush wraps the layers.');
+      return false;
+    }
+    const frame = captureFrameGray();
+    if (!frame) {
+      setMessage(zh ? '当前帧像素还没准备好，请稍后再画' : 'Frame pixels are not ready yet');
+      return false;
+    }
+    const traced = traceWallLayersFromPaint({
+      gray: frame.gray,
+      width: frame.width,
+      height: frame.height,
+      stroke,
+      brushRadius: wallBrushRadiusRef.current,
+      lesion: pointsRef.current,
+      lumen: lumenPolygonRef.current,
+      targetLayers: wallLayerTargetRef.current,
+    });
+    const result = traced.available
+      ? {
+        available: true,
+        wall: traced.wall,
+        remainPx: traced.remainPx,
+        overshootPx: traced.overshootPx,
+        thicknessPx: traced.thicknessPx,
+        noteZh: traced.noteZh,
+        noteEn: traced.noteEn,
+      }
+      : extendWallByPixels({
+        gray: frame.gray,
+        width: frame.width,
+        height: frame.height,
+        stroke,
+        lesion: pointsRef.current,
+        lumen: lumenPolygonRef.current,
+      });
+    if (!result.available) {
+      setMessage(zh ? result.noteZh : result.noteEn);
+      return false;
+    }
+    pushEditUndo();
+    wallPointsRef.current = result.wall;
+    wallExtensionMaskRef.current = result.wall.map(() => false);
+    setWallPoints(result.wall);
+    const readout = traced.available
+      ? readoutFromTrace(traced)
+      : judgeWallLayerBreach({
+        remainPx: result.remainPx,
+        overshootPx: result.overshootPx,
+        thicknessPx: result.thicknessPx,
+        source: 'pixel',
+      });
+    applyWallLayerVisuals(result.wall, readout, frame, traced.available ? traced.layers : null);
+    refreshWallEchoClarify(frame);
+    setWallPaintMode(false);
+    wallPaintModeRef.current = false;
+    setWallPaintStroke([]);
+    wallPaintStrokeRef.current = null;
+    setActiveLayer('wall');
+    setSimpleEditLayer('wall');
+    setSimpleEditMode(false);
+    persistOpenKeyframeContours({ refined: true });
+    markActiveDoctorKeyframeRefined();
+    void persistOverrideRef.current('doctor_edit', { silent: true });
+    window.dispatchEvent(new CustomEvent('gastric:open-wall-layers', { detail: { open: true } }));
+    recordDoctorOp('wall_edit', {
+      layer: 'wall',
+      operation: 'wall_paint_extend',
+      tool: 'pixel_ridge',
+      point_count: result.wall.length,
+      remain_px: result.remainPx,
+      overshoot_px: result.overshootPx,
+      layers_breached: readout.layersBreached,
+      painted_layers: readout.paintedLayers,
+      mucosa_breached: readout.mucosaBreached,
+    });
+    setMessage(zh ? `${result.noteZh} ${readout.noteZh}` : `${result.noteEn} ${readout.noteEn}`);
+    redrawRef.current?.();
+    const openId = activeDoctorKeyframeIdRef.current;
+    if (openId) maybeAutoPropagateRef.current?.(openId);
+    return true;
+  }, [applyWallLayerVisuals, captureFrameGray, markActiveDoctorKeyframeRefined, persistOpenKeyframeContours, pushEditUndo, recordDoctorOp, zh]);
+
+  const startWallPaintTool = useCallback(() => {
+    if (wallPaintModeRef.current) {
+      wallPaintModeRef.current = false;
+      setWallPaintMode(false);
+      setWallPaintStroke([]);
+      wallPaintStrokeRef.current = null;
+      setMessage(zh ? '已取消预期走行线' : 'Expected-trajectory paint cancelled');
+      return;
+    }
+    pauseVideoOnCurrentFrame();
+    if (!requireOpenKeyframeForBox()) return;
+    armLesionBox(false);
+    setLumenEditMode(false);
+    setLumenSculptMode(null);
+    setWallPickMode(false);
+    wallPickModeRef.current = false;
+    setAnalysisFocusMode(false);
+    analysisFocusModeRef.current = false;
+    setSimpleEditMode(false);
+    wallPaintModeRef.current = true;
+    setWallPaintMode(true);
+    setWallPaintStroke([]);
+    wallPaintStrokeRef.current = null;
+    setActiveLayer('wall');
+    recordDoctorOp('tool_switch', { layer: 'wall', operation: 'tool_switch', tool: 'wall_paint' });
+    setMessage(paintLineHint(wallLayerTargetRef.current, zh));
+  }, [armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
+
+  const startAnalysisFocusTool = useCallback(() => {
+    if (analysisFocusModeRef.current) {
+      analysisFocusModeRef.current = false;
+      setAnalysisFocusMode(false);
+      setMessage(zh ? '已取消分析焦点' : 'Analysis focus cancelled');
+      return;
+    }
+    pauseVideoOnCurrentFrame();
+    if (!requireOpenKeyframeForBox()) return;
+    armLesionBox(false);
+    setLumenEditMode(false);
+    setWallPickMode(false);
+    wallPickModeRef.current = false;
+    setWallPaintMode(false);
+    wallPaintModeRef.current = false;
+    setSimpleEditMode(false);
+    analysisFocusModeRef.current = true;
+    setAnalysisFocusMode(true);
+    recordDoctorOp('tool_switch', { layer: 'wall', operation: 'tool_switch', tool: 'analysis_focus' });
+    setMessage(analysisFocusHint(zh));
+  }, [armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
+
   const enterLumenBoxEdit = useCallback((reason?: string) => {
+    pauseVideoOnCurrentFrame();
+    if (!requireOpenKeyframeForBox()) return;
     stopInteractivePrompt();
     setMode('soft');
     setSimplePromptMode('box');
+    armLesionBox(false);
     setSimpleEditMode(false);
     setLumenEditMode(true);
     setLumenSculptMode(null);
     setTrackOnPlay(false);
+    // Next drag always starts a new box so a leftover/YOLO box covering the
+    // frame cannot steal the gesture as a move.
+    lumenBoxFreshDrawRef.current = true;
     recordDoctorOp('tool_switch', { layer: 'lumen', operation: 'tool_switch', tool: 'lumen_box' });
     setMessage(
       zh
-        ? `可选：拖出胃腔框。拖角点缩放，拖框内移动。不自动检测。${reason ? ` ${reason}` : ''}`
-        : `Optional: draw a lumen box. Drag corners or inside to adjust. No auto-detect.${reason ? ` ${reason}` : ''}`,
+        ? `已点亮「框选胃腔」：光标是拖框标记，拖出矩形后自动分割。${reason ? ` ${reason}` : ''}`
+        : `Box lumen is armed: cursor is the drag marker; release auto-segments.${reason ? ` ${reason}` : ''}`,
     );
-  }, [recordDoctorOp, stopInteractivePrompt, zh]);
+  }, [pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, stopInteractivePrompt, zh]);
 
   const toggleLumenBoxEdit = useCallback(() => {
     if (lumenEditMode) {
@@ -4845,6 +6268,7 @@ export function InteractiveSegPanel({
     stopInteractivePrompt();
     setNnInteractiveMode(false);
     setLumenEditMode(false);
+    armLesionBox(false);
     setSimpleEditMode(false);
     setRefineTarget(layer);
     setMode('brush');
@@ -5000,24 +6424,8 @@ export function InteractiveSegPanel({
         lesion_area_ratio: data.lesion_area_ratio,
         validation_summary: data.validation_summary,
       });
-      const maxCoord = Math.max(...data.mask_polygon.flatMap((point) => point));
-      const polyFull = maxCoord <= 1.5
-        ? data.mask_polygon.map((point) => [point[0] * frame.fullWidth, point[1] * frame.fullHeight])
-        : data.mask_polygon.map((point) => [point[0] / scale, point[1] / scale]);
+      const polyFull = scalePolyToFull(data.mask_polygon, scale, frame.fullWidth, frame.fullHeight);
       const poly = prepareEditableContour(polyFull, LESION_CONTOUR_MAX_POINTS);
-      const quality = scoreLesionPolygon(
-        poly,
-        frame.fullWidth,
-        frame.fullHeight,
-        box,
-      );
-      if (quality == null && box) {
-        throw new Error(
-          zh
-            ? '病灶模型结果与框选不符或面积异常'
-            : 'Lesion model mask failed quality checks against the box',
-        );
-      }
       maskAuditRef.current('model_trace', {
         trace_id: traceId,
         operation: 'lesion_segmentation',
@@ -5036,7 +6444,6 @@ export function InteractiveSegPanel({
           polygon_points: poly.length,
           lesion_area_ratio: data.lesion_area_ratio,
           validation_summary: data.validation_summary,
-          quality_score: quality ?? undefined,
         },
         duration_ms: Math.round(performance.now() - traceStartedAt),
       });
@@ -5092,7 +6499,7 @@ export function InteractiveSegPanel({
     } finally {
       setSegmentationBusy(false);
     }
-  }, [layerResult, mediaMode, onImagingAssist, onSystemReport, patient, segmentationBusy, segmentationModel, snapshotOriginal, videoTime, wallPointsRef, zh]);
+  }, [applyWallExtension, layerResult, mediaMode, onImagingAssist, onSystemReport, patient, segmentationBusy, segmentationModel, snapshotOriginal, videoTime, wallPointsRef, zh]);
 
   useEffect(() => {
     runLesionModelRef.current = runLesionModel;
@@ -5137,28 +6544,23 @@ export function InteractiveSegPanel({
     const centroid = box
       ? [(box.x1 + box.x2) / 2, (box.y1 + box.y2) / 2]
       : null;
+    const publicModel = publicLesionSegModel(segmentationModel);
+    if (publicModel === 'dinov3') {
+      // Full-image DINO is the no-box number. Do not feed an oracle box into DINO auto-find.
+      return runLesionModelRef.current(null, null, [], 'dinov3');
+    }
     if (box && centroid) {
       const guided = await runSamAtPoint(centroid, {
         silent: true,
         source: 'sam',
         box,
-        model: 'sam2',
-        enforceQualityGate: true,
+        model: 'sam31',
         keepEditing: false,
       });
       if (guided && guided.length >= 3) return guided;
-      const sam31 = await runSamAtPoint(centroid, {
-        silent: true,
-        source: 'sam',
-        box,
-        model: 'sam31',
-        enforceQualityGate: true,
-        keepEditing: false,
-      });
-      if (sam31 && sam31.length >= 3) return sam31;
     }
     return runLesionModelRef.current(centroid, box, [], 'sam31');
-  }, [mediaMode, runSamAtPoint]);
+  }, [mediaMode, runSamAtPoint, segmentationModel]);
 
   const runDoctorKeyframePreseg = useCallback(async (keyframeId: string, frame: CapturedDoctorFrame) => {
     const session = doctorKeyframeSessionRef.current;
@@ -5229,8 +6631,8 @@ export function InteractiveSegPanel({
           persistOpenKeyframeContoursRef.current?.({ refined: false });
           setMessage(
             zh
-              ? '关键帧病灶已自动分割，可拖点/正负点/涂抹微调，或改框重跑'
-              : 'Keyframe lesion auto-segmented; refine with handles, +/- points, or brush',
+              ? '关键帧病灶已自动分割。请从邻近看得见的胃壁起笔，或点两侧再接。不要从肿块正中空想分层。'
+              : 'Keyframe lesion auto-segmented. Paint from adjacent visible wall, or mark both flanks. Do not invent layers in the mass center.',
           );
         } else {
           recordDoctorOp('detect_lesion', {
@@ -5240,11 +6642,11 @@ export function InteractiveSegPanel({
             status: 'error',
             keyframe_id: keyframeId,
           });
-          enterSimpleBoxPrompt();
+          armLesionBox(false);
           setMessage(
             zh
-              ? '自动分割未找到病灶，请在此关键帧上拖框；松手后仍会自动分割'
-              : 'Auto-segment found no lesion; draw a box on this keyframe',
+              ? '自动分割未找到病灶。请先点亮「框选病灶」，再拖出矩形'
+              : 'Auto-segment found no lesion. Arm Box lesion, then drag',
           );
         }
         if (result.lumenPolygon && result.lumenPolygon.length >= 3) {
@@ -5289,15 +6691,15 @@ export function InteractiveSegPanel({
           status: 'error',
           keyframe_id: keyframeId,
         });
-        enterSimpleBoxPrompt();
+        armLesionBox(false);
         setMessage(
           zh
-            ? '自动分割失败，请在此关键帧上拖框重试'
-            : 'Auto-segment failed; draw a box on this keyframe',
+            ? '自动分割失败。请先点亮「框选病灶」，再拖出矩形'
+            : 'Auto-segment failed. Arm Box lesion, then drag',
         );
       }
     }
-  }, [enterSimpleBoxPrompt, recordDoctorOp, zh]);
+  }, [applyWallExtension, recordDoctorOp, zh]);
 
   const runPropagateToOtherKeyframes = useCallback(async (opts?: {
     sourceId?: string;
@@ -5330,6 +6732,16 @@ export function InteractiveSegPanel({
     )
       ? clonePoly(lumenPolygonRef.current)
       : (source.lumenPolygon || null);
+    const liveWall = (
+      source.id === activeDoctorKeyframeIdRef.current && wallPointsRef.current.length >= 3
+    )
+      ? clonePoly(wallPointsRef.current)
+      : (source.wallPolygon || null);
+    const liveWallLayer = (
+      source.id === activeDoctorKeyframeIdRef.current && wallLayerReadoutRef.current
+    )
+      ? wallLayerReadoutRef.current
+      : (source.wallLayerReadout || null);
     const targets = opts?.auto
       ? laterUnrefinedKeyframes(frames, source)
       : frames.filter((kf) => kf.id !== source.id && !kf.refined);
@@ -5361,6 +6773,10 @@ export function InteractiveSegPanel({
         source,
         sourceLesion: liveLesion,
         sourceLumen: liveLumen,
+        sourceWall: opts?.auto ? null : liveWall,
+        sourceWallLayer: opts?.auto ? null : liveWallLayer,
+        sourceWallBands: opts?.auto ? [] : wallLayerBandsRef.current,
+        sourceWallImaginary: opts?.auto ? [] : wallLayerImaginaryRef.current,
         targets,
       });
       if (!result.hits.length) {
@@ -5380,14 +6796,16 @@ export function InteractiveSegPanel({
         video.currentTime || videoTime,
         Boolean(isPlaying),
       );
+      const destIds = result.hits.map((hit) => hit.id);
+      const rechecked = liveWall ? await recheckKeyframesWallPixels(destIds) : 0;
       if (open && result.hits.some((hit) => hit.id === open.id)) {
         const updated = findDoctorKeyframeById(doctorKeyframesRef.current, open.id);
         if (updated) void selectDoctorKeyframeRef.current(updated);
       }
       setMessage(
         zh
-          ? `已${result.method === 'optical_flow' ? '按光流' : '按轮廓'}传到 ${result.hits.length} 个关键帧（打开后复核）`
-          : `${result.method === 'optical_flow' ? 'Flow' : 'Copy'} propagated to ${result.hits.length} keyframes (open to review)`,
+          ? `已${result.method === 'optical_flow' ? '按光流' : '按轮廓'}把病灶${liveWall ? '和胃壁' : ''}传到 ${result.hits.length} 个关键帧${rechecked ? `，并按 ${rechecked} 帧像素重核了中断` : ''}`
+          : `${result.method === 'optical_flow' ? 'Flow' : 'Copy'} propagated${liveWall ? ' lesion and wall' : ''} to ${result.hits.length} keyframes${rechecked ? `; re-checked interrupt on ${rechecked} frames` : ''}`,
       );
     } catch (error) {
       if (!opts?.auto) {
@@ -5396,7 +6814,7 @@ export function InteractiveSegPanel({
     } finally {
       setPropagateToKeyframesBusy(false);
     }
-  }, [isPlaying, patient, persistOpenKeyframeContours, videoTime, videoUrl, zh]);
+  }, [isPlaying, patient, persistOpenKeyframeContours, recheckKeyframesWallPixels, videoTime, videoUrl, zh]);
   runPropagateToOtherKeyframesRef.current = runPropagateToOtherKeyframes;
 
   const maybeAutoPropagate = useCallback((sourceId: string) => {
@@ -5419,9 +6837,20 @@ export function InteractiveSegPanel({
       setMessage(zh ? '视频帧未就绪，稍后再标关键帧' : 'Video frame not ready');
       return;
     }
+    pauseVideoOnCurrentFrame();
     const timeSec = Number((video.currentTime || 0).toFixed(3));
     const gate = canAddDoctorKeyframe(doctorKeyframes, timeSec);
     if (!gate.ok) {
+      if (gate.reason === 'duplicate') {
+        const nearby = doctorKeyframes.find((kf) => Math.abs(kf.timeSec - timeSec) <= DOCTOR_KEYFRAME_DEDUP_SEC);
+        if (nearby) {
+          void selectDoctorKeyframeRef.current(nearby);
+          setMessage(zh
+            ? `已暂停并打开关键帧 t=${nearby.timeSec.toFixed(2)}s，只看这一帧`
+            : `Paused on keyframe t=${nearby.timeSec.toFixed(2)}s`);
+          return;
+        }
+      }
       setMessage(
         gate.reason === 'full'
           ? (zh ? `关键帧已满（${DOCTOR_KEYFRAME_MAX}），请先删除再标` : `Keyframe strip full (${DOCTOR_KEYFRAME_MAX}); remove one first`)
@@ -5431,15 +6860,22 @@ export function InteractiveSegPanel({
     }
     const id = newDoctorKeyframeId(timeSec);
     const frame = captureDoctorFrameFromVideo(video);
+    const hasLesion = pointsRef.current.length >= 3;
+    const hasLumen = lumenPolygonRef.current.length >= 3 || Boolean(lumenBoxRef.current);
     const next: DoctorKeyframe = {
       id,
       timeSec,
       thumbDataUrl: frame?.thumbDataUrl || null,
-      segStatus: frame ? 'running' : 'failed',
-      error: frame ? null : 'no_video_frame',
+      segStatus: hasLesion ? 'ready' : 'idle',
+      lesionPolygon: hasLesion ? clonePoly(pointsRef.current) : undefined,
+      lumenBox: lumenBoxRef.current || undefined,
+      lumenPolygon: lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : undefined,
+      wallPolygon: wallPointsRef.current.length >= 3 ? clonePoly(wallPointsRef.current) : undefined,
+      wallLayerReadout: wallLayerReadoutRef.current,
+      error: null,
     };
     persistOpenKeyframeContours();
-    clearKeyframeOverlay();
+    if (!hasLesion) clearKeyframeOverlay();
     setDoctorKeyframes((prev) => {
       const sorted = sortDoctorKeyframes([...prev, next]);
       doctorKeyframesRef.current = sorted;
@@ -5449,32 +6885,53 @@ export function InteractiveSegPanel({
     activeDoctorKeyframeIdRef.current = id;
     setAnalysisContourUnrefined(false);
     setSimpleToolsOpen(true);
+    armLesionBox(false);
     recordDoctorOp('keyframe_mark', {
       operation: 'keyframe_mark',
       tool: 'keyframe_mark',
       keyframe_id: id,
+      video_time_sec: timeSec,
     });
-    if (frame) {
-      void runDoctorKeyframePreseg(id, frame);
-    } else {
-      enterSimpleBoxPrompt();
-      setMessage(
-        zh
-          ? `已标记关键帧 t=${timeSec.toFixed(2)}s。无法抓帧，请手动拖出病灶框`
-          : `Marked keyframe t=${timeSec.toFixed(2)}s. No frame capture; draw a lesion box`,
-      );
-    }
+    setMessage(
+      hasLesion
+        ? (zh
+          ? `已暂停并标记关键帧 t=${timeSec.toFixed(2)}s，只看这一帧；沿用当前病灶${hasLumen ? '与胃腔' : ''}。`
+          : `Paused and marked keyframe t=${timeSec.toFixed(2)}s; kept the current contour.`)
+        : (zh
+          ? `已暂停并标记关键帧 t=${timeSec.toFixed(2)}s，只看这一帧。请点亮「框选病灶」后再拖框`
+          : `Paused and marked keyframe t=${timeSec.toFixed(2)}s. Arm Box lesion, then drag`),
+    );
   }, [
     clearKeyframeOverlay,
     doctorKeyframes,
-    enterSimpleBoxPrompt,
     mediaMode,
+    pauseVideoOnCurrentFrame,
     persistOpenKeyframeContours,
     recordDoctorOp,
-    runDoctorKeyframePreseg,
     videoUrl,
     zh,
   ]);
+
+  const toggleVideoPlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      void video.play();
+      return;
+    }
+    pauseVideoOnCurrentFrame();
+  }, [pauseVideoOnCurrentFrame]);
+
+  const handleCineSpace = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!video.paused) {
+      pauseVideoOnCurrentFrame();
+      setMessage(zh ? '已暂停。再按空格标记此帧为关键帧' : 'Paused. Press Space again to mark this frame');
+      return;
+    }
+    markDoctorKeyframe();
+  }, [markDoctorKeyframe, pauseVideoOnCurrentFrame, zh]);
 
   const selectDoctorKeyframe = useCallback(async (kf: DoctorKeyframe) => {
     const video = videoRef.current;
@@ -5482,8 +6939,7 @@ export function InteractiveSegPanel({
     persistOpenKeyframeContours();
     setActiveDoctorKeyframeId(kf.id);
     activeDoctorKeyframeIdRef.current = kf.id;
-    video.pause();
-    setIsPlaying(false);
+    pauseVideoOnCurrentFrame({ timeSec: kf.timeSec });
     if (Math.abs((video.currentTime || 0) - kf.timeSec) > 0.04) {
       await seekVideoForAgent(video, kf.timeSec);
     }
@@ -5494,6 +6950,9 @@ export function InteractiveSegPanel({
       pointsRef.current = prepared;
       generatedLesionRef.current = prepared;
       setPoints(prepared);
+      const extras = (kf.extraLesionPolygons || []).filter((poly) => poly.length >= 3);
+      extraLesionPolygonsRef.current = extras;
+      setExtraLesionPolygons(extras);
       setSimpleEditMode(true);
       setSimpleEditLayer('lesion');
       setMode('soft');
@@ -5518,7 +6977,64 @@ export function InteractiveSegPanel({
       lumenPolygonRef.current = seeded;
       setLumenPolygon(seeded);
     }
+    const restoredFocus = (kf.analysisFocusPoints || []).filter((point) => point.length >= 2);
+    analysisFocusPointsRef.current = restoredFocus;
+    setAnalysisFocusPoints(restoredFocus);
+    if (kf.wallVisibility) {
+      setWallVisibility(kf.wallVisibility);
+      wallVisibilityRef.current = kf.wallVisibility;
+    }
+    if (kf.serosaAnchorMode) {
+      setSerosaAnchorMode(kf.serosaAnchorMode);
+      serosaAnchorModeRef.current = kf.serosaAnchorMode;
+    }
+    if (kf.wallPolygon && kf.wallPolygon.length >= 3) {
+      const preparedWall = prepareEditableContour(kf.wallPolygon, WALL_CONTOUR_MAX_POINTS);
+      wallPointsRef.current = preparedWall;
+      setWallPoints(preparedWall);
+      if (kf.wallLayerReadout) {
+        const restored = {
+          ...judgeWallLayerBreach({
+            remainPx: kf.wallLayerReadout.remainPx,
+            source: kf.wallLayerReadout.source,
+          }),
+          layersBreached: kf.wallLayerReadout.layersBreached,
+          deepestZh: kf.wallLayerReadout.deepestZh,
+          deepestEn: kf.wallLayerReadout.deepestEn,
+          ratio: kf.wallLayerReadout.ratio,
+          source: kf.wallLayerReadout.source,
+        };
+        const destFrame = captureFrameGray();
+        const storedBands = (kf.wallLayerBands || []).filter((band) => band.length >= 2);
+        const ids = doctorClinicalIds(wallLayerTargetRef.current);
+        applyWallLayerVisuals(
+          preparedWall,
+          restored,
+          destFrame,
+          storedBands.length
+            ? storedBands.map((curve, index) => ({
+              layer: ids[index] || 5,
+              curve,
+              imaginaryMask: kf.wallLayerImaginary?.[index] || [],
+            }))
+            : null,
+        );
+        refreshWallEchoClarify(destFrame);
+        persistOpenKeyframeContours({ refined: true });
+      }
+    } else {
+      wallPointsRef.current = [];
+      wallExtensionMaskRef.current = [];
+      setWallPoints([]);
+      setWallLayerReadout(null);
+      wallLayerReadoutRef.current = null;
+      setWallLayerBands([]);
+      wallLayerBandsRef.current = [];
+      setWallLayerImaginary([]);
+      wallLayerImaginaryRef.current = [];
+    }
     setSimplePromptMode('box');
+    armLesionBox(false);
     setLumenEditMode(false);
     setRefineTarget('lesion');
     setSimpleToolsOpen(true);
@@ -5528,39 +7044,173 @@ export function InteractiveSegPanel({
     setViewFocusMode(null);
     redrawRef.current();
 
-    const needsAutoSeg = !(kf.lesionPolygon && kf.lesionPolygon.length >= 3)
-      && kf.segStatus !== 'running';
-    if (needsAutoSeg) {
-      const frame = captureDoctorFrameFromVideo(video);
-      if (frame) {
-        void runDoctorKeyframePreseg(kf.id, frame);
-        return;
-      }
-    }
-
     setMessage(
       kf.lesionPolygon && kf.lesionPolygon.length >= 3
         ? (zh
-          ? `已打开关键帧 t=${kf.timeSec.toFixed(2)}s，可继续精修病灶`
-          : `Opened keyframe t=${kf.timeSec.toFixed(2)}s; refine the lesion`)
+          ? `已暂停并打开关键帧 ${formatKeyframeTime(kf.timeSec)} / 第${cineFrameIndex(kf.timeSec, videoFpsRef.current)}帧，只看这一帧；可整体拖动或精修`
+          : `Paused on keyframe ${formatKeyframeTime(kf.timeSec)} / f${cineFrameIndex(kf.timeSec, videoFpsRef.current)}; drag the whole lesion or refine`)
         : (zh
-          ? `已打开关键帧 t=${kf.timeSec.toFixed(2)}s。请拖出病灶框，松手后自动分割`
-          : `Opened keyframe t=${kf.timeSec.toFixed(2)}s. Draw a lesion box to auto-segment`),
+          ? `已暂停并打开关键帧 ${formatKeyframeTime(kf.timeSec)} / 第${cineFrameIndex(kf.timeSec, videoFpsRef.current)}帧。请先点亮「框选病灶」，再拖出矩形`
+          : `Paused on keyframe ${formatKeyframeTime(kf.timeSec)} / f${cineFrameIndex(kf.timeSec, videoFpsRef.current)}. Arm Box lesion, then drag`),
     );
-  }, [clearKeyframeOverlay, persistOpenKeyframeContours, runDoctorKeyframePreseg, zh]);
+    recordDoctorOp('keyframe_select', {
+      operation: 'keyframe_select',
+      op: 'keyframe_select',
+      keyframe_id: kf.id,
+      video_time_sec: kf.timeSec,
+    });
+  }, [applyWallLayerVisuals, captureFrameGray, clearKeyframeOverlay, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, refreshWallEchoClarify, zh]);
   selectDoctorKeyframeRef.current = selectDoctorKeyframe;
 
   const removeDoctorKeyframe = useCallback((id: string) => {
+    const removed = doctorKeyframesRef.current.find((kf) => kf.id === id);
     setDoctorKeyframes((prev) => prev.filter((kf) => kf.id !== id));
     setActiveDoctorKeyframeId((cur) => (cur === id ? null : cur));
-  }, []);
+    recordDoctorOp('keyframe_delete', {
+      operation: 'keyframe_delete',
+      op: 'keyframe_delete',
+      keyframe_id: id,
+      video_time_sec: removed?.timeSec ?? null,
+    });
+    if (accountReaderId && patient?.id) {
+      void fetch('/api/reader/case-state', {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          account_id: accountReaderId,
+          case_id: patient.id,
+          patient_id: patient.patient_id,
+          study_mode: patient.study_mode || undefined,
+          progress: 'in_progress',
+          activity_append: {
+            id: `kfd_${Date.now().toString(36)}`,
+            at: new Date().toISOString(),
+            type: 'keyframe_delete',
+            label_zh: `删除关键帧 t=${Number(removed?.timeSec || 0).toFixed(2)}s`,
+            label_en: `Deleted keyframe t=${Number(removed?.timeSec || 0).toFixed(2)}s`,
+            detail: { keyframe_id: id, time_sec: removed?.timeSec ?? null },
+          },
+        }),
+      }).catch(() => {});
+    }
+  }, [accountReaderId, authHeaders, patient?.id, patient?.patient_id, patient?.study_mode, recordDoctorOp]);
 
   useEffect(() => {
+    let cancelled = false;
     setDoctorKeyframes([]);
     setActiveDoctorKeyframeId(null);
     setAnalysisContourUnrefined(false);
+    setAdjacentPair(null);
+    adjacentPairRef.current = null;
+    setWallLayerTarget(1);
+    wallLayerTargetRef.current = 1;
     doctorKeyframeSessionRef.current += 1;
-  }, [patient?.id, patient?.patient_id, videoUrl]);
+    const caseId = patient?.id;
+    const accountId = accountReaderId;
+    if (!caseId || !accountId || !simpleVideoMode) {
+      return () => { cancelled = true; };
+    }
+    const session = doctorKeyframeSessionRef.current;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/reader/case-state?case_id=${encodeURIComponent(caseId)}`,
+          { cache: 'no-store', headers: authHeaders() },
+        );
+        if (!response.ok || cancelled || doctorKeyframeSessionRef.current !== session) return;
+        const data = await response.json() as {
+          ok?: boolean;
+          state?: {
+            doctor_keyframes?: DoctorKeyframe[];
+            active_keyframe_id?: string | null;
+            adjacent_lock?: AdjacentPair | null;
+            wall_target_layers?: 1 | 2 | 3 | null;
+          } | null;
+        };
+        const restoredLock = parseAdjacentPair(data.state?.adjacent_lock);
+        const restoredLayers = parseWallLayerTarget(data.state?.wall_target_layers);
+        if (restoredLock) {
+          setAdjacentPair(restoredLock);
+          adjacentPairRef.current = restoredLock;
+        }
+        if (restoredLayers) {
+          setWallLayerTarget(restoredLayers);
+          wallLayerTargetRef.current = restoredLayers;
+        }
+        if (restoredLock) {
+          window.dispatchEvent(new CustomEvent(ADJACENT_LOCK_EVENT, {
+            detail: { pair: restoredLock, source: 'restore' } satisfies AdjacentLockEventDetail,
+          }));
+        }
+        const frames = Array.isArray(data.state?.doctor_keyframes) ? data.state.doctor_keyframes : [];
+        if (!frames.length || cancelled || doctorKeyframeSessionRef.current !== session) return;
+        const sorted = sortDoctorKeyframes(frames);
+        doctorKeyframesRef.current = sorted;
+        setDoctorKeyframes(sorted);
+        const activeId = data.state?.active_keyframe_id || sorted[0]?.id || null;
+        setActiveDoctorKeyframeId(activeId);
+        activeDoctorKeyframeIdRef.current = activeId;
+        const active = findDoctorKeyframeById(sorted, activeId) || sorted[0];
+        if (active) void selectDoctorKeyframeRef.current(active);
+      } catch {
+        // Restore is best effort.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [accountReaderId, authHeaders, patient?.id, patient?.patient_id, simpleVideoMode, videoUrl, zh]);
+
+  useEffect(() => {
+    if (!simpleVideoMode || !patient?.id || !accountReaderId) return;
+    if (!doctorKeyframes.length && !activeDoctorKeyframeId) return;
+    const timer = window.setTimeout(() => {
+      const latestCount = doctorKeyframes.length;
+      const prevCount = Number(sessionStorage.getItem(`kf_count_${patient.id}`) || '0');
+      const shouldLog = latestCount !== prevCount;
+      if (shouldLog) sessionStorage.setItem(`kf_count_${patient.id}`, String(latestCount));
+      void fetch('/api/reader/case-state', {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          account_id: accountReaderId,
+          case_id: patient.id,
+          patient_id: patient.patient_id,
+          study_mode: patient.study_mode || undefined,
+          progress: 'in_progress',
+          doctor_keyframes: doctorKeyframes.map((kf) => ({
+            ...kf,
+            thumbDataUrl: kf.thumbDataUrl || null,
+          })),
+          active_keyframe_id: activeDoctorKeyframeId,
+          keyframe_mark_count: latestCount,
+          activity_append: shouldLog && latestCount > 0
+            ? {
+              id: `kf_${Date.now().toString(36)}`,
+              at: new Date().toISOString(),
+              type: 'keyframe_mark',
+              label_zh: `关键帧已更新（共 ${latestCount} 帧）`,
+              label_en: `Keyframes updated (${latestCount})`,
+              detail: {
+                count: latestCount,
+                active_keyframe_id: activeDoctorKeyframeId,
+              },
+            }
+            : null,
+        }),
+      }).catch(() => {
+        // Persist must not interrupt reading.
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    accountReaderId,
+    activeDoctorKeyframeId,
+    authHeaders,
+    doctorKeyframes,
+    patient?.id,
+    patient?.patient_id,
+    patient?.study_mode,
+    simpleVideoMode,
+  ]);
 
   useEffect(() => {
     doctorKeyframesRef.current = doctorKeyframes;
@@ -5569,6 +7219,7 @@ export function InteractiveSegPanel({
 
   useEffect(() => {
     if (isPlaying || mediaMode !== 'video') return;
+    if (lesionBoxArmedRef.current) return;
     const currentTime = videoRef.current?.currentTime ?? videoTime;
     const kf = isDoctorKeyframeOpen(doctorKeyframes, activeDoctorKeyframeId, currentTime, false);
     if (!kf || kf.segStatus !== 'ready') return;
@@ -5579,15 +7230,32 @@ export function InteractiveSegPanel({
   useEffect(() => {
     if (!open || mediaMode !== 'video') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      const target = e.target;
+      const typing = target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLInputElement && target.type !== 'range');
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (typing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        stepCineFrames(e.key === 'ArrowLeft' ? -1 : 1);
+        return;
+      }
       if (e.code !== 'Space' && e.key !== ' ') return;
+      // Allow Space on the scrubber (range) so pause-scrub-mark works.
+      if (typing) return;
       e.preventDefault();
       e.stopPropagation();
-      markDoctorKeyframe();
+      handleCineSpace();
+      // Blur scrubber so the next Space is not eaten by the range control.
+      if (target instanceof HTMLElement && typeof target.blur === 'function') {
+        target.blur();
+      }
+      containerRef.current?.focus?.({ preventScroll: true });
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [markDoctorKeyframe, mediaMode, open]);
+  }, [handleCineSpace, mediaMode, open, stepCineFrames]);
 
   const refineWithNnInteractive = useCallback(async (
     target: 'lesion' | 'lumen' = 'lesion',
@@ -5823,6 +7491,9 @@ export function InteractiveSegPanel({
         setTrackingPrepared(false);
         setTrackOnPlay(false);
       }
+      if (simpleVideoMode && target === 'lesion' && nextPolygon.length >= 3) {
+        scheduleCompleteMaskAutosaveRef.current('auto_save');
+      }
       onImagingAssist?.({
         layerResult,
         lesionPolygon: target === 'lesion' ? nextPolygon : pointsRef.current,
@@ -5917,6 +7588,7 @@ export function InteractiveSegPanel({
     setSam31RefineTarget(null);
     setMode('sam');
     setSimplePromptMode('point');
+    armLesionBox(false);
     setSimpleEditMode(false);
     setLumenEditMode(false);
     setTrackOnPlay(false);
@@ -6495,12 +8167,17 @@ export function InteractiveSegPanel({
       let lesion = pointsRef.current;
       if (lesion.length < 3) {
         recordDoctorWorkflowStep('lesion_detection', '自动检测病灶候选', 'started', {
-          input: { model: 'yolo_then_sam31', prompt: 'lesion_box_then_lora_mask' },
+          input: {
+            model: publicLesionSegModel(segmentationModel),
+            prompt: publicLesionSegModel(segmentationModel) === 'dinov3'
+              ? 'full_image_dino'
+              : 'lesion_box_then_lora_mask',
+          },
         });
         lesion = await findLesionCandidate() || [];
         if (lesion.length < 3) throw new Error('自动检测病灶失败，请手动框选病灶');
         recordDoctorWorkflowStep('lesion_detection', '自动检测病灶候选', 'completed', {
-          output: { polygon_points: lesion.length, source: 'yolo_then_sam31' },
+          output: { polygon_points: lesion.length, source: publicLesionSegModel(segmentationModel) },
         });
       } else {
         recordDoctorWorkflowStep('lesion_reuse', '复用已有病灶位置', 'skipped', {
@@ -6518,7 +8195,7 @@ export function InteractiveSegPanel({
             seedCenter,
             seedBox,
             [{ x: seedCenter[0], y: seedCenter[1], label: 'positive' }],
-            'sam31',
+            publicLesionSegModel(segmentationModel),
           );
       if (refined && refined.length >= 3) {
         pointsRef.current = refined;
@@ -6555,6 +8232,7 @@ export function InteractiveSegPanel({
       recordDoctorWorkflowStep('workflow_complete', '病灶与胃腔分割完成，等待手动跟踪', 'completed', {
         output: { lesion_points: lesion.length, lumen_points: lumenPolygonRef.current.length },
       });
+      scheduleCompleteMaskAutosaveRef.current('auto_save');
       setMessage(
         zh
           ? '病灶与胃腔分割已完成。确认轮廓后点「视频跟踪」，将同时跟踪病灶与胃腔。'
@@ -6602,7 +8280,7 @@ export function InteractiveSegPanel({
     if (pointsRef.current.length < 3) {
       setAssistOverlayOpen(false);
       setTaskProgress(null);
-      setMessage(zh ? '请先打开关键帧并框选病灶' : 'Open a keyframe and draw a lesion box first');
+      setMessage(zh ? '请先框选病灶' : 'Draw a lesion box first');
       return;
     }
 
@@ -6629,12 +8307,25 @@ export function InteractiveSegPanel({
     zh,
   ]);
 
+  useEffect(() => {
+    const onRunAssist = () => {
+      void runContourAnchoredAssist();
+    };
+    window.addEventListener('gastric:run-assist', onRunAssist);
+    return () => window.removeEventListener('gastric:run-assist', onRunAssist);
+  }, [runContourAnchoredAssist]);
+
   const autoDetectLesion = useCallback(async () => {
     if (!simpleVideoMode || mediaMode !== 'video' || lesionAutoBusy) return;
     canvasWorkflowLabelRef.current = true;
     setLesionAutoBusy(true);
     recordDoctorWorkflowStep('lesion_detection', '自动检测病灶候选', 'started', {
-      input: { model: 'yolo_then_sam31', prompt: 'lesion_box_then_lora_mask' },
+      input: {
+        model: publicLesionSegModel(segmentationModel),
+        prompt: publicLesionSegModel(segmentationModel) === 'dinov3'
+          ? 'full_image_dino'
+          : 'lesion_box_then_lora_mask',
+      },
     });
     try {
       const polygon = await findLesionCandidate();
@@ -6642,7 +8333,7 @@ export function InteractiveSegPanel({
         throw new Error('自动检测病灶未返回有效候选轮廓');
       }
       recordDoctorWorkflowStep('lesion_detection', '自动检测病灶候选', 'completed', {
-        output: { polygon_points: polygon.length, model: 'yolo_then_sam31' },
+        output: { polygon_points: polygon.length, model: publicLesionSegModel(segmentationModel) },
       });
       setMessage(zh ? '已找到病灶候选；可用「编辑轮廓」微调后点顶中辅助分析' : 'Lesion candidate found; refine with Edit, then use top Assist');
     } catch (error) {
@@ -6654,7 +8345,7 @@ export function InteractiveSegPanel({
       setLesionAutoBusy(false);
       setWorkflowStepLabel(null);
     }
-  }, [findLesionCandidate, lesionAutoBusy, mediaMode, recordDoctorWorkflowStep, simpleVideoMode, zh]);
+  }, [findLesionCandidate, lesionAutoBusy, mediaMode, recordDoctorWorkflowStep, segmentationModel, simpleVideoMode, zh]);
 
   useEffect(() => {
     persistLumenOverrideRef.current = handleSaveLumen;
@@ -6695,7 +8386,7 @@ export function InteractiveSegPanel({
 
   const hitLumenHandle = useCallback((imgPt: number[], box: LumenBBox, thr: number): LumenBoxHandle | null => {
     // Larger grab area so continuous box adjustment stays easy on clinical displays.
-    const cornerThr = Math.max(thr * 2.8, 14);
+    const cornerThr = Math.max(thr * 3.6, 22);
     const corners: Array<[LumenBoxHandle, number, number]> = [
       ['nw', box.x1, box.y1],
       ['ne', box.x2, box.y1],
@@ -6742,32 +8433,19 @@ export function InteractiveSegPanel({
       setSamClicks(next);
     }
     if (simpleVideoMode && mediaMode === 'video') {
-      // Box auto-seg: SAM2 interactive first (better boundary with box), then SAM3.1.
-      if (box) {
-        const guided = await runSamAtPoint(imgPt, {
-          silent: true,
-          keepEditing: true,
-          stayInSam: true,
-          source: 'sam',
-          clicks: next.length ? next : undefined,
-          box,
-          model: 'sam2',
-          enforceQualityGate: true,
-        });
-        if (guided && guided.length >= 3) return guided;
-        const sam31 = await runSamAtPoint(imgPt, {
-          silent: true,
-          keepEditing: true,
-          stayInSam: true,
-          source: 'sam',
-          clicks: next.length ? next : undefined,
-          box,
-          model: 'sam31',
-          enforceQualityGate: true,
-        });
-        if (sam31 && sam31.length >= 3) return sam31;
+      const publicModel = publicLesionSegModel(segmentationModel);
+      if (publicModel === 'dinov3') {
+        return runLesionModelRef.current(imgPt, box || null, next, 'dinov3');
       }
-      return runLesionModel(imgPt, box || null, next, 'sam31');
+      return runSamAtPoint(imgPt, {
+        silent: true,
+        keepEditing: true,
+        stayInSam: true,
+        source: 'sam',
+        clicks: next.length ? next : undefined,
+        box: box || undefined,
+        model: 'sam31',
+      });
     }
     return runSamAtPoint(imgPt, {
       keepEditing: true,
@@ -6776,7 +8454,7 @@ export function InteractiveSegPanel({
       clicks: next.length ? next : undefined,
       box: box || undefined,
     });
-  }, [freezeCurrentFrame, layerResult, mediaMode, onImagingAssist, onSystemReport, patient, runLesionModel, runSamAtPoint, segmentationModel, simpleVideoMode]);
+  }, [freezeCurrentFrame, mediaMode, runSamAtPoint, segmentationModel, simpleVideoMode]);
 
   const activateActiveSamPrompt = useCallback((
     promptMode: ActiveSamPromptMode,
@@ -6807,6 +8485,7 @@ export function InteractiveSegPanel({
     }
     setMode('sam');
     setSimplePromptMode(promptMode);
+    armLesionBox(false);
     setSimpleEditMode(false);
     setLumenEditMode(false);
     setNnInteractiveTarget(target);
@@ -6932,9 +8611,110 @@ export function InteractiveSegPanel({
   ]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const imgPt = canvasToImage(e);
-    if (!imgPt) return;
-    if (lumenSamBusy || segmentationBusy) return;
+    const wantPan = (e.shiftKey || e.button === 1)
+      && viewZoomRef.current > 1.02
+      && !wallPaintModeRef.current
+      && !wallPickModeRef.current
+      && !lumenSculptMode;
+    if (wantPan) {
+      e.preventDefault();
+      capturePointerSafely(e.currentTarget, e.pointerId);
+      const fallback = canvasToImage(e, { clamp: true });
+      const center = viewCenterRef.current || (fallback ? { x: fallback[0], y: fallback[1] } : { x: 0, y: 0 });
+      viewPanDragRef.current = { x: e.clientX, y: e.clientY, cx: center.x, cy: center.y };
+      return;
+    }
+    const wantLesionBox = lesionBoxArmedRef.current || lesionBoxArmed;
+    const imgPt = canvasToImage(e, {
+      clamp: wantLesionBox || lumenEditMode || wallPickModeRef.current || analysisFocusModeRef.current,
+    });
+    if (!imgPt) {
+      if (wantLesionBox) {
+        setMessage(zh ? '请在图像上拖出矩形框选病灶' : 'Drag a rectangle on the image');
+      }
+      return;
+    }
+
+    if (analysisFocusModeRef.current) {
+      e.preventDefault();
+      freezeCurrentFrame();
+      const next = addAnalysisFocusPoint(analysisFocusPointsRef.current, imgPt);
+      analysisFocusPointsRef.current = next;
+      setAnalysisFocusPoints(next);
+      persistOpenKeyframeContoursRef.current({ refined: true });
+      recordDoctorOpRef.current('analysis_focus', {
+        video_time_sec: videoRef.current?.currentTime ?? null,
+        image_x: imgPt[0],
+        image_y: imgPt[1],
+        layer: 'wall',
+        operation: 'analysis_focus',
+        point_count: next.length,
+      });
+      setMessage(zh
+        ? (next.length
+          ? `已标 ${next.length} 个分析焦点。再点可改或再加，最多 3 个。这不是突破点。`
+          : '已去掉分析焦点。')
+        : (next.length
+          ? `${next.length} analysis focus point(s). Tap again to add or remove, max 3. Not a breach mark.`
+          : 'Cleared analysis focus.'));
+      redrawRef.current?.();
+      return;
+    }
+
+    if (wallPickModeRef.current) {
+      e.preventDefault();
+      freezeCurrentFrame();
+      const next = [...wallPickFlanksRef.current, imgPt].slice(0, 2);
+      wallPickFlanksRef.current = next;
+      setWallPickFlanks(next);
+      recordDoctorOpRef.current('wall_edit', {
+        video_time_sec: videoRef.current?.currentTime ?? null,
+        image_x: imgPt[0],
+        image_y: imgPt[1],
+        layer: 'wall',
+        operation: 'wall_flank_pick',
+        point_count: next.length,
+        frozen: true,
+      });
+      if (next.length >= 2) {
+        wallPickModeRef.current = false;
+        setWallPickMode(false);
+        applyWallExtension({ doctorFlanks: next });
+      } else {
+        setMessage(zh ? '已点一侧可见壁。请再点对侧。' : 'First visible flank marked. Click the opposite side.');
+      }
+      redrawRef.current?.();
+      return;
+    }
+
+    if (wallPaintModeRef.current) {
+      e.preventDefault();
+      freezeCurrentFrame();
+      capturePointerSafely(e.currentTarget, e.pointerId);
+      wallPaintStrokeRef.current = [imgPt];
+      setWallPaintStroke([imgPt]);
+      redrawRef.current?.();
+      return;
+    }
+
+    // Armed box-lesion wins over handles, whole-mask drag, nnInteractive, and in-flight SAM.
+    if (wantLesionBox && !lumenEditMode && !lumenSculptMode) {
+      e.preventDefault();
+      lastPolyClickRef.current = null;
+      contourInteractionRef.current = true;
+      generatedLesionRef.current = [];
+      videoFrameOverridesRef.current = [];
+      setVideoFrameOverrides([]);
+      setTrackingPrepared(false);
+      setSimpleEditMode(false);
+      clearSamPrompts();
+      setSimplePromptBox(null);
+      freezeCurrentFrame();
+      capturePointerSafely(e.currentTarget, e.pointerId);
+      samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
+      setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
+      return;
+    }
 
     if (lumenSculptMode) {
       e.preventDefault();
@@ -6957,7 +8737,8 @@ export function InteractiveSegPanel({
     if (lumenEditMode) {
       if (samBusy || segmentationBusy || lumenBusy || lumenSamBusy) return;
       const activeBox = lumenBoxRef.current || lumenBox;
-      if (activeBox) {
+      const startFresh = lumenBoxFreshDrawRef.current || !activeBox;
+      if (!startFresh && activeBox) {
         const handle = hitLumenHandle(imgPt, activeBox, hitThreshold());
         if (handle) {
           e.preventDefault();
@@ -6971,7 +8752,8 @@ export function InteractiveSegPanel({
           return;
         }
       }
-      // Outside the current box: redraw a new lumen box and stay in edit mode.
+      // Fresh draw, or click outside the current box: start a new lumen box.
+      lumenBoxFreshDrawRef.current = false;
       e.preventDefault();
       capturePointerSafely(e.currentTarget, e.pointerId);
       freezeCurrentFrame();
@@ -7042,9 +8824,9 @@ export function InteractiveSegPanel({
         ? (lumenPolygonRef.current.length >= 3 ? lumenPolygonRef.current : ensureLumenPolygonForRefine())
         : getCurrentTrackedPolygon();
       if (source.length >= 3) {
-        const handleCount = Math.min(
-          VISIBLE_HANDLE_COUNT,
-          refineTarget === 'lumen' ? LUMEN_CTRL_COUNT : LESION_CTRL_COUNT,
+        const handleCount = adaptiveHandleCount(
+          source,
+          Math.min(VISIBLE_HANDLE_COUNT, refineTarget === 'lumen' ? LUMEN_CTRL_COUNT : LESION_CTRL_COUNT),
         );
         const picked = pickVisibleHandle(source, imgPt, hitThreshold(), handleCount, hitThreshold() * 1.4);
         if (picked) {
@@ -7101,9 +8883,51 @@ export function InteractiveSegPanel({
     }
 
     if (simpleVideoMode && mediaMode === 'video') {
-      if (samBusy || segmentationBusy || lumenSamBusy || nnInteractiveBusy) return;
+      if (samBusy || segmentationBusy || lumenSamBusy || nnInteractiveBusy) {
+        setMessage(zh ? '正在分割中，请稍候再画' : 'Segmentation in progress; wait before drawing');
+        return;
+      }
       e.preventDefault();
-      if (simpleEditMode) {
+      const canEditExisting = !lesionBoxArmed && !lumenEditMode;
+      if (simpleEditMode || (canEditExisting && getCurrentTrackedPolygon().length >= 3)) {
+        const bands = wallLayerBandsRef.current;
+        if (bands.length && !lumenEditMode && refineTarget !== 'lumen') {
+          const bandThr = hitThreshold() * (viewZoom >= 1.35 ? 2.4 : 1.4);
+          let found: { bandIndex: number; pick: { index: number; points: number[][] } } | null = null;
+          let bestD = Infinity;
+          for (let bandIndex = 0; bandIndex < bands.length; bandIndex += 1) {
+            const band = bands[bandIndex];
+            if (band.length < 2) continue;
+            const hit = (e.altKey || e.ctrlKey)
+              ? pickOrInsertOnContour(band, imgPt, bandThr)
+              : pickSoftAnchor(band, imgPt, bandThr);
+            if (!hit) continue;
+            const d = dist2(band[hit.index] || hit.points[hit.index], imgPt);
+            if (d < bestD) {
+              bestD = d;
+              found = { bandIndex, pick: hit };
+            }
+          }
+          if (found) {
+            const hitBand = found;
+            capturePointerSafely(e.currentTarget, e.pointerId);
+            freezeCurrentFrame();
+            pushEditUndo();
+            const nextBands = bands.map((band, index) => (
+              index === hitBand.bandIndex ? clonePoly(hitBand.pick.points) : band
+            ));
+            wallLayerBandsRef.current = nextBands;
+            setWallLayerBands(nextBands);
+            dragSoftRef.current = true;
+            dragIndexRef.current = hitBand.pick.index;
+            dragLayerRef.current = 'band';
+            dragBandIndexRef.current = hitBand.bandIndex;
+            setDragIndex(hitBand.pick.index);
+            setDragLayer('band');
+            setSimpleEditMode(true);
+            return;
+          }
+        }
         const source = refineTarget === 'lumen'
           ? (lumenPolygonRef.current.length >= 3 ? lumenPolygonRef.current : ensureLumenPolygonForRefine())
           : (simpleEditLayer === 'wall' && wallPointsRef.current.length >= 3
@@ -7112,9 +8936,12 @@ export function InteractiveSegPanel({
         const layer: DragLayer = refineTarget === 'lumen'
           ? 'lumen'
           : (simpleEditLayer === 'wall' && wallPointsRef.current.length >= 3 ? 'wall' : 'lesion');
-        const handleCount = Math.min(
-          VISIBLE_HANDLE_COUNT,
-          layer === 'lumen' ? LUMEN_CTRL_COUNT : layer === 'wall' ? WALL_CTRL_COUNT : LESION_CTRL_COUNT,
+        const handleCount = adaptiveHandleCount(
+          source,
+          Math.min(
+            VISIBLE_HANDLE_COUNT,
+            layer === 'lumen' ? LUMEN_CTRL_COUNT : layer === 'wall' ? WALL_CTRL_COUNT : LESION_CTRL_COUNT,
+          ),
         );
         const picked = source.length >= 3
           ? ((e.altKey || e.ctrlKey)
@@ -7137,15 +8964,25 @@ export function InteractiveSegPanel({
           dragLayerRef.current = layer;
           setDragIndex(picked.index);
           setDragLayer(layer);
+          setSimpleEditMode(true);
           return;
         }
-        if (source.length >= 3 && pointInPolygon(imgPt, source)) {
+        if (source.length >= 3 && hitWholeShape(imgPt, source, hitThreshold())) {
           capturePointerSafely(e.currentTarget, e.pointerId);
           freezeCurrentFrame();
           pushEditUndo();
           polyMoveRef.current = { layer, start: clonePoly(source), origin: imgPt };
+          setSimpleEditMode(true);
+          return;
         }
-        return;
+        if (!lesionBoxArmed) {
+          setMessage(
+            zh
+              ? '拖病灶本体可整体移动；要重新画框，请先点亮「框选病灶」'
+              : 'Drag the lesion body to move it. Arm Box lesion only when you want a new box',
+          );
+          return;
+        }
       }
 
       if (nnInteractiveMode) {
@@ -7172,7 +9009,19 @@ export function InteractiveSegPanel({
         return;
       }
 
-      // Reader simple path: box + control-point edit when not refining.
+      // Only start a new lesion box when the button is armed.
+      if (!lesionBoxArmed) {
+        setMessage(
+          zh
+            ? (getCurrentTrackedPolygon().length >= 3
+              ? '已有病灶遮罩。拖本体可移动；要重画请先点亮「框选病灶」'
+              : '请先点亮右侧「框选病灶」，再拖出矩形')
+            : (getCurrentTrackedPolygon().length >= 3
+              ? 'A lesion mask exists. Drag the body to move it, or arm Box lesion to redraw'
+              : 'Arm Box lesion on the right, then drag a rectangle'),
+        );
+        return;
+      }
       {
         lastPolyClickRef.current = null;
         contourInteractionRef.current = true;
@@ -7200,7 +9049,7 @@ export function InteractiveSegPanel({
     if (e.altKey && editableLesionPoints.length >= 3) {
       setLayerPick({ x: imgPt[0], y: imgPt[1] });
       captureFrameDataUrl();
-      viewingTraceRef.current('layer_pick', {
+      recordDoctorOpRef.current('layer_pick', {
         video_time_sec: videoRef.current?.currentTime ?? null,
         image_x: imgPt[0],
         image_y: imgPt[1],
@@ -7262,6 +9111,10 @@ export function InteractiveSegPanel({
       capturePointerSafely(e.currentTarget, e.pointerId);
       freezeCurrentFrame();
       pushEditUndo();
+      if (pickLayer === 'wall') {
+        wallExtensionMaskRef.current = [];
+        setWallExtensionNote('');
+      }
       setActiveLayer(pickLayer);
       const useSoft = mode !== 'hard';
       if (mode === 'sam' || mode === 'add') setMode('soft');
@@ -7288,7 +9141,7 @@ export function InteractiveSegPanel({
         if (activeLayer === 'wall') {
           wallPointsRef.current = next;
           setWallPoints(next);
-          viewingTraceRef.current('wall_edit', {
+          recordDoctorOpRef.current('wall_edit', {
             video_time_sec: videoRef.current?.currentTime ?? null,
             image_x: imgPt[0],
             image_y: imgPt[1],
@@ -7299,7 +9152,7 @@ export function InteractiveSegPanel({
         } else {
           pointsRef.current = next;
           setPoints(next);
-          viewingTraceRef.current('lesion_edit', {
+          recordDoctorOpRef.current('lesion_edit', {
             video_time_sec: videoRef.current?.currentTime ?? null,
             image_x: imgPt[0],
             image_y: imgPt[1],
@@ -7341,7 +9194,7 @@ export function InteractiveSegPanel({
       if (activeLayer === 'wall') {
         wallPointsRef.current = next;
         setWallPoints(next);
-        viewingTraceRef.current('wall_edit', {
+        recordDoctorOpRef.current('wall_edit', {
           video_time_sec: videoRef.current?.currentTime ?? null,
           image_x: imgPt[0],
           image_y: imgPt[1],
@@ -7352,7 +9205,7 @@ export function InteractiveSegPanel({
       } else {
         pointsRef.current = next;
         setPoints(next);
-        viewingTraceRef.current('lesion_edit', {
+        recordDoctorOpRef.current('lesion_edit', {
           video_time_sec: videoRef.current?.currentTime ?? null,
           image_x: imgPt[0],
           image_y: imgPt[1],
@@ -7402,6 +9255,34 @@ export function InteractiveSegPanel({
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (viewPanDragRef.current) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const video = videoRef.current;
+      const img = imgRef.current;
+      const useVideo = mediaMode === 'video' && video && video.videoWidth > 0;
+      const iw = useVideo ? video!.videoWidth : (img?.naturalWidth || 1);
+      const ih = useVideo ? video!.videoHeight : (img?.naturalHeight || 1);
+      const { scale } = computeDisplayTransform(
+        iw,
+        ih,
+        canvas.width,
+        canvas.height,
+        viewFocusBox,
+        viewZoomRef.current,
+        viewCenterRef.current,
+      );
+      const rect = canvas.getBoundingClientRect();
+      const css = rect.width / Math.max(1, canvas.width);
+      const drag = viewPanDragRef.current;
+      const next = {
+        x: drag.cx - (e.clientX - drag.x) / Math.max(1e-6, scale * css),
+        y: drag.cy - (e.clientY - drag.y) / Math.max(1e-6, scale * css),
+      };
+      viewCenterRef.current = next;
+      setViewCenter(next);
+      return;
+    }
     if (magnifierOn && dragIndexRef.current == null && !samBoxDragRef.current && !lumenBoxDragRef.current && !activePromptStrokeRef.current) {
       const canvas = canvasRef.current;
       const imgPt = canvasToImage(e);
@@ -7429,6 +9310,19 @@ export function InteractiveSegPanel({
           });
         }
       }
+    }
+    const wallStroke = wallPaintStrokeRef.current;
+    if (wallStroke) {
+      const imgPt = canvasToImage(e, { clamp: true });
+      if (!imgPt) return;
+      e.preventDefault();
+      const last = wallStroke[wallStroke.length - 1];
+      if (!last || Math.hypot(imgPt[0] - last[0], imgPt[1] - last[1]) >= 2.2) {
+        wallStroke.push(imgPt);
+        setWallPaintStroke([...wallStroke]);
+      }
+      redrawRef.current?.();
+      return;
     }
     const paintStroke = lumenPaintStrokeRef.current;
     if (paintStroke && lumenSculptMode) {
@@ -7528,7 +9422,7 @@ export function InteractiveSegPanel({
     }
     const boxDrag = samBoxDragRef.current;
     if (boxDrag) {
-      const imgPt = canvasToImage(e);
+      const imgPt = canvasToImage(e, { clamp: true });
       if (!imgPt) return;
       e.preventDefault();
       boxDrag.x1 = imgPt[0];
@@ -7551,6 +9445,21 @@ export function InteractiveSegPanel({
       const dragIdx = dragIndexRef.current;
       const dragLayer = dragLayerRef.current;
       if (!pt || dragIdx === null || !dragLayer) return;
+      if (dragLayer === 'band') {
+        const bandIndex = dragBandIndexRef.current;
+        const bands = wallLayerBandsRef.current;
+        if (bandIndex == null || !bands[bandIndex]?.[dragIdx]) return;
+        const nextBand = clonePoly(bands[bandIndex]);
+        if (dragSoftRef.current) {
+          softDeform(nextBand, dragIdx, pt[0], pt[1], WALL_SOFT_SIGMA);
+        }
+        nextBand[dragIdx] = [pt[0], pt[1]];
+        const nextBands = bands.map((band, index) => (index === bandIndex ? nextBand : band));
+        wallLayerBandsRef.current = nextBands;
+        draggingRef.current = true;
+        redrawRef.current();
+        return;
+      }
       const src = dragLayer === 'wall'
         ? wallPointsRef.current
         : dragLayer === 'lumen'
@@ -7577,6 +9486,10 @@ export function InteractiveSegPanel({
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (viewPanDragRef.current) {
+      viewPanDragRef.current = null;
+      return;
+    }
     if (polyMoveRef.current) {
       const move = polyMoveRef.current;
       polyMoveRef.current = null;
@@ -7594,6 +9507,19 @@ export function InteractiveSegPanel({
       }
       markActiveDoctorKeyframeRefined();
       void persistOverrideRef.current('doctor_edit', { silent: true });
+      return;
+    }
+    if (wallPaintStrokeRef.current) {
+      const stroke = wallPaintStrokeRef.current;
+      wallPaintStrokeRef.current = null;
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        /* ignore */
+      }
+      commitWallPaintStroke(stroke);
       return;
     }
     if (lumenPaintStrokeRef.current) {
@@ -7679,13 +9605,25 @@ export function InteractiveSegPanel({
           sam_score: undefined,
           error: undefined,
         }));
-        setMessage(
-          zh
-            ? '胃腔框已更新（仍可继续拖调）；轮廓已清除，满意后点「分割」'
-            : 'Lumen box updated (keep adjusting); contour cleared — tap Contour when ready',
-        );
-        // Stay in lumenEditMode for continuous adjustment.
-        setLumenEditMode(true);
+        const boxW = Math.abs(normalized.x2 - normalized.x1);
+        const boxH = Math.abs(normalized.y2 - normalized.y1);
+        if (boxW > 12 && boxH > 12) {
+          setLumenEditMode(false);
+          setMessage(zh ? '胃腔框已画出，正在自动分割…' : 'Lumen box set; auto-segmenting…');
+          void segmentLumenWithSam31().then((ok) => {
+            if (ok) {
+              setLumenEditMode(false);
+              setMessage(zh ? '胃腔已自动分割。要重画请再点「框选胃腔」' : 'Lumen auto-segmented. Arm Box lumen to redraw');
+            } else {
+              setLumenEditMode(true);
+              lumenBoxFreshDrawRef.current = true;
+              setMessage(zh ? '胃腔自动分割未成功，框选仍点亮，可再拖一框' : 'Lumen auto-segment failed; Box lumen stays armed');
+            }
+          });
+        } else {
+          setMessage(zh ? '请拖出更大的胃腔框' : 'Drag a larger lumen box');
+          setLumenEditMode(true);
+        }
         if (mediaMode === 'video' && pointsRef.current.length >= 3) {
           recordVideoFrameOverride(pointsRef.current, 'accepted');
           void persistOverrideRef.current('doctor_edit', { silent: true });
@@ -7728,6 +9666,7 @@ export function InteractiveSegPanel({
         setSamClicks(samClicksRef.current);
         setSimplePromptBox(box);
         setSimplePromptMode('box');
+        armLesionBox(false);
         recordDoctorOp('box_draw_end', {
           layer: 'lesion',
           operation: 'box_draw_end',
@@ -7737,58 +9676,46 @@ export function InteractiveSegPanel({
         });
         if (simpleVideoMode) {
           applyDoctorLesionBox(box);
-          if (boxAutoSegBusy) return;
           setBoxAutoSegBusy(true);
           void runSamClick([cx, cy], 'positive', box).then((poly) => {
             setBoxAutoSegBusy(false);
             resumeSimpleTracking(poly);
-            if (poly && poly.length >= 3) {
-              stopInteractivePrompt();
-              setMode('soft');
-              setSimplePromptMode('box');
-              setSimpleEditMode(true);
-              setSimpleEditLayer('lesion');
-              setActiveLayer('lesion');
-              setLumenEditMode(false);
-              persistOpenKeyframeContours({ refined: true });
-              recordDoctorOp('sam_refine', {
-                layer: 'lesion',
-                operation: 'sam_refine',
-                tool: 'box_lesion',
-                status: 'ok',
-                point_count: poly.length,
-              });
-              setMessage(
-                zh
-                  ? '框选完成：已自动分割，可拖控制点微调，或用正/负点、涂抹继续修'
-                  : 'Box done: auto-segmented; drag handles or use +/- points / brush to refine',
-              );
-            } else {
-              recordDoctorOp('sam_refine', {
-                layer: 'lesion',
-                operation: 'sam_refine',
-                tool: 'box_lesion',
-                status: 'error',
-              });
-              setMessage(
-                zh
-                  ? '自动分割未成功，已保留框选；可改框重试，或改用正/负点'
-                  : 'Auto-segment failed; box kept. Redraw or use +/- points',
-              );
-            }
+            stopInteractivePrompt();
+            setMode('soft');
+            setSimplePromptMode('box');
+            armLesionBox(false);
+            setSimpleEditMode(true);
+            setSimpleEditLayer('lesion');
+            setActiveLayer('lesion');
+            setLumenEditMode(false);
+            persistOpenKeyframeContours({ refined: true });
+            const ok = Boolean(poly && poly.length >= 3);
+            recordDoctorOp('sam_refine', {
+              layer: 'lesion',
+              operation: 'sam_refine',
+              tool: 'box_lesion',
+              status: ok ? 'ok' : 'error',
+              point_count: (poly && poly.length >= 3) ? poly.length : pointsRef.current.length,
+            });
+            setMessage(
+              ok
+                ? (zh ? '已出遮罩，可拖病灶精修' : 'Mask ready; drag to refine')
+                : (zh ? '已用框作为轮廓，可拖点精修' : 'Kept the box as the contour; drag to refine'),
+            );
           }).catch(() => {
             setBoxAutoSegBusy(false);
+            armLesionBox(false);
+            setMode('soft');
+            setSimpleEditMode(true);
+            setSimpleEditLayer('lesion');
+            persistOpenKeyframeContours({ refined: true });
             recordDoctorOp('sam_refine', {
               layer: 'lesion',
               operation: 'sam_refine',
               tool: 'box_lesion',
               status: 'error',
             });
-            setMessage(
-              zh
-                ? '自动分割失败，已保留框选；请检查 SAM 服务后改框重试'
-                : 'Auto-segment failed; box kept. Check SAM and redraw',
-            );
+            setMessage(zh ? '已用框作为轮廓，可拖点精修' : 'Kept the box as the contour; drag to refine');
           });
         } else {
           void runSamClick([cx, cy], 'positive', box).then((poly) => {
@@ -7797,14 +9724,15 @@ export function InteractiveSegPanel({
               stopInteractivePrompt();
               setMode('soft');
               setSimplePromptMode('box');
+              armLesionBox(false);
               setSimpleEditMode(true);
               setSimpleEditLayer('lesion');
               setActiveLayer('lesion');
               setLumenEditMode(false);
               setMessage(
                 zh
-                  ? '框选完成：已自动分割并进入轮廓编辑，拖控制点微调后点顶中「辅助分析」'
-                  : 'Box done: auto-segmented; drag handles to refine, then use top Assist',
+                  ? '框选完成：已出遮罩。拖病灶本体可整体移动；要重画请再点「框选病灶」'
+                  : 'Box done: mask ready. Drag the lesion body to move it; arm Box lesion only to redraw',
               );
             }
           });
@@ -7829,39 +9757,75 @@ export function InteractiveSegPanel({
       const editedLayer = dragLayerRef.current;
       const dragIdx = dragIndexRef.current;
       if (lastPt && editedLayer && dragIdx !== null) {
-        const src = editedLayer === 'wall'
-          ? wallPointsRef.current
-          : editedLayer === 'lumen'
-            ? lumenPolygonRef.current
-            : pointsRef.current;
-        if (src[dragIdx]) {
-          const next = clonePoly(src);
-          if (dragSoftRef.current) {
-            softDeform(
-              next,
-              dragIdx,
-              lastPt[0],
-              lastPt[1],
-              editedLayer === 'wall' ? WALL_SOFT_SIGMA : editedLayer === 'lumen' ? LUMEN_SOFT_SIGMA : LESION_SOFT_SIGMA,
-            );
+        if (editedLayer === 'band') {
+          const bandIndex = dragBandIndexRef.current;
+          const bands = wallLayerBandsRef.current;
+          if (bandIndex != null && bands[bandIndex]?.[dragIdx]) {
+            const nextBand = clonePoly(bands[bandIndex]);
+            if (dragSoftRef.current) {
+              softDeform(nextBand, dragIdx, lastPt[0], lastPt[1], WALL_SOFT_SIGMA);
+            }
+            nextBand[dragIdx] = [lastPt[0], lastPt[1]];
+            const nextBands = bands.map((band, index) => (index === bandIndex ? nextBand : band));
+            wallLayerBandsRef.current = nextBands;
+            setWallLayerBands(nextBands);
+            const wall = wallPointsRef.current;
+            const readout = wallLayerReadoutRef.current;
+            const frame = captureFrameGray();
+            if (wall.length >= 3 && readout && frame) {
+              const ids = doctorClinicalIds(wallLayerTargetRef.current);
+              const next = attachLayerInterrupts(
+                readout,
+                frame.gray,
+                frame.width,
+                frame.height,
+                nextBands.map((curve, index) => ({
+                  layer: ids[index] || 5,
+                  curve,
+                })),
+                wallLayerTargetRef.current,
+              );
+              setWallLayerReadout(next);
+              wallLayerReadoutRef.current = next;
+            }
           }
-          next[dragIdx] = [lastPt[0], lastPt[1]];
-          if (editedLayer === 'wall') wallPointsRef.current = next;
-          else if (editedLayer === 'lumen') lumenPolygonRef.current = next;
-          else pointsRef.current = next;
+        } else {
+          const src = editedLayer === 'wall'
+            ? wallPointsRef.current
+            : editedLayer === 'lumen'
+              ? lumenPolygonRef.current
+              : pointsRef.current;
+          if (src[dragIdx]) {
+            const next = clonePoly(src);
+            if (dragSoftRef.current) {
+              softDeform(
+                next,
+                dragIdx,
+                lastPt[0],
+                lastPt[1],
+                editedLayer === 'wall' ? WALL_SOFT_SIGMA : editedLayer === 'lumen' ? LUMEN_SOFT_SIGMA : LESION_SOFT_SIGMA,
+              );
+            }
+            next[dragIdx] = [lastPt[0], lastPt[1]];
+            if (editedLayer === 'wall') wallPointsRef.current = next;
+            else if (editedLayer === 'lumen') lumenPolygonRef.current = next;
+            else pointsRef.current = next;
+          }
         }
       }
       pendingDragPtRef.current = null;
       draggingRef.current = false;
       recordDoctorOp('contour_drag', {
-        layer: editedLayer,
-        operation: 'contour_drag',
+        layer: editedLayer === 'band' ? 'wall' : editedLayer,
+        operation: editedLayer === 'band' ? 'wall_band_drag' : 'contour_drag',
         tool: dragSoftRef.current ? 'brush' : 'hard',
-        point_count: editedLayer === 'wall'
-          ? wallPointsRef.current.length
-          : editedLayer === 'lumen'
-            ? lumenPolygonRef.current.length
-            : pointsRef.current.length,
+        point_count: editedLayer === 'band'
+          ? (wallLayerBandsRef.current[dragBandIndexRef.current || 0]?.length || 0)
+          : editedLayer === 'wall'
+            ? wallPointsRef.current.length
+            : editedLayer === 'lumen'
+              ? lumenPolygonRef.current.length
+              : pointsRef.current.length,
         image_x: lastPt?.[0],
         image_y: lastPt?.[1],
       });
@@ -7876,16 +9840,22 @@ export function InteractiveSegPanel({
         }
         void persistLumenOverrideRef.current(true);
       }
+      if (editedLayer === 'band') {
+        persistOpenKeyframeContours({ refined: true });
+        setMessage(zh ? '已按您拖过的假想分层重核中断（不定 cT）' : 'Re-checked interrupt on the sculpted layer (not a definite cT)');
+      }
       if (mediaMode === 'video' && editedLayer === 'lesion') {
         setTrackingPrepared(false);
         recordVideoFrameOverride(pointsRef.current, 'accepted');
       }
       markActiveDoctorKeyframeRefined();
-      setMessage(
-        zh
-          ? (editedLayer === 'wall' ? '胃壁区域已更新' : editedLayer === 'lumen' ? '胃腔轮廓已更新' : '当前帧病灶区域已更新')
-          : (editedLayer === 'wall' ? 'Wall region updated' : editedLayer === 'lumen' ? 'Lumen contour updated' : 'Current-frame lesion region updated'),
-      );
+      if (editedLayer !== 'band') {
+        setMessage(
+          zh
+            ? (editedLayer === 'wall' ? '胃壁区域已更新' : editedLayer === 'lumen' ? '胃腔轮廓已更新' : '当前帧病灶区域已更新')
+            : (editedLayer === 'wall' ? 'Wall region updated' : editedLayer === 'lumen' ? 'Lumen contour updated' : 'Current-frame lesion region updated'),
+        );
+      }
       void persistOverrideRef.current('doctor_edit', { silent: true });
       try {
         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -7897,6 +9867,7 @@ export function InteractiveSegPanel({
     }
     dragIndexRef.current = null;
     dragLayerRef.current = null;
+    dragBandIndexRef.current = null;
     setDragIndex(null);
     setDragLayer(null);
   };
@@ -8357,12 +10328,48 @@ export function InteractiveSegPanel({
           history_entry_id: data.history_entry?.id,
           ...summarizeMaskForAudit(saved),
         });
+        recordDoctorOp('mask_save', {
+          operation: action || 'mask_save',
+          op: 'mask_save',
+          status: 'ok',
+          history_entry_id: data.history_entry?.id || null,
+        });
+        if (accountReaderId && patient?.id) {
+          void fetch('/api/reader/case-state', {
+            method: 'PUT',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              account_id: accountReaderId,
+              case_id: patient.id,
+              patient_id: patient.patient_id,
+              study_mode: patient.study_mode || undefined,
+              progress: 'in_progress',
+              increment_mask_save: true,
+              activity_append: {
+                id: `mask_${Date.now().toString(36)}`,
+                at: new Date().toISOString(),
+                type: 'mask_saved',
+                label_zh: action === 'video_tracking_complete' ? '视频跟踪分割已保存' : '病灶/胃腔分割已保存',
+                label_en: action === 'video_tracking_complete' ? 'Tracking segmentation saved' : 'Lesion/lumen mask saved',
+                detail: { action, history_entry_id: data.history_entry?.id || null },
+              },
+            }),
+          }).catch(() => {});
+        }
         if (data.history_entry) {
           setMaskHistory((current) => [
             data.history_entry!,
             ...current.filter((item) => item.id !== data.history_entry!.id),
           ].slice(0, 40));
         }
+        lastCompleteMaskSigRef.current = [
+          next.mask_polygon?.length || 0,
+          next.mask_polygon?.[0]?.[0] || 0,
+          next.mask_polygon?.[0]?.[1] || 0,
+          lumenSnapshot?.lumen_polygon?.length || 0,
+          (saved.video_frames || []).length,
+        ].join(':');
+        if (simpleVideoMode) setCompleteMaskAutosaved(true);
         if (!options.silent) {
           setMessage(
             action === 'video_tracking_complete'
@@ -8389,11 +10396,42 @@ export function InteractiveSegPanel({
     const queued = persistChainRef.current.catch(() => false).then(save);
     persistChainRef.current = queued.catch(() => false);
     return queued;
-  }, [accountReaderId, authHeaders, buildLumenOverride, buildOverride, lumenOverride, onOverrideChange, zh]);
+  }, [accountReaderId, authHeaders, buildLumenOverride, buildOverride, lumenOverride, onOverrideChange, simpleVideoMode, zh]);
 
   useEffect(() => {
     persistOverrideRef.current = persistOverride;
   }, [persistOverride]);
+
+  const scheduleCompleteMaskAutosave = useCallback((action = 'auto_save') => {
+    if (!simpleVideoMode || pointsRef.current.length < 3) return;
+    if (completeMaskAutosaveTimerRef.current != null) {
+      window.clearTimeout(completeMaskAutosaveTimerRef.current);
+    }
+    completeMaskAutosaveTimerRef.current = window.setTimeout(() => {
+      completeMaskAutosaveTimerRef.current = null;
+      if (pointsRef.current.length < 3 || trackBusyRef.current || samBusyRef.current) return;
+      const lesion = pointsRef.current;
+      const mid = lesion[Math.floor(lesion.length / 2)] || lesion[0];
+      const sig = [
+        lesion.length,
+        lesion[0]?.[0] || 0,
+        lesion[0]?.[1] || 0,
+        mid?.[0] || 0,
+        mid?.[1] || 0,
+        lumenPolygonRef.current.length,
+        videoFrameOverridesRef.current.length,
+      ].join(':');
+      if (sig === lastCompleteMaskSigRef.current) return;
+      void persistOverrideRef.current(action, { silent: true });
+    }, 400);
+  }, [simpleVideoMode]);
+  scheduleCompleteMaskAutosaveRef.current = scheduleCompleteMaskAutosave;
+
+  useEffect(() => () => {
+    if (completeMaskAutosaveTimerRef.current != null) {
+      window.clearTimeout(completeMaskAutosaveTimerRef.current);
+    }
+  }, []);
 
   const loadMaskHistory = useCallback(async () => {
     if (!patient) return;
@@ -8721,10 +10759,6 @@ export function InteractiveSegPanel({
 
   if (!patient) return null;
 
-  const lesionReady = getCurrentTrackedPolygon().length >= 3;
-  const lumenReady = Boolean(lumenBox || lumenPolygon.length >= 3);
-  const videoTrackReady = trackingPrepared && videoFrameOverrides.length > 0;
-
   const modal = open ? (
         <div className={inline
           ? 'pointer-events-auto absolute inset-0 z-[120] flex min-h-0 min-w-0 items-stretch justify-stretch overflow-hidden bg-[#080b0f]'
@@ -8740,24 +10774,25 @@ export function InteractiveSegPanel({
                       ? (patientDisplayLabel(patient, language) || 'Case')
                       : (zh ? (mediaMode === 'video' ? '视频工具' : '静态图分割') : (mediaMode === 'video' ? 'Video tools' : 'Static image segmentation'))}
                   </div>
-                  {simpleVideoMode ? null : (
                   <CaseGoldReveal
                     patientId={patient.patient_id}
                     caseId={patient.id}
                     recordId={patient.id}
                     phase={patient.phase}
                     group={patient.group}
+                    queueId={patient.queue_id}
                     available={patient.gold_available !== false}
+                    knownLabel={patient.gold_five_class || null}
                     zh={zh}
                     compact
+                    autoReveal
                   />
-                  )}
                 </div>
                 <div className="mt-0.5 truncate text-[10px] text-slate-500 max-md:hidden">
                   {simpleVideoMode
                     ? (zh
-                      ? '先看视频，播放中也可标记关键帧，将自动分割病灶；框选精修时再暂停'
-                      : 'Watch first and mark keyframes while playing; lesion auto-segments. Pause only to redraw a box')
+                      ? '先看视频，点亮「框选病灶」后拖框，当前帧即作为关键帧'
+                      : 'Watch first, arm Box lesion, then drag; this frame becomes the keyframe')
                     : `${patientDisplayLabel(patient, language)}, ${zh
                       ? mediaMode === 'video'
                         ? '当前帧证据与 ROI 工具'
@@ -8826,6 +10861,7 @@ export function InteractiveSegPanel({
                 zh={zh}
                 keyframes={doctorKeyframes}
                 activeId={activeDoctorKeyframeId}
+                fps={videoFps}
                 onSelect={(kf) => { void selectDoctorKeyframe(kf); }}
                 onRemove={removeDoctorKeyframe}
                 onMarkDeepest={markDoctorKeyframeDeepest}
@@ -8974,7 +11010,7 @@ export function InteractiveSegPanel({
                 type="button"
                 onClick={() => {
                   setActiveLayer('wall');
-                  viewingTraceRef.current('layer_switch', {
+                  recordDoctorOpRef.current('layer_switch', {
                     video_time_sec: videoRef.current?.currentTime ?? null,
                     layer: 'wall',
                   });
@@ -8989,9 +11025,36 @@ export function InteractiveSegPanel({
               </button>
               <button
                 type="button"
+                disabled={points.length < 3}
+                onClick={() => startWallExtensionTool()}
+                className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                  wallPickMode
+                    ? 'border-amber-300 bg-amber-400/25 text-amber-50'
+                    : 'border-amber-400/40 bg-amber-500/10 text-amber-100'
+                } disabled:opacity-40`}
+                title={zh ? '点两侧看得见的胃壁，沿突破方向接过去；虚线可拖改。再点一次则自动接。' : 'Click the two visible flanks, then join through the breach. Drag the dashes. Click again to auto-join.'}
+              >
+                <Spline size={13} />
+                {zh ? (wallPickMode ? '自动接 / 点两侧' : '延长胃壁') : (wallPickMode ? 'Auto-join / click flanks' : 'Extend wall')}
+              </button>
+              <button
+                type="button"
+                onClick={() => startWallPaintTool()}
+                className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                  wallPaintMode
+                    ? 'border-amber-300 bg-amber-400/25 text-amber-50'
+                    : 'border-amber-400/40 bg-amber-500/10 text-amber-100'
+                }`}
+                title={paintLineHint(wallLayerTarget, zh)}
+              >
+                <Pencil size={13} />
+                {paintToolLabel(wallPaintMode, zh)}
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setActiveLayer('lesion');
-                  viewingTraceRef.current('layer_switch', {
+                  recordDoctorOpRef.current('layer_switch', {
                     video_time_sec: videoRef.current?.currentTime ?? null,
                     layer: 'lesion',
                   });
@@ -9097,13 +11160,17 @@ export function InteractiveSegPanel({
                 <span>{zh ? '模型' : 'Model'}</span>
                 <select
                   value={segmentationModel}
-                  onChange={(e) => setSegmentationModel(e.target.value as LesionSegmentationModel)}
+                  onChange={(e) => {
+                    const next = e.target.value as LesionSegmentationModel;
+                    if (next === 'sam31' || next === 'dinov3') chooseLesionSegModel(next);
+                    else setSegmentationModel(next);
+                  }}
                   className="rounded border border-white/15 bg-black/40 px-2 py-1 text-[11px] text-slate-200"
                   aria-label={zh ? '静态分割模型' : 'Static segmentation model'}
                 >
                   <option value="sabm_sam2_guided">{zh ? '引导式分割' : 'Guided segmentation'}</option>
-                  <option value="sam31">{zh ? '概念分割' : 'Concept segmentation'}</option>
-                  <option value="dinov3">{zh ? '区域特征分割' : 'Region-feature segmentation'}</option>
+                  <option value="sam31">SAM 3.1</option>
+                  <option value="dinov3">DINO</option>
                   <option value="convnext">{zh ? '卷积分割' : 'Conv segmentation'}</option>
                 </select>
                 <span>ROI</span>
@@ -9146,11 +11213,18 @@ export function InteractiveSegPanel({
                         </span>
                         <button
                           type="button"
-                          onClick={enterSimpleBoxPrompt}
+                          onClick={() => {
+                            if (lesionBoxArmed) {
+                              armLesionBox(false);
+                              setMessage(zh ? '已取消框选病灶' : 'Box lesion cancelled');
+                              return;
+                            }
+                            enterSimpleBoxPrompt();
+                          }}
                           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
-                            simplePromptMode === 'box' && !simpleEditMode && !lumenEditMode
-                              ? 'border-cyan-300/70 bg-cyan-500/35 text-cyan-50'
-                              : 'border-cyan-400/40 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/25'
+                            lesionBoxArmed
+                              ? 'border-cyan-200 bg-cyan-400/50 text-white ring-2 ring-cyan-100'
+                              : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10'
                           }`}
                         >
                           <ScanLine size={13} />
@@ -9533,12 +11607,7 @@ export function InteractiveSegPanel({
                 <button
                   type="button"
                   disabled={!videoUrl}
-                  onClick={() => {
-                    const v = videoRef.current;
-                    if (!v) return;
-                    if (v.paused) void v.play();
-                    else v.pause();
-                  }}
+                  onClick={() => toggleVideoPlayback()}
                   className="flex items-center gap-1 rounded-lg border border-violet-400/40 px-2.5 py-1.5 text-[11px] text-violet-100 disabled:opacity-40"
                 >
                   {isPlaying ? <Pause size={13} /> : <Play size={13} />}
@@ -9553,7 +11622,7 @@ export function InteractiveSegPanel({
                       ? 'border-amber-300/40 bg-amber-500/10 text-amber-100'
                       : 'border-amber-300/70 bg-amber-500/25 text-amber-50'
                   }`}
-                  title={zh ? '标记当前帧为关键帧；空格同样可以。标完后自动分割病灶' : 'Mark this frame as a keyframe. Space does the same. Auto-segments lesion'}
+                  title={zh ? '暂停并标记当前帧为关键帧。空格先暂停，再按一次才标记' : 'Pause and mark this frame. Space pauses first; press again to mark'}
                 >
                   {zh ? '标记此帧' : 'Mark this frame'}
                 </button>
@@ -9576,36 +11645,34 @@ export function InteractiveSegPanel({
                   {propagateToKeyframesBusy ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />}
                   {zh ? '传到其他关键帧' : 'To other keyframes'}
                 </button>
-                <div
-                  className="video-progress-shell min-w-[140px] flex-1"
-                  style={{ ['--progress' as string]: `${videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}%` }}
-                >
-                  <input
-                    ref={(node) => { videoProgressRefs.current[0] = node; }}
-                    type="range"
-                    min={0}
-                    max={Math.max(videoDuration, 0.01)}
-                    step={0.01}
-                    defaultValue={videoTime}
-                    disabled={!videoUrl}
-                    onPointerDown={beginVideoScrub}
-                    onPointerUp={endVideoScrub}
-                    onPointerCancel={endVideoScrub}
-                    onChange={(e) => {
-                      onVideoProgressChange(Number(e.target.value));
-                    }}
-                    className="video-progress"
-                    style={{ ['--progress' as string]: `${videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}%` }}
-                  />
-                </div>
+                <CineScrubBar
+                  className="min-w-[140px] flex-1"
+                  duration={videoDuration}
+                  progressPct={videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}
+                  disabled={!videoUrl}
+                  title={zh ? '拖进度条粗定位；滚轮逐帧' : 'Drag to seek; wheel steps one frame'}
+                  ariaLabel={zh ? '视频进度' : 'Video progress'}
+                  barRef={(node) => { videoProgressRefs.current[0] = node; }}
+                  onScrubStart={beginVideoScrub}
+                  onScrub={onVideoProgressChange}
+                  onScrubEnd={endVideoScrub}
+                />
                 <span className="shrink-0 font-mono text-[10px] tabular-nums text-violet-200/90">
-                  <span ref={(node) => { videoTimeLabelRefs.current[0] = node; }}>{formatCineTime(videoTime)}</span>
+                  <span ref={(node) => { videoTimeLabelRefs.current[0] = node; }}>{formatCineTime(videoTime, videoFps)}</span>
                   {' / '}
-                  {formatCineTime(videoDuration)}
+                  {formatCineTime(videoDuration, videoFps)}
                 </span>
                 <CineSpeedSelect
                   value={videoPlaybackRate}
-                  onChange={setVideoPlaybackRate}
+                  onChange={(rate) => {
+                    setVideoPlaybackRate(rate);
+                    recordDoctorOp('cine_speed', {
+                      operation: 'cine_speed',
+                      op: 'cine_speed',
+                      value: rate,
+                      video_time_sec: videoRef.current?.currentTime ?? null,
+                    });
+                  }}
                   zh={zh}
                   placement="down"
                 />
@@ -9698,19 +11765,139 @@ export function InteractiveSegPanel({
 
 
             <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
-              <div ref={containerRef} className="relative h-full w-full bg-black">
+              <div ref={containerRef} tabIndex={-1} className="relative h-full w-full bg-black outline-none">
                 {simpleVideoMode && mediaMode === 'video' && (
                   <div className="pointer-events-none absolute inset-x-2 top-3 z-[180] overflow-x-auto">
-                    <div className="pointer-events-auto mx-auto flex min-w-full w-max items-center justify-center gap-1.5 pb-1">
+                    <div className="pointer-events-none mx-auto flex min-w-full w-max flex-col items-center justify-center gap-1.5 pb-1">
                       <FloatingToolGroup accent="amber">
                         <FloatingToolButton
-                          icon={<Bookmark size={14} />}
-                          label={zh ? '标记此帧' : 'Mark frame'}
-                          title={zh ? '标记当前帧为关键帧；空格同样可以。标完后自动分割病灶' : 'Mark this frame as a keyframe. Space does the same. Auto-segments lesion'}
-                          disabled={!videoUrl}
-                          onClick={() => markDoctorKeyframe()}
+                          icon={<Pencil size={14} />}
+                          label={paintToolLabel(wallPaintMode, zh)}
+                          title={paintLineHint(wallLayerTarget, zh)}
+                          active={wallPaintMode}
+                          disabled={boxAutoSegBusy}
+                          onClick={() => startWallPaintTool()}
                           tone="amber"
-                          emphasize
+                        />
+                        <FloatingToolButton
+                          icon={<Crosshair size={14} />}
+                          label={zh ? (analysisFocusMode ? '正在标焦点' : '分析焦点') : (analysisFocusMode ? 'Marking focus' : 'Focus')}
+                          title={analysisFocusHint(zh)}
+                          active={analysisFocusMode}
+                          disabled={boxAutoSegBusy}
+                          onClick={() => startAnalysisFocusTool()}
+                          tone="amber"
+                        />
+                        <label className="flex items-center gap-1 px-1.5 text-[10px] text-amber-100/85">
+                          <span>{zh ? `笔刷 ${wallBrushRadius}` : `Brush ${wallBrushRadius}`}</span>
+                          <input
+                            type="range"
+                            min={3}
+                            max={22}
+                            value={wallBrushRadius}
+                            onChange={(event) => setWallBrushRadius(Number(event.target.value))}
+                            className="h-1 w-16 accent-amber-300"
+                          />
+                        </label>
+                        <span className="flex items-center gap-0.5 px-1" title={zh ? '选择要分析的界面。不是判断病灶已经到了哪一层。第一版主看浆膜。' : 'Pick the interface to analyze. This is not a claim about how deep the lesion has reached. First version is serosa.'}>
+                          {WALL_ANATOMY_TARGETS.map((target) => (
+                            <button
+                              key={target.id}
+                              type="button"
+                              onClick={() => applyWallLayerTarget(target.id)}
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                wallLayerTarget === target.id
+                                  ? 'bg-amber-300 text-slate-900'
+                                  : 'bg-black/30 text-amber-100/80 hover:bg-black/50'
+                              }`}
+                              title={zh ? target.askZh : target.askEn}
+                            >
+                              {zh ? target.shortZh : target.shortEn}
+                            </button>
+                          ))}
+                        </span>
+                        <FloatingToolButton
+                          icon={<MousePointer2 size={14} />}
+                          label={wallPickMode ? (zh ? '点两侧' : 'Pick flanks') : (zh ? '点两侧接' : 'Mark flanks')}
+                          title={zh ? '点两侧看得见的胃壁，再自动接过去。再点一次则自动接。' : 'Click the two visible flanks, then join. Click again to auto-join.'}
+                          active={wallPickMode}
+                          disabled={boxAutoSegBusy || points.length < 3}
+                          onClick={() => startWallExtensionTool()}
+                          tone="amber"
+                        />
+                        <FloatingToolButton
+                          icon={<ScanSearch size={14} />}
+                          label={zh ? '最深窄带回声' : 'Deepest echo'}
+                          title={zh ? '只在浸润最深窄带做亮/中/暗区域聚类，用于分层，不是全图超分' : 'Cluster bright/mid/dark echo on the deepest narrow band for layering, not full-image super-resolution'}
+                          active={Boolean(wallEchoClarify?.available && viewFocusMode === 'roi')}
+                          disabled={boxAutoSegBusy || (points.length < 3 && wallPoints.length < 3)}
+                          onClick={() => {
+                            const next = wallEchoClarify?.available ? wallEchoClarify : refreshWallEchoClarify();
+                            if (!next?.available) {
+                              setMessage(zh ? '请先框选病灶并画邻近胃壁，再盯浸润最深窄带' : 'Box the lesion and paint the adjacent wall first');
+                              return;
+                            }
+                            if (viewFocusMode === 'roi' && viewFocusBox) {
+                              setViewFocusBox(null);
+                              setViewFocusMode(null);
+                              setMessage(zh ? '已回到整帧' : 'Back to the full frame');
+                              return;
+                            }
+                            setMagnifierOn(false);
+                            magnifierPosRef.current = null;
+                            viewZoomRef.current = 1;
+                            viewCenterRef.current = null;
+                            setViewZoom(1);
+                            setViewCenter(null);
+                            setViewFocusBox(next.box);
+                            setViewFocusMode('roi');
+                            setMessage(zh
+                              ? `已放大浸润最深窄带（${next.patternZh || '回声聚类'}）。不是全图超分。`
+                              : `Zoomed to the deepest narrow band (${next.patternEn || 'echo cluster'}). Not full-image super-resolution.`);
+                          }}
+                          tone="amber"
+                        />
+                        <FloatingToolButton
+                          icon={dinoBusy ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}
+                          label={dinoBusy
+                            ? (zh ? 'DINO层…' : 'DINO…')
+                            : (zh ? 'ROI DINO层' : 'ROI DINO')}
+                          title={zh
+                            ? '查看当前帧病灶附近 DINOv3 第 2 / 5 / 8 / 11 层特征。草稿，不定 cT。'
+                            : 'Inspect DINOv3 layers 2 / 5 / 8 / 11 near the current-frame ROI. Draft only.'}
+                          active={Boolean(dinoDockOpen && dinoResult?.available)}
+                          disabled={boxAutoSegBusy || dinoBusy || points.length < 3}
+                          onClick={() => toggleRoiDinoLayers()}
+                          tone="amber"
+                        />
+                        <FloatingToolButton
+                          icon={<Layers size={14} />}
+                          label={wallAnalysisOpen ? (zh ? '收起壁层' : 'Close layers') : (zh ? '壁层' : 'Layers')}
+                          title={zh ? '打开或收起胃壁分层面板' : 'Open or close the wall-layer panel'}
+                          active={wallAnalysisOpen}
+                          disabled={points.length < 3 && !layerResult && wallPoints.length < 3}
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('gastric:open-wall-layers', {
+                              detail: { open: !wallAnalysisOpen },
+                            }));
+                          }}
+                          tone="amber"
+                        />
+                        <FloatingToolButton
+                          icon={<Save size={14} />}
+                          label={zh ? '保存胃壁' : 'Save wall'}
+                          title={zh ? '把当前帧的胃壁辅助线存到本关键帧。不会传到其他帧。' : 'Save wall guides on this keyframe only. They are not copied to other frames.'}
+                          disabled={boxAutoSegBusy || (wallPoints.length < 3 && !wallLayerBands.length && !analysisFocusPoints.length)}
+                          onClick={() => saveWallDraftOnFrame()}
+                          tone="amber"
+                        />
+                        <FloatingToolButton
+                          icon={<Trash2 size={14} />}
+                          label={zh ? '清除胃壁' : 'Clear wall'}
+                          title={zh ? '只清除当前帧的胃壁辅助线，不影响其他关键帧' : 'Clear wall guides on this frame only'}
+                          disabled={boxAutoSegBusy || (wallPoints.length < 3 && !wallLayerBands.length && !analysisFocusPoints.length)}
+                          onClick={() => clearWallDraftOnFrame()}
+                          tone="amber"
                         />
                       </FloatingToolGroup>
                       {onUnifiedAgentRun ? (
@@ -9720,8 +11907,8 @@ export function InteractiveSegPanel({
                             label={unifiedAgentBusy || assistOverlayOpen ? (zh ? '分析中' : 'Running') : (zh ? '辅助分析' : 'Assist')}
                             title={
                               points.length < 3
-                                ? (zh ? '请先标记关键帧并框选病灶，再分析' : 'Mark a keyframe and draw a lesion box first')
-                                : (zh ? '用当前关键帧上的病灶框做辅助分析' : 'Run assist on the lesion box of this keyframe')
+                                ? (zh ? '请先框选病灶，再分析' : 'Draw a lesion box first, then analyze')
+                                : (zh ? '用当前框选做辅助分析' : 'Run assist on the current lesion box')
                             }
                             disabled={!videoUrl || unifiedAgentBusy || points.length < 3}
                             onClick={() => void runContourAnchoredAssist()}
@@ -9734,169 +11921,109 @@ export function InteractiveSegPanel({
                   </div>
                 )}
                 {simpleVideoMode && simpleToolsOpen ? (
-                  <div className="workbench-tool-rail-dock pointer-events-none absolute top-2 bottom-2 right-2 z-[140] flex items-start sm:top-3 sm:right-3">
+                  <div className="workbench-tool-rail-dock pointer-events-none absolute top-2 bottom-2 right-2 z-[220] flex items-start sm:top-3 sm:right-3">
                     <div className="workbench-tool-rail pointer-events-auto max-h-full rounded-lg border border-white/10 bg-black/70 p-1 shadow-2xl shadow-black/40 backdrop-blur-md">
+                      <ToolRailSectionTitle>{zh ? '病灶' : 'Lesion'}</ToolRailSectionTitle>
+                      <div className="mx-1 mb-0.5 grid grid-cols-2 gap-0.5 rounded-md border border-white/10 bg-black/40 p-0.5">
+                        {([
+                          { id: 'sam31' as const, zh: 'SAM 3.1', en: 'SAM 3.1' },
+                          { id: 'dinov3' as const, zh: 'DINO', en: 'DINO' },
+                        ]).map((item) => {
+                          const active = publicLesionSegModel(segmentationModel) === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              disabled={boxAutoSegBusy}
+                              title={item.id === 'dinov3'
+                                ? (zh ? 'DINO 画病灶 mask，不进辅助分期' : 'DINO draws the lesion mask; not used for Assist staging')
+                                : (zh ? 'SAM 3.1 按框画病灶 mask' : 'SAM 3.1 draws the lesion mask from the box')}
+                              onClick={() => chooseLesionSegModel(item.id)}
+                              className={`rounded px-1 py-1 text-[10px] font-semibold disabled:opacity-40 ${
+                                active
+                                  ? 'bg-cyan-400/40 text-white'
+                                  : 'text-slate-400 hover:bg-white/10 hover:text-slate-200'
+                              }`}
+                            >
+                              {zh ? item.zh : item.en}
+                            </button>
+                          );
+                        })}
+                      </div>
                       <ToolRailButton
-                        icon={<ScanLine size={15} />}
+                        icon={boxAutoSegBusy ? <Loader2 size={15} className="animate-spin" /> : <ScanLine size={15} />}
                         label={zh ? '框选病灶' : 'Box lesion'}
-                        hint={zh ? '先打开关键帧，再拖出病灶框；松手后自动分割' : 'Open a keyframe, then drag a lesion box. Auto-segments on release'}
-                        active={simplePromptMode === 'box' && !simpleEditMode && !lumenEditMode && !nnInteractiveMode && !lumenSculptMode}
-                        disabled={boxAutoSegBusy}
-                        onClick={enterSimpleBoxPrompt}
-                        side="right"
-                        tone="cyan"
-                      />
-                      <ToolRailButton
-                        icon={<CirclePlus size={15} />}
-                        label={zh ? '正点' : '+ Point'}
-                        hint={zh ? '点击补充漏分割区域' : 'Click to add missed lesion area'}
-                        active={simplePromptMode === 'point' && activeSamPromptLabel === 'positive' && !lumenSculptMode}
-                        disabled={boxAutoSegBusy}
+                        hint={zh ? '点亮后拖框。已有病灶时再拖会替换。多个灶用「再框一灶」' : 'Arm, then drag. A new box replaces the current lesion. Use Add lesion for a second mass'}
+                        active={lesionBoxArmed && !keepExtraLesion}
                         onClick={() => {
-                          setActiveSamPromptLabel('positive');
-                          activateActiveSamPrompt('point');
-                          recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'point_positive' });
+                          if (lesionBoxArmed && !keepExtraLesion) {
+                            armLesionBox(false);
+                            setKeepExtraLesion(false);
+                            keepExtraLesionRef.current = false;
+                            setMessage(zh ? '已取消框选病灶' : 'Box lesion cancelled');
+                            return;
+                          }
+                          keepExtraLesionRef.current = false;
+                          setKeepExtraLesion(false);
+                          enterSimpleBoxPrompt();
                         }}
                         side="right"
-                        tone="emerald"
+                        tone={lesionBoxArmed && !keepExtraLesion ? 'cyan' : 'slate'}
+                        prominent={lesionBoxArmed && !keepExtraLesion}
                       />
-                      <ToolRailButton
-                        icon={<CircleMinus size={15} />}
-                        label={zh ? '负点' : '- Point'}
-                        hint={zh ? '点击排除伪影或壁' : 'Click to exclude artifact or wall'}
-                        active={simplePromptMode === 'point' && activeSamPromptLabel === 'negative' && !lumenSculptMode}
-                        disabled={boxAutoSegBusy}
-                        onClick={() => {
-                          setActiveSamPromptLabel('negative');
-                          activateActiveSamPrompt('point');
-                          recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'point_negative' });
-                        }}
-                        side="right"
-                        tone="rose"
-                      />
-                      <ToolRailButton
-                        icon={<Pencil size={15} />}
-                        label={zh ? '拖点精修' : 'Edit contour'}
-                        hint={zh ? '拖动控制点微调病灶轮廓' : 'Drag handles to refine the lesion contour'}
-                        active={simpleEditMode && simpleEditLayer === 'lesion' && !lumenSculptMode}
-                        disabled={points.length < 3 || boxAutoSegBusy}
-                        onClick={() => {
-                          enterSimpleContourEdit('lesion');
-                          recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'contour_edit' });
-                        }}
-                        side="right"
-                        tone="cyan"
-                      />
-                      <ToolRailButton
-                        icon={<Brush size={15} />}
-                        label={zh ? '病灶增' : 'Lesion +'}
-                        hint={zh ? '涂抹以扩大病灶区域' : 'Paint to expand the lesion'}
-                        active={lumenSculptMode === 'brush-add' && sculptLayer === 'lesion'}
-                        disabled={points.length < 3 || boxAutoSegBusy}
-                        onClick={() => activateSculpt('brush-add', 'lesion')}
-                        side="right"
-                        tone="lime"
-                      />
-                      <ToolRailButton
-                        icon={<Eraser size={15} />}
-                        label={zh ? '病灶减' : 'Lesion -'}
-                        hint={zh ? '涂抹以缩小病灶区域' : 'Paint to shrink the lesion'}
-                        active={lumenSculptMode === 'brush-sub' && sculptLayer === 'lesion'}
-                        disabled={points.length < 3 || boxAutoSegBusy}
-                        onClick={() => activateSculpt('brush-sub', 'lesion')}
-                        side="right"
-                        tone="rose"
-                      />
-                      <ToolRailButton
-                        icon={<Sparkles size={15} />}
-                        label={zh ? '边界精修' : 'Refine'}
-                        hint={zh ? '用当前病灶边界启动辅助精修' : 'Refine the current lesion boundary'}
-                        disabled={points.length < 3 || nnInteractiveBusy || boxAutoSegBusy}
-                        active={nnInteractiveMode}
-                        onClick={() => {
-                          activateNnInteractive('lesion');
-                          recordDoctorOp('nninteractive', { layer: 'lesion', operation: 'nninteractive', tool: 'refine' });
-                        }}
-                        side="right"
-                        tone="lime"
-                      />
-                      <ToolRailDivider />
-                      <ToolRailButton
-                        icon={<ScanLine size={15} />}
-                        label={zh ? '框选胃腔' : 'Box lumen'}
-                        hint={zh ? '可选：手动框选胃腔' : 'Optional: draw a lumen box'}
-                        active={lumenEditMode}
-                        disabled={boxAutoSegBusy}
-                        onClick={() => enterLumenBoxEdit('manual')}
-                        side="right"
-                        tone="fuchsia"
-                      />
-                      <ToolRailButton
-                        icon={<ScanSearch size={15} />}
-                        label={zh ? '检测胃腔' : 'Find lumen'}
-                        hint={zh ? '自动检测胃腔候选' : 'Auto-detect lumen candidate'}
-                        disabled={boxAutoSegBusy || lumenBusy}
-                        onClick={() => void detectLumen()}
-                        side="right"
-                        tone="fuchsia"
-                      />
-                      <ToolRailButton
-                        icon={<Brush size={15} />}
-                        label={zh ? '胃腔增' : 'Lumen +'}
-                        hint={zh ? '涂抹以扩大胃腔区域' : 'Paint to expand the lumen'}
-                        active={lumenSculptMode === 'brush-add' && sculptLayer === 'lumen'}
-                        disabled={!lumenBox && lumenPolygon.length < 3}
-                        onClick={() => activateSculpt('brush-add', 'lumen')}
-                        side="right"
-                        tone="lime"
-                      />
-                      <ToolRailButton
-                        icon={<Eraser size={15} />}
-                        label={zh ? '胃腔减' : 'Lumen -'}
-                        hint={zh ? '涂抹以缩小胃腔区域' : 'Paint to shrink the lumen'}
-                        active={lumenSculptMode === 'brush-sub' && sculptLayer === 'lumen'}
-                        disabled={!lumenBox && lumenPolygon.length < 3}
-                        onClick={() => activateSculpt('brush-sub', 'lumen')}
-                        side="right"
-                        tone="rose"
-                      />
-                      {lumenSculptMode ? (
-                        <div className="px-1 py-1">
-                          <div className="text-center text-[9px] text-slate-200">
-                            {zh ? `笔刷 ${paintRadius}` : `Brush ${paintRadius}`}
-                          </div>
-                          <input
-                            type="range"
-                            min={6}
-                            max={48}
-                            value={paintRadius}
-                            onChange={(event) => setPaintRadius(Number(event.target.value))}
-                            className="w-full accent-sky-400"
-                          />
-                        </div>
+                      {points.length >= 3 ? (
+                        <ToolRailButton
+                          icon={<ScanLine size={15} />}
+                          label={zh ? '再框一灶' : 'Add lesion'}
+                          hint={zh ? '再拖一个框，上一处病灶留下（青色）' : 'Draw another box; the previous lesion stays (teal)'}
+                          active={lesionBoxArmed && keepExtraLesion}
+                          onClick={() => {
+                            keepExtraLesionRef.current = true;
+                            setKeepExtraLesion(true);
+                            enterSimpleBoxPrompt();
+                          }}
+                          side="right"
+                          tone={lesionBoxArmed && keepExtraLesion ? 'cyan' : 'slate'}
+                          prominent={lesionBoxArmed && keepExtraLesion}
+                        />
+                      ) : null}
+                      {extraLesionPolygons.length ? (
+                        <ToolRailButton
+                          icon={<ScanLine size={15} />}
+                          label={zh ? '去掉上一灶' : 'Drop last extra'}
+                          hint={zh ? '去掉最近留下的额外病灶，不改当前主灶' : 'Remove the last extra lesion; keep the current primary'}
+                          onClick={() => dropLastExtraLesion()}
+                          side="right"
+                          tone="slate"
+                        />
                       ) : null}
                       <ToolRailDivider />
                       <ToolRailButton
-                        icon={<Pentagon size={15} />}
-                        label={zh ? '多边形' : 'Polygon'}
-                        hint={zh ? '手工多边形编辑病灶' : 'Manual polygon edit for lesion'}
-                        active={mode === 'polygon'}
+                        icon={<ScanLine size={15} />}
+                        label={lumenEditMode ? (zh ? '正在框胃腔' : 'Boxing lumen') : (zh ? '框选胃腔' : 'Box lumen')}
+                        hint={zh ? '点亮后光标变为拖框标记；松手后自动分割胃腔。再点一次取消' : 'Arm to get the box cursor; release auto-segments the lumen. Click again to cancel'}
+                        active={lumenEditMode}
                         disabled={boxAutoSegBusy}
-                        onClick={() => {
-                          setMode('polygon');
-                          setSimpleEditMode(false);
-                          setLumenEditMode(false);
-                          setLumenSculptMode(null);
-                          recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'polygon' });
-                          setMessage(zh ? '多边形模式：点击加点，双击或按钮闭合' : 'Polygon mode: click to add vertices');
-                        }}
+                        onClick={() => toggleLumenBoxEdit()}
+                        side="right"
+                        tone="fuchsia"
+                        prominent={lumenEditMode}
+                      />
+                      <ToolRailButton
+                        icon={<Spline size={15} />}
+                        label={zh ? (wallPaintMode ? '正在画预期线' : '预期线') : (wallPaintMode ? 'Drawing trajectory' : 'Trajectory')}
+                        hint={paintLineHint(wallLayerTarget, zh)}
+                        active={wallPaintMode || wallPickMode || (simpleEditMode && simpleEditLayer === 'wall')}
+                        disabled={boxAutoSegBusy}
+                        onClick={() => startWallPaintTool()}
                         side="right"
                         tone="amber"
+                        prominent={wallPaintMode || wallPickMode}
                       />
                       <ToolRailButton
                         icon={<MoreHorizontal size={15} />}
                         label={zh ? '更多工具' : 'More tools'}
-                        hint={zh ? '清空、撤销与放大' : 'Clear, undo, and zoom'}
+                        hint={zh ? '拖点精修、正负点、涂改、检测胃腔、多边形与清空' : 'Contour edit, points, paint, find lumen, polygon, and clear'}
                         active={railMoreOpen}
                         onClick={() => setRailMoreOpen((value) => !value)}
                         side="right"
@@ -9904,7 +12031,162 @@ export function InteractiveSegPanel({
                       />
                       {railMoreOpen ? (
                         <>
+                          {points.length >= 3 && !boxAutoSegBusy && !lumenEditMode ? (
+                            <>
+                              <ToolRailDivider />
+                              <ToolRailSectionTitle>{zh ? '病灶精修' : 'Lesion refine'}</ToolRailSectionTitle>
+                              <ToolRailButton
+                                icon={<Pencil size={15} />}
+                                label={zh ? '拖点精修' : 'Edit contour'}
+                                hint={zh ? '遮罩已出：拖控制点微调病灶轮廓' : 'Mask ready: drag handles to refine the lesion'}
+                                active={simpleEditMode && simpleEditLayer === 'lesion' && !lumenSculptMode}
+                                disabled={boxAutoSegBusy}
+                                onClick={() => {
+                                  enterSimpleContourEdit('lesion');
+                                  recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'contour_edit' });
+                                }}
+                                side="right"
+                                tone="cyan"
+                                prominent={simpleEditMode && simpleEditLayer === 'lesion'}
+                              />
+                              <ToolRailButton
+                                icon={<CirclePlus size={15} />}
+                                label={zh ? '正点' : '+ Point'}
+                                hint={zh ? '点击补充漏分割区域' : 'Click to add missed lesion area'}
+                                active={simplePromptMode === 'point' && activeSamPromptLabel === 'positive' && !lumenSculptMode}
+                                onClick={() => {
+                                  setActiveSamPromptLabel('positive');
+                                  activateActiveSamPrompt('point');
+                                  recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'point_positive' });
+                                }}
+                                side="right"
+                                tone="emerald"
+                              />
+                              <ToolRailButton
+                                icon={<CircleMinus size={15} />}
+                                label={zh ? '负点' : '- Point'}
+                                hint={zh ? '点击排除伪影或壁' : 'Click to exclude artifact or wall'}
+                                active={simplePromptMode === 'point' && activeSamPromptLabel === 'negative' && !lumenSculptMode}
+                                onClick={() => {
+                                  setActiveSamPromptLabel('negative');
+                                  activateActiveSamPrompt('point');
+                                  recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'point_negative' });
+                                }}
+                                side="right"
+                                tone="rose"
+                              />
+                              <ToolRailButton
+                                icon={<Brush size={15} />}
+                                label={zh ? '病灶增' : 'Lesion +'}
+                                hint={zh ? '涂抹以扩大病灶区域' : 'Paint to expand the lesion'}
+                                active={lumenSculptMode === 'brush-add' && sculptLayer === 'lesion'}
+                                onClick={() => activateSculpt('brush-add', 'lesion')}
+                                side="right"
+                                tone="lime"
+                              />
+                              <ToolRailButton
+                                icon={<Eraser size={15} />}
+                                label={zh ? '病灶减' : 'Lesion -'}
+                                hint={zh ? '涂抹以缩小病灶区域' : 'Paint to shrink the lesion'}
+                                active={lumenSculptMode === 'brush-sub' && sculptLayer === 'lesion'}
+                                onClick={() => activateSculpt('brush-sub', 'lesion')}
+                                side="right"
+                                tone="rose"
+                              />
+                              <ToolRailButton
+                                icon={<Sparkles size={15} />}
+                                label={zh ? '边界精修' : 'Refine'}
+                                hint={zh ? '用当前病灶边界启动辅助精修' : 'Refine the current lesion boundary'}
+                                disabled={nnInteractiveBusy}
+                                active={nnInteractiveMode}
+                                onClick={() => {
+                                  activateNnInteractive('lesion');
+                                  recordDoctorOp('nninteractive', { layer: 'lesion', operation: 'nninteractive', tool: 'refine' });
+                                }}
+                                side="right"
+                                tone="lime"
+                              />
+                              {(lumenSculptMode && sculptLayer === 'lesion') ? (
+                                <div className="px-1 py-1">
+                                  <div className="text-center text-[9px] text-slate-200">
+                                    {zh ? `笔刷 ${paintRadius}` : `Brush ${paintRadius}`}
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={6}
+                                    max={48}
+                                    value={paintRadius}
+                                    onChange={(event) => setPaintRadius(Number(event.target.value))}
+                                    className="w-full accent-sky-400"
+                                  />
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
                           <ToolRailDivider />
+                          <ToolRailSectionTitle>{zh ? '胃腔（可选）' : 'Lumen (optional)'}</ToolRailSectionTitle>
+                          <ToolRailButton
+                            icon={lumenBusy ? <Loader2 size={15} className="animate-spin" /> : <ScanSearch size={15} />}
+                            label={zh ? '检测胃腔' : 'Find lumen'}
+                            hint={zh ? '自动检测胃腔候选' : 'Auto-detect lumen candidate'}
+                            disabled={boxAutoSegBusy || lumenBusy}
+                            onClick={() => void detectLumen()}
+                            side="right"
+                            tone="fuchsia"
+                          />
+                          <ToolRailButton
+                            icon={<Brush size={15} />}
+                            label={zh ? '胃腔增' : 'Lumen +'}
+                            hint={zh ? '涂抹以扩大胃腔区域' : 'Paint to expand the lumen'}
+                            active={lumenSculptMode === 'brush-add' && sculptLayer === 'lumen'}
+                            disabled={!lumenBox && lumenPolygon.length < 3}
+                            onClick={() => activateSculpt('brush-add', 'lumen')}
+                            side="right"
+                            tone="lime"
+                          />
+                          <ToolRailButton
+                            icon={<Eraser size={15} />}
+                            label={zh ? '胃腔减' : 'Lumen -'}
+                            hint={zh ? '涂抹以缩小胃腔区域' : 'Paint to shrink the lumen'}
+                            active={lumenSculptMode === 'brush-sub' && sculptLayer === 'lumen'}
+                            disabled={!lumenBox && lumenPolygon.length < 3}
+                            onClick={() => activateSculpt('brush-sub', 'lumen')}
+                            side="right"
+                            tone="rose"
+                          />
+                          {(lumenSculptMode && sculptLayer === 'lumen') ? (
+                            <div className="px-1 py-1">
+                              <div className="text-center text-[9px] text-slate-200">
+                                {zh ? `笔刷 ${paintRadius}` : `Brush ${paintRadius}`}
+                              </div>
+                              <input
+                                type="range"
+                                min={6}
+                                max={48}
+                                value={paintRadius}
+                                onChange={(event) => setPaintRadius(Number(event.target.value))}
+                                className="w-full accent-sky-400"
+                              />
+                            </div>
+                          ) : null}
+                          <ToolRailDivider />
+                          <ToolRailButton
+                            icon={<Pentagon size={15} />}
+                            label={zh ? '多边形' : 'Polygon'}
+                            hint={zh ? '手工多边形编辑病灶' : 'Manual polygon edit for lesion'}
+                            active={mode === 'polygon'}
+                            disabled={boxAutoSegBusy}
+                            onClick={() => {
+                              setMode('polygon');
+                              setSimpleEditMode(false);
+                              setLumenEditMode(false);
+                              setLumenSculptMode(null);
+                              recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'polygon' });
+                              setMessage(zh ? '多边形模式：点击加点，双击或按钮闭合' : 'Polygon mode: click to add vertices');
+                            }}
+                            side="right"
+                            tone="amber"
+                          />
                           <ToolRailButton
                             icon={<RotateCcw size={15} />}
                             label={zh ? '清空重画' : 'Clear all'}
@@ -9935,10 +12217,10 @@ export function InteractiveSegPanel({
                           />
                           <ToolRailButton
                             icon={<ZoomIn size={15} />}
-                            label={viewFocusBox ? (zh ? '退出放大' : 'Exit zoom') : (zh ? '区域放大' : 'Region zoom')}
-                            hint={zh ? '放大病灶或胃腔区域' : 'Zoom to the lesion or lumen region'}
-                            disabled={points.length < 3 && !lumenBox && lumenPolygon.length < 3}
-                            active={Boolean(viewFocusBox)}
+                            label={(viewFocusBox || viewZoom > 1.02) ? (zh ? '退出放大' : 'Exit zoom') : (zh ? '区域放大' : 'Region zoom')}
+                            hint={zh ? '放大病灶或胃腔区域；滚轮也可缩放当前帧' : 'Zoom to the lesion or lumen; the wheel also zooms this frame'}
+                            disabled={points.length < 3 && !lumenBox && lumenPolygon.length < 3 && viewZoom <= 1.02}
+                            active={Boolean(viewFocusBox) || viewZoom > 1.02}
                             onClick={toggleZoomRoi}
                             side="right"
                             tone="sky"
@@ -9957,7 +12239,7 @@ export function InteractiveSegPanel({
                   </div>
                 ) : null}
                 {simpleVideoMode && !simpleToolsOpen ? (
-                  <div className="pointer-events-none absolute bottom-2 right-2 z-[140] md:top-2 md:bottom-auto md:right-2">
+                  <div className="pointer-events-none absolute bottom-2 right-2 z-[220] md:top-2 md:bottom-auto md:right-2">
                     <div className="pointer-events-auto rounded-lg border border-white/10 bg-black/70 p-1 backdrop-blur-md">
                       <ToolRailButton
                         icon={<PanelTop size={16} />}
@@ -9973,7 +12255,7 @@ export function InteractiveSegPanel({
                 {mediaMode === 'video' && (
                   <video
                     ref={videoRef}
-                    className={simpleVideoMode ? 'absolute inset-0 z-0 h-full w-full bg-black object-contain' : 'hidden'}
+                    className={simpleVideoMode && viewZoom <= 1.02 && !viewFocusBox ? 'absolute inset-0 z-0 h-full w-full bg-black object-contain' : 'hidden'}
                     muted
                     playsInline
                     autoPlay
@@ -9981,21 +12263,56 @@ export function InteractiveSegPanel({
                     crossOrigin="anonymous"
                   />
                 )}
+                {viewZoom > 1.02 ? (
+                  <div className="pointer-events-none absolute left-3 bottom-3 z-[30] flex items-center gap-2 rounded-md border border-white/15 bg-black/70 px-2 py-1 text-[10px] text-slate-200">
+                    <span className="font-mono text-amber-100">{`x${viewZoom.toFixed(1)}`}</span>
+                    <span className="text-slate-400">{zh ? '滚轮缩放, Shift 拖移, 双击复位' : 'Wheel zoom, Shift drag, double-click reset'}</span>
+                  </div>
+                ) : null}
                 <canvas
                   ref={canvasRef}
                   className="relative z-10 h-full w-full touch-none"
-                  style={{ cursor: magnifierOn ? 'none' : lumenSculptMode ? 'crosshair' : dragIndex !== null ? 'grabbing' : simpleEditMode ? 'grab' : mode === 'soft' || mode === 'hard' ? 'grab' : 'crosshair' }}
+                  style={{
+                    cursor: magnifierOn
+                      ? 'none'
+                      : (wallPickMode || wallPaintMode)
+                        ? 'crosshair'
+                        : lumenSculptMode
+                        ? 'crosshair'
+                        : lumenEditMode
+                          ? BOX_DRAW_CURSOR_LUMEN
+                          : lesionBoxArmed
+                            ? BOX_DRAW_CURSOR_LESION
+                            : dragIndex !== null
+                              ? 'grabbing'
+                              : (simpleEditMode || points.length >= 3)
+                                ? 'move'
+                                : 'default',
+                  }}
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerCancel}
                   onWheel={(e) => {
-                    if (!lumenSculptMode) return;
+                    if (wallPaintMode) {
+                      e.preventDefault();
+                      const step = e.deltaY > 0 ? -1 : 1;
+                      setWallBrushRadius((value) => Math.max(3, Math.min(22, value + step)));
+                      return;
+                    }
+                    if (lumenSculptMode) {
+                      e.preventDefault();
+                      const step = e.deltaY > 0 ? -2 : 2;
+                      setPaintRadius((r) => Math.max(6, Math.min(48, r + step)));
+                      return;
+                    }
                     e.preventDefault();
-                    const step = e.deltaY > 0 ? -2 : 2;
-                    setPaintRadius((r) => Math.max(6, Math.min(48, r + step)));
                   }}
                   onDoubleClick={(e) => {
+                    if (viewZoom > 1.02) {
+                      resetViewZoom();
+                      return;
+                    }
                     if (simpleVideoMode) return;
                     const imgPt = canvasToImage(e);
                     if (!imgPt) return;
@@ -10096,17 +12413,23 @@ export function InteractiveSegPanel({
                   </div>
                 ) : null}
                 {(lumenEditMode || (!simpleVideoMode && (nnInteractiveMode || (mode === 'sam' && simplePromptMode !== 'box')))) && (
-                  <div className={`pointer-events-none absolute top-3 z-20 rounded-lg border border-emerald-300/30 bg-slate-950/95 px-2.5 py-2 text-[10px] text-slate-200 shadow-lg ${simpleVideoMode ? 'left-[8.25rem] sm:left-[9rem]' : 'left-3'}`}>
-                    <div className={`font-semibold ${lumenEditMode ? 'text-amber-100' : 'text-emerald-100'}`}>
+                  <div className={`pointer-events-none absolute top-3 left-3 z-20 rounded-lg border bg-slate-950/95 px-2.5 py-2 text-[10px] text-slate-200 shadow-lg ${
+                    lumenEditMode
+                      ? 'border-fuchsia-300/40'
+                      : lesionBoxArmed
+                        ? 'border-cyan-300/40'
+                        : 'border-emerald-300/30'
+                  }`}>
+                    <div className={`font-semibold ${lumenEditMode ? 'text-fuchsia-100' : 'text-emerald-100'}`}>
                       {lumenEditMode
-                        ? (zh ? '胃腔框编辑' : 'Lumen box edit')
+                        ? (zh ? '正在框选胃腔' : 'Boxing lumen')
                         : nnInteractiveMode
                           ? `${nnInteractiveTarget === 'lumen' ? (zh ? '胃腔' : 'Lumen') : (zh ? '病灶' : 'Lesion')} ${promptModeText(simplePromptMode, zh)}`
                           : `${zh ? '本地点提示' : 'Local prompt'} ${promptModeText(simplePromptMode, zh)}`}
                     </div>
                     {lumenEditMode ? (
-                      <div className="mt-1 text-amber-200">
-                        {zh ? '可连续拖调：角点缩放 / 框内移动 / 框外重画；点「完成调整」才退出' : 'Keep adjusting: corners / move / redraw outside; tap Done to exit'}
+                      <div className="mt-1 text-fuchsia-200">
+                        {zh ? '拖出矩形，松手后自动分割胃腔' : 'Drag a rectangle; release auto-segments the lumen'}
                       </div>
                     ) : (
                       <>
@@ -10125,58 +12448,6 @@ export function InteractiveSegPanel({
                     )}
                   </div>
                 )}
-                {lumenLesionGeometry.available && (!simpleVideoMode || lumenLesionGeometry.relation === 'separated') ? (
-                  <div className={`pointer-events-none absolute top-3 z-20 w-[min(265px,calc(100%-1.5rem))] rounded-lg border ${
-                    lumenLesionGeometry.relation === 'separated'
-                      ? 'border-rose-300/50 bg-rose-950/85'
-                      : 'border-fuchsia-300/25 bg-slate-950/80'
-                  } px-2.5 py-2 text-[10px] text-slate-200 shadow-lg ${simpleVideoMode ? 'right-[7rem] sm:right-[7.5rem]' : 'right-3'}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`font-semibold ${lumenLesionGeometry.relation === 'separated' ? 'text-rose-100' : 'text-fuchsia-100'}`}>
-                        {zh ? '胃腔-病灶几何关系' : 'Lumen-lesion geometry'}
-                      </span>
-                      <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[8px] uppercase text-slate-400">
-                        {lumenLesionGeometry.quality}
-                      </span>
-                    </div>
-                    <div className={`mt-1 text-[9px] leading-relaxed ${lumenLesionGeometry.relation === 'separated' ? 'text-rose-100' : 'text-slate-400'}`}>
-                      {geometryRelationText(lumenLesionGeometry, zh)}
-                    </div>
-                    <div className="mt-2 grid grid-cols-3 gap-1.5">
-                      <div className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-1">
-                        <div className="text-[8px] text-slate-500">{zh ? '间距' : 'Gap'}</div>
-                        <div className="font-mono text-fuchsia-100">
-                          {lumenLesionGeometry.distancePx != null ? `${Math.round(lumenLesionGeometry.distancePx)} px` : '—'}
-                        </div>
-                      </div>
-                      <div className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-1">
-                        <div className="text-[8px] text-slate-500">{zh ? '平滑度' : 'Smooth'}</div>
-                        <div className="font-mono text-lime-100">
-                          {lumenLesionGeometry.smoothnessIndex != null
-                            ? `${Math.round(lumenLesionGeometry.smoothnessIndex * 100)}%`
-                            : '—'}
-                        </div>
-                      </div>
-                      <div className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-1">
-                        <div className="text-[8px] text-slate-500">{zh ? '向外扩张' : 'Outward'}</div>
-                        <div className="font-mono text-lime-100">
-                          {lumenLesionGeometry.outwardExpansionRatio != null
-                            ? `${lumenLesionGeometry.outwardExpansionRatio >= 0 ? '+' : ''}${Math.round(lumenLesionGeometry.outwardExpansionRatio * 100)}%`
-                            : '—'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-1.5 text-[8px] text-slate-500">
-                      {geometryQualityText(lumenLesionGeometry, zh)}
-                      {zh ? '；仅为当前帧几何辅助' : '; current-frame geometry proxy only'}
-                    </div>
-                    <div className="mt-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[9px] leading-relaxed text-slate-300">
-                      {zh
-                        ? '编辑逻辑：病灶是分割目标，胃腔是定位和排除参照。两条轮廓独立编辑；胃腔框改变会清空旧胃腔轮廓，重叠只提示复核，不直接等于侵犯。'
-                        : 'Editing logic: the lesion is the segmentation target; the lumen is a localization and exclusion reference. Edit them independently. Changing the lumen box clears its old contour, and overlap only triggers review.'}
-                    </div>
-                  </div>
-                ) : null}
               </div>
               {wallDockEl ? createPortal(
                 <WallFeatureAnalysisCard
@@ -10196,41 +12467,34 @@ export function InteractiveSegPanel({
             {simpleVideoMode && (
               <div className="workbench-cine-bar shrink-0 border-t border-white/10 bg-black px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-[3.8rem] shrink-0 text-right font-mono text-[10px] tabular-nums text-slate-300">
-                    <span ref={(node) => { videoTimeLabelRefs.current[1] = node; }}>{formatCineTime(videoTime)}</span>
+                  <span className="w-[7.6rem] shrink-0 text-right font-mono text-[10px] tabular-nums text-slate-300">
+                    <span ref={(node) => { videoTimeLabelRefs.current[1] = node; }}>{formatCineTime(videoTime, videoFps)}</span>
                   </span>
-                  <div
-                    className="video-progress-shell min-w-0 flex-1"
-                    style={{ ['--progress' as string]: `${videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}%` }}
-                  >
-                    <input
-                      ref={(node) => { videoProgressRefs.current[1] = node; }}
-                      type="range"
-                      min={0}
-                      max={Math.max(videoDuration, 0.01)}
-                      step={0.01}
-                      defaultValue={videoTime}
-                      disabled={!videoUrl}
-                      onPointerDown={beginVideoScrub}
-                      onPointerUp={endVideoScrub}
-                      onPointerCancel={endVideoScrub}
-                      onChange={(event) => {
-                        onVideoProgressChange(Number(event.target.value));
-                      }}
-                      className="video-progress"
-                      style={{ ['--progress' as string]: `${videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}%` }}
-                      aria-label={zh ? '视频进度' : 'Video progress'}
-                    />
-                  </div>
-                  <span className="w-[3.8rem] shrink-0 font-mono text-[10px] tabular-nums text-slate-300">
-                    {formatCineTime(videoDuration)}
+                  <CineScrubBar
+                    className="min-w-0 flex-1"
+                    duration={videoDuration}
+                    progressPct={videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}
+                    disabled={!videoUrl}
+                    title={zh ? '拖进度条粗定位；滚轮逐帧' : 'Drag to seek; wheel steps one frame'}
+                    ariaLabel={zh ? '视频进度' : 'Video progress'}
+                    barRef={(node) => { videoProgressRefs.current[1] = node; }}
+                    onScrubStart={beginVideoScrub}
+                    onScrub={onVideoProgressChange}
+                    onScrubEnd={endVideoScrub}
+                  />
+                  <span className="w-[7.6rem] shrink-0 font-mono text-[10px] tabular-nums text-slate-300">
+                    {formatCineTime(videoDuration, videoFps)}
                   </span>
                 </div>
                 <div className="mt-1.5 flex items-center justify-between gap-2 max-md:justify-center">
                   <span className="min-w-0 truncate text-[10px] text-slate-500 max-md:hidden">
                     {zh
-                      ? '先看视频，播放中也可点「标记此帧」或按空格'
-                      : 'Watch first, then Mark this frame or press Space while playing'}
+                      ? (doctorKeyframes.length < 2
+                        ? 'T 分期最好再标 1–2 个关键帧。进度条粗定位，滚轮或左右键逐帧。空格先暂停，再按一次才标记'
+                        : '进度条粗定位，滚轮或左右键逐帧。空格先暂停；已暂停时再按空格才标关键帧')
+                      : (doctorKeyframes.length < 2
+                        ? 'T-staging works better with 2–3 keyframes. Drag to seek, wheel or arrows for one frame. Space pauses; press again to mark'
+                        : 'Drag to seek; wheel or arrows step one frame. Space pauses first. Press Space again while paused to mark')}
                   </span>
                   <div className="flex shrink-0 items-center gap-1">
                     {simpleVideoMode && keyCandidates.length > 0 ? (
@@ -10270,17 +12534,7 @@ export function InteractiveSegPanel({
                     <button
                       type="button"
                       disabled={!videoUrl}
-                      onClick={() => {
-                        const video = videoRef.current;
-                        if (!video) return;
-                        video.pause();
-                        const nextTime = Math.max(0, video.currentTime - 1 / 30);
-                        video.currentTime = nextTime;
-                        setVideoTime(nextTime);
-                        syncFrameFromVideo({ force: true });
-                        redrawRef.current();
-                        viewingTraceRef.current('cine_frame_step', { video_time_sec: nextTime, step: -1, playing: false });
-                      }}
+                      onClick={() => stepCineFrames(-1)}
                       className="rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30 max-md:min-h-11 max-md:min-w-11"
                       title={zh ? '后退一帧' : 'Previous frame'}
                     >
@@ -10289,12 +12543,7 @@ export function InteractiveSegPanel({
                     <button
                       type="button"
                       disabled={!videoUrl}
-                      onClick={() => {
-                        const video = videoRef.current;
-                        if (!video) return;
-                        if (video.paused) void video.play();
-                        else video.pause();
-                      }}
+                      onClick={() => toggleVideoPlayback()}
                       className="flex h-7 min-w-12 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/10 px-2 text-[10px] text-white hover:bg-white/15 disabled:opacity-30 max-md:h-11 max-md:min-w-16 max-md:text-xs"
                     >
                       {isPlaying ? <Pause size={12} /> : <Play size={12} />}
@@ -10303,38 +12552,35 @@ export function InteractiveSegPanel({
                     <button
                       type="button"
                       disabled={!videoUrl}
-                      onClick={() => markDoctorKeyframe()}
-                      className={`flex h-7 items-center justify-center rounded-md border px-2 text-[10px] font-semibold disabled:opacity-30 max-md:h-11 max-md:px-3 max-md:text-xs ${
-                        isPlaying
-                          ? 'border-amber-300/40 bg-amber-500/10 text-amber-100'
-                          : 'border-amber-300/70 bg-amber-500/25 text-amber-50'
-                      }`}
-                      title={zh ? '标记当前帧为关键帧；空格同样可以。标完后自动分割病灶' : 'Mark this frame as a keyframe. Space does the same. Auto-segments lesion'}
-                    >
-                      {zh ? '标记此帧' : 'Mark frame'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!videoUrl}
-                      onClick={() => {
-                        const video = videoRef.current;
-                        if (!video) return;
-                        video.pause();
-                        const nextTime = Math.min(video.duration || videoTime, video.currentTime + 1 / 30);
-                        video.currentTime = nextTime;
-                        setVideoTime(nextTime);
-                        syncFrameFromVideo({ force: true });
-                        redrawRef.current();
-                        viewingTraceRef.current('cine_frame_step', { video_time_sec: nextTime, step: 1, playing: false });
-                      }}
+                      onClick={() => stepCineFrames(1)}
                       className="rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30 max-md:min-h-11 max-md:min-w-11"
                       title={zh ? '前进一帧' : 'Next frame'}
                     >
                       <SkipForward size={13} />
                     </button>
+                    <button
+                      type="button"
+                      disabled={!videoUrl}
+                      onClick={() => markDoctorKeyframe()}
+                      className="flex h-7 items-center justify-center gap-1 rounded-md border border-amber-300/50 bg-amber-500/20 px-2.5 text-[10px] font-semibold text-amber-50 hover:bg-amber-500/30 disabled:opacity-30 max-md:h-11 max-md:px-3 max-md:text-xs"
+                      title={zh
+                        ? '暂停并标记当前帧为关键帧。空格先暂停，再按一次才标记'
+                        : 'Pause and mark this frame. Space pauses first; press again to mark'}
+                    >
+                      <Flag size={12} />
+                      {zh ? '标记此帧' : 'Mark frame'}
+                    </button>
                     <CineSpeedSelect
                       value={videoPlaybackRate}
-                      onChange={setVideoPlaybackRate}
+                      onChange={(rate) => {
+                        setVideoPlaybackRate(rate);
+                        recordDoctorOp('cine_speed', {
+                          operation: 'cine_speed',
+                          op: 'cine_speed',
+                          value: rate,
+                          video_time_sec: videoRef.current?.currentTime ?? null,
+                        });
+                      }}
                       zh={zh}
                       placement="up"
                     />
@@ -10342,7 +12588,7 @@ export function InteractiveSegPanel({
                 </div>
               </div>
             )}
-            <div className="workbench-toolbar flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">
+            <div className={`workbench-toolbar flex flex-wrap items-center gap-2 border-t border-white/10 px-4 ${simpleVideoMode ? 'py-1' : 'py-3'}`}>
               {!simpleVideoMode && (
                 <button
                   type="button"
@@ -10373,15 +12619,14 @@ export function InteractiveSegPanel({
                 </button>
               )}
               {simpleVideoMode && points.length >= 3 && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void handleSave()}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-40"
-                >
-                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                  {zh ? '保存完整遮罩' : 'Save complete masks'}
-                </button>
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-slate-300">
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} className="text-emerald-300" />}
+                  {saving
+                    ? (zh ? '完整遮罩自动保存中' : 'Autosaving complete masks')
+                    : completeMaskAutosaved
+                      ? (zh ? '完整遮罩已自动保存' : 'Complete masks autosaved')
+                      : (zh ? '完整遮罩将自动保存' : 'Complete masks will autosave')}
+                </span>
               )}
               <button
                 type="button"
@@ -10428,39 +12673,14 @@ export function InteractiveSegPanel({
                   {zh ? '完成并关闭' : 'Done'}
                 </button>
               )}
-              {simpleVideoMode && (
-                <div className="order-last flex basis-full items-center gap-1.5 border-t border-white/5 pt-1.5 text-[9px] text-slate-400 max-md:hidden sm:order-none sm:ml-auto sm:basis-auto sm:border-t-0 sm:pt-0">
-                  <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-1 ${lesionReady ? 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100' : 'border-white/10 bg-white/[0.03]'}`}>
-                    <ScanLine size={11} />
-                    {zh ? (lesionReady ? '病灶已就绪' : '病灶待框选') : (lesionReady ? 'Lesion ready' : 'Lesion prompt needed')}
-                  </span>
-                  <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-1 ${lumenReady ? 'border-fuchsia-300/30 bg-fuchsia-400/10 text-fuchsia-100' : 'border-white/10 bg-white/[0.03]'}`}>
-                    <Droplets size={11} />
-                    {zh ? (lumenReady ? '胃腔已框选' : '胃腔可选') : (lumenReady ? 'Lumen boxed' : 'Lumen optional')}
-                  </span>
-                  <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-1 ${videoTrackReady ? 'border-violet-300/30 bg-violet-400/10 text-violet-100' : 'border-white/10 bg-white/[0.03]'}`}>
-                    <Video size={11} />
-                    {zh
-                      ? (doctorKeyframes.length
-                        ? `关键帧 ${doctorKeyframes.length}`
-                        : (videoTrackReady ? `视频 ${videoFrameOverrides.length} 帧` : '空格标关键帧'))
-                      : (doctorKeyframes.length
-                        ? `KF ${doctorKeyframes.length}`
-                        : (videoTrackReady ? `Video ${videoFrameOverrides.length} frames` : 'Space = keyframe'))}
-                  </span>
-                </div>
-              )}
+              {!simpleVideoMode ? (
               <div className="ml-auto flex flex-col items-end gap-0.5 text-[10px] text-slate-400">
                 <div className="flex items-center gap-2">
                   <ZoomIn size={12} />
-                  {simpleVideoMode ? (
-                    <span>{zh ? '当前帧系统结果' : 'Current-frame system result'}</span>
-                  ) : (
-                    <span>
-                      {zh ? '当前层' : 'Layer'} {activeLayer === 'wall' ? wallPoints.length : points.length}pt
-                      {wallPoints.length >= 3 ? `, ${zh ? '壁' : 'wall'}${wallPoints.length}` : ''}
-                    </span>
-                  )}
+                  <span>
+                    {zh ? '当前层' : 'Layer'} {activeLayer === 'wall' ? wallPoints.length : points.length}pt
+                    {wallPoints.length >= 3 ? `, ${zh ? '壁' : 'wall'}${wallPoints.length}` : ''}
+                  </span>
                   {samAvailable === false && (
                     <span className="text-amber-300/90">
                       {zh ? '系统分析服务不可用' : 'Analysis service unavailable'}
@@ -10468,13 +12688,14 @@ export function InteractiveSegPanel({
                   )}
                 </div>
               </div>
+              ) : null}
             </div>
             {historyOpen && (
               <div className="shrink-0 border-t border-sky-300/20 bg-sky-950/20 px-4 py-2.5">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-100">
                     <History size={13} />
-                    {zh ? '完整遮罩历史' : 'Complete mask history'}
+                    {zh ? '完整遮罩历史（各账号）' : 'Complete mask history (all accounts)'}
                   </div>
                   <button
                     type="button"
@@ -10512,7 +12733,8 @@ export function InteractiveSegPanel({
                                 {new Date(entry.saved_at).toLocaleString()}
                               </div>
                               <div className="mt-0.5 text-[9px] text-slate-500">
-                                {entry.action || 'manual_save'}
+                                {entry.owner_account_id || entry.override.reviewer_id || (zh ? '未记账号' : 'unattributed')}
+                                {entry.action ? ` / ${entry.action}` : ''}
                                 {frames.length
                                   ? `, ${frames.length} ${zh ? '帧' : 'frames'}`
                                   : ''}
@@ -10537,10 +12759,18 @@ export function InteractiveSegPanel({
                               </button>
                               <button
                                 type="button"
-                                disabled={historyBusy || !accountReaderId}
+                                disabled={
+                                  historyBusy
+                                  || !accountReaderId
+                                  || Boolean(entry.owner_account_id && entry.owner_account_id !== accountReaderId)
+                                }
                                 onClick={() => void deleteMaskHistoryEntry(entry)}
                                 className="rounded border border-red-400/30 bg-red-500/10 px-2 py-1 text-[10px] text-red-200 hover:bg-red-500/20 disabled:opacity-40"
-                                title={accountReaderId ? (zh ? '删除本账号该版本' : 'Delete this version for your account') : (zh ? '请先登录账号' : 'Sign in first')}
+                                title={
+                                  entry.owner_account_id && entry.owner_account_id !== accountReaderId
+                                    ? (zh ? '只能删除自己的版本' : 'You can delete only your own version')
+                                    : (accountReaderId ? (zh ? '删除自己的该版本' : 'Delete your version') : (zh ? '请先登录账号' : 'Sign in first'))
+                                }
                               >
                                 {zh ? '删除' : 'Delete'}
                               </button>
@@ -10581,7 +12811,7 @@ export function InteractiveSegPanel({
                   </div>
                 ) : (
                   <div className="py-2 text-[10px] text-slate-500">
-                    {zh ? '当前病例暂无已保存历史版本' : 'No saved versions for this case'}
+                    {zh ? '此例各账号都还没有已保存的完整遮罩' : 'No saved complete masks from any account for this case'}
                   </div>
                 )}
               </div>
@@ -10604,9 +12834,235 @@ export function InteractiveSegPanel({
                 {uncorrectedContourNote(zh)}
               </div>
             ) : null}
-            {message && (
-              <div className="border-t border-white/5 px-4 py-2 text-[11px] text-slate-300">{message}</div>
-            )}
+            {wallPaintMode ? (
+              <div className="border-t border-amber-400/20 bg-amber-500/10 px-4 py-2 text-[11px] leading-relaxed text-amber-50">
+                <span className="font-semibold">{zh ? anatomyTargetMeta(wallLayerTarget).lineZh : anatomyTargetMeta(wallLayerTarget).lineEn}</span>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  {WALL_VISIBILITY_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => applyPromptMetaLive(option.id, serosaAnchorMode)}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        wallVisibility === option.id
+                          ? 'bg-amber-200 text-slate-900'
+                          : 'border border-amber-200/30 bg-black/20 text-amber-50'
+                      }`}
+                    >
+                      {zh ? option.zh : option.en}
+                    </button>
+                  ))}
+                  {SEROSA_ANCHOR_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => applyPromptMetaLive(wallVisibility, option.id)}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        serosaAnchorMode === option.id
+                          ? 'bg-sky-200 text-slate-900'
+                          : 'border border-sky-200/30 bg-black/20 text-sky-50'
+                      }`}
+                    >
+                      {zh ? option.zh : option.en}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {wallPickMode ? (
+              <div className="border-t border-amber-400/20 bg-amber-500/10 px-4 py-2 text-[11px] leading-relaxed text-amber-50">
+                <span className="font-semibold">{zh ? '胃壁延长（点选）' : 'Wall extension (pick)'}</span>
+                <span className="ml-1 text-amber-100/80">
+                  {zh
+                    ? (wallPickFlanks.length >= 1
+                      ? '已点一侧。请再点对侧看得见的胃壁。'
+                      : '请点两侧看得见的胃壁。未点两侧时不会从肿块正中自动接。')
+                    : (wallPickFlanks.length >= 1
+                      ? 'First flank marked. Click the opposite visible wall.'
+                      : 'Click the two visible wall flanks. The wall is not invented in the mass center.')}
+                </span>
+                <button
+                  type="button"
+                  className="ml-2 rounded border border-amber-200/40 px-1.5 py-0.5 text-[10px] text-amber-50 hover:bg-amber-400/20"
+                  onClick={() => {
+                    wallPickModeRef.current = false;
+                    setWallPickMode(false);
+                    applyWallExtension();
+                  }}
+                >
+                  {zh ? '自动接' : 'Auto-join'}
+                </button>
+                <button
+                  type="button"
+                  className="ml-1 rounded border border-white/20 px-1.5 py-0.5 text-[10px] text-amber-50/80 hover:bg-white/10"
+                  onClick={() => {
+                    wallPickModeRef.current = false;
+                    wallPickFlanksRef.current = [];
+                    setWallPickMode(false);
+                    setWallPickFlanks([]);
+                    setMessage('');
+                    redrawRef.current?.();
+                  }}
+                >
+                  {zh ? '取消' : 'Cancel'}
+                </button>
+              </div>
+            ) : null}
+            {wallLayerReadout && !hideWallOnOtherFrames && (wallLayerReadout.layersBreached > 0 || (wallLayerReadout.paintedLayers || 0) > 0) ? (
+              <div className="border-t border-sky-400/20 bg-sky-500/10 px-4 py-2 text-[11px] leading-relaxed text-sky-50">
+                <span className="font-semibold">{zh ? '预期线草稿' : 'Trajectory draft'}</span>
+                <span className="ml-1">
+                  {zh
+                    ? `${wallLayerReadout.targetLayers ? `${anatomyTargetMeta(wallLayerReadout.targetLayers).lineZh}。` : ''}${
+                      wallLayerReadout.interrupts?.length
+                        ? `${wallLayerReadout.interrupts.map((item) => `${item.nameZh}${verdictLabel(item.verdict, true)}`).join('，')}。`
+                        : ''
+                    }${wallLayerReadout.mucosaBreached ? '黏膜层已受累。' : ''}${wallLayerReadout.layersBreached > 0 && !wallLayerReadout.interrupts?.length ? `最深到${wallLayerReadout.deepestZh}${wallLayerReadout.extraserosal ? '，并越过外缘' : ''}。` : ''}`
+                    : `${wallLayerReadout.targetLayers ? `${anatomyTargetMeta(wallLayerReadout.targetLayers).lineEn}. ` : ''}${
+                      wallLayerReadout.interrupts?.length
+                        ? `${wallLayerReadout.interrupts.map((item) => `${item.nameEn} ${verdictLabel(item.verdict, false)}`).join(', ')}. `
+                        : ''
+                    }${wallLayerReadout.mucosaBreached ? 'Mucosa involved. ' : ''}${wallLayerReadout.layersBreached > 0 && !wallLayerReadout.interrupts?.length ? `Deepest ${wallLayerReadout.deepestEn}${wallLayerReadout.extraserosal ? ', past the outer edge' : ''}.` : ''}`}
+                </span>
+                {wallLayerReadout.ticks?.length ? (
+                  <span className="ml-1 inline-flex flex-wrap gap-1">
+                    {wallLayerReadout.ticks.map((tick) => (
+                      <span
+                        key={tick.layer}
+                        className={`rounded px-1.5 py-0.5 text-[10px] ${
+                          tick.status === 'absent' || tick.status === 'imaginary'
+                            ? 'bg-rose-400/20 text-rose-100'
+                            : tick.status === 'thinned'
+                              ? 'bg-amber-400/20 text-amber-100'
+                              : tick.status === 'unseen'
+                                ? 'bg-white/10 text-slate-300'
+                                : 'bg-emerald-400/15 text-emerald-100'
+                        }`}
+                      >
+                        {zh ? `${tick.nameZh} ${tick.labelZh}` : `${tick.nameEn} ${tick.labelEn}`}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+                <span className="ml-1 text-sky-100/80">{zh ? wallLayerReadout.noteZh : wallLayerReadout.noteEn}</span>
+              </div>
+            ) : null}
+            {dinoDockOpen && dinoResult?.available && dinoLayers.length ? (
+              <div className="border-t border-violet-400/25 bg-violet-500/10 px-4 py-2 text-[11px] leading-relaxed text-violet-50">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">{zh ? 'ROI 附近 DINO 层特征（草稿）' : 'ROI DINO layers (draft)'}</span>
+                  <span className="text-violet-100/80">
+                    {zh
+                      ? '只看当前帧病灶/胃壁附近，不是全图，不定 cT。'
+                      : 'Current-frame lesion/wall neighborhood only. Not a definite cT.'}
+                  </span>
+                  <span className="inline-flex flex-wrap gap-1">
+                    {dinoLayers.map((layer) => {
+                      const index = Number(layer.layer_index);
+                      const selected = selectedDinoLayer?.layer_index === index;
+                      return (
+                        <button
+                          key={`dino-roi-l${index}`}
+                          type="button"
+                          onClick={() => setActiveDinoLayer(index)}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            selected
+                              ? 'bg-violet-200 text-slate-900'
+                              : 'bg-black/30 text-violet-100/85 hover:bg-black/50'
+                          }`}
+                        >
+                          {`L${index}`}
+                        </button>
+                      );
+                    })}
+                  </span>
+                  {selectedDinoLayer?.scalars?.cos_wall_lesion != null ? (
+                    <span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-violet-100">
+                      {zh ? '壁/灶' : 'wall/lesion'} {Number(selectedDinoLayer.scalars.cos_wall_lesion).toFixed(2)}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {dinoLayers.map((layer) => {
+                    const index = Number(layer.layer_index);
+                    const feature = layer.roi_feature_overlay_png || layer.feature_overlay_png;
+                    const wall = layer.roi_wall_evidence_overlay_png || layer.wall_evidence_overlay_png;
+                    return (
+                      <button
+                        key={`dino-roi-preview-${index}`}
+                        type="button"
+                        onClick={() => setActiveDinoLayer(index)}
+                        className={`rounded border p-1 ${
+                          selectedDinoLayer?.layer_index === index
+                            ? 'border-violet-200/80 bg-black/40'
+                            : 'border-white/15 bg-black/20'
+                        }`}
+                        title={zh ? `第 ${index} 层：左=病灶亲和，右=壁相对灶` : `Layer ${index}: left=lesion affinity, right=wall vs lesion`}
+                      >
+                        <div className="mb-0.5 text-center font-mono text-[10px] text-violet-100">{`L${index}`}</div>
+                        <span className="inline-flex items-center gap-1">
+                          {feature ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={feature} alt="" className="h-12 w-16 rounded object-cover" />
+                          ) : null}
+                          {wall ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={wall} alt="" className="h-12 w-16 rounded object-cover" />
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {!hideWallOnOtherFrames && wallEchoClarify?.available ? (
+              <div className="border-t border-pink-400/25 bg-pink-500/10 px-4 py-2 text-[11px] leading-relaxed text-pink-50">
+                <span className="font-semibold">{zh ? '最深窄带回声（草稿）' : 'Deepest-band echo (draft)'}</span>
+                <span className="ml-1">{zh ? wallEchoClarify.noteZh : wallEchoClarify.noteEn}</span>
+                <span className="ml-2 inline-flex items-center gap-2 align-middle">
+                  {echoPreview.raw ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={echoPreview.raw}
+                      alt=""
+                      className="h-8 w-16 rounded border border-white/20 object-cover"
+                      title={zh ? '原图窄带' : 'Raw narrow band'}
+                    />
+                  ) : null}
+                  {echoPreview.clustered ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={echoPreview.clustered}
+                      alt=""
+                      className="h-8 w-16 rounded border border-pink-200/40 object-cover"
+                      title={zh ? '亮/中/暗区域聚类' : 'Bright / mid / dark regions'}
+                    />
+                  ) : null}
+                  <span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-pink-100">
+                    {zh ? wallEchoClarify.patternZh : wallEchoClarify.patternEn}
+                  </span>
+                </span>
+              </div>
+            ) : null}
+            {!hideWallOnOtherFrames && wallExtensionNote ? (
+              <div className="border-t border-amber-400/20 bg-amber-500/10 px-4 py-2 text-[11px] leading-relaxed text-amber-50">
+                <span className="font-semibold">{zh ? '胃壁延长（草稿）' : 'Wall extension (draft)'}</span>
+                {wallExtensionStats?.overshootPx != null && wallExtensionStats.overshootPx > 1
+                  ? (zh
+                    ? `  超出约 ${wallExtensionStats.overshootPx} px。`
+                    : `  Overshoot about ${wallExtensionStats.overshootPx} px.`)
+                  : wallExtensionStats?.remainPx != null
+                    ? (zh
+                      ? `  尚未明显超出，剩余约 ${wallExtensionStats.remainPx} px。`
+                      : `  Not clearly past the line; about ${wallExtensionStats.remainPx} px remains.`)
+                    : ''}
+                <span className="ml-1 text-amber-100/80">{wallExtensionNote}</span>
+              </div>
+            ) : null}
+            {message ? (
+              <div className="border-t border-white/5 px-3 py-1 text-[10px] leading-snug text-slate-400">{message}</div>
+            ) : null}
             <ViewingTraceDock
               zh={zh}
               sessionId={viewingTraceSessionId}

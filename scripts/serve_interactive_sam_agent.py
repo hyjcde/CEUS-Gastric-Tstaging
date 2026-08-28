@@ -256,6 +256,9 @@ class AnalyzeRequest(BaseModel):
     llm_report: bool = False
     boundary_sectors: list[BoundarySectorPayload] = Field(default_factory=list)
     gc_us_report: dict[str, Any] | None = None
+    # Overlay PNGs are large (~MB) and can fail browser fetch ("Load failed").
+    # Contour UIs only need mask_polygon; opt in for raster preview.
+    include_overlay: bool = False
 
 
 class VideoPropagateRequest(BaseModel):
@@ -271,6 +274,13 @@ class VideoPropagateRequest(BaseModel):
     max_frames: int = 0
 
 
+class DinoRoiBBox(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
 class DinoFeaturesRequest(BaseModel):
     case_id: str = ""
     frame_time: float = 0.0
@@ -279,6 +289,7 @@ class DinoFeaturesRequest(BaseModel):
     image_height: int = Field(..., gt=0)
     lesion_polygon: list[list[float]] = Field(default_factory=list)
     wall_polygon: list[list[float]] = Field(default_factory=list)
+    roi_bbox: DinoRoiBBox | None = None
     layer_index: int = 11
     layer_indices: list[int] = Field(default_factory=list)
 
@@ -352,16 +363,67 @@ def dino_cosine_map(tokens: np.ndarray, vector: np.ndarray) -> np.ndarray:
     return (tokens @ vector / np.maximum(token_norm * vector_norm, 1e-8)).astype(np.float32)
 
 
+def _encode_png_bgr(image_bgr: np.ndarray) -> str:
+    ok, encoded = cv2.imencode(".png", image_bgr)
+    if not ok:
+        return ""
+    return f"data:image/png;base64,{base64.b64encode(encoded.tobytes()).decode('ascii')}"
+
+
+def resolve_dino_roi_box(
+    req: DinoFeaturesRequest,
+    image_width: int,
+    image_height: int,
+    margin: int = 48,
+) -> tuple[int, int, int, int] | None:
+    if req.roi_bbox is not None:
+        x1, y1, x2, y2 = (
+            float(req.roi_bbox.x1),
+            float(req.roi_bbox.y1),
+            float(req.roi_bbox.x2),
+            float(req.roi_bbox.y2),
+        )
+    else:
+        points: list[list[float]] = []
+        points.extend(req.lesion_polygon or [])
+        points.extend(req.wall_polygon or [])
+        if len(points) < 3:
+            return None
+        xs = [float(pt[0]) for pt in points if len(pt) >= 2]
+        ys = [float(pt[1]) for pt in points if len(pt) >= 2]
+        if not xs or not ys:
+            return None
+        x1, y1, x2, y2 = min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin
+    left = int(max(0, min(image_width - 2, math.floor(x1))))
+    top = int(max(0, min(image_height - 2, math.floor(y1))))
+    right = int(max(left + 8, min(image_width, math.ceil(x2))))
+    bottom = int(max(top + 8, min(image_height, math.ceil(y2))))
+    if right - left < 8 or bottom - top < 8:
+        return None
+    return left, top, right, bottom
+
+
+def crop_overlay_png(data_url: str, box: tuple[int, int, int, int] | None) -> str:
+    if not data_url or box is None or "," not in data_url:
+        return ""
+    raw = np.frombuffer(base64.b64decode(data_url.split(",", 1)[1]), dtype=np.uint8)
+    image = cv2.imdecode(raw, cv2.IMREAD_COLOR)
+    if image is None:
+        return ""
+    x1, y1, x2, y2 = box
+    crop = image[y1:y2, x1:x2]
+    if crop.size == 0:
+        return ""
+    return _encode_png_bgr(crop)
+
+
 def dino_overlay_png(image_rgb: np.ndarray, feature_map: np.ndarray, cmap: int) -> str:
     h, w = image_rgb.shape[:2]
     normalized = cv2.normalize(feature_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     heatmap = cv2.applyColorMap(cv2.resize(normalized, (w, h), interpolation=cv2.INTER_CUBIC), cmap)
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
     overlay = cv2.addWeighted(image_bgr, 0.48, heatmap, 0.52, 0)
-    ok, encoded = cv2.imencode(".png", overlay)
-    if not ok:
-        return ""
-    return f"data:image/png;base64,{base64.b64encode(encoded.tobytes()).decode('ascii')}"
+    return _encode_png_bgr(overlay)
 
 
 def build_dino_layer_result(
@@ -372,6 +434,7 @@ def build_dino_layer_result(
     lesion: np.ndarray | None,
     wall: np.ndarray | None,
     boundary: np.ndarray | None,
+    roi_box: tuple[int, int, int, int] | None = None,
 ) -> dict[str, Any]:
     channels, grid_height, grid_width = feature_map.shape
     tokens = feature_map.reshape(channels, grid_height * grid_width).T
@@ -403,7 +466,7 @@ def build_dino_layer_result(
         dino_cosine_map(tokens, pooled["wall"])
         - dino_cosine_map(tokens, pooled["lesion"])
     ).reshape(grid_height, grid_width)
-    return {
+    payload = {
         "available": True,
         "model": model_id,
         "layer_index": int(layer_index),
@@ -427,6 +490,11 @@ def build_dino_layer_result(
         "feature_overlay_png": dino_overlay_png(image_rgb, lesion_affinity, cv2.COLORMAP_MAGMA),
         "wall_evidence_overlay_png": dino_overlay_png(image_rgb, wall_evidence, cv2.COLORMAP_TURBO),
     }
+    payload["roi_feature_overlay_png"] = crop_overlay_png(payload["feature_overlay_png"], roi_box)
+    payload["roi_wall_evidence_overlay_png"] = crop_overlay_png(payload["wall_evidence_overlay_png"], roi_box)
+    if roi_box is not None:
+        payload["roi_box"] = {"x1": roi_box[0], "y1": roi_box[1], "x2": roi_box[2], "y2": roi_box[3]}
+    return payload
 
 
 def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
@@ -455,6 +523,7 @@ def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
         )
     first_feature_map = outputs[0][0].detach().float().cpu().numpy()
     _, grid_height, grid_width = first_feature_map.shape
+    roi_box = resolve_dino_roi_box(req, actual_width, actual_height)
     lesion = polygon_to_grid(req.lesion_polygon, actual_width, actual_height, grid_height, grid_width)
     wall = polygon_to_grid(req.wall_polygon, actual_width, actual_height, grid_height, grid_width)
     boundary = None
@@ -471,6 +540,7 @@ def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
             lesion=lesion,
             wall=wall,
             boundary=boundary,
+            roi_box=roi_box,
         )
         for layer_index, layer_output in zip(requested_layers, outputs)
     ]
@@ -483,6 +553,11 @@ def extract_dino_features(req: DinoFeaturesRequest) -> dict[str, Any]:
         "case_id": req.case_id,
         "frame_time": float(req.frame_time),
         "layer_indices": requested_layers,
+        "roi_box": (
+            {"x1": roi_box[0], "y1": roi_box[1], "x2": roi_box[2], "y2": roi_box[3]}
+            if roi_box is not None
+            else None
+        ),
         "layers": layers,
     }
 
@@ -1941,7 +2016,7 @@ def interactive_analyze(req: AnalyzeRequest) -> dict[str, Any]:
         "tracking": tracking_meta,
         "frame_size": {"width": native_w, "height": native_h},
         "mask_polygon": polygon,
-        "mask_overlay_png": mask_to_overlay_png(mask),
+        "mask_overlay_png": mask_to_overlay_png(mask) if req.include_overlay else None,
         "report": report,
     }
 

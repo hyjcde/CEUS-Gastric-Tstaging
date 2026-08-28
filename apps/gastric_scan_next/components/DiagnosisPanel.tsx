@@ -3,7 +3,7 @@
 import { useSettings } from '@/contexts/SettingsContext';
 import { calculateDiagnosis, generateNarrativeReport, generateSummaryPoints, getFeatureDescriptions } from '@/lib/diagnosis';
 import { AgentAnalysisResponse, ConceptState, Patient } from '@/types';
-import { Activity, AlignLeft, BarChart2, FileText, Maximize2, Ruler, Tag, Terminal, User, X, Download, FileDown, ChevronDown } from 'lucide-react';
+import { Activity, AlignLeft, BarChart2, FileText, Maximize2, Tag, Terminal, X, Download, FileDown, ChevronDown } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { exportReportToPDF, exportSinglePatientToCSV } from '@/lib/export-utils';
@@ -13,6 +13,10 @@ import type { GcUsReportImage } from '@/lib/gc-us-report-template';
 import type { SamReport } from '@/lib/reader/types';
 import type { DinoFeatureResult, DinoLayerResult } from '@/components/InteractiveSegPanel';
 import { DoctorReportStudio } from '@/components/DoctorReportStudio';
+import { patientDisplayLabel } from '@/lib/patient-display';
+import { ClinicalHistoryCard } from '@/components/ClinicalHistoryCard';
+import { SimilarCaseReferencePanel } from '@/components/reader/SimilarCaseReferencePanel';
+import { isEvaluationBrowserSession } from '@/lib/reader/evaluation-session';
 
 interface DiagnosisPanelProps {
   state: ConceptState;
@@ -26,6 +30,12 @@ interface DiagnosisPanelProps {
   onExpandedChange?: (expanded: boolean) => void;
   /** GC-US imaging paragraph from SAM + wall features */
   imagingNarrative?: string | null;
+  similarCasesEnabled?: boolean;
+  studyMode?: string;
+  queryPreviewUrl?: string;
+  queryMaskPolygon?: number[][] | null;
+  queryImageWidth?: number;
+  queryImageHeight?: number;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -45,8 +55,15 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
   onGcUsReportChange,
   onExpandedChange,
   imagingNarrative = null,
+  similarCasesEnabled = false,
+  studyMode,
+  queryPreviewUrl,
+  queryMaskPolygon,
+  queryImageWidth,
+  queryImageHeight,
 }) => {
   const { t, language } = useSettings();
+  const evaluationSession = isEvaluationBrowserSession();
   const [reportText, setReportText] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'diagnosis' | 'clinical'>('diagnosis');
@@ -223,8 +240,8 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
         : 'No definitive high-risk nodal signals (N0).';
 
     const stageText = language !== 'en'
-      ? `工作台评估的是 cT（浸润深度），不等于完整 TNM；N 为淋巴结，M 为远处转移。当前辅助推断 ${tStage}${nStage}（置信度 ${confidence.overall}%）。无经确认壁层/浆膜/邻近器官证据时保持 cTx 或待确认。`
-      : `This workbench estimates cT (invasion depth), not full TNM; N is nodal and M is distant metastasis. Current assistive inference is ${tStage}${nStage} (${confidence.overall}% confidence). Keep cTx / pending without confirmed wall, serosa, or adjacent-organ evidence.`;
+      ? `工作台评估的是 cT（浸润深度），不等于完整 TNM；N 为淋巴结，M 为远处转移。当前辅助推断 ${tStage}${nStage}（置信度 ${confidence.overall}%）。无经确认壁层/浆膜/邻近器官证据时分期标记为 provisional。`
+      : `This workbench estimates cT (invasion depth), not full TNM; N is nodal and M is distant metastasis. Current assistive inference is ${tStage}${nStage} (${confidence.overall}% confidence). Without confirmed wall/serosa/adjacent-organ evidence the stage is provisional.`;
 
     const recommendationText = flags.highRisk
       ? language !== 'en'
@@ -324,31 +341,39 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
   }, [language, patient]);
 
   const patientReportRows = useMemo(() => {
-    if (!patient?.report) return [];
+    if (!patient) return [];
     const rows = [
       {
         label: language !== 'en' ? '超声报告' : 'Ultrasound report',
-        value: patient.report.ultrasound_report,
+        value: patient.report?.ultrasound_report,
       },
       {
         label: language !== 'en' ? '超声所见' : 'Ultrasound findings',
-        value: patient.report.ultrasound_findings,
+        value: patient.report?.ultrasound_findings,
       },
       {
         label: language !== 'en' ? '超声提示' : 'Ultrasound impression',
-        value: patient.report.ultrasound_impression,
+        value: patient.report?.ultrasound_impression,
       },
       {
         label: language !== 'en' ? '内镜报告' : 'Endoscopy report',
-        value: patient.report.endoscopy_report,
+        value: patient.report?.endoscopy_report,
       },
       {
         label: language !== 'en' ? '病理报告' : 'Pathology report',
-        value: patient.report.pathology_report,
+        value: patient.report?.pathology_report || patient.clinical?.pathology_text,
+      },
+      {
+        label: language !== 'en' ? '出院诊断' : 'Discharge diagnosis',
+        value: patient.clinical?.discharge_diagnosis,
+      },
+      {
+        label: language !== 'en' ? 'CT 报告' : 'CT report',
+        value: patient.report?.ct_report,
       },
     ];
     return rows.filter((row) => row.value);
-  }, [language, patient?.report]);
+  }, [language, patient]);
 
   useEffect(() => {
     if (!patient) {
@@ -508,7 +533,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                                 {language !== 'en' ? '辅助诊断完整报告' : 'Assisted diagnosis full report'}
                             </div>
                             <div className="text-xs text-gray-500 mt-0.5">
-                                {patient?.id_short || 'N/A'} • {new Date().toLocaleString(language !== 'en' ? 'zh-CN' : 'en-US')}
+                                {patientDisplayLabel(patient, language)} • {new Date().toLocaleString(language !== 'en' ? 'zh-CN' : 'en-US')}
                             </div>
                         </div>
                     </div>
@@ -584,9 +609,9 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                         <div className={`rounded-xl border ${flags.isT4 || flags.hasMetastasis ? 'border-red-500/40 bg-red-950/20' : 'border-emerald-500/40 bg-emerald-950/20'} px-4 py-3 flex items-center justify-between gap-4`}>
                             <div className="min-w-0">
                                 <div className="text-[10px] text-gray-500 uppercase tracking-wider">{language !== 'en' ? '可编辑诊断意见草稿' : 'Editable diagnosis draft'}</div>
-                                <div className="text-base text-gray-100 font-mono truncate mt-1">{patient?.id_short || 'N/A'}</div>
+                                <div className="text-base text-gray-100 font-mono truncate mt-1">{patientDisplayLabel(patient, language)}</div>
                                 <div className="text-[11px] text-gray-500 mt-0.5">
-                                    {patient?.id_short || 'N/A'} • {new Date().toLocaleString(language !== 'en' ? 'zh-CN' : 'en-US')}
+                                    {patientDisplayLabel(patient, language)} • {new Date().toLocaleString(language !== 'en' ? 'zh-CN' : 'en-US')}
                                 </div>
                             </div>
                             <div className="flex items-center gap-5 shrink-0">
@@ -791,6 +816,24 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
       <div className="flex-1 flex flex-col min-h-0">
         {activeTab === 'diagnosis' ? (
             <>
+                {similarCasesEnabled && patient ? (
+                  <div className="shrink-0 max-h-[42vh] overflow-y-auto border-b border-white/10 p-2">
+                    <SimilarCaseReferencePanel
+                      caseId={patient.id}
+                      patientId={patient.patient_id || patient.id}
+                      studyMode={studyMode || patient.study_mode}
+                      enabled
+                      zh={language !== 'en'}
+                      compact
+                      allowOpenWorkbench={!evaluationSession}
+                      queryPreviewUrl={queryPreviewUrl}
+                      queryMaskPolygon={queryMaskPolygon}
+                      queryImageWidth={queryImageWidth}
+                      queryImageHeight={queryImageHeight}
+                    />
+                  </div>
+                ) : null}
+
                 {/* Probabilities Section - Compact 2 Columns */}
                 <div className="shrink-0 p-3 border-b border-neutral-800 bg-neutral-900/30 grid grid-cols-2 gap-4">
                 {/* Column 1: T-Stage */}
@@ -948,21 +991,21 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                                 {language !== 'en' ? '边界/病灶' : 'Boundary/lesion'} {formatDinoValue(scalars.cos_boundary_lesion)}
                               </span>
                             </div>
-                            {layer.feature_overlay_png || layer.wall_evidence_overlay_png ? (
+                            {layer.roi_feature_overlay_png || layer.feature_overlay_png || layer.roi_wall_evidence_overlay_png || layer.wall_evidence_overlay_png ? (
                               <div className="mt-1.5 grid grid-cols-2 gap-1 overflow-hidden rounded">
-                                {layer.feature_overlay_png ? (
+                                {(layer.roi_feature_overlay_png || layer.feature_overlay_png) ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={layer.feature_overlay_png}
+                                    src={layer.roi_feature_overlay_png || layer.feature_overlay_png}
                                     alt={`${language !== 'en' ? '病灶亲和图' : 'Lesion affinity map'} layer ${layerIndex + 1}`}
                                     loading="lazy"
                                     className="h-14 w-full object-cover"
                                   />
                                 ) : <div className="h-14 rounded bg-black/30" />}
-                                {layer.wall_evidence_overlay_png ? (
+                                {(layer.roi_wall_evidence_overlay_png || layer.wall_evidence_overlay_png) ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={layer.wall_evidence_overlay_png}
+                                    src={layer.roi_wall_evidence_overlay_png || layer.wall_evidence_overlay_png}
                                     alt={`${language !== 'en' ? '胃壁证据图' : 'Wall evidence map'} layer ${layerIndex + 1}`}
                                     loading="lazy"
                                     className="h-14 w-full object-cover"
@@ -1004,27 +1047,27 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                         ))}
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        {selectedDinoLayer.feature_overlay_png ? (
+                        {(selectedDinoLayer.roi_feature_overlay_png || selectedDinoLayer.feature_overlay_png) ? (
                           <figure>
                             <figcaption className="mb-1 text-[9px] text-slate-500">
-                              {language !== 'en' ? '病灶亲和图' : 'Lesion affinity'}
+                              {language !== 'en' ? '病灶亲和图（ROI）' : 'Lesion affinity (ROI)'}
                             </figcaption>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={selectedDinoLayer.feature_overlay_png}
+                              src={selectedDinoLayer.roi_feature_overlay_png || selectedDinoLayer.feature_overlay_png}
                               alt={language !== 'en' ? '当前层病灶亲和叠加图' : 'Selected-layer lesion affinity overlay'}
                               className="h-28 w-full rounded border border-white/10 object-cover"
                             />
                           </figure>
                         ) : null}
-                        {selectedDinoLayer.wall_evidence_overlay_png ? (
+                        {(selectedDinoLayer.roi_wall_evidence_overlay_png || selectedDinoLayer.wall_evidence_overlay_png) ? (
                           <figure>
                             <figcaption className="mb-1 text-[9px] text-slate-500">
-                              {language !== 'en' ? '胃壁差异证据图' : 'Wall evidence difference'}
+                              {language !== 'en' ? '胃壁差异证据图（ROI）' : 'Wall evidence difference (ROI)'}
                             </figcaption>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={selectedDinoLayer.wall_evidence_overlay_png}
+                              src={selectedDinoLayer.roi_wall_evidence_overlay_png || selectedDinoLayer.wall_evidence_overlay_png}
                               alt={language !== 'en' ? '当前层胃壁证据叠加图' : 'Selected-layer wall evidence overlay'}
                               className="h-28 w-full rounded border border-white/10 object-cover"
                             />
@@ -1047,7 +1090,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                     className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2.5 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/25"
                   >
                     <Maximize2 size={16} />
-                    {language !== 'en' ? '展开完整报告' : 'Open full report'}
+                    {language !== 'en' ? '确认完整报告' : 'Confirm full report'}
                   </button>
                   <div className="mt-1.5 text-center text-[11px] text-slate-500">
                     {language !== 'en'
@@ -1070,56 +1113,15 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                 </div>
             </>
         ) : patient ? (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 animate-in fade-in duration-300 custom-scrollbar">
-                 {/* Demographics */}
-                 <div className="bg-linear-to-br from-neutral-900/50 to-neutral-800/30 p-3 rounded-lg border border-white/5 hover:border-blue-500/30 transition-colors">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1"><User size={10}/> {t.diagnosis.demographics}</div>
-                    <div className="text-sm text-gray-200 font-mono">
-                        {patient.clinical ? `${patient.clinical.sex}, ${patient.clinical.age ?? 'N/A'}y` : (language !== 'en' ? '当前病例未挂接临床摘要' : 'No safe clinical summary attached')}
-                    </div>
-                    {patient.clinical?.location && (
-                        <div className="text-[10px] text-gray-500 mt-1">{patient.clinical.location}</div>
-                    )}
-                 </div>
+            <div className="flex-1 overflow-y-auto animate-in fade-in duration-300 custom-scrollbar">
+                 <ClinicalHistoryCard
+                   patient={patient}
+                   hideGold={evaluationSession}
+                   hideReports={evaluationSession}
+                 />
+                 <div className="space-y-4 p-4">
 
-                 {/* Tumor Size */}
-                 <div className="bg-linear-to-br from-neutral-900/50 to-neutral-800/30 p-3 rounded-lg border border-white/5 hover:border-blue-500/30 transition-colors">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1"><Ruler size={10}/> {t.diagnosis.tumor_size}</div>
-                    <div className="text-sm text-gray-200 font-mono">
-                        {patient.clinical ? `${patient.clinical.tumorSize.length ?? 'N/A'} × ${patient.clinical.tumorSize.thickness ?? 'N/A'} cm` : 'N/A × N/A cm'}
-                    </div>
-                 </div>
-
-                 {/* Biomarkers */}
-                 <div className="bg-linear-to-br from-neutral-900/50 to-neutral-800/30 p-3 rounded-lg border border-white/5">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1"><Activity size={10}/> {t.diagnosis.biomarkers}</div>
-                    <div className="space-y-2">
-                        <div className="flex justify-between items-center text-xs p-2 rounded bg-neutral-800/30">
-                            <span className="text-gray-400">CEA</span>
-                            <div className="flex items-center gap-2">
-                                <span className={`font-mono font-bold ${patient.clinical?.biomarkers.cea_positive ? 'text-red-400' : 'text-emerald-400'}`}>
-                                    {patient.clinical?.biomarkers.cea ?? 'N/A'} ng/ml
-                                </span>
-                                {patient.clinical?.biomarkers.cea_positive && (
-                                    <span className="text-[8px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/30">+</span>
-                                )}
-                            </div>
-                        </div>
-                        <div className="flex justify-between items-center text-xs p-2 rounded bg-neutral-800/30">
-                            <span className="text-gray-400">CA19-9</span>
-                            <div className="flex items-center gap-2">
-                                <span className={`font-mono font-bold ${patient.clinical?.biomarkers.ca199_positive ? 'text-red-400' : 'text-emerald-400'}`}>
-                                    {patient.clinical?.biomarkers.ca199 ?? 'N/A'} U/ml
-                                </span>
-                                {patient.clinical?.biomarkers.ca199_positive && (
-                                    <span className="text-[8px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/30">+</span>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                 </div>
-
-                 {/* Case Summary */}
+                 {!evaluationSession ? (
                  <div className="bg-linear-to-br from-neutral-900/50 to-neutral-800/30 p-3 rounded-lg border border-white/5">
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1"><AlignLeft size={10}/> {t.diagnosis.case_summary}</div>
                     <div className="space-y-1.5 text-xs text-gray-300">
@@ -1131,8 +1133,9 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                         ))}
                     </div>
                  </div>
+                 ) : null}
 
-                 {patientReportRows.length > 0 && (
+                 {!evaluationSession && patientReportRows.length > 0 && (
                     <div className="bg-linear-to-br from-cyan-900/20 to-slate-800/20 p-3 rounded-lg border border-cyan-500/30">
                       <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <FileText size={10} className="text-cyan-400"/>
@@ -1175,6 +1178,7 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = React.memo(({
                           </div>
                         ))}
                     </div>
+                 </div>
                  </div>
 
             </div>
