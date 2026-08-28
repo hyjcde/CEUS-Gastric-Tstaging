@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, ROI lesion mask then peri-lesion layer zoom
+
+- Scope: `scripts/render_wall_layer_thin_bands.py`. Same panel folder `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/`.
+- Reason: Full-frame YOLO boxes were too large and missed the lower mass on P008. The doctor asked to crop a tight ROI, segment the whole lesion in blue, then magnify the peri-lesion wall and split three thin layers. No charts.
+- Key changes: Crop around the yellow line (P008 drops the empty top). Segment on that crop with DINOv3 ROI LoRA or UNet, keep the fuller mask. Blue wash is the lesion. Right panel is a 6x zoom of the wall next to the mask, yellow / orange / green = shallow / muscularis / serosa. Does not unlock cT.
+- Validation: Four tight ROIs wrote masks. P008 / P040 formed bright-dark-bright after excluding the blue mask.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Thin 3-layer bands on painted frames
 
 - Scope: `scripts/render_wall_layer_thin_bands.py`. Panels `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/`. Sheet `results/visualizations/error_cases/wall_layer_thin_bands_20260829.png`.

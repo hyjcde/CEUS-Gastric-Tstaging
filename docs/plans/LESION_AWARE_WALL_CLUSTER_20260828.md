@@ -107,7 +107,7 @@ python3 scripts/render_wall_cluster_diagnostics.py
 python3 scripts/render_wall_layer_thin_bands.py
 ```
 
-在画线位置再跑一次病灶检测（现网 YOLO，优先靠近黄线的框）后，四例本帧都检出 I 框。P019 排除 I 框后 k-means 出现亮-暗-亮。出图只保留记录图 + 黄线 + R 灶 / I 框 + 黄线内三层细色块放大，不画灰度-深度散点或对比度条。图：`results/visualizations/error_cases/wall_layer_thin_bands_20260829.png`。
+不要在整张扇扫上跑大框检测。先按黄线裁紧 ROI（P008 去掉上部空扇区），在这张小图上分割整块病灶，蓝色叠在图上。再把灶周胃壁放大，分浅层 / 固有肌 / 浆膜三层细块。图：`results/visualizations/error_cases/wall_layer_thin_bands_20260829.png`。
 
 不要把像素 ticks 当成医生中断答案，也不要报一致率。
 
