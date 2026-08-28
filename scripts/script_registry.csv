@@ -434,6 +434,7 @@ render_lesion_aware_wall_cluster_panel.py,current,analysis,4,scripts,scripts/cur
 render_prompt_mask_case_visualizations.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 render_roi_margin_compare_panel.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 render_wall_cluster_diagnostics.py,current,analysis,4,scripts,scripts/current,yes,true,
+render_wall_layer_thin_bands.py,current,analysis,4,scripts,scripts/current,yes,true,
 reorganize_project_logic_white_html.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 repo_env.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 repo_paths.py,runtime,governance,,scripts,scripts/runtime,import_only,true,

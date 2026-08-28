@@ -104,7 +104,10 @@ ZML 真线上：只有 P040 同时有走行线和近邻灶（0.10 s），排除 
 
 ```bash
 python3 scripts/render_wall_cluster_diagnostics.py
+python3 scripts/render_wall_layer_thin_bands.py
 ```
+
+在画线位置再跑一次病灶检测（现网 YOLO，优先靠近黄线的框）后，四例本帧都检出 I 框。P019 排除 I 框后 k-means 出现亮-暗-亮。出图只保留记录图 + 黄线 + R 灶 / I 框 + 黄线内三层细色块放大，不画灰度-深度散点或对比度条。图：`results/visualizations/error_cases/wall_layer_thin_bands_20260829.png`。
 
 不要把像素 ticks 当成医生中断答案，也不要报一致率。
 

@@ -1,0 +1,60 @@
+{
+  "created_at": "2026-08-29",
+  "note": "Record frames, YOLO near the yellow line, 3 thin magnified bands. No charts. Not a cT.",
+  "cases": [
+    {
+      "case_id": "CASE-008",
+      "display_id": "P008",
+      "status": "ok",
+      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-008_thin_bands.png",
+      "r_note": "R same_frame",
+      "i_detected": true,
+      "exclude_note": "I box",
+      "method": "kmeans",
+      "pattern": "shallow-muscularis-serosa",
+      "bright_dark_bright": false,
+      "n_valid": 7123
+    },
+    {
+      "case_id": "CASE-019",
+      "display_id": "P019",
+      "status": "ok",
+      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-019_thin_bands.png",
+      "r_note": "R nearby dkf_8.395_4miq48 dt=4.47s",
+      "i_detected": true,
+      "exclude_note": "I box",
+      "method": "kmeans",
+      "pattern": "bright-dark-bright",
+      "bright_dark_bright": true,
+      "n_valid": 1300
+    },
+    {
+      "case_id": "CASE-040",
+      "display_id": "P040",
+      "status": "ok",
+      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-040_thin_bands.png",
+      "r_note": "R nearest_kf_dkf_1.950_l3u29r_dt0.100",
+      "i_detected": true,
+      "exclude_note": "I box",
+      "method": "kmeans",
+      "pattern": "shallow-muscularis-serosa",
+      "bright_dark_bright": false,
+      "n_valid": 2314
+    },
+    {
+      "case_id": "CASE-076",
+      "display_id": "P076",
+      "status": "ok",
+      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-076_thin_bands.png",
+      "r_note": "R nearby dkf_0.728_hb06id dt=0.55s",
+      "i_detected": true,
+      "exclude_note": "I box",
+      "method": "kmeans",
+      "pattern": "shallow-muscularis-serosa",
+      "bright_dark_bright": false,
+      "n_valid": 3886
+    }
+  ],
+  "index": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/index.png",
+  "sheet": "/data/research/gastric/GastricTstaging/results/visualizations/error_cases/wall_layer_thin_bands_20260829.png"
+}

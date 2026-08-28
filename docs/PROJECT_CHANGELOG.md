@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Thin 3-layer bands on painted frames
+
+- Scope: `scripts/render_wall_layer_thin_bands.py`. Panels `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/`. Sheet `results/visualizations/error_cases/wall_layer_thin_bands_20260829.png`.
+- Reason: The four ZML lines already sit on record frames that have lesions on both reader (R) and inference (I). Need a doctor-facing figure: detect the mass on the painted frame, then magnify three thin dark-bright bands inside the yellow corridor. No scatter or contrast charts.
+- Key changes: YOLO runs on the painted cine frame and prefers the box nearest the yellow line. That I box excludes lesion pixels from k-means / Ward. Figure is record + yellow line + R contour + I box + an unwrapped, 10x-tall 3-color strip. Does not unlock cT. Does not change the public workbench.
+- Validation: All four frames got an I box. P019 exclude-I formed bright-dark-bright on k-means. P008 / P040 / P076 still show three depth-ordered bands.
+- Deployment: none (offline figure).
+- Follow-up: Same-frame doctor lesion on P019 / P076 would replace the nearby-R overlay. Do not start DINO corridor yet.
+
 ## 2026-08-29, Wall-cluster cavity-side diagnostics
 
 - Scope: `scripts/render_wall_cluster_diagnostics.py`. Panels `pipeline/experiments/reports/lesion_aware_wall_cluster_trad/diagnostics/`.
