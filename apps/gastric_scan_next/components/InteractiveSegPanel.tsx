@@ -112,6 +112,7 @@ import {
 } from '@/lib/human-assist/prompt-stroke';
 import { DoctorKeyframeStrip } from '@/components/reader/DoctorKeyframeStrip';
 import { CineScrubBar } from '@/components/reader/CineScrubBar';
+import { readerPosterUrl } from '@/lib/reader/media-url';
 import {
   canAddDoctorKeyframe,
   findDoctorKeyframe,
@@ -1592,6 +1593,7 @@ export function InteractiveSegPanel({
   const [keepExtraLesion, setKeepExtraLesion] = useState(false);
   const [videoFps, setVideoFps] = useState(DEFAULT_CINE_FPS);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [videoFrameReady, setVideoFrameReady] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragLayer, setDragLayer] = useState<DragLayer | null>(null);
   const [saving, setSaving] = useState(false);
@@ -2181,16 +2183,32 @@ export function InteractiveSegPanel({
       playbackRafRef.current = null;
     }
     video?.pause();
+    const nextVideos = patient?.video_urls || [];
+    const nextUrl = nextVideos[0]?.url || '';
+    const poster = readerPosterUrl(nextUrl);
     if (video) {
-      video.removeAttribute('src');
-      video.load();
+      if (nextUrl) {
+        if (poster) video.poster = poster;
+        if (video.getAttribute('src') !== nextUrl) {
+          video.src = nextUrl;
+          video.load();
+        }
+      } else {
+        video.removeAttribute('poster');
+        video.removeAttribute('src');
+        video.load();
+      }
     }
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     setIsPlaying(false);
     autoplayAttemptRef.current = '';
     setVideoTime(0);
     setVideoDuration(0);
-    setVideoUrl('');
-    setVideos([]);
+    setVideos(nextVideos);
+    setVideoUrl(nextUrl);
+    setVideoFrameReady(false);
     setImgLoaded(false);
   }, [patient?.id]);
 
@@ -5174,6 +5192,7 @@ export function InteractiveSegPanel({
     if (!open || mediaMode !== 'video' || !videoUrl) return;
     const video = videoRef.current;
     if (!video) return;
+    setVideoFrameReady(video.readyState >= 2);
     setFrameFrozen(false);
     frameFrozenRef.current = false;
     const stopPlaybackLoop = () => {
@@ -5231,6 +5250,15 @@ export function InteractiveSegPanel({
       syncFrameFromVideo({ force: true });
       redraw();
     };
+    const onReady = () => {
+      setVideoFrameReady(true);
+      setImgLoaded(true);
+      syncFrameFromVideo({ force: true });
+      redraw();
+    };
+    const onWaiting = () => {
+      if (video.readyState < 2) setVideoFrameReady(false);
+    };
     const onTime = () => {
       if (scrubbingRef.current) return;
       if (frameFrozenRef.current || dragIndexRef.current !== null) {
@@ -5285,17 +5313,29 @@ export function InteractiveSegPanel({
       }
     };
     video.addEventListener('loadedmetadata', onMeta);
+    video.addEventListener('loadeddata', onReady);
+    video.addEventListener('canplay', onReady);
+    video.addEventListener('waiting', onWaiting);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
     video.addEventListener('ended', onEnded);
     video.muted = true;
     video.playsInline = true;
-    video.src = videoUrl;
-    video.load();
+    const poster = readerPosterUrl(videoUrl);
+    if (poster) video.poster = poster;
+    if (video.getAttribute('src') !== videoUrl) {
+      video.src = videoUrl;
+      video.load();
+    } else if (video.readyState >= 2) {
+      onReady();
+    }
     return () => {
       stopPlaybackLoop();
       video.removeEventListener('loadedmetadata', onMeta);
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('canplay', onReady);
+      video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
@@ -5570,49 +5610,34 @@ export function InteractiveSegPanel({
     const video = videoRef.current;
     const currentTime = video?.currentTime ?? videoTime;
     const frames = doctorKeyframesRef.current;
-    if (isDoctorKeyframeOpen(frames, activeDoctorKeyframeIdRef.current, currentTime, false)) {
-      return true;
-    }
-    const nearby = frames.find((kf) => Math.abs(kf.timeSec - currentTime) <= DOCTOR_KEYFRAME_DEDUP_SEC);
-    if (nearby) {
-      setActiveDoctorKeyframeId(nearby.id);
-      activeDoctorKeyframeIdRef.current = nearby.id;
-      if (video && Math.abs((video.currentTime || 0) - nearby.timeSec) > DOCTOR_KEYFRAME_OPEN_EPS_SEC) {
-        video.currentTime = nearby.timeSec;
-        setVideoTime(nearby.timeSec);
-      }
+    const fps = videoFpsRef.current;
+    const currentFrame = cineFrameIndex(currentTime, fps);
+    const sameFrame = frames.find((kf) => cineFrameIndex(kf.timeSec, fps) === currentFrame);
+    if (sameFrame) {
+      setActiveDoctorKeyframeId(sameFrame.id);
+      activeDoctorKeyframeIdRef.current = sameFrame.id;
       return true;
     }
     if (!video?.videoWidth) {
       setMessage(zh ? '视频帧未就绪，稍后再框选' : 'Video frame not ready');
       return false;
     }
-    const gate = canAddDoctorKeyframe(frames, currentTime);
-    if (!gate.ok) {
-      setMessage(
-        gate.reason === 'full'
-          ? (zh ? `关键帧已满（${DOCTOR_KEYFRAME_MAX}），请先点开一条再框选` : `Keyframe strip full (${DOCTOR_KEYFRAME_MAX}); open one first`)
-          : (zh ? '该时刻已有关键帧，可直接框选' : 'This time already has a keyframe; draw the box'),
-      );
-      return gate.reason === 'duplicate';
+    if (frames.length >= DOCTOR_KEYFRAME_MAX) {
+      setMessage(zh ? `关键帧已满（${DOCTOR_KEYFRAME_MAX}），请先删除再框选当前帧` : `Keyframe strip full (${DOCTOR_KEYFRAME_MAX}); remove one first`);
+      return false;
     }
+    persistOpenKeyframeContours();
+    clearKeyframeOverlay();
     const timeSec = Number((currentTime || 0).toFixed(3));
     const id = newDoctorKeyframeId(timeSec);
     const frame = captureDoctorFrameFromVideo(video);
-    const hasLesion = pointsRef.current.length >= 3;
     const next: DoctorKeyframe = {
       id,
       timeSec,
       thumbDataUrl: frame?.thumbDataUrl || null,
-      segStatus: hasLesion ? 'ready' : 'idle',
-      lesionPolygon: hasLesion ? clonePoly(pointsRef.current) : undefined,
-      lumenBox: lumenBoxRef.current || undefined,
-      lumenPolygon: lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : undefined,
-      wallPolygon: wallPointsRef.current.length >= 3 ? clonePoly(wallPointsRef.current) : undefined,
-      wallLayerReadout: wallLayerReadoutRef.current,
+      segStatus: 'idle',
       error: null,
     };
-    persistOpenKeyframeContours();
     setDoctorKeyframes((prev) => {
       const sorted = sortDoctorKeyframes([...prev, next]);
       doctorKeyframesRef.current = sorted;
@@ -5629,7 +5654,7 @@ export function InteractiveSegPanel({
     });
     setMessage(zh ? '已将当前帧作为关键帧，请拖框选病灶' : 'This frame is now the keyframe; drag a box on the lesion');
     return true;
-  }, [mediaMode, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, simpleVideoMode, videoTime, zh]);
+  }, [clearKeyframeOverlay, mediaMode, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, simpleVideoMode, videoTime, zh]);
   requireOpenKeyframeForBoxRef.current = requireOpenKeyframeForBox;
 
   const applyDoctorLesionBox = useCallback((box: { x1: number; y1: number; x2: number; y2: number }) => {
@@ -12293,6 +12318,7 @@ export function InteractiveSegPanel({
                     playsInline
                     autoPlay
                     preload="auto"
+                    poster={readerPosterUrl(videoUrl) || undefined}
                     crossOrigin="anonymous"
                   />
                 )}
@@ -12371,9 +12397,14 @@ export function InteractiveSegPanel({
                     );
                   }}
                 />
-                {(samBusy || lumenSamBusy || segmentationBusy || propagateBusy || precomputeBusy || workflowBusy || lesionAutoBusy || (mediaMode === 'image' && !imgLoaded)) && !assistOverlayOpen && !unifiedAgentBusy && (
+                {(samBusy || lumenSamBusy || segmentationBusy || propagateBusy || precomputeBusy || workflowBusy || lesionAutoBusy || (mediaMode === 'image' && !imgLoaded) || (mediaMode === 'video' && !!videoUrl && !videoFrameReady)) && !assistOverlayOpen && !unifiedAgentBusy && (
                   <div className="pointer-events-none absolute inset-0 z-[170] flex flex-col items-center justify-center bg-black/45 px-4">
                     <Loader2 className="animate-spin text-cyan-300" size={34} />
+                    {mediaMode === 'video' && !!videoUrl && !videoFrameReady && !samBusy && !lumenSamBusy && !segmentationBusy && !propagateBusy && !precomputeBusy && !workflowBusy && !lesionAutoBusy ? (
+                      <div className="mt-3 text-xs font-medium text-slate-100">
+                        {zh ? '正在打开视频' : 'Opening video'}
+                      </div>
+                    ) : null}
                     {(taskProgress || precomputeProgress || unifiedAgentBusy || workflowBusy || lesionAutoBusy || lumenSamBusy || propagateBusy || samBusy || segmentationBusy) ? (
                       <div className="mt-4 w-[min(40rem,100%)] rounded-2xl border border-white/20 bg-slate-950/95 px-6 py-5 text-center shadow-2xl backdrop-blur">
                         <div className="text-sm font-semibold text-slate-100">

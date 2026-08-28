@@ -2,6 +2,24 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-28, Case open: first-frame poster, no blank black pane
+
+- Scope: `InteractiveSegPanel.tsx`, `lib/reader/media-url.ts`, `app/api/reader/media/poster/route.ts`. Public Next required.
+- Reason: Switching cases unloaded the previous video before the next clip had a decoded frame. Reader v150 cases have no still `image_url`, so the pane stayed black until a large MP4 became playable.
+- Key changes: Keep the next video URL on case switch. Show a first-frame poster (`/api/reader/media/poster`) and a short "正在打开视频" overlay until `loadeddata`. Do not call `video.load()` on an empty src.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Public smoke after deploy.
+- Deployment: public Next BUILD `LMx_BkaiXYTrnb5p-4379`. Smoke: `public_root=200`, `public_clinical=200`. Synced 171 first-frame `*.poster.jpg` into Aliyun reader media. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Cases with `moov` at the end of the MP4 still take longer to become scrubbable; the poster only covers the first paint.
+
+## 2026-08-28, Public workbench: Box lesion stays on the current frame
+
+- Scope: `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: Tapping 框选病灶 was seeking to a nearby existing keyframe. Doctors need the current cine frame marked as a new keyframe, then they draw the box there.
+- Key changes: Arming the box no longer writes `video.currentTime` to another keyframe. Same cine frame reuses that strip item. A different frame adds a new idle keyframe and clears leftover contours from the previous frame. Does not unlock cT or change Assist.
+- Validation: `npx tsc --noEmit`. Public smoke after deploy.
+- Deployment: public Next BUILD `bX3npdqB_6mUNxSrwj33N`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Space-to-mark still uses the 0.12s duplicate window; only the box tool was changed.
+
 ## 2026-08-28, Public workbench: ROI DINO layers in a collapsible dialog
 
 - Scope: `DinoRoiLayerDialog.tsx`, `InteractiveSegPanel.tsx`, `app/api/agent/dino/features/route.ts`, `scripts/serve_interactive_sam_agent.py`. Public Next required.
