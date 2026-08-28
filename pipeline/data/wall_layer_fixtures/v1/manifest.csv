@@ -1,0 +1,5 @@
+display_id,case_id,pT_ref,site,time_sec,wall_source,cavity_side_source,brush_radius,skip_reason,frame_path
+P008,CASE-008,T1,胃体,2.3,provisional_lesion_axis,lumen_bbox,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-008.jpg
+P019,CASE-019,T2,贲门/胃底,8.395,provisional_lesion_axis,heuristic,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-019.jpg
+P040,CASE-040,T3,贲门/胃底,1.95,provisional_lesion_axis,heuristic,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-040.jpg
+P076,CASE-076,T4,贲门/胃底,0.728,provisional_lesion_axis,heuristic,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-076.jpg

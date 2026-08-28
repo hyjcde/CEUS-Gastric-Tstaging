@@ -41,6 +41,22 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "run_unet2d_segmentation_baseline.py": ("current", "segmentation"),
     "score_binary_segmentation_folder.py": ("current", "segmentation"),
     "organize_dataset_clinical_tables.py": ("current", "data_governance"),
+    "export_clinical_queue_json.py": ("current", "data_governance"),
+    "reconcile_clinical_tables_20260813.py": ("current", "data_governance"),
+    "check_clinical_tables_20260814.py": ("current", "data_governance"),
+    "audit_clinical_table_media_20260814.py": ("current", "data_governance"),
+    "inventory_tnm_nm_labels_20260814.py": ("current", "analysis"),
+    "tnm_nm_label_map.py": ("current", "data_governance"),
+    "build_tnm_nm_phase0_splits_20260814.py": ("current", "data_governance"),
+    "eval_tnm_backend_heads_20260814.py": ("current", "analysis"),
+    "probe_tnm_t_proxy_baseline_20260814.py": ("current", "analysis"),
+    "run_tnm_frozen_n_probe_20260814.py": ("current", "analysis"),
+    "stats_tnm_t_association_20260814.py": ("current", "analysis"),
+    "predict_tnm_frozen_heads_20260814.py": ("current", "analysis"),
+    "plot_tnm_extended_data_20260814.py": ("current", "visualization"),
+    "fit_tnm_regularized_n_head_20260814.py": ("current", "analysis"),
+    "viz_static_wall_dash_6cases_20260814.py": ("current", "visualization"),
+    "gc_us_wall_dash.py": ("current", "visualization"),
     "preprocess_direct_surgery_datasets.py": ("current", "data_governance"),
     "patient_split.py": ("current", "data_governance"),
     "build_dataset_inventory.py": ("current", "data_governance"),
@@ -67,6 +83,14 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "audit_mainline_eval_chain.py": ("maintenance", "governance"),
     "audit_modeling_dataset_contracts.py": ("maintenance", "data_governance"),
     "build_patient_training_view.py": ("current", "data_governance"),
+    "build_task_datasets.py": ("current", "data_governance"),
+    "build_binary_multicenter_joint_unseen.py": ("current", "data_governance"),
+    "run_binary_multicenter_joint_unseen_20260820.py": ("current", "analysis"),
+    "score_binary_multicenter_unseen.py": ("current", "analysis"),
+    "build_task_datasets_source_inventory.py": ("current", "data_governance"),
+    "join_reader_v150_to_task_datasets.py": ("current", "data_governance"),
+    "audit_task_datasets.py": ("maintenance", "data_governance"),
+    "align_acc_boost2_to_official_freeze.py": ("maintenance", "data_governance"),
     "build_training_media_view.py": ("current", "data_governance"),
     "build_static_images_view.py": ("current", "data_governance"),
     "build_videos_view.py": ("current", "data_governance"),
@@ -90,6 +114,44 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "run_clinical_loop_promotion_gate.py": ("current", "segmentation"),
     "collect_clinical_loop_workflow_metrics.py": ("current", "segmentation"),
     "assert_temporal_claims_deferred.py": ("current", "segmentation"),
+    "run_medsiglip_gastricus.py": ("current", "analysis"),
+    "build_tstaging_maincenter_retrospective.py": ("current", "data_governance"),
+    "build_tstaging_threecenter_joint_unseen.py": ("current", "data_governance"),
+    "train_t_stage.py": ("current", "analysis"),
+    "eval_t_stage.py": ("current", "analysis"),
+    "eval_tstage_tent_20260827.py": ("current", "analysis"),
+    "freeze_zml_reader_v150_inputs_20260827.py": ("current", "data_governance"),
+    "score_zml_reader_v150_frozen_20260827.py": ("current", "analysis"),
+    "plot_zml_reader_v150_tent_20260827.py": ("current", "analysis"),
+    "plot_zml_reader_v150_doctor_model_agreement_20260827.py": ("current", "analysis"),
+    "plot_zml_reader_v150_doctor_model_zh_20260827.py": ("current", "analysis"),
+    "tstaging_lab_prepare.py": ("current", "data_governance"),
+    "tstaging_lab_verify.py": ("current", "data_governance"),
+    "tstaging_lab_train.py": ("current", "analysis"),
+    "tstaging_lab_evaluate.py": ("current", "analysis"),
+    "tstaging_lab_new_experiment.py": ("current", "analysis"),
+    "tstaging_lab_register.py": ("current", "analysis"),
+    "tstaging_lab_plot.py": ("current", "analysis"),
+    "tstaging_lab_monitor.py": ("current", "analysis"),
+    "tstaging_lab_audit_clinical.py": ("current", "data_governance"),
+    "tstaging_lab_train_maskroi_clinical.py": ("current", "analysis"),
+    "tstaging_lab_evaluate_maskroi_clinical.py": ("current", "analysis"),
+    "tstaging_lab_train_roi25.py": ("current", "analysis"),
+    "tstaging_lab_evaluate_roi25.py": ("current", "analysis"),
+    "tstaging_lab_train_roi50.py": ("current", "analysis"),
+    "tstaging_lab_evaluate_roi50.py": ("current", "analysis"),
+    "tstaging_lab_train_roi25_mask.py": ("current", "analysis"),
+    "tstaging_lab_evaluate_roi25_mask.py": ("current", "analysis"),
+    "tstaging_lab_train_deep_side.py": ("current", "analysis"),
+    "tstaging_lab_evaluate_deep_side.py": ("current", "analysis"),
+    "copy_tstaging_physical_train.py": ("current", "data_governance"),
+    "build_tstaging_center_tables.py": ("current", "data_governance"),
+    "compare_sam_dino_roi_panel_expand10.py": ("current", "segmentation"),
+    "wall_lesion_aware_cluster.py": ("current", "analysis"),
+    "pack_wall_layer_fixture_v1.py": ("current", "analysis"),
+    "eval_lesion_aware_wall_cluster_v1.py": ("current", "analysis"),
+    "render_lesion_aware_wall_cluster_panel.py": ("current", "analysis"),
+    "test_wall_lesion_aware_cluster.py": ("current", "analysis"),
 }
 
 LEGACY_PATTERNS = (
@@ -144,7 +206,7 @@ def infer_status(name: str, path: Path, readme_sec: str) -> tuple[str, str, str]
 
     if name.startswith("build_") and "registry" in name:
         return "maintenance", "governance", readme_sec
-    if name.startswith(("verify_", "check_", "migrate_", "consolidate_", "cleanup_", "audit_")):
+    if name.startswith(("verify_", "check_", "migrate_", "consolidate_", "cleanup_", "audit_", "align_")):
         return "maintenance", "governance", readme_sec
 
     if HARDCODED_ROOT.search(body) and "repo_paths" not in body:
@@ -284,7 +346,7 @@ def main() -> None:
         "notes",
     ]
     with OUT.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
     print(f"Wrote {len(rows)} rows -> {OUT} ({date.today().isoformat()})")

@@ -66,7 +66,7 @@
 
 ### 0.2 工作台已经送到分析、但还缺什么
 
-点「辅助分析」：`InteractiveSegPanel.runUnifiedAgent` → `page.tsx` `handleReaderUnifiedAgent` → `POST /api/reader/agent/analyze` → `pipeline/agent/product/analyze_case.py`。公网写死 `assist_profile: 'contour_anchored_fast'`，sidecar 走 `_analyze_classify_only`，**整条壁证据图和 DINO 分割都 skip**。
+点「辅助分析」：`InteractiveSegPanel.runUnifiedAgent` → `page.tsx` `handleReaderUnifiedAgent` → `POST /api/reader/agent/analyze` → `pipeline/agent/product/analyze_case.py`。公网写死 `assist_profile: 'contour_anchored_fast'`，sidecar 走 `_analyze_classify_only`。框选里用 DINO 或 SAM 画出的 `mask_polygon` 都会进这条辅助分析；sidecar 仍 skip 壁证据图，也**不替换** Dual 四分类权重。
 
 现在请求里**已经有**（字符串 / 布尔，不是几何）：
 
@@ -139,6 +139,8 @@ wallPolygon + wallLayerTarget(k) + 可见度
 
 **排序必须用法向深度，不能用亮度。** 浆膜和界面都可以亮；固有肌和肿块都可以暗。按亮暗命名会回到现网 M0 的上限。
 
+**M0 必须先排除病灶再拟合中心。** 2026-08-28 讨论后：医生线可以穿过病灶，但 k-means 中心只能用走廊里灶外（可膨胀）的格子。查询段（灶内）只在聚类之后读连续 / 融合 / 中断。现网 `clarifyDeepestEcho` 采在最深点，正好把肿块吃进暗簇，不能当 M0 种子。离线 A/B 与打包入口见 [LESION_AWARE_WALL_CLUSTER_20260828.md](./LESION_AWARE_WALL_CLUSTER_20260828.md)。灰度都聚不出层带时，不要上 DINO。
+
 锚定段（`serosaAnchorMode`）只做两件事：给聚好的簇起名字（两端最外侧簇 = 浆膜），以及提供「正常壁」种子。它不代替聚类，也不在查询段空想平行线。
 
 ### 1.2 走廊网格（复用现网采样，不新造坐标系）
@@ -156,7 +158,7 @@ wallPolygon + wallLayerTarget(k) + 可见度
 
 | 代号 | 每个格子的特征 | 和现网的关系 | 角色 |
 |------|----------------|--------------|------|
-| **M0** | 灰度，或 `[灰度, 法向深度]` | 现网 `kmeans1d` 只吃灰度。升级后 k 跟 `wallLayerTarget` 走，簇按深度排序 | 像素聚类基线，界面先留着亮-中-暗图作对照 |
+| **M0** | 灰度，或 `[灰度, 法向深度]`；**只在灶外格子上拟合** | 现网 `kmeans1d` 只吃灰度且含肿块。升级后 k 跟 `wallLayerTarget` 走，簇按深度排序，种子段先减膨胀灶 | 像素聚类基线，界面先留着亮-中-暗图作对照 |
 | **M1** | DINO token（PCA 后），或 `[灰度, 深度, token_pca]` | 还没有。网格必须和 M0 对齐 | **主候选。** 分层看的是「像不像同一层组织」，不是亮不亮 |
 | **M2** | 锚定段簇中心当本例模板，查询段逐点算到各层中心的距离 | 协议里的模板匹配 | 聚类之后的辅助读数：中断 / 换层，不单独出层带 |
 

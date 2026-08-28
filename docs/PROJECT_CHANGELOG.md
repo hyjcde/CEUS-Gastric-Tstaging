@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-28, Lesion-aware wall cluster offline A/B
+
+- Scope: `scripts/wall_lesion_aware_cluster.py`, `pack_wall_layer_fixture_v1.py`, `eval_lesion_aware_wall_cluster_v1.py`, `render_lesion_aware_wall_cluster_panel.py`, `test_wall_lesion_aware_cluster.py`. Plan `docs/plans/LESION_AWARE_WALL_CLUSTER_20260828.md`. Fixtures `pipeline/data/wall_layer_fixtures/v1/`. Report `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/`.
+- Reason: A doctor expected line may cross the mass. Clustering the full brush or the live 56x28 deepest window lets hypoechoic tumor pixels pull the dark-layer center. Normal-wall layers must be fit outside a dilated lesion mask.
+- Key changes: Pack four reader v150 frames (P008/P019/P040/P076) with zml lesion polygons. No saved doctor wall line, so pack writes a provisional lesion-axis stroke and labels `wall_source`. Same-frame arms: live M0, full-brush k=3, exclude-lesion k=3 at dilate 0/3/5/10. Clusters sort by normal depth, not brightness. Does not unlock cT, does not change the public workbench, does not call DINO.
+- Validation: `python3 scripts/test_wall_lesion_aware_cluster.py` recovers bright-dark-bright after exclusion on a synthetic strip. Eval wrote per-case JSON and A/B panels. On provisional lines, exclude d=5 formed bright-dark-bright on P019 and P076; the full brush did not. P008 and P040 did not form stable three layers on either arm.
+- Deployment: none (offline probe).
+- Follow-up: Harvest real `wallPolygon` from the workbench, then re-pack. Do not report agreement until then. Spline extension and four-state continuity wait.
+
 ## 2026-08-28, SAM vs DINO contact sheets and ROI x1.10 Dice
 
 - Scope: `scripts/compare_sam_dino_roi_panel_expand10.py`. Report `pipeline/experiments/reports/sam_dino_roi_expand10_20260828/`. Panels under `results/visualizations/segmentation/sam_dino_roi_compare_{external,prospective}_eval_20260828.png`.
