@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { NextRequest, NextResponse } from 'next/server';
 import { PROJECT_ROOT } from '@/lib/config';
 import { buildPythonAgentEnv } from '@/lib/agent-python-env';
+import { proxyAgentRequest } from '@/lib/agent-upstream';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,19 @@ type SegmentationRequest = {
   image_height?: number;
   box?: { x1: number; y1: number; x2: number; y2: number } | null;
   clicks?: Array<{ x: number; y: number; label?: 'positive' | 'negative' | string }>;
+  include_overlay?: boolean;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stripOverlayUnlessRequested(payload: unknown, includeOverlay: boolean): unknown {
+  if (!includeOverlay && isRecord(payload) && 'mask_overlay_png' in payload) {
+    delete payload.mask_overlay_png;
+  }
+  return payload;
+}
 
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python3';
 
@@ -186,12 +199,13 @@ def main():
             "image_width": width,
             "image_height": height,
             "mask_polygon": polygon,
-            "mask_overlay_png": overlay_data_url(image, binary, polygon),
             "validation_summary": result.get("validation_summary"),
             "prompt": {"box": request.get("box"), "click_count": len(clicks)},
             "elapsed_ms": int((time.time() - started) * 1000),
             "error": result.get("error"),
         }
+        if bool(request.get("include_overlay")):
+            response["mask_overlay_png"] = overlay_data_url(image, binary, polygon)
         print(json.dumps(response, ensure_ascii=False))
     finally:
         temp_path.unlink(missing_ok=True)
@@ -222,11 +236,73 @@ function runPython(payload: SegmentationRequest): Promise<{ code: number; stdout
   });
 }
 
+const DINO_SEG_UPSTREAM = String(process.env.DINO_SEG_UPSTREAM || 'http://127.0.0.1:8773').replace(/\/+$/, '');
+
+async function tryWarmDino(body: SegmentationRequest): Promise<NextResponse | null> {
+  if (!DINO_SEG_UPSTREAM || process.env.DINO_SEG_UPSTREAM_DISABLE === '1') {
+    return null;
+  }
+  try {
+    const response = await fetch(`${DINO_SEG_UPSTREAM}/api/dino-seg/segment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(180_000),
+    });
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!response.ok) return null;
+    stripOverlayUnlessRequested(payload, body.include_overlay === true);
+    return NextResponse.json(payload, { status: response.status });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
+  if (!DINO_SEG_UPSTREAM || process.env.DINO_SEG_UPSTREAM_DISABLE === '1') {
+    return NextResponse.json({ ok: false, available: false, warm: false, error: 'DINO warm service disabled' }, { status: 503 });
+  }
+  try {
+    const response = await fetch(`${DINO_SEG_UPSTREAM}/api/dino-seg/status`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    });
+    const payload = await response.json();
+    return NextResponse.json(payload, { status: response.status });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        available: false,
+        warm: false,
+        error: error instanceof Error ? error.message : 'DINO segmentation service unavailable',
+      },
+      { status: 503 },
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
+  const forwarded = await proxyAgentRequest(request);
+  if (forwarded) return forwarded;
   try {
     const body = await request.json() as SegmentationRequest;
+    const includeOverlay = body.include_overlay === true;
     if (!body.frame_png_b64) {
       return NextResponse.json({ ok: false, error: 'frame_png_b64 is required' }, { status: 400 });
+    }
+    if ((body.model || 'dinov3') !== 'sam31' && (body.model || 'dinov3') !== 'convnext') {
+      const warmed = await tryWarmDino(body);
+      if (warmed) return warmed;
     }
     if (body.model === 'sam31') {
       const upstream = String(process.env.SAM31_UPSTREAM || 'http://127.0.0.1:8768').replace(/\/+$/, '');
@@ -247,6 +323,19 @@ export async function POST(request: NextRequest) {
         }
         if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
           const enriched = payload as Record<string, unknown>;
+          if (response.status === 429) {
+            const detail = enriched.detail;
+            if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+              const info = detail as Record<string, unknown>;
+              enriched.ok = false;
+              enriched.error = String(info.error || 'SAM3.1 GPU queue is full');
+              enriched.queue_position = info.queue_position;
+              enriched.queue_length = info.queue_length;
+            } else if (typeof detail === 'string') {
+              enriched.ok = false;
+              enriched.error = detail;
+            }
+          }
           if (!enriched.backend_id) {
             enriched.backend_id = 'sam31_gastric_lora_full_components_5epoch_run2';
           }
@@ -256,7 +345,8 @@ export async function POST(request: NextRequest) {
           enriched.agent_primary_remains = 'lesion_segmentation_unet_fulldata_convnext_base';
           payload = enriched;
         }
-        return NextResponse.json(payload, { status: response.ok ? 200 : 502 });
+        stripOverlayUnlessRequested(payload, includeOverlay);
+        return NextResponse.json(payload, { status: response.status === 429 ? 429 : (response.ok ? 200 : 502) });
       } catch (error) {
         return NextResponse.json(
           {
@@ -274,6 +364,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: result.stderr || `segmentation process exit ${result.code}` }, { status: 500 });
     }
     const parsed = JSON.parse(result.stdout.trim().split('\n').pop() || '{}') as Record<string, unknown>;
+    stripOverlayUnlessRequested(parsed, includeOverlay);
     return NextResponse.json(parsed);
   } catch (error) {
     return NextResponse.json(

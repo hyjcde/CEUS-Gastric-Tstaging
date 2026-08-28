@@ -1105,6 +1105,25 @@ function publicLesionSegModel(model: LesionSegmentationModel): 'sam31' | 'dinov3
   return model === 'dinov3' ? 'dinov3' : 'sam31';
 }
 
+function lesionMaskPolygonFromPayload(raw: Record<string, unknown>): number[][] | null {
+  const direct = raw.mask_polygon;
+  if (Array.isArray(direct) && direct.length >= 3) return direct as number[][];
+  const nested = raw.result;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    const polygon = (nested as Record<string, unknown>).mask_polygon;
+    if (Array.isArray(polygon) && polygon.length >= 3) return polygon as number[][];
+  }
+  return null;
+}
+
+function liveSamBoxPreview(
+  drag: { x0: number; y0: number; x1: number; y1: number } | null,
+  preview: { x1: number; y1: number; x2: number; y2: number } | null,
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  if (drag) return { x1: drag.x0, y1: drag.y0, x2: drag.x1, y2: drag.y1 };
+  return preview;
+}
+
 export function buildModelAssistReport(
   patient: Patient,
   polygon: number[][],
@@ -1593,7 +1612,6 @@ export function InteractiveSegPanel({
   const [keepExtraLesion, setKeepExtraLesion] = useState(false);
   const [videoFps, setVideoFps] = useState(DEFAULT_CINE_FPS);
   const [imgLoaded, setImgLoaded] = useState(false);
-  const [videoFrameReady, setVideoFrameReady] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragLayer, setDragLayer] = useState<DragLayer | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1700,6 +1718,7 @@ export function InteractiveSegPanel({
   const activeDoctorKeyframeIdRef = useRef<string | null>(null);
   const lastAutoPropagateSigRef = useRef('');
   const selectDoctorKeyframeRef = useRef<(kf: DoctorKeyframe) => void | Promise<void>>(() => undefined);
+  const applyDoctorKeyframeOverlayRef = useRef<(kf: DoctorKeyframe, opts?: { refreshEcho?: boolean }) => void>(() => undefined);
   const requireOpenKeyframeForBoxRef = useRef<() => boolean>(() => true);
   const persistOpenKeyframeContoursRef = useRef<(opts?: { refined?: boolean; clearWall?: boolean; refOnly?: boolean }) => void>(() => undefined);
   const clearKeyframeOverlayRef = useRef<() => void>(() => undefined);
@@ -1864,6 +1883,7 @@ export function InteractiveSegPanel({
   const lumenPaintBaseRef = useRef<number[][] | null>(null);
   const pendingDragPtRef = useRef<number[] | null>(null);
   const dragRafRef = useRef<number | null>(null);
+  const boxDragRafRef = useRef<number | null>(null);
   const paintRafRef = useRef<number | null>(null);
   const paintRadiusRef = useRef(16);
   paintRadiusRef.current = paintRadius;
@@ -2186,20 +2206,6 @@ export function InteractiveSegPanel({
     video?.pause();
     const nextVideos = patient?.video_urls || [];
     const nextUrl = nextVideos[0]?.url || '';
-    const poster = readerPosterUrl(nextUrl);
-    if (video) {
-      if (nextUrl) {
-        if (poster) video.poster = poster;
-        if (video.getAttribute('src') !== nextUrl) {
-          video.src = nextUrl;
-          video.load();
-        }
-      } else {
-        video.removeAttribute('poster');
-        video.removeAttribute('src');
-        video.load();
-      }
-    }
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2209,7 +2215,6 @@ export function InteractiveSegPanel({
     setVideoDuration(0);
     setVideos(nextVideos);
     setVideoUrl(nextUrl);
-    setVideoFrameReady(false);
     setImgLoaded(false);
   }, [patient?.id]);
 
@@ -3622,6 +3627,57 @@ export function InteractiveSegPanel({
     holdCtx.drawImage(video, 0, 0);
   }, []);
 
+  const paintLesionBoxDrag = useCallback(() => {
+    const canvas = canvasRef.current;
+    const drag = samBoxDragRef.current;
+    if (!canvas || !drag || !imgLoaded) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const video = videoRef.current;
+    const img = imgRef.current;
+    const hold = lastCineFrameRef.current;
+    const useVideo = mediaMode === 'video'
+      && !!video
+      && video.videoWidth > 0
+      && video.readyState >= 2;
+    const useHold = !useVideo && mediaMode === 'video' && !!hold && hold.width > 0 && hold.height > 0;
+    const iw = useVideo ? video!.videoWidth : useHold ? hold!.width : (img?.naturalWidth || 0);
+    const ih = useVideo ? video!.videoHeight : useHold ? hold!.height : (img?.naturalHeight || 0);
+    if (!iw || !ih) return;
+    const { scale, dx, dy } = computeDisplayTransform(
+      iw,
+      ih,
+      canvas.width,
+      canvas.height,
+      viewFocusBox,
+      viewZoom,
+      viewCenter,
+    );
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (useVideo) ctx.drawImage(video!, dx, dy, iw * scale, ih * scale);
+    else if (useHold) ctx.drawImage(hold!, dx, dy, iw * scale, ih * scale);
+    else if (img) ctx.drawImage(img, dx, dy, iw * scale, ih * scale);
+    const ax = dx + Math.min(drag.x0, drag.x1) * scale;
+    const ay = dy + Math.min(drag.y0, drag.y1) * scale;
+    const aw = Math.abs(drag.x1 - drag.x0) * scale;
+    const ah = Math.abs(drag.y1 - drag.y0) * scale;
+    ctx.fillStyle = 'rgba(94, 184, 196, 0.10)';
+    ctx.fillRect(ax, ay, aw, ah);
+    ctx.strokeStyle = '#67e8f9';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(ax, ay, aw, ah);
+  }, [imgLoaded, mediaMode, viewCenter, viewFocusBox, viewZoom]);
+
+  const scheduleLesionBoxDragPaint = useCallback(() => {
+    if (boxDragRafRef.current != null) return;
+    boxDragRafRef.current = window.requestAnimationFrame(() => {
+      boxDragRafRef.current = null;
+      if (!samBoxDragRef.current) return;
+      paintLesionBoxDrag();
+    });
+  }, [paintLesionBoxDrag]);
+
   const cancelPendingScrubSeek = useCallback(() => {
     if (scrubSeekRafRef.current != null) {
       cancelAnimationFrame(scrubSeekRafRef.current);
@@ -3719,6 +3775,7 @@ export function InteractiveSegPanel({
       setDoctorKeyframes(next);
       setActiveDoctorKeyframeId(null);
       activeDoctorKeyframeIdRef.current = null;
+      clearKeyframeOverlayRef.current();
     } else {
       setDoctorKeyframes(doctorKeyframesRef.current);
     }
@@ -3747,6 +3804,12 @@ export function InteractiveSegPanel({
     setVideoTime(nextTime);
     paintProgressUi(nextTime, { forceSlider: true });
     syncFrameFromVideo({ force: true });
+    const activeKf = findDoctorKeyframeById(doctorKeyframesRef.current, activeDoctorKeyframeIdRef.current);
+    if (!activeKf || cineFrameIndex(nextTime, videoFpsRef.current) !== cineFrameIndex(activeKf.timeSec, videoFpsRef.current)) {
+      setActiveDoctorKeyframeId(null);
+      activeDoctorKeyframeIdRef.current = null;
+      clearKeyframeOverlayRef.current();
+    }
     redrawRef.current();
     recordDoctorOpRef.current('cine_frame_step', {
       video_time_sec: nextTime,
@@ -3853,13 +3916,14 @@ export function InteractiveSegPanel({
       const currentFrameTime = mediaMode === 'video'
         ? Number(videoRef.current?.currentTime ?? videoTime)
         : 0;
+      const useDino = activeModel === 'dinov3';
       const payload: Record<string, unknown> = {
         case_id: patient.patient_id,
         frame_png_b64: frame.b64,
         image_width: frame.width,
         image_height: frame.height,
         frame_time: currentFrameTime,
-        model: activeModel === 'sabm_sam2_guided' ? 'sam2' : activeModel,
+        model: useDino ? 'dinov3' : (activeModel === 'sabm_sam2_guided' ? 'sam2' : activeModel),
         video_url: mediaMode === 'video' ? videoUrl : undefined,
         tracking_session_id: trackingSessionId || undefined,
         tracking_enabled: mediaMode === 'video' && Boolean(trackingSessionId),
@@ -3868,6 +3932,7 @@ export function InteractiveSegPanel({
           && !opts?.silent,
         llm_report: Boolean(opts?.llmReport),
         include_overlay: false,
+        threshold: 0.5,
       };
       const promptClicks = opts?.clicks?.length
         ? opts.clicks
@@ -3897,26 +3962,46 @@ export function InteractiveSegPanel({
       } else if (!opts?.box) {
         throw new Error('missing click/box');
       }
-      const res = await fetch('/api/agent/sam-interactive', {
+      const res = await fetch(useDino ? '/api/agent/lesion-segmentation' : '/api/agent/sam-interactive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: ac.signal,
       });
-      const data = await readJsonPayload<{
-        ok?: boolean;
-        error?: string;
-        result?: {
-          mask_polygon?: number[][];
-          prompt_meta?: Record<string, unknown>;
-          message?: string;
-          sam_score?: number;
-          backend_id?: string;
-          report?: SamReport;
-        };
-      }>(res, 'Interactive segmentation endpoint');
+      const raw = await readJsonPayload<Record<string, unknown>>(
+        res,
+        useDino ? 'Lesion segmentation endpoint' : 'Interactive segmentation endpoint',
+      );
+      const dinoPolygon = useDino ? lesionMaskPolygonFromPayload(raw) : null;
+      const data = useDino
+        ? {
+            ok: Boolean(raw.ok && dinoPolygon),
+            error: typeof raw.error === 'string' ? raw.error : undefined,
+            result: {
+              mask_polygon: dinoPolygon || undefined,
+              prompt_meta: undefined as Record<string, unknown> | undefined,
+              message: typeof raw.error === 'string' ? raw.error : undefined,
+              sam_score: typeof raw.lesion_area_ratio === 'number' ? raw.lesion_area_ratio : undefined,
+              backend_id: typeof raw.backend_id === 'string' ? raw.backend_id : undefined,
+              report: undefined as SamReport | undefined,
+            },
+          }
+        : {
+            ok: Boolean(raw.ok),
+            error: typeof raw.error === 'string' ? raw.error : undefined,
+            result: (raw.result && typeof raw.result === 'object' && !Array.isArray(raw.result)
+              ? raw.result
+              : {}) as {
+              mask_polygon?: number[][];
+              prompt_meta?: Record<string, unknown>;
+              message?: string;
+              sam_score?: number;
+              backend_id?: string;
+              report?: SamReport;
+            },
+          };
       if (!data.ok || !data.result?.mask_polygon) {
-        throw new Error(data.error || data.result?.message || 'SAM returned no polygon');
+        throw new Error(data.error || data.result?.message || (useDino ? 'DINO returned no polygon' : 'SAM returned no polygon'));
       }
       const rawPoly = (data.result.mask_polygon as number[][]).map((p) => [Number(p[0]), Number(p[1])]);
       if (rawPoly.length < 3) {
@@ -3928,9 +4013,12 @@ export function InteractiveSegPanel({
       }
       const promptMeta = (data.result.prompt_meta || {}) as Record<string, unknown>;
       const maskArea = Number(promptMeta.mask_area_px);
+      const dinoAreaRatio = useDino && typeof raw.lesion_area_ratio === 'number'
+        ? raw.lesion_area_ratio
+        : null;
       const maskAreaRatio = Number.isFinite(maskArea) && frame.width > 0 && frame.height > 0
         ? maskArea / (frame.width * frame.height)
-        : null;
+        : dinoAreaRatio;
       const polyFull = scalePolyToFull(rawPoly, scale, frame.fullWidth, frame.fullHeight);
       const poly = prepareEditableContour(polyFull, LESION_CONTOUR_MAX_POINTS);
       maskAuditRef.current('model_trace', {
@@ -4484,13 +4572,19 @@ export function InteractiveSegPanel({
     }
 
     const map = (x: number, y: number) => ({ x: dx + x * scale, y: dy + y * scale });
+    const boxPreview = liveSamBoxPreview(samBoxDragRef.current, samBoxPreview);
     const openedKeyframe = isDoctorKeyframeOpen(
       doctorKeyframes,
       activeDoctorKeyframeId,
       useVideo ? video!.currentTime : videoTime,
       isPlaying,
     );
-    const hideKeyframeSeg = doctorKeyframes.length > 0 && !openedKeyframe;
+    const openedSameCineFrame = Boolean(
+      openedKeyframe
+      && cineFrameIndex(useVideo ? video!.currentTime : videoTime, videoFpsRef.current)
+        === cineFrameIndex(openedKeyframe.timeSec, videoFpsRef.current),
+    );
+    const hideKeyframeSeg = doctorKeyframes.length > 0 && !openedSameCineFrame;
     const trackingPlayback = Boolean(
       !hideKeyframeSeg
       && doctorKeyframes.length === 0
@@ -4500,7 +4594,7 @@ export function InteractiveSegPanel({
       && trackingPrepared
       && videoFrameOverrides.length > 1,
     );
-    const trackedFrame = useVideo && videoFrameOverrides.length
+    const trackedFrame = useVideo && videoFrameOverrides.length && doctorKeyframes.length === 0
       ? nearestOverrideFrame(
         videoFrameOverrides,
         video!.currentTime,
@@ -4619,9 +4713,9 @@ export function InteractiveSegPanel({
           drawHandles(displayPoints, Math.min(VISIBLE_HANDLE_COUNT, LESION_CTRL_COUNT), COLOR_LESION_HANDLE, 'lesion');
         }
       }
-      if (samBoxPreview) {
-        const a = map(samBoxPreview.x1, samBoxPreview.y1);
-        const b = map(samBoxPreview.x2, samBoxPreview.y2);
+      if (boxPreview) {
+        const a = map(boxPreview.x1, boxPreview.y1);
+        const b = map(boxPreview.x2, boxPreview.y2);
         ctx.fillStyle = 'rgba(94, 184, 196, 0.05)';
         ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
         ctx.strokeStyle = COLOR_LESION_STROKE;
@@ -4639,9 +4733,9 @@ export function InteractiveSegPanel({
       drawHandles(liveWall, WALL_CTRL_COUNT, COLOR_WALL_HANDLE, 'wall');
       drawHandles(displayPoints, LESION_CTRL_COUNT, COLOR_LESION_HANDLE, 'lesion');
 
-      if (samBoxPreview) {
-        const a = map(samBoxPreview.x1, samBoxPreview.y1);
-        const b = map(samBoxPreview.x2, samBoxPreview.y2);
+      if (boxPreview) {
+        const a = map(boxPreview.x1, boxPreview.y1);
+        const b = map(boxPreview.x2, boxPreview.y2);
         ctx.strokeStyle = 'rgba(168, 85, 247, 0.95)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 3]);
@@ -5228,7 +5322,6 @@ export function InteractiveSegPanel({
     if (!open || mediaMode !== 'video' || !videoUrl) return;
     const video = videoRef.current;
     if (!video) return;
-    setVideoFrameReady(video.readyState >= 2);
     setFrameFrozen(false);
     frameFrozenRef.current = false;
     const stopPlaybackLoop = () => {
@@ -5287,18 +5380,11 @@ export function InteractiveSegPanel({
       redraw();
     };
     const onReady = () => {
-      setVideoFrameReady(true);
       setImgLoaded(true);
       syncFrameFromVideo({ force: true });
       redraw();
     };
-    const onWaiting = () => {
-      // Seeking fires waiting even after the first frame. Do not cover the cine with the open-video veil.
-      if (scrubbingRef.current || video.videoWidth > 0) return;
-      if (video.readyState < 2) setVideoFrameReady(false);
-    };
     const onSeeked = () => {
-      setVideoFrameReady(true);
       captureCineHoldFrame(video);
       if (scrubbingRef.current) {
         paintProgressUi(video.currentTime || 0);
@@ -5366,7 +5452,6 @@ export function InteractiveSegPanel({
     video.addEventListener('loadedmetadata', onMeta);
     video.addEventListener('loadeddata', onReady);
     video.addEventListener('canplay', onReady);
-    video.addEventListener('waiting', onWaiting);
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('play', onPlay);
@@ -5376,7 +5461,17 @@ export function InteractiveSegPanel({
     video.playsInline = true;
     const poster = readerPosterUrl(videoUrl);
     if (poster) video.poster = poster;
-    if (video.getAttribute('src') !== videoUrl) {
+    const assigned = video.getAttribute('src') || '';
+    const alreadySame = assigned === videoUrl
+      || video.currentSrc === videoUrl
+      || (assigned !== '' && (() => {
+        try {
+          return new URL(assigned, window.location.href).href === new URL(videoUrl, window.location.href).href;
+        } catch {
+          return false;
+        }
+      })());
+    if (!alreadySame) {
       lastCineFrameRef.current = null;
       video.src = videoUrl;
       video.load();
@@ -5388,7 +5483,6 @@ export function InteractiveSegPanel({
       video.removeEventListener('loadedmetadata', onMeta);
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('canplay', onReady);
-      video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('play', onPlay);
@@ -5587,6 +5681,10 @@ export function InteractiveSegPanel({
     activePromptStrokeRef.current = null;
     setPromptStrokes([]);
     setActivePromptStroke(null);
+    if (boxDragRafRef.current != null) {
+      cancelAnimationFrame(boxDragRafRef.current);
+      boxDragRafRef.current = null;
+    }
     samBoxDragRef.current = null;
     setSamBoxPreview(null);
   }, [invalidateNnInteractiveSession]);
@@ -5601,6 +5699,10 @@ export function InteractiveSegPanel({
     if (dragRafRef.current != null) {
       cancelAnimationFrame(dragRafRef.current);
       dragRafRef.current = null;
+    }
+    if (boxDragRafRef.current != null) {
+      cancelAnimationFrame(boxDragRafRef.current);
+      boxDragRafRef.current = null;
     }
   }, []);
 
@@ -5668,8 +5770,12 @@ export function InteractiveSegPanel({
     const currentFrame = cineFrameIndex(currentTime, fps);
     const sameFrame = frames.find((kf) => cineFrameIndex(kf.timeSec, fps) === currentFrame);
     if (sameFrame) {
-      setActiveDoctorKeyframeId(sameFrame.id);
-      activeDoctorKeyframeIdRef.current = sameFrame.id;
+      persistOpenKeyframeContours();
+      const latest = findDoctorKeyframeById(doctorKeyframesRef.current, sameFrame.id) || sameFrame;
+      applyDoctorKeyframeOverlayRef.current(latest);
+      setActiveDoctorKeyframeId(latest.id);
+      activeDoctorKeyframeIdRef.current = latest.id;
+      redrawRef.current();
       return true;
     }
     if (!video?.videoWidth) {
@@ -6116,11 +6222,15 @@ export function InteractiveSegPanel({
     };
   }, [wallEchoClarify]);
 
-  const hideWallOnOtherFrames = doctorKeyframes.length > 0 && !isDoctorKeyframeOpen(
+  const openedWallKeyframe = isDoctorKeyframeOpen(
     doctorKeyframes,
     activeDoctorKeyframeId,
     videoTime,
     isPlaying,
+  );
+  const hideWallOnOtherFrames = doctorKeyframes.length > 0 && (
+    !openedWallKeyframe
+    || cineFrameIndex(videoTime, videoFpsRef.current) !== cineFrameIndex(openedWallKeyframe.timeSec, videoFpsRef.current)
   );
 
   const commitWallPaintStroke = useCallback((stroke: number[][]) => {
@@ -6461,7 +6571,11 @@ export function InteractiveSegPanel({
     clicks: Array<{ x: number; y: number; label: 'positive' | 'negative' }> = [],
     modelOverride?: LesionSegmentationModel,
   ): Promise<number[][] | null> => {
-    if (!patient || segmentationBusy) return null;
+    if (!patient) return null;
+    if (segmentationBusy) {
+      setMessage(zh ? '上一张分割还在算，请稍候再框' : 'Previous segmentation is still running; wait before boxing again');
+      return null;
+    }
     const activeSegmentationModel = modelOverride || segmentationModel;
     const traceId = `lesion_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const traceStartedAt = performance.now();
@@ -6508,6 +6622,7 @@ export function InteractiveSegPanel({
             : imgPt
               ? [{ x: imgPt[0] * scale, y: imgPt[1] * scale, label: 'positive' }]
               : [],
+          include_overlay: false,
         }),
       });
       const data = await readJsonPayload<{
@@ -6941,18 +7056,23 @@ export function InteractiveSegPanel({
     }
     pauseVideoOnCurrentFrame();
     const timeSec = Number((video.currentTime || 0).toFixed(3));
+    const fps = videoFpsRef.current;
+    const currentFrame = cineFrameIndex(timeSec, fps);
+    const sameFrame = doctorKeyframes.find((kf) => cineFrameIndex(kf.timeSec, fps) === currentFrame);
+    if (sameFrame) {
+      persistOpenKeyframeContours();
+      const latest = findDoctorKeyframeById(doctorKeyframesRef.current, sameFrame.id) || sameFrame;
+      applyDoctorKeyframeOverlayRef.current(latest);
+      setActiveDoctorKeyframeId(latest.id);
+      activeDoctorKeyframeIdRef.current = latest.id;
+      redrawRef.current();
+      setMessage(zh
+        ? `已打开当前帧关键帧 t=${latest.timeSec.toFixed(2)}s，只显示这一帧的轮廓`
+        : `Opened this-frame keyframe t=${latest.timeSec.toFixed(2)}s`);
+      return;
+    }
     const gate = canAddDoctorKeyframe(doctorKeyframes, timeSec);
     if (!gate.ok) {
-      if (gate.reason === 'duplicate') {
-        const nearby = doctorKeyframes.find((kf) => Math.abs(kf.timeSec - timeSec) <= DOCTOR_KEYFRAME_DEDUP_SEC);
-        if (nearby) {
-          void selectDoctorKeyframeRef.current(nearby);
-          setMessage(zh
-            ? `已暂停并打开关键帧 t=${nearby.timeSec.toFixed(2)}s，只看这一帧`
-            : `Paused on keyframe t=${nearby.timeSec.toFixed(2)}s`);
-          return;
-        }
-      }
       setMessage(
         gate.reason === 'full'
           ? (zh ? `关键帧已满（${DOCTOR_KEYFRAME_MAX}），请先删除再标` : `Keyframe strip full (${DOCTOR_KEYFRAME_MAX}); remove one first`)
@@ -6960,24 +7080,17 @@ export function InteractiveSegPanel({
       );
       return;
     }
+    persistOpenKeyframeContours();
+    clearKeyframeOverlay();
     const id = newDoctorKeyframeId(timeSec);
     const frame = captureDoctorFrameFromVideo(video);
-    const hasLesion = pointsRef.current.length >= 3;
-    const hasLumen = lumenPolygonRef.current.length >= 3 || Boolean(lumenBoxRef.current);
     const next: DoctorKeyframe = {
       id,
       timeSec,
       thumbDataUrl: frame?.thumbDataUrl || null,
-      segStatus: hasLesion ? 'ready' : 'idle',
-      lesionPolygon: hasLesion ? clonePoly(pointsRef.current) : undefined,
-      lumenBox: lumenBoxRef.current || undefined,
-      lumenPolygon: lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : undefined,
-      wallPolygon: wallPointsRef.current.length >= 3 ? clonePoly(wallPointsRef.current) : undefined,
-      wallLayerReadout: wallLayerReadoutRef.current,
+      segStatus: 'idle',
       error: null,
     };
-    persistOpenKeyframeContours();
-    if (!hasLesion) clearKeyframeOverlay();
     setDoctorKeyframes((prev) => {
       const sorted = sortDoctorKeyframes([...prev, next]);
       doctorKeyframesRef.current = sorted;
@@ -6994,15 +7107,9 @@ export function InteractiveSegPanel({
       keyframe_id: id,
       video_time_sec: timeSec,
     });
-    setMessage(
-      hasLesion
-        ? (zh
-          ? `已暂停并标记关键帧 t=${timeSec.toFixed(2)}s，只看这一帧；沿用当前病灶${hasLumen ? '与胃腔' : ''}。`
-          : `Paused and marked keyframe t=${timeSec.toFixed(2)}s; kept the current contour.`)
-        : (zh
-          ? `已暂停并标记关键帧 t=${timeSec.toFixed(2)}s，只看这一帧。请点亮「框选病灶」后再拖框`
-          : `Paused and marked keyframe t=${timeSec.toFixed(2)}s. Arm Box lesion, then drag`),
-    );
+    setMessage(zh
+      ? `已暂停并标记关键帧 t=${timeSec.toFixed(2)}s，只看这一帧。请点亮「框选病灶」后再拖框`
+      : `Paused and marked keyframe t=${timeSec.toFixed(2)}s. Arm Box lesion, then drag`);
   }, [
     clearKeyframeOverlay,
     doctorKeyframes,
@@ -7035,18 +7142,7 @@ export function InteractiveSegPanel({
     markDoctorKeyframe();
   }, [markDoctorKeyframe, pauseVideoOnCurrentFrame, zh]);
 
-  const selectDoctorKeyframe = useCallback(async (kf: DoctorKeyframe) => {
-    const video = videoRef.current;
-    if (!video) return;
-    persistOpenKeyframeContours();
-    setActiveDoctorKeyframeId(kf.id);
-    activeDoctorKeyframeIdRef.current = kf.id;
-    pauseVideoOnCurrentFrame({ timeSec: kf.timeSec });
-    if (Math.abs((video.currentTime || 0) - kf.timeSec) > 0.04) {
-      await seekVideoForAgent(video, kf.timeSec);
-    }
-    setVideoTime(kf.timeSec);
-    syncFrameFromVideo({ force: true });
+  const applyDoctorKeyframeOverlay = useCallback((kf: DoctorKeyframe, opts?: { refreshEcho?: boolean }) => {
     if (kf.lesionPolygon && kf.lesionPolygon.length >= 3) {
       const prepared = prepareEditableContour(kf.lesionPolygon, LESION_CONTOUR_MAX_POINTS);
       pointsRef.current = prepared;
@@ -7055,11 +7151,12 @@ export function InteractiveSegPanel({
       const extras = (kf.extraLesionPolygons || []).filter((poly) => poly.length >= 3);
       extraLesionPolygonsRef.current = extras;
       setExtraLesionPolygons(extras);
-      setSimpleEditMode(true);
-      setSimpleEditLayer('lesion');
-      setMode('soft');
     } else {
-      clearKeyframeOverlay();
+      pointsRef.current = [];
+      generatedLesionRef.current = [];
+      setPoints([]);
+      extraLesionPolygonsRef.current = [];
+      setExtraLesionPolygons([]);
     }
     if (kf.lumenPolygon && kf.lumenPolygon.length >= 3) {
       lumenPolygonRef.current = kf.lumenPolygon;
@@ -7078,6 +7175,11 @@ export function InteractiveSegPanel({
       const seeded = boxToClosedPolygon(kf.lumenBox, 32);
       lumenPolygonRef.current = seeded;
       setLumenPolygon(seeded);
+    } else {
+      lumenPolygonRef.current = [];
+      setLumenPolygon([]);
+      lumenBoxRef.current = null;
+      setLumenBox(null);
     }
     const restoredFocus = (kf.analysisFocusPoints || []).filter((point) => point.length >= 2);
     analysisFocusPointsRef.current = restoredFocus;
@@ -7106,23 +7208,31 @@ export function InteractiveSegPanel({
           ratio: kf.wallLayerReadout.ratio,
           source: kf.wallLayerReadout.source,
         };
-        const destFrame = captureFrameGray();
         const storedBands = (kf.wallLayerBands || []).filter((band) => band.length >= 2);
-        const ids = doctorClinicalIds(wallLayerTargetRef.current);
-        applyWallLayerVisuals(
-          preparedWall,
-          restored,
-          destFrame,
-          storedBands.length
-            ? storedBands.map((curve, index) => ({
-              layer: ids[index] || 5,
-              curve,
-              imaginaryMask: kf.wallLayerImaginary?.[index] || [],
-            }))
-            : null,
-        );
-        refreshWallEchoClarify(destFrame);
-        persistOpenKeyframeContours({ refined: true });
+        const storedImaginary = (kf.wallLayerImaginary || []).map((mask) => mask.slice());
+        setWallLayerReadout(restored);
+        wallLayerReadoutRef.current = restored;
+        setWallLayerBands(storedBands);
+        wallLayerBandsRef.current = storedBands;
+        setWallLayerImaginary(storedImaginary);
+        wallLayerImaginaryRef.current = storedImaginary;
+        if (opts?.refreshEcho) {
+          const destFrame = captureFrameGray();
+          const ids = doctorClinicalIds(wallLayerTargetRef.current);
+          applyWallLayerVisuals(
+            preparedWall,
+            restored,
+            destFrame,
+            storedBands.length
+              ? storedBands.map((curve, index) => ({
+                layer: ids[index] || 5,
+                curve,
+                imaginaryMask: storedImaginary[index] || [],
+              }))
+              : null,
+          );
+          refreshWallEchoClarify(destFrame);
+        }
       }
     } else {
       wallPointsRef.current = [];
@@ -7134,6 +7244,32 @@ export function InteractiveSegPanel({
       wallLayerBandsRef.current = [];
       setWallLayerImaginary([]);
       wallLayerImaginaryRef.current = [];
+      setWallEchoClarify(null);
+    }
+  }, [applyWallLayerVisuals, captureFrameGray, refreshWallEchoClarify]);
+  applyDoctorKeyframeOverlayRef.current = applyDoctorKeyframeOverlay;
+
+  const selectDoctorKeyframe = useCallback(async (kf: DoctorKeyframe) => {
+    const video = videoRef.current;
+    if (!video) return;
+    persistOpenKeyframeContours();
+    setActiveDoctorKeyframeId(kf.id);
+    activeDoctorKeyframeIdRef.current = kf.id;
+    applyDoctorKeyframeOverlay(kf, { refreshEcho: false });
+    redrawRef.current();
+    pauseVideoOnCurrentFrame({ timeSec: kf.timeSec });
+    if (Math.abs((video.currentTime || 0) - kf.timeSec) > 0.04) {
+      await seekVideoForAgent(video, kf.timeSec);
+    }
+    setVideoTime(kf.timeSec);
+    syncFrameFromVideo({ force: true });
+    applyDoctorKeyframeOverlay(kf, { refreshEcho: true });
+    if (kf.lesionPolygon && kf.lesionPolygon.length >= 3) {
+      setSimpleEditMode(true);
+      setSimpleEditLayer('lesion');
+      setMode('soft');
+    } else {
+      setSimpleEditMode(false);
     }
     setSimplePromptMode('box');
     armLesionBox(false);
@@ -7161,7 +7297,7 @@ export function InteractiveSegPanel({
       keyframe_id: kf.id,
       video_time_sec: kf.timeSec,
     });
-  }, [applyWallLayerVisuals, captureFrameGray, clearKeyframeOverlay, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, refreshWallEchoClarify, zh]);
+  }, [applyDoctorKeyframeOverlay, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, zh]);
   selectDoctorKeyframeRef.current = selectDoctorKeyframe;
 
   const removeDoctorKeyframe = useCallback((id: string) => {
@@ -7321,12 +7457,18 @@ export function InteractiveSegPanel({
 
   useEffect(() => {
     if (isPlaying || mediaMode !== 'video') return;
-    if (lesionBoxArmedRef.current) return;
+    if (lesionBoxArmedRef.current || scrubbingRef.current) return;
     const currentTime = videoRef.current?.currentTime ?? videoTime;
     const kf = isDoctorKeyframeOpen(doctorKeyframes, activeDoctorKeyframeId, currentTime, false);
-    if (!kf || kf.segStatus !== 'ready') return;
-    if (pointsRef.current.length >= 3 || lumenPolygonRef.current.length >= 3 || lumenBoxRef.current) return;
-    void selectDoctorKeyframeRef.current(kf);
+    if (!kf) return;
+    if (cineFrameIndex(currentTime, videoFpsRef.current) !== cineFrameIndex(kf.timeSec, videoFpsRef.current)) return;
+    const hasLive = pointsRef.current.length >= 3
+      || lumenPolygonRef.current.length >= 3
+      || Boolean(lumenBoxRef.current)
+      || wallPointsRef.current.length >= 3;
+    if (hasLive) return;
+    applyDoctorKeyframeOverlayRef.current(kf);
+    redrawRef.current();
   }, [activeDoctorKeyframeId, doctorKeyframes, isPlaying, mediaMode, videoTime]);
 
   useEffect(() => {
@@ -8534,27 +8676,14 @@ export function InteractiveSegPanel({
       samClicksRef.current = next;
       setSamClicks(next);
     }
-    if (simpleVideoMode && mediaMode === 'video') {
-      const publicModel = publicLesionSegModel(segmentationModel);
-      if (publicModel === 'dinov3') {
-        return runLesionModelRef.current(imgPt, box || null, next, 'dinov3');
-      }
-      return runSamAtPoint(imgPt, {
-        silent: true,
-        keepEditing: true,
-        stayInSam: true,
-        source: 'sam',
-        clicks: next.length ? next : undefined,
-        box: box || undefined,
-        model: 'sam31',
-      });
-    }
     return runSamAtPoint(imgPt, {
+      silent: Boolean(simpleVideoMode && mediaMode === 'video'),
       keepEditing: true,
       stayInSam: true,
       source: 'sam',
       clicks: next.length ? next : undefined,
       box: box || undefined,
+      model: publicLesionSegModel(segmentationModel),
     });
   }, [freezeCurrentFrame, mediaMode, runSamAtPoint, segmentationModel, simpleVideoMode]);
 
@@ -8814,7 +8943,7 @@ export function InteractiveSegPanel({
       freezeCurrentFrame();
       capturePointerSafely(e.currentTarget, e.pointerId);
       samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
-      setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
+      paintLesionBoxDrag();
       return;
     }
 
@@ -9136,7 +9265,7 @@ export function InteractiveSegPanel({
         setSimplePromptBox(null);
         capturePointerSafely(e.currentTarget, e.pointerId);
         samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
-        setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
+        paintLesionBoxDrag();
         return;
       }
     }
@@ -9285,7 +9414,7 @@ export function InteractiveSegPanel({
       freezeCurrentFrame();
       // Start potential box drag; commit on pointerup (click or box).
       samBoxDragRef.current = { x0: imgPt[0], y0: imgPt[1], x1: imgPt[0], y1: imgPt[1] };
-      setSamBoxPreview({ x1: imgPt[0], y1: imgPt[1], x2: imgPt[0], y2: imgPt[1] });
+      paintLesionBoxDrag();
       (e.currentTarget as HTMLCanvasElement).dataset.samNeg = e.shiftKey ? '1' : '0';
       return;
     }
@@ -9529,8 +9658,7 @@ export function InteractiveSegPanel({
       e.preventDefault();
       boxDrag.x1 = imgPt[0];
       boxDrag.y1 = imgPt[1];
-      setSamBoxPreview({ x1: boxDrag.x0, y1: boxDrag.y0, x2: boxDrag.x1, y2: boxDrag.y1 });
-      redraw();
+      scheduleLesionBoxDragPaint();
       return;
     }
     const idx = dragIndexRef.current;
@@ -9741,6 +9869,10 @@ export function InteractiveSegPanel({
     }
     const boxDrag = samBoxDragRef.current;
     if (boxDrag) {
+      if (boxDragRafRef.current != null) {
+        cancelAnimationFrame(boxDragRafRef.current);
+        boxDragRafRef.current = null;
+      }
       samBoxDragRef.current = null;
       setSamBoxPreview(null);
       try {
@@ -12451,14 +12583,9 @@ export function InteractiveSegPanel({
                     );
                   }}
                 />
-                {(samBusy || lumenSamBusy || segmentationBusy || propagateBusy || precomputeBusy || workflowBusy || lesionAutoBusy || (mediaMode === 'image' && !imgLoaded) || (mediaMode === 'video' && !!videoUrl && !videoFrameReady)) && !assistOverlayOpen && !unifiedAgentBusy && (
+                {(samBusy || lumenSamBusy || segmentationBusy || propagateBusy || precomputeBusy || workflowBusy || lesionAutoBusy || (mediaMode === 'image' && !imgLoaded)) && !assistOverlayOpen && !unifiedAgentBusy && (
                   <div className="pointer-events-none absolute inset-0 z-[170] flex flex-col items-center justify-center bg-black/45 px-4">
                     <Loader2 className="animate-spin text-cyan-300" size={34} />
-                    {mediaMode === 'video' && !!videoUrl && !videoFrameReady && !samBusy && !lumenSamBusy && !segmentationBusy && !propagateBusy && !precomputeBusy && !workflowBusy && !lesionAutoBusy ? (
-                      <div className="mt-3 text-xs font-medium text-slate-100">
-                        {zh ? '正在打开视频' : 'Opening video'}
-                      </div>
-                    ) : null}
                     {(taskProgress || precomputeProgress || unifiedAgentBusy || workflowBusy || lesionAutoBusy || lumenSamBusy || propagateBusy || samBusy || segmentationBusy) ? (
                       <div className="mt-4 w-[min(40rem,100%)] rounded-2xl border border-white/20 bg-slate-950/95 px-6 py-5 text-center shadow-2xl backdrop-blur">
                         <div className="text-sm font-semibold text-slate-100">

@@ -2,14 +2,40 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-28, Public workbench: DINO box uses the same path as SAM 3.1
+
+- Scope: `InteractiveSegPanel.tsx`, `app/api/agent/lesion-segmentation/route.ts`, `scripts/serve_dino_segmentation.py`. Public Next required.
+- Reason: Choosing DINO made 框选病灶 look dead. The box went through a different busy path, the public edge did not forward DINO to the workstation, and the reply carried a huge overlay PNG. Dragging the box also rebuilt the whole panel on every pointer move.
+- Key changes: Box commit always uses the SAM apply path; only the endpoint changes for DINO. Public `/api/agent/lesion-segmentation` now proxies first, same as SAM, and drops `mask_overlay_png` unless asked. Box drag paints the last cine frame plus the rectangle on animation frames, with no React setState. Assist stays the frozen Dual after either mask. Auto-find DINO stays full-image.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Python compile of the warm DINO service. Public smoke after deploy.
+- Deployment: public Next BUILD `NvCWwvhRp6cV8MtVX2v9y`. Smoke: `public_root=200`, `public_clinical=200`. Restarted `gastric-dino-segmentation` so the warm service skips the overlay by default. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
+## 2026-08-28, Case open: drop the opening-video veil
+
+- Scope: `InteractiveSegPanel.tsx`, `app/api/reader/media/poster/route.ts`. Public Next required.
+- Reason: "正在打开视频" covered the cine until `canplay`. The poster route also tried ffmpeg when a sidecar was missing, which made public case open feel much slower.
+- Key changes: No opening overlay or copy. Poster serves only a ready JPEG. Case switch sets the next URL once and does not `load()` twice.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Public smoke after deploy.
+- Deployment: public Next BUILD `eCAC02ZYSzcdOm5ZQwTHX`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
 ## 2026-08-28, Case open: first-frame poster, no blank black pane
 
 - Scope: `InteractiveSegPanel.tsx`, `lib/reader/media-url.ts`, `app/api/reader/media/poster/route.ts`. Public Next required.
 - Reason: Switching cases unloaded the previous video before the next clip had a decoded frame. Reader v150 cases have no still `image_url`, so the pane stayed black until a large MP4 became playable.
-- Key changes: Keep the next video URL on case switch. Show a first-frame poster (`/api/reader/media/poster`) and a short "正在打开视频" overlay until `loadeddata`. Do not call `video.load()` on an empty src.
+- Key changes: Keep the next video URL on case switch. Show a first-frame poster (`/api/reader/media/poster`). Do not call `video.load()` on an empty src.
 - Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Public smoke after deploy.
 - Deployment: public Next BUILD `LMx_BkaiXYTrnb5p-4379`. Smoke: `public_root=200`, `public_clinical=200`. Synced 171 first-frame `*.poster.jpg` into Aliyun reader media. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
 - Follow-up: Cases with `moov` at the end of the MP4 still take longer to become scrubbable; the poster only covers the first paint.
+
+## 2026-08-28, Public workbench: Keyframe select shows only that frame's mask
+
+- Scope: `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: Opening a keyframe kept the previous frame's lesion/lumen/wall in live refs, so another frame's mask flashed on the new picture. Tracking overlays within 0.12s could also leak onto a keyframe.
+- Key changes: Apply only the selected keyframe's stored contours before seeking. Leaving a keyframe by scrub or arrow-step clears the live overlay. A new keyframe starts empty. Display hides contours unless the cine frame matches the open keyframe. Does not unlock cT or change Assist.
+- Validation: `npx tsc --noEmit`. Public smoke after deploy.
+- Deployment: public Next BUILD `a0q-0XL1kNHPFpNVDySGj`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
 
 ## 2026-08-28, Public workbench: Keep the cine picture while scrubbing
 
