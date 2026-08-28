@@ -1805,6 +1805,7 @@ export function InteractiveSegPanel({
   const pendingScrubTimeRef = useRef<number | null>(null);
   const scrubSeekRafRef = useRef<number | null>(null);
   const lastScrubSeekAtRef = useRef(0);
+  const lastCineFrameRef = useRef<HTMLCanvasElement | null>(null);
   const scrubSeekTimerRef = useRef<number | null>(null);
   const videoTimeLabelRefs = useRef<Array<HTMLSpanElement | null>>([]);
   const taskProgressStartedAtRef = useRef<number | null>(null);
@@ -3605,6 +3606,22 @@ export function InteractiveSegPanel({
     if (canvas) canvas.style.visibility = visible ? 'visible' : 'hidden';
   }, []);
 
+  const captureCineHoldFrame = useCallback((video: HTMLVideoElement | null | undefined) => {
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+    let hold = lastCineFrameRef.current;
+    if (!hold) {
+      hold = document.createElement('canvas');
+      lastCineFrameRef.current = hold;
+    }
+    if (hold.width !== video.videoWidth || hold.height !== video.videoHeight) {
+      hold.width = video.videoWidth;
+      hold.height = video.videoHeight;
+    }
+    const holdCtx = hold.getContext('2d');
+    if (!holdCtx) return;
+    holdCtx.drawImage(video, 0, 0);
+  }, []);
+
   const cancelPendingScrubSeek = useCallback(() => {
     if (scrubSeekRafRef.current != null) {
       cancelAnimationFrame(scrubSeekRafRef.current);
@@ -3642,13 +3659,16 @@ export function InteractiveSegPanel({
     scrubbingRef.current = true;
     persistOpenKeyframeContoursRef.current({ refOnly: true });
     video.pause();
-    setOverlayCanvasVisible(false);
+    setIsPlaying(false);
+    captureCineHoldFrame(video);
+    setOverlayCanvasVisible(true);
+    redrawRef.current();
     if (frameFrozenRef.current) {
       frameFrozenRef.current = false;
       setFrameFrozen(false);
     }
     recordDoctorOpRef.current('cine_scrub_start', { video_time_sec: video.currentTime || 0, playing: false });
-  }, [setOverlayCanvasVisible]);
+  }, [captureCineHoldFrame, setOverlayCanvasVisible]);
 
   const scrubVideoTo = useCallback((nextTime: number) => {
     const video = videoRef.current;
@@ -4424,27 +4444,43 @@ export function InteractiveSegPanel({
 
     const video = videoRef.current;
     const img = imgRef.current;
+    const hold = lastCineFrameRef.current;
     const useVideo =
       mediaMode === 'video'
       && !!video
       && video.videoWidth > 0
       && video.readyState >= 2;
+    const useHold = !useVideo && mediaMode === 'video' && !!hold && hold.width > 0 && hold.height > 0;
 
-    const iw = useVideo ? video!.videoWidth : (img?.naturalWidth || 0);
-    const ih = useVideo ? video!.videoHeight : (img?.naturalHeight || 0);
+    const iw = useVideo ? video!.videoWidth : useHold ? hold!.width : (img?.naturalWidth || 0);
+    const ih = useVideo ? video!.videoHeight : useHold ? hold!.height : (img?.naturalHeight || 0);
     if (!iw || !ih) return;
 
     const cw = canvas.width;
     const ch = canvas.height;
     const { scale, dx, dy } = computeDisplayTransform(iw, ih, cw, ch, viewFocusBox, viewZoom, viewCenter);
 
-    const nativeVideoPlayback = simpleVideoMode && useVideo && !viewFocusBox && viewZoom <= 1.02;
+    const nativeVideoPlayback = Boolean(
+      simpleVideoMode
+      && useVideo
+      && !viewFocusBox
+      && viewZoom <= 1.02
+      && video
+      && !video.paused
+      && !scrubbingRef.current,
+    );
     ctx.clearRect(0, 0, cw, ch);
     if (!nativeVideoPlayback) {
       ctx.fillStyle = '#0a0a0a';
       ctx.fillRect(0, 0, cw, ch);
-      if (useVideo) ctx.drawImage(video!, dx, dy, iw * scale, ih * scale);
-      else if (img) ctx.drawImage(img, dx, dy, iw * scale, ih * scale);
+      if (useVideo) {
+        ctx.drawImage(video!, dx, dy, iw * scale, ih * scale);
+        captureCineHoldFrame(video);
+      } else if (useHold) {
+        ctx.drawImage(hold!, dx, dy, iw * scale, ih * scale);
+      } else if (img) {
+        ctx.drawImage(img, dx, dy, iw * scale, ih * scale);
+      }
     }
 
     const map = (x: number, y: number) => ({ x: dx + x * scale, y: dy + y * scale });
@@ -5142,7 +5178,7 @@ export function InteractiveSegPanel({
       });
     }
 
-  }, [points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallEchoClarify, viewZoom, viewCenter, analysisFocusPoints]);
+  }, [captureCineHoldFrame, points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallEchoClarify, viewZoom, viewCenter, analysisFocusPoints]);
 
   useEffect(() => {
     redrawRef.current = redraw;
@@ -5257,7 +5293,22 @@ export function InteractiveSegPanel({
       redraw();
     };
     const onWaiting = () => {
+      // Seeking fires waiting even after the first frame. Do not cover the cine with the open-video veil.
+      if (scrubbingRef.current || video.videoWidth > 0) return;
       if (video.readyState < 2) setVideoFrameReady(false);
+    };
+    const onSeeked = () => {
+      setVideoFrameReady(true);
+      captureCineHoldFrame(video);
+      if (scrubbingRef.current) {
+        paintProgressUi(video.currentTime || 0);
+        redrawRef.current();
+        return;
+      }
+      if (video.paused) {
+        syncFrameFromVideo({ force: true });
+        redrawRef.current();
+      }
     };
     const onTime = () => {
       if (scrubbingRef.current) return;
@@ -5316,6 +5367,7 @@ export function InteractiveSegPanel({
     video.addEventListener('loadeddata', onReady);
     video.addEventListener('canplay', onReady);
     video.addEventListener('waiting', onWaiting);
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
@@ -5325,6 +5377,7 @@ export function InteractiveSegPanel({
     const poster = readerPosterUrl(videoUrl);
     if (poster) video.poster = poster;
     if (video.getAttribute('src') !== videoUrl) {
+      lastCineFrameRef.current = null;
       video.src = videoUrl;
       video.load();
     } else if (video.readyState >= 2) {
@@ -5336,12 +5389,13 @@ export function InteractiveSegPanel({
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('canplay', onReady);
       video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
       video.removeEventListener('ended', onEnded);
     };
-  }, [open, mediaMode, paintProgressUi, videoUrl, syncFrameFromVideo]);
+  }, [captureCineHoldFrame, open, mediaMode, paintProgressUi, videoUrl, syncFrameFromVideo]);
 
   useEffect(() => {
     if (!open || mediaMode !== 'video' || !videoUrl) return;

@@ -11,6 +11,15 @@ This file records material project changes, their validation, and deployment sta
 - Deployment: public Next BUILD `LMx_BkaiXYTrnb5p-4379`. Smoke: `public_root=200`, `public_clinical=200`. Synced 171 first-frame `*.poster.jpg` into Aliyun reader media. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
 - Follow-up: Cases with `moov` at the end of the MP4 still take longer to become scrubbable; the poster only covers the first paint.
 
+## 2026-08-28, Public workbench: Keep the cine picture while scrubbing
+
+- Scope: `InteractiveSegPanel.tsx`. Public Next required.
+- Reason: Dragging the progress bar hid the overlay canvas and let the native video go black on seek. Waiting also put the "opening video" veil on top.
+- Key changes: Scrub keeps the last decoded frame on the canvas. Seeking no longer hides that canvas or flips `videoFrameReady` after the first frame. `seeked` paints the new frame. Does not unlock cT or change Assist.
+- Validation: `npx tsc --noEmit`. Public smoke after deploy.
+- Deployment: public Next BUILD `4Ei3Ui0DuM03hE-zC2GG_`. Smoke: `public_root=200`, `public_clinical=200`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: None.
+
 ## 2026-08-28, Public workbench: Box lesion stays on the current frame
 
 - Scope: `InteractiveSegPanel.tsx`. Public Next required.
