@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from wall_lesion_aware_cluster import (  # noqa: E402
+    CLUSTER_METHODS,
     INSUFFICIENT,
     cluster_brush_band,
     rasterize_polygon,
@@ -71,12 +72,24 @@ def main() -> int:
         lumen_center=lumen_center, lesion_poly=lesion,
     )
     assert short.status == INSUFFICIENT
+    method_hits = {}
+    for method in CLUSTER_METHODS:
+        arm = cluster_brush_band(
+            gray, wall, lesion_mask,
+            brush_radius=6, k=3, dilate_px=3, exclude_lesion=True, method=method,
+            lumen_center=lumen_center, lesion_poly=lesion, cavity_side_source="lumen",
+        )
+        method_hits[method] = arm.bright_dark_bright
+        assert arm.status == "ok", (method, arm.skip_reason)
+    # Spatial-only 1D may slice equally and still miss the gray pattern.
+    assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {
         "full_bdb": full.bright_dark_bright,
         "exclude_bdb": excl.bright_dark_bright,
         "full_n": full.n_valid,
         "exclude_n": excl.n_valid,
         "exclude_pattern": excl.pattern,
+        "methods_bdb": method_hits,
     })
     return 0
 

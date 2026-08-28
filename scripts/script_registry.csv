@@ -220,6 +220,7 @@ eval_gc_us_tscore_new_batches_v1.py,runtime,module,,scripts,scripts/runtime,impo
 eval_gc_us_wall_layer_axis_vs_gt_v1.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 eval_gc_us_wall_layer_deepest_agg_v1.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 eval_gc_us_wall_layer_v2_vs_gt.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+eval_lesion_aware_wall_cluster_trad.py,current,analysis,4,scripts,scripts/current,yes,true,
 eval_lesion_aware_wall_cluster_v1.py,current,analysis,4,scripts,scripts/current,yes,true,
 eval_mask_grounding.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 eval_multimodal_controller.py,runtime,module,,scripts,scripts/runtime,import_only,true,

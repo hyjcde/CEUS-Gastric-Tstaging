@@ -150,6 +150,7 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "wall_lesion_aware_cluster.py": ("current", "analysis"),
     "pack_wall_layer_fixture_v1.py": ("current", "analysis"),
     "eval_lesion_aware_wall_cluster_v1.py": ("current", "analysis"),
+    "eval_lesion_aware_wall_cluster_trad.py": ("current", "analysis"),
     "render_lesion_aware_wall_cluster_panel.py": ("current", "analysis"),
     "test_wall_lesion_aware_cluster.py": ("current", "analysis"),
 }

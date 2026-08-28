@@ -256,6 +256,16 @@ def sample_band_pixels(
     }
 
 
+CLUSTER_METHODS = (
+    "kmeans",
+    "gmm",
+    "ward",
+    "fcm",
+    "kmeans1d_gray",
+    "kmeans1d_across",
+)
+
+
 def kmeans_features(features: np.ndarray, k: int, seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
     if len(features) < k:
         labels = np.zeros((len(features),), dtype=np.int32)
@@ -271,6 +281,98 @@ def kmeans_features(features: np.ndarray, k: int, seed: int = 7) -> tuple[np.nda
         cv2.KMEANS_PP_CENTERS,
     )
     return labels.reshape(-1).astype(np.int32), centers.astype(np.float32)
+
+
+def _centers_from_labels(features: np.ndarray, labels: np.ndarray, k: int) -> np.ndarray:
+    dim = features.shape[1] if features.ndim == 2 else 1
+    centers = np.zeros((k, dim), dtype=np.float32)
+    for lab in range(k):
+        sel = labels == lab
+        if sel.any():
+            centers[lab] = features[sel].mean(axis=0)
+        else:
+            centers[lab] = features.mean(axis=0)
+    return centers
+
+
+def gmm_features(features: np.ndarray, k: int, seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
+    if len(features) < k:
+        return kmeans_features(features, k, seed)
+    try:
+        from sklearn.mixture import GaussianMixture
+    except ImportError:
+        return kmeans_features(features, k, seed)
+    model = GaussianMixture(
+        n_components=k,
+        covariance_type="diag",
+        random_state=seed,
+        n_init=4,
+        max_iter=120,
+        reg_covar=1e-4,
+    )
+    labels = model.fit_predict(features.astype(np.float64)).astype(np.int32)
+    return labels, model.means_.astype(np.float32)
+
+
+def ward_features(features: np.ndarray, k: int, seed: int = 7, max_fit: int = 1600) -> tuple[np.ndarray, np.ndarray]:
+    if len(features) < k:
+        return kmeans_features(features, k, seed)
+    try:
+        from sklearn.cluster import AgglomerativeClustering
+    except ImportError:
+        return kmeans_features(features, k, seed)
+    if len(features) > max_fit:
+        rng = np.random.default_rng(seed)
+        idx = rng.choice(len(features), max_fit, replace=False)
+        sub = features[idx]
+        sub_lab = AgglomerativeClustering(n_clusters=k, linkage="ward").fit_predict(sub)
+        centers = _centers_from_labels(sub, sub_lab.astype(np.int32), k)
+        d2 = ((features[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+        return d2.argmin(axis=1).astype(np.int32), centers
+    labels = AgglomerativeClustering(n_clusters=k, linkage="ward").fit_predict(features)
+    labels = labels.astype(np.int32)
+    return labels, _centers_from_labels(features, labels, k)
+
+
+def fcm_features(features: np.ndarray, k: int, seed: int = 7, m: float = 2.0, n_iter: int = 35) -> tuple[np.ndarray, np.ndarray]:
+    if len(features) < k:
+        return kmeans_features(features, k, seed)
+    rng = np.random.default_rng(seed)
+    u = rng.random((len(features), k)).astype(np.float64)
+    u /= np.maximum(u.sum(axis=1, keepdims=True), 1e-8)
+    feat = features.astype(np.float64)
+    centers = np.zeros((k, feat.shape[1]), dtype=np.float64)
+    for _ in range(n_iter):
+        um = u ** m
+        centers = (um.T @ feat) / np.maximum(um.sum(axis=0)[:, None], 1e-8)
+        dist = np.linalg.norm(feat[:, None, :] - centers[None, :, :], axis=2)
+        dist = np.maximum(dist, 1e-8)
+        inv = dist ** (-2.0 / (m - 1.0))
+        u = inv / np.maximum(inv.sum(axis=1, keepdims=True), 1e-8)
+    labels = u.argmax(axis=1).astype(np.int32)
+    return labels, centers.astype(np.float32)
+
+
+def cluster_features(features: np.ndarray, k: int, method: str = "kmeans", seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
+    name = str(method or "kmeans").strip().lower()
+    if name == "gmm":
+        return gmm_features(features, k, seed)
+    if name == "ward":
+        return ward_features(features, k, seed)
+    if name == "fcm":
+        return fcm_features(features, k, seed)
+    return kmeans_features(features, k, seed)
+
+
+def features_for_method(samples: dict[str, np.ndarray], method: str) -> np.ndarray:
+    gray = samples["gray"] / 255.0
+    across = samples["across"] * DEPTH_WEIGHT
+    name = str(method or "kmeans").strip().lower()
+    if name == "kmeans1d_gray":
+        return gray.reshape(-1, 1).astype(np.float32)
+    if name == "kmeans1d_across":
+        return across.reshape(-1, 1).astype(np.float32)
+    return np.stack([gray, across], axis=1).astype(np.float32)
 
 
 def majority_vote_sparse(xs: np.ndarray, ys: np.ndarray, labels: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
@@ -338,6 +440,7 @@ class ClusterArm:
     name: str
     status: str
     k: int
+    method: str
     n_pixels: int
     n_valid: int
     dilate_px: int
@@ -401,11 +504,13 @@ def cluster_brush_band(
     k: int = 3,
     dilate_px: int = 0,
     exclude_lesion: bool = True,
+    method: str = "kmeans",
     lumen_center: np.ndarray | None = None,
     lesion_poly: np.ndarray | None = None,
     cavity_side_source: str = "heuristic",
 ) -> ClusterArm:
-    name = f"{'exclude' if exclude_lesion else 'full'}_k{k}_d{dilate_px}"
+    method = str(method or "kmeans").strip().lower()
+    name = f"{'exclude' if exclude_lesion else 'full'}_{method}_k{k}_d{dilate_px}"
     wall = densify_polyline(as_xy(wall), 3.0)
     lesion_pts = as_xy(lesion_poly) if lesion_poly is not None else np.zeros((0, 2), dtype=np.float32)
     lesion_center = polygon_centroid(lesion_pts)
@@ -432,6 +537,7 @@ def cluster_brush_band(
             name=name,
             status=INSUFFICIENT,
             k=k,
+            method=method,
             n_pixels=int(len(samples["xs"])),
             n_valid=n_valid,
             dilate_px=dilate_px,
@@ -442,12 +548,9 @@ def cluster_brush_band(
             flanks=flanks,
         )
 
-    feat_all = np.stack([
-        samples["gray"] / 255.0,
-        samples["across"] * DEPTH_WEIGHT,
-    ], axis=1)
+    feat_all = features_for_method(samples, method)
     feat_fit = feat_all[keep]
-    labels_fit, centers = kmeans_features(feat_fit, k)
+    labels_fit, centers = cluster_features(feat_fit, k, method)
     order = np.argsort([float(samples["across"][keep][labels_fit == lab].mean()) if np.any(labels_fit == lab) else 0.0 for lab in range(k)])
     remap = {int(old): int(new) for new, old in enumerate(order.tolist())}
     labels_fit = np.array([remap[int(lab)] for lab in labels_fit], dtype=np.int32)
@@ -494,6 +597,7 @@ def cluster_brush_band(
         name=name,
         status="ok",
         k=k,
+        method=method,
         n_pixels=int(len(samples["xs"])),
         n_valid=n_valid,
         dilate_px=dilate_px,

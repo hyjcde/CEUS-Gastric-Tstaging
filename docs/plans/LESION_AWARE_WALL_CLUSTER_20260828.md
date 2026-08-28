@@ -66,9 +66,21 @@ python3 scripts/pack_wall_layer_fixture_v1.py
 
 对照臂：现网 56x28 按亮度命名；完整笔刷 k=3；排除病灶 k=3。
 
+传统聚类再比一轮（仍只在灶外拟合，k=3，膨胀 5 px）：
+
+| 方法 | 怎么聚 |
+|------|--------|
+| k-means | 现网同款，特征是灰度 + 法向深度 |
+| GMM | 每个层当成一团高斯分布 |
+| Ward | 层次聚类，相近像素先合并 |
+| FCM | 模糊 C-means，像素可同时像两层 |
+| 1D gray | 只按灰度聚，再按深度排序 |
+| 1D across | 只按法向深度切成三带 |
+
 ```bash
 python3 scripts/test_wall_lesion_aware_cluster.py
 python3 scripts/eval_lesion_aware_wall_cluster_v1.py
+python3 scripts/eval_lesion_aware_wall_cluster_trad.py
 ```
 
 报告：`pipeline/experiments/reports/lesion_aware_wall_cluster_v1/`
@@ -80,6 +92,8 @@ python3 scripts/eval_lesion_aware_wall_cluster_v1.py
 合成条带上，排除灶后暗层中心不再被肿块灰度拉低，并能聚出 bright-dark-bright。
 
 ZML 真线上：只有 P040 同时有走行线和近邻灶（0.10 s），排除 d=5 出现 bright-dark-bright，完整笔刷没有。P008 同帧有灶，排除后像素从 6166 降到 4348，仍未形成亮-暗-亮。P019、P076 的线和灶不在同一帧，排除臂等于完整笔刷。这两例要等同帧灶，或先按「只聚正常壁」看分层。
+
+传统对照（排除 d=5）：P040 六种方法都出现亮-暗-亮。P019 只有 Ward 出现，对比度 108.7。P008、P076 六种都没有；P008 浆膜侧比固有肌更暗，P076 浅层最暗，更像胃腔侧或走行线位置的问题，不是换一个聚类器就能翻盘。1D 灰度常把两侧亮层并成一簇，合成条带上也不稳。
 
 不要把像素 ticks 当成医生中断答案，也不要报一致率。
 

@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Traditional clusterers on ZML wall fixtures
+
+- Scope: `scripts/wall_lesion_aware_cluster.py`, `eval_lesion_aware_wall_cluster_trad.py`, `test_wall_lesion_aware_cluster.py`. Report `pipeline/experiments/reports/lesion_aware_wall_cluster_trad/`. Plan `docs/plans/LESION_AWARE_WALL_CLUSTER_20260828.md`.
+- Reason: k-means on gray plus depth only recovered bright-dark-bright on P040. Need to see if GMM, Ward, FCM, or 1D k-means do better on the same exclude-lesion pixels before DINO.
+- Key changes: Cluster fit now takes a method. Still fits only outside the dilated lesion, then labels query pixels by nearest center. Methods: k-means, GMM, Ward, FCM, 1D gray, 1D depth. No public workbench change.
+- Validation: Synthetic exclude recovers bright-dark-bright for k-means, GMM, Ward, FCM. On ZML fixtures, P040 is bright-dark-bright on all six. P019 only on Ward. P008 and P076 on none.
+- Deployment: none (offline probe).
+- Follow-up: Inspect cavity-side and line placement on P008 / P076 before adding DINO. Keep Ward as a second seed next to k-means.
+
 ## 2026-08-29, Local wall-lab 4-case queue
 
 - Scope: `lib/cohort.ts`, `app/api/patients/route.ts`, `PatientList.tsx`, `QueueTreeSelect.tsx`, `SettingsContext.tsx`, `app/page.tsx`, `lib/reader/queue-access-server.ts`.
