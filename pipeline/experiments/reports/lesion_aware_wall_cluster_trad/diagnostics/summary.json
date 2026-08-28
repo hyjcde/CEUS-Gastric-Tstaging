@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "display_id": "P008",
+      "case_id": "CASE-008",
+      "pT_ref": "T1",
+      "cavity_source": "lumen_polygon",
+      "n_kept": 4348,
+      "n_dropped": 1818,
+      "profile_bdb": false,
+      "profile_bdb_flipped": false,
+      "panel": "pipeline/experiments/reports/lesion_aware_wall_cluster_trad/diagnostics/CASE-008_diag.png",
+      "status": "ok"
+    },
+    {
+      "display_id": "P019",
+      "case_id": "CASE-019",
+      "pT_ref": "T2",
+      "cavity_source": "heuristic",
+      "n_kept": 6313,
+      "n_dropped": 0,
+      "profile_bdb": false,
+      "profile_bdb_flipped": false,
+      "panel": "pipeline/experiments/reports/lesion_aware_wall_cluster_trad/diagnostics/CASE-019_diag.png",
+      "status": "ok"
+    },
+    {
+      "display_id": "P040",
+      "case_id": "CASE-040",
+      "pT_ref": "T3",
+      "cavity_source": "heuristic",
+      "n_kept": 2349,
+      "n_dropped": 3064,
+      "profile_bdb": true,
+      "profile_bdb_flipped": true,
+      "panel": "pipeline/experiments/reports/lesion_aware_wall_cluster_trad/diagnostics/CASE-040_diag.png",
+      "status": "ok"
+    },
+    {
+      "display_id": "P076",
+      "case_id": "CASE-076",
+      "pT_ref": "T4",
+      "cavity_source": "heuristic",
+      "n_kept": 12065,
+      "n_dropped": 0,
+      "profile_bdb": false,
+      "profile_bdb_flipped": false,
+      "panel": "pipeline/experiments/reports/lesion_aware_wall_cluster_trad/diagnostics/CASE-076_diag.png",
+      "status": "ok"
+    }
+  ]
+}

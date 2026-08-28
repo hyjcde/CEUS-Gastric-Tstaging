@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Wall-cluster cavity-side diagnostics
+
+- Scope: `scripts/render_wall_cluster_diagnostics.py`. Panels `pipeline/experiments/reports/lesion_aware_wall_cluster_trad/diagnostics/`.
+- Reason: P008 and P076 failed every traditional clusterer. Need to see cavity direction and gray-vs-depth, not only cluster color overlays.
+- Key changes: Per-case 4-up: anatomy with outward arrows, kept vs dropped scatter, current vs flipped across-profile, method contrast bars. P040 shows a real dark mid-band. P076 keeps the mass because there is no same-frame lesion. Does not unlock cT.
+- Validation: Script wrote four case panels plus index. Profile BDB only on P040.
+- Deployment: none (offline figure).
+- Follow-up: Same-frame lesion on P076 before more clusterers.
+
 ## 2026-08-29, Traditional clusterers on ZML wall fixtures
 
 - Scope: `scripts/wall_lesion_aware_cluster.py`, `eval_lesion_aware_wall_cluster_trad.py`, `test_wall_lesion_aware_cluster.py`. Report `pipeline/experiments/reports/lesion_aware_wall_cluster_trad/`. Plan `docs/plans/LESION_AWARE_WALL_CLUSTER_20260828.md`.
