@@ -1,41 +1,7 @@
 {
   "created_at": "2026-08-29",
-  "segmenter": "dino_roi_lora_m025",
+  "segmenter": "unet_crop",
   "cases": [
-    {
-      "case_id": "CASE-008",
-      "display_id": "P008",
-      "status": "ok",
-      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-008_thin_bands.png",
-      "seg": "dino_roi_lora_m025",
-      "mask_px": 1518,
-      "roi": [
-        646,
-        330,
-        848,
-        424
-      ],
-      "method": "ward",
-      "pattern": "bright-dark-bright",
-      "bright_dark_bright": true
-    },
-    {
-      "case_id": "CASE-019",
-      "display_id": "P019",
-      "status": "ok",
-      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-019_thin_bands.png",
-      "seg": "unet_crop",
-      "mask_px": 5929,
-      "roi": [
-        503,
-        180,
-        756,
-        451
-      ],
-      "method": "kmeans",
-      "pattern": "shallow-muscularis-serosa",
-      "bright_dark_bright": false
-    },
     {
       "case_id": "CASE-040",
       "display_id": "P040",
@@ -52,24 +18,7 @@
       "method": "kmeans",
       "pattern": "bright-dark-bright",
       "bright_dark_bright": true
-    },
-    {
-      "case_id": "CASE-076",
-      "display_id": "P076",
-      "status": "ok",
-      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-076_thin_bands.png",
-      "seg": "dino_roi_lora_m025",
-      "mask_px": 20705,
-      "roi": [
-        258,
-        148,
-        741,
-        427
-      ],
-      "method": "kmeans",
-      "pattern": "shallow-muscularis-serosa",
-      "bright_dark_bright": false
     }
   ],
-  "index": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/index.png"
+  "index": ""
 }

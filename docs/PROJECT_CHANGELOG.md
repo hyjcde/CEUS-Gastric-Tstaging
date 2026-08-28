@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 single-case pale k-means
+
+- Scope: `scripts/render_wall_layer_thin_bands.py --case P040`. Panel `results/visualizations/error_cases/CASE-040_thin_bands.png`.
+- Reason: Four-case contact sheet was too busy. Need one case at a time, lighter overlays, and pixel k-means on the peri-lesion window rather than painted ribbons.
+- Key changes: `--case` skips the collage. Cluster k-means k=3 only on the magnified peri-lesion crop after excluding the lesion mask. Overlay alpha is lower. Does not unlock cT.
+- Validation: P040 exclude-lesion k-means formed bright-dark-bright.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, ROI lesion mask then peri-lesion layer zoom
 
 - Scope: `scripts/render_wall_layer_thin_bands.py`. Same panel folder `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/`.
