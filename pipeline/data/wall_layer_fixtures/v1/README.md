@@ -1,5 +1,3 @@
 # wall_layer_fixtures v1
 
-Offline bag for lesion-aware wall clustering. Images stay in the frozen reader pack; this folder only stores meta and a small preview.
-
-wall_source=provisional_lesion_axis is not a doctor line. Do not report agreement until a real wall_polygon is harvested.
+Prefers public ZML wall strokes. Frame is extracted at the paint time, not the old frozen keyframe. Pair a lesion only if it sits on the same frame, or within 0.30 s. Distant keyframes stay unused.

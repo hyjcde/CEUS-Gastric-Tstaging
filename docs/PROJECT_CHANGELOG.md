@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Rematch wall fixtures to public ZML strokes
+
+- Scope: `scripts/pack_wall_layer_fixture_v1.py`, `scripts/eval_lesion_aware_wall_cluster_v1.py`. Fixtures `pipeline/data/wall_layer_fixtures/v1/`. Report `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/`. Plan `docs/plans/LESION_AWARE_WALL_CLUSTER_20260828.md`.
+- Reason: The first bag used old frozen times and a provisional lesion-axis line. ZML painted real expected lines on the public workbench on 2026-08-28 evening. Clustering must sit on those strokes and those cine times.
+- Key changes: Pack reads the public `zml` draft. Frame is extracted at the paint time. Lesion pairs only on the same keyframe or within 0.30 s. P008 wall lives in `mask_overrides`. P019 / P076 stay wall-only because the saved lesion is 4.47 s / 0.55 s away. P040 pairs 1.85 s wall with 1.95 s lesion. Pixel readout ticks are stored as workbench hints, not doctor cT. No public UI change.
+- Validation: `python3 scripts/test_wall_lesion_aware_cluster.py`. Re-pack and eval. P040 exclude d=5 formed bright-dark-bright; the full brush did not. P008 same-frame exclude did not. P019 / P076 exclude equals the full brush.
+- Deployment: none (offline probe).
+- Follow-up: Same-frame lesion on P019 / P076 before claiming exclude-lesion there. Do not start DINO corridor until gray clustering is stable on these ZML lines.
+
 ## 2026-08-28, Lesion-aware wall cluster offline A/B
 
 - Scope: `scripts/wall_lesion_aware_cluster.py`, `pack_wall_layer_fixture_v1.py`, `eval_lesion_aware_wall_cluster_v1.py`, `render_lesion_aware_wall_cluster_panel.py`, `test_wall_lesion_aware_cluster.py`. Plan `docs/plans/LESION_AWARE_WALL_CLUSTER_20260828.md`. Fixtures `pipeline/data/wall_layer_fixtures/v1/`. Report `pipeline/experiments/reports/lesion_aware_wall_cluster_v1/`.

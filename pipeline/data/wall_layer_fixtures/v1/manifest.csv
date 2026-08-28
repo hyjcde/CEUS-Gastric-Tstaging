@@ -1,5 +1,5 @@
-display_id,case_id,pT_ref,site,time_sec,wall_source,cavity_side_source,brush_radius,skip_reason,frame_path
-P008,CASE-008,T1,胃体,2.3,provisional_lesion_axis,lumen_bbox,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-008.jpg
-P019,CASE-019,T2,贲门/胃底,8.395,provisional_lesion_axis,heuristic,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-019.jpg
-P040,CASE-040,T3,贲门/胃底,1.95,provisional_lesion_axis,heuristic,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-040.jpg
-P076,CASE-076,T4,贲门/胃底,0.728,provisional_lesion_axis,heuristic,8.0,,pipeline/data/zml_reader_v150_frozen_20260827/images/CASE-076.jpg
+display_id,case_id,pT_ref,site,time_sec,wall_source,lesion_source,zml_keyframe_id,cavity_side_source,brush_radius,skip_reason,frame_path
+P008,CASE-008,T1,胃体,0.35,zml_mask_override,same_frame,zml::CASE-008,lumen_bbox,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-008/frame.jpg
+P019,CASE-019,T2,贲门/胃底,3.924,zml_keyframe,other_kf_dkf_8.395_4miq48_dt4.471_not_used,dkf_3.924_j1v8ij,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-019/frame.jpg
+P040,CASE-040,T3,贲门/胃底,1.85,zml_keyframe,nearest_kf_dkf_1.950_l3u29r_dt0.100,dkf_1.850_s8gyvd,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-040/frame.jpg
+P076,CASE-076,T4,贲门/胃底,0.179,zml_keyframe,other_kf_dkf_0.728_hb06id_dt0.549_not_used,dkf_0.179_q6hl53,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-076/frame.jpg

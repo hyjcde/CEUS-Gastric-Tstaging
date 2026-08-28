@@ -1,5 +1,5 @@
 display_id,case_id,pT_ref,wall_source,score_exclude_vs_full_0to3,notes,live_m0_looks_contaminated,preferred_dilate_px
-P008,CASE-008,T1,provisional_lesion_axis,,,,
-P019,CASE-019,T2,provisional_lesion_axis,,,,
-P040,CASE-040,T3,provisional_lesion_axis,,,,
-P076,CASE-076,T4,provisional_lesion_axis,,,,
+P008,CASE-008,T1,zml_mask_override,,,,
+P019,CASE-019,T2,zml_keyframe,,,,
+P040,CASE-040,T3,zml_keyframe,,,,
+P076,CASE-076,T4,zml_keyframe,,,,
