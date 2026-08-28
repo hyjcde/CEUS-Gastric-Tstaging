@@ -18,7 +18,7 @@
 
 ## 一句话
 
-工作台已经能画浆膜预期走行线、用灰度算出四档草稿、再点辅助分析。DINO 不要另起一套分层，只做**同一条走廊上的第二种读数**：记住两端正常壁的 token，问中间还像不像。过门以后写进现有芯片和旁路文案，不解锁确定 cT。
+工作台对象只回答「在哪画、分几层、清不清楚」。**真正的分层必须从走廊里的实际像素，或 DINO 特征，做聚类得到层带**，不能靠平行偏移冒充层次。灰度聚类和 DINO 聚类同场对照；过门以后写进现有 1/2/3 线和四档芯片，不定 cT。
 
 ---
 
@@ -35,7 +35,7 @@
 4 画浆膜预期走行线，一笔穿过可疑区
 5 看不清标看不清，不等于中断
 6 最多 3 个分析焦点；看右侧四档草稿
-   └── 本计划从这里读线、读焦点、读可见度
+   └── 本计划从这里取走廊和 k，在网格上做像素或 DINO 聚类
 7 邻帧相近位置还在不在（单帧中断更像伪像）
 8 点「辅助分析」（冻结四分类 + 旁路胃壁文案）
 ```
@@ -44,20 +44,19 @@
 
 ### 0.1 已经有的对象（必须复用）
 
-| 医生看到的 | 代码里的名字 | 在哪 | 本计划怎么用 |
-|------------|--------------|------|--------------|
-| 预期走行线 | `wallPoints` / `DoctorKeyframe.wallPolygon` | 中栏笔刷；病例草稿 `doctor_keyframes[]`；遮罩历史 `MaskBoundaryOverride.wall_polygon` | **走廊先验**。M2 的锚定段 / 查询段都从这条线来 |
-| 浆膜 / 固有肌 / 浅层 | `WallAnatomyTarget` = `1 \| 2 \| 3`，state `wallLayerTarget` | 中栏芯片；`DoctorCaseState.wall_target_layers` | 读哪条界面。第一刀只做 `1`（浆膜） |
-| 清楚 / 模糊 / 看不清 | `WallVisibility` | 右侧；`DoctorKeyframe.wallVisibility` | `unseen` → 强制 `cannot_judge`；`blurry` → 最多 `suspected` |
-| 双侧锚定 / 单侧延伸 / 本帧看不清 | `SerosaAnchorMode` | 右侧；`DoctorKeyframe.serosaAnchorMode` | `bilateral` 才做双侧模板；`unanalyzable` → 无法判断 |
-| 分析焦点（最多 3 点） | `analysisFocusPoints` | 中栏点击；`DoctorKeyframe.analysisFocusPoints` | 查询段加权，**不是**突破点 |
-| 连续 / 疑似中断 / 中断 / 无法判断 | `InterruptVerdict`；`LayerInterrupt` | 右侧芯片，可点改；`wallLayerReadout.interrupts` | DINO 必须吐**同一套四档**，不要新标签 |
-| 最深窄带原图 + 亮-中-暗伪彩 | `WallEchoClarify`（`patternZh`、`clarified`） | 中栏坞「最深窄带回声（草稿）」 | **M0 基线**，界面先留着 |
-| 亮-暗-亮中断 | `detectBrightDarkInterrupt` / `attachLayerInterrupts` | 画线后自动重核 | M0 的 verdict 来源 |
-| 传到其他关键帧 | `keyframe-propagate.ts` + `DoctorKeyframe` | 中栏 | 各帧自己的 `wallPolygon` / readout |
-| 邻帧连续性黄字 | `compareKeyframeContinuity` | 右侧 `WallAssistDraftDetail.keyframes` | 单帧断、邻帧还在 → 疑似伪像。DINO 必须服从这套规则 |
-| 灶周矩形 | `periLesionRoi({ lesion, extras, wall })` | 已进 `contour_context.peri_lesion_roi` | 只是大框。走廊裁剪要比它更贴线 |
-| 多灶 | `extraLesionPolygons`（最多再加 4 个） | 中栏「再框一灶」 | 主灶 + 走行线；不要为每个灶新画一套层 |
+| 医生看到的 | 代码里的名字 | 在哪 | 分层时它只定什么 | 层本身从哪来 |
+|------------|--------------|------|------------------|--------------|
+| 预期走行线 | `wallPoints` / `DoctorKeyframe.wallPolygon` | 中栏笔刷；`doctor_keyframes[]`；`wall_polygon` | **在哪采走廊**（切向脊柱） | 走廊网格上的像素或 token 聚类 |
+| 浆膜 / 固有肌 / 浅层 | `wallLayerTarget` = `1 \| 2 \| 3` | 中栏芯片 | **聚成几簇**（k），以及簇排好后贴什么解剖名 | 不是「已经到了哪一层」的答案 |
+| 清楚 / 模糊 / 看不清 | `wallVisibility` | 右侧 | 看不清则不聚类、直接 `cannot_judge` | 模糊时簇只准报到 `suspected` |
+| 双侧锚定 / 单侧延伸 / 本帧看不清 | `serosaAnchorMode` | 右侧 | 哪些列能当「正常壁」种子；本帧看不清则停 | 种子用来给簇命名，不代替聚类 |
+| 最多 3 个分析焦点 | `analysisFocusPoints` | 中栏点击 | 查询段哪些列加重看簇是否丢掉 | **不是**突破点，不当标签 |
+| 连续 / 疑似 / 中断 / 无法判断 | `InterruptVerdict` | 右侧芯片 | 聚类之后的读数格式 | 沿每一层带看簇是否断裂或被肿块簇换掉 |
+| 最深窄带亮-中-暗图 | `clarifyDeepestEcho` | 中栏坞 | 现网像素聚类对照（M0） | 现在只按亮度分，要升级成按层带分 |
+| 亮-暗-亮中断 | `detectBrightDarkInterrupt` | 画线后重核 | M0 沿层带的旧读数 | DINO 簇用「簇标签是否还在」替代纯亮度 |
+| 传到其他关键帧、邻帧黄字 | `keyframe-propagate` + `compareKeyframeContinuity` | 中栏 / 右侧 | 每帧自己聚；单帧断邻帧还在则降成疑似 | 各帧走廊像素/token 分别聚类 |
+| 灶周矩形 | `periLesionRoi` | 已进请求 | 只给冻结四分类看形态 | **太宽，不当聚类网格** |
+| 多灶 | `extraLesionPolygons` | 「再框一灶」 | 主灶定最深点 | 仍只在一条走行走廊里聚类 |
 
 几何函数已经在 `lib/wall-polyline.ts`：`densifySmooth`、`closestOnPoly`、`offsetAlongNormals`、`centroidPts`。最深点已经在 `deepestInvasionPoint`。装草稿已经在 `attachLayerInterrupts` / `applyWallPromptMeta` / `recheckWallInterruptDraft`。右侧只听事件 `WALL_ASSIST_DRAFT_EVENT`，类型是 `WallAssistDraftDetail`。
 
@@ -91,7 +90,7 @@
 
 `page.tsx` 组 `mask_override` 时只有 `mask_polygon` + `roi_bbox`。全量管线其实已经会读 `mask_override.wall_polygon`（`pipeline_adapter.py`），但公网根本没带上，而且公网也不走全量管线。
 
-所以：**缺的不是工作台对象，是「折线没进分析」+「走廊里还在比灰度」。**
+所以：**缺的不是工作台对象，是「折线没进分析」+「1/2/3 线主要靠平行偏移，还没有用像素或 DINO 特征把走廊聚成层带」。**
 
 ### 0.3 不要接的现成接口
 
@@ -105,24 +104,105 @@
 
 ---
 
-## 1. 现网灰度（M0）为什么够用当对照、不够用当终点
+## 1. 分层引擎：先验定走廊，聚类出层带
 
-中栏已经在做的事（`clarifyDeepestEcho`）：
+医生画的线和档位**不是层**。层是走廊网格里「哪些采样点属于同一条回声带」。8 月 27 日会上说的也是这句话：人眼大致亮 / 中 / 暗，AI 用区域聚类，目的是分层，不是普通超分。
+
+### 1.1 现网差在哪（必须说清楚）
+
+工作台现在其实是三套东西叠在一起，不要混报：
+
+| 现网函数 | 实际在做什么 | 算不算「特征聚类分层」 |
+|----------|--------------|------------------------|
+| `clusterLayersAlongWall` | 沿灶缘做 1/2/3 条**平行偏移**；只有 `layerCount=3` 时才用灰度梯度微调间距 | **不算。** 层间距是几何，不是把像素聚成层 |
+| `traceWallLayersFromPaint` | 笔刷条带上找灰度梯度峰，再平行外推 | **半算。** 用了像素梯度，但没有对特征做 k-means，峰不够就回退成均匀间距 |
+| `clarifyDeepestEcho` | 最深窄带 56 x 28 上对**灰度**做 1D k-means，k=2 或 3 | **算像素聚类。** 但簇按亮度叫暗 / 中 / 亮，**不按解剖层**排序 |
+| `detectBrightDarkInterrupt` | 沿线看两端亮、中间暗 | 中断读数，不是出层带 |
+
+所以现网「1/2/3 分层」看起来像层，多数时候是平行线；现网「聚类」出的是亮暗图，不是浆膜 / 固有肌 / 浅层。本计划要把这两步并成一步：
 
 ```text
-病灶 + 走行线
-  -> deepestInvasionPoint 落到壁上
-  -> 切向 x 法向采约 56 x 28 窄带
-  -> 灰度 1D k-means（对比度大则 k=3，否则 k=2）
-  -> 厚度方向压成 暗 / 中 / 亮
-  -> detectBrightDarkInterrupt：两端亮、中间暗 → 疑似中断
-  -> attachLayerInterrupts 写成 InterruptVerdict
-  -> 事件推到右侧同一套芯片
+wallPolygon + wallLayerTarget(k) + 可见度
+    -> 同一块走廊网格（沿 x 跨，对齐现网 56 x 28）
+    -> 每个采样点一个特征向量
+         像素：灰度，可选再加沿法向深度
+         DINO：插值 token，先 PCA 到 8–32 维
+         可选拼接： [gray, depth, token_pca]
+    -> k-means / GMM，k = wallLayerTarget（看不清则不聚）
+    -> 簇按「沿法向的平均深度」从腔侧排到浆膜侧
+    -> 再贴解剖名：k=1 浆膜；k=2 固有肌, 浆膜；k=3 浅层, 固有肌, 浆膜
+    -> 每条层带沿走行看簇是否连续
+    -> 写成现有 ticks + InterruptVerdict
 ```
 
-几何脚手架是对的。上限是特征只有亮度。浆膜、肝包膜、气体界面、伪像都可以「看起来亮」；固有肌、胃腔、坏死灶都可以「看起来暗」。工作台已经让医生画出「这例自己的正常壁在哪」，灰度却没有把两端当成**本例模板**。
+**排序必须用法向深度，不能用亮度。** 浆膜和界面都可以亮；固有肌和肿块都可以暗。按亮暗命名会回到现网 M0 的上限。
 
-DINO 要补的正是工作台已经给了、灰度用不上的那一步：锚定段（`SerosaAnchorMode = bilateral` 的两端）提取模板，查询段（线的中段，可被 `analysisFocusPoints` 加重）问像不像。
+锚定段（`serosaAnchorMode`）只做两件事：给聚好的簇起名字（两端最外侧簇 = 浆膜），以及提供「正常壁」种子。它不代替聚类，也不在查询段空想平行线。
+
+### 1.2 走廊网格（复用现网采样，不新造坐标系）
+
+和 `clarifyDeepestEcho` 同一套：
+
+- 原点：`deepestInvasionPoint` 落到 `wallPolygon` 上
+- 切向 / 法向：现网已经会朝胃腔外侧翻法向
+- 网格：沿约 56，跨约 28；跨向半宽跟笔刷走（现网 `acrossHalf`）
+- 每个格子记下：图像坐标、灰度、沿法向深度、可选 DINO token
+
+档位 2 / 3 时不要另开第二套网格，只是把 k 从 1 改成 2 或 3，让聚类在**同一块厚度**上多分几带。k=1 时聚 2 簇也可以：一层「还像浆膜」，一层「其他」（肿块 / 腔 / 伪像），中断看浆膜簇在查询段还在不在。
+
+### 1.3 像素聚类（M0 升级）和 DINO 聚类（M1）必须同场
+
+| 代号 | 每个格子的特征 | 和现网的关系 | 角色 |
+|------|----------------|--------------|------|
+| **M0** | 灰度，或 `[灰度, 法向深度]` | 现网 `kmeans1d` 只吃灰度。升级后 k 跟 `wallLayerTarget` 走，簇按深度排序 | 像素聚类基线，界面先留着亮-中-暗图作对照 |
+| **M1** | DINO token（PCA 后），或 `[灰度, 深度, token_pca]` | 还没有。网格必须和 M0 对齐 | **主候选。** 分层看的是「像不像同一层组织」，不是亮不亮 |
+| **M2** | 锚定段簇中心当本例模板，查询段逐点算到各层中心的距离 | 协议里的模板匹配 | 聚类之后的辅助读数：中断 / 换层，不单独出层带 |
+
+默认出层带看 M1，M0 并列对照，M2 只写连续 / 中断。医生改芯片仍然覆盖两者。
+
+可见度规则抄工作台：
+
+```text
+wallVisibility == unseen  或  serosaAnchorMode == unanalyzable
+    -> 不聚类，verdict = cannot_judge
+wallVisibility == blurry
+    -> 仍聚类出层带，但中断最多 suspected
+只有 1 帧某层簇断了、邻帧同层还在
+    -> 降成 suspected
+```
+
+分析焦点只加重查询段里那几列「浆膜簇还在不在」，不把焦点坐标写成突破点。
+
+### 1.4 从簇到工作台线 / 芯片
+
+聚完之后才能画现在中栏那些层线：
+
+1. 每个簇沿切向取厚度中位数，得到一条折线，写入现有 `wallLayerBands`（不要新类型）。
+2. 查询段里该簇面积掉到锚定段的一小半，或格子改判成病灶 mask 内的「其他」簇 → 该层 `interrupted` / `absent`，后面改假想线（现网 `imaginary` 已有）。
+3. `ticks` 的 `present / thinned / absent / imaginary / unseen` 继续用。
+4. `LayerInterrupt.verdict` 仍是四档。
+
+伪代码（说明用）：
+
+```python
+k = wallLayerTarget                    # 1 / 2 / 3，医生选的是簇数
+grid = sample_corridor(wallPolygon)    # 56 x 28，与 clarifyDeepestEcho 对齐
+
+if wallVisibility == "unseen" or serosaAnchorMode == "unanalyzable":
+    return ticks_unseen, verdict="cannot_judge"
+
+# M0：像素；M1：DINO 或像素+DINO
+feat_m0 = [gray] or [gray, depth]
+feat_m1 = pca(token) or [gray, depth, pca(token)]
+labels = kmeans(feat, k=k)             # 或 k+1，多一簇给「其他/肿块」
+
+# 按法向平均深度排序：0 = 最靠腔，k-1 = 最靠浆膜
+order = argsort([mean_depth(cluster) for cluster in labels])
+names = {1: ["浆膜"], 2: ["固有肌", "浆膜"], 3: ["浅层", "固有肌", "浆膜"]}[k]
+
+bands = [median_curve(cluster) for cluster in order]   # -> wallLayerBands
+verdicts = [interrupt_if_cluster_drops(cluster, foci) for cluster in order]
+```
 
 ---
 
@@ -130,64 +210,19 @@ DINO 要补的正是工作台已经给了、灰度用不上的那一步：锚定
 
 一张关键帧进 DINOv3 ViT-B/16（512）会得到 32 x 32 个 token，每个 768 维。不是亮度，是「这一小块长得像什么」。
 
-对照工作台三句话：
+对照分层三句话：
 
-1. 灰度 M0 已经在窄带上按区域分亮 / 中 / 暗。token 也是区域表示，只是每个点从 1 个数变成 768 个数。
-2. 医生两端画的是可见正常浆膜（锚定）。同一条线上两端 token 应该像；中间被肿块占住即使仍亮，也应该不像。
-3. 右侧四档已经够用。DINO 只替换或并列 `LayerInterrupt.verdict`，不发明第五档。
+1. 像素聚类：每个格子 1 个（或 2 个）数，只能按亮暗和深浅分带。
+2. DINO 聚类：每个格子变成一小段向量，浆膜亮线和肝包膜亮线可以进不同簇。
+3. 右侧四档仍然够用。聚类负责出层带和「这层还在不在」；芯片格式不改。
 
-以前仓库里的 DINO 问「这例是 T 几」。本计划问「**这条 `wallPolygon` 上，哪一段还像壁**」。
+以前仓库里的 DINO 问「这例是 T 几」。本计划问「**这条走廊里的格子，聚成几条还在的层带**」。
 
 ---
 
-## 3. 三种方法，全部吃工作台同一条线
+## 3. 为什么不再把模板匹配当主方法
 
-| 代号 | 走廊里比什么 | 工作台现成函数 | 角色 |
-|------|----------------|----------------|------|
-| **M0** | 灰度 1D k-means + 亮-暗-亮 | `clarifyDeepestEcho`、`detectBrightDarkInterrupt`、`recheckWallInterruptDraft` | **产品基线，界面不撤** |
-| **M1** | token 先 PCA 再到 k-means / GMM，用锚定段把簇标成壁样 / 肿块样 / 其他 | 还没有；采样网格应对齐 M0 的 56 x 28 | 研究作图 |
-| **M2** | 锚定段平均 token = 本例模板，查询段逐点余弦 | 协议第 3–5 步；工作台有线、有锚定、还没做成模板 | **主候选** |
-
-默认读 M2，M1 出拼图，M0 始终并列。医生改芯片（`cycleInterruptVerdict` / `toggleDoctorInterrupt`）仍然是金标准覆盖，DINO 不得锁死。
-
-可见度规则必须抄工作台，不要自己发明：
-
-```text
-wallVisibility == unseen  或  serosaAnchorMode == unanalyzable
-    -> verdict = cannot_judge
-wallVisibility == blurry
-    -> 最多 suspected，不得报 interrupted
-只有 1 帧 interrupted、邻帧 continuous（compareKeyframeContinuity）
-    -> 降成 suspected（伪像）
-```
-
-第一刀只做档位 1（浆膜）。档位 2 / 3 等医生真的在工作台上画固有肌 / 浅层线再开。
-
-M2 伪代码（说明用；输出必须能塞进现有 `LayerInterrupt`）：
-
-```python
-line = DoctorKeyframe.wallPolygon          # 已有
-foci = DoctorKeyframe.analysisFocusPoints  # 已有，最多 3
-vis  = DoctorKeyframe.wallVisibility
-anchor = DoctorKeyframe.serosaAnchorMode
-
-if vis == "unseen" or anchor == "unanalyzable":
-    return LayerInterrupt(verdict="cannot_judge")
-
-# 走廊：沿 line 用 densifySmooth + offsetAlongNormals
-# 进网：走廊裁剪 letterbox 512，不要 crop_ui 全图，不要 Dual crop_roi
-v = interpolate_tokens(line_samples)       # 亚 token
-
-if anchor == "bilateral":
-    template = mean(v on both flanks if vis == "clear")
-else:
-    template = mean(v on the one visible flank)
-
-sim(s) = cosine(v(s), template)
-# 可选：再减病灶 mask 内靠近查询段的 lesion_template
-
-verdict = same_four_labels_as_M0(sim, foci_weight=foci)
-```
+M2（两端像不像）对 T3/T4 浆膜连续性仍然有用，但它**不出层**。档位 2 / 3 要的是厚度方向上几条不同组织，必须靠聚类。主方法改成 M0 / M1 聚类出带，M2 只辅助判中断。
 
 ---
 
@@ -226,14 +261,15 @@ verdict = same_four_labels_as_M0(sim, foci_weight=foci)
 
 | 字段 | 对齐工作台 |
 |------|------------|
-| `m0_verdict` / `m2_verdict` | `InterruptVerdict` 四档 |
-| `m2_anchor_sim_mean` / `m2_query_sim_min` | 新标量，只进报告 |
-| `m2_end_minus_mid` | 对现网 `detectBrightDarkInterrupt` 的 `delta` |
+| `m0_verdict` / `m1_verdict` | `InterruptVerdict` 四档 |
+| `m0_bands` / `m1_bands` | 与 `wallLayerBands` 同形的折线 |
+| `cluster_map` | 56 x 28 簇号图，按法向深度着色，不是按亮度 |
+| `m2_query_sim_min` | 可选，只辅助中断 |
 | `multi_frame_agree` | 抄 `compareKeyframeContinuity` |
 | `token_px_in_original` | 防止全图 512 混进来 |
 | `backbone` / `layer` | `lvd1689m` 或 `adapter_20260511`；2 / 5 / 8 / 11 |
 
-拼图三列即可：工作台原图 + 走行线、现网 M0 窄带伪彩、M2 相似度热条。热条将来如果进产品，放在中栏坞「最深窄带回声（草稿）」**旁边第二张图**，不要新开卡片。黑底、Times New Roman；标题不要用中间点。
+拼图四列：工作台原图 + 走行线、现网亮-中-暗图、M0 按深度着色的像素簇、M1 的 DINO 簇。进产品时 M1 簇图放在「最深窄带回声」坞旁边，层线仍写进现有 `wallLayerBands`。黑底、Times New Roman；标题不要用中间点。
 
 ### 5.3 线上怎么挂（Gate 3 才做，分两刀）
 
@@ -250,8 +286,8 @@ verdict = same_four_labels_as_M0(sim, foci_weight=foci)
 
 - 复用 sidecar 已加载的冻结 ViT，不要前端跑模型，不要改成 `assist_profile: 'full'`
 - 输入就是上一刀补上的折线 + 焦点 + 可见度
-- 输出一个和 `LayerInterrupt` 同形的草稿，事件仍走 `WALL_ASSIST_DRAFT_EVENT`
-- 右侧同一排芯片并列「灰度 / DINO」，医生点改仍然有效
+- 输出：`wallLayerBands` + 与 `LayerInterrupt` 同形的四档，事件仍走 `WALL_ASSIST_DRAFT_EVENT`
+- 中栏并列「像素簇 / DINO 簇」；右侧芯片仍是同一套四档，医生点改仍然有效
 - 大字仍是冻结四分类
 
 ### 5.4 脚本（还没写）
@@ -262,10 +298,10 @@ scripts/extract_dino_wall_corridor_tokens.py
     走廊裁剪 + 冻结 DINO + 采样点缓存
 
 scripts/eval_dino_wall_corridor_methods.py
-    同一缓存跑 M0 / M1 / M2；M0 应能对上前端四档
+    同一网格跑像素聚类 M0、DINO 聚类 M1、可选 M2 中断
 
 scripts/render_dino_wall_corridor_panel.py
-    工作台线 + M0 伪彩 + M2 热条
+    工作台线 + 亮暗图 + 像素簇 + DINO 簇（按法向深度着色）
 ```
 
 缓存：`pipeline/data/dino_wall_corridor_tokens/v1/`（大文件，只索引）。不要改 `dinov3_tstaging_region_scalars` 的 schema。先 `--help`，再进 `scripts/script_registry.csv`。
@@ -283,23 +319,24 @@ scripts/render_dino_wall_corridor_panel.py
 - 走廊裁剪后每个 token ≤ 约 4 原图像素 → 往下
 - 仍 ≥ 12 → 先改走廊宽度 / 进网边长，不要开聚类
 
-### Gate 1 — 同一条工作台线上，M2 热条人能不能看懂
+### Gate 1 — 簇看起来像不像层带
 
-双侧锚定、可见度清楚的帧：
+双侧锚定、可见度清楚、医生选了 k 的帧：
 
-1. 两端高相似
-2. 分析焦点附近若医生标了中断，相似度应掉下去
-3. 肝包膜 / 界面亮线不应吃成高相似
+1. 厚度方向上应能看出约 k 条沿走行延伸的带，而不是沿切向切成一段段。
+2. 最外侧带应落在医生线附近，不要贴到肝包膜。
+3. 同一亮度、不同组织（浆膜 vs 肝缘 vs 肿块亮边）在 M1 里应尽量进不同簇；若 M1 和亮度图几乎一样，说明 token 没有多给信息。
+4. k=2 / 3 时，簇的平均法向深度应单调排开，不要交叉成碎片。
 
-LVD 与 20260511、层 2 与 11 各出一套。过门：人能看出「两端像、中间不像」，且比「中间只是变暗」清楚。不过门：查线是不是裁歪、法向是不是朝腔。不要 LoRA。
+LVD 与 20260511、层 2 与 11 各出一套。过门：人能从 M1 簇图读出层带，且明显不同于「只按亮暗上色」。不过门：先查网格和 k，不要 LoRA。
 
-### Gate 2 — 和医生改过的芯片比
+### Gate 2 — 和医生改过的层线 / 芯片比
 
-金标准是工作台右侧医生点过的 `InterruptVerdict`（含看不清）。另册，不在同一 150 例上自评自涨。
+金标准两层：医生拖过的 `wallLayerBands`（如果有），以及右侧点过的 `InterruptVerdict`。另册，不在同一 150 例上自评自涨。
 
-主指标：四档一致率、假中断、漏中断、多帧后假中断是否下降。对照 M0、M2、以及「两家都中断才报中断」。病理 T3/T4 只作弱旁证。
+主指标：层带与医生线的法向距离、四档一致率、假中断、漏中断。对照纯平行偏移、M0 像素簇、M1 DINO 簇、以及「两家都中断才报中断」。病理 T3/T4 只作弱旁证。
 
-过门：假中断低于 M0 且漏中断不升，或联合规则明显降假中断。不过门：灰度继续当产品。
+过门：M1 层带比平行偏移更贴医生线，或假中断低于 M0 且漏中断不升。不过门：界面继续用现网平行线 + 亮暗图。
 
 ### Gate 3 — 才改 sidecar / Next
 
@@ -319,8 +356,9 @@ LVD 与 20260511、层 2 与 11 各出一套。过门：人能看出「两端像
   先不要改芯片文案和画线手感
 
 本计划
-  读同一条 wallPolygon
-  离线 M2 → 过门 → 请求补折线 → sidecar 并列草稿
+  同一走廊网格
+  像素聚类 M0 对照，DINO 聚类 M1 出层带
+  过门 → 请求补折线 → sidecar 把簇线写回 wallLayerBands
 
 分类研究（Gate C / TabPFN）
   继续问 T 几
@@ -332,7 +370,7 @@ LVD 与 20260511、层 2 与 11 各出一套。过门：人能看出「两端像
 
 ## 8. 明确不要做
 
-1. 不要新画线工具、新折线类型、新右侧卡片、新五层 GT。
+1. 不要新画线工具、新折线类型、新右侧卡片、新五层 GT。也不要用平行偏移冒充分层。
 2. 不要接 `WallFeatureAnalysisCard` 或 `/api/agent/dino/features`。
 3. 不要用全图 512 region scalar 或 Dual `crop_roi` 冒充分层。
 4. 不要把 `periLesionRoi` 大框当成走廊。
@@ -350,7 +388,7 @@ LVD 与 20260511、层 2 与 11 各出一套。过门：人能看出「两端像
 | 顺序 | 工作 | 大约 |
 |------|------|------|
 | 1 | 从 `doctor_keyframes` / `mask_overrides` 读线，走廊裁剪 + Gate 0 | 1 天 |
-| 2 | 同一采样点复现 M0，出 M2 热条（Gate 1） | 1–2 天 |
+| 2 | 同一网格跑像素簇 M0 与 DINO 簇 M1，出按深度着色的拼图（Gate 1） | 1–2 天 |
 | 3 | LVD vs 20260511、层 2 vs 11 | 0.5 天 |
 | 4 | 等医生在工作台上改过的芯片，做 Gate 2 | 有标签再排 |
 | 5 | 请求体补 `wall_polygon`（产品小补丁，即使 DINO 不过门也该做） | 0.5 天 + 公网部署 |
@@ -362,11 +400,11 @@ LVD 与 20260511、层 2 与 11 各出一套。过门：人能看出「两端像
 
 ## 10. 对医生 / 合作者怎么讲
 
-**对医生：** 你现在画的线和右侧四档都保留。我们试的是让 AI 记住你两端正常壁长什么样，再到中间问还像不像。看不清你继续标看不清。辅助分析的大字还是原来的冻结结果。
+**对医生：** 你画的线告诉 AI 沿哪走、大概分几层。层带本身由走廊里的回声（灰度或 DINO）聚类出来，不是平行描边。右侧四档仍可改。看不清继续标看不清。
 
-**对合作者：** 这是工作台 few-shot 本例模板匹配。先验是 `wallPolygon` + 可见度 + 锚定 + 焦点，不是新网络。输出必须是现有 `InterruptVerdict`。
+**对合作者：** 工作台先验只定走廊和 k。分层是同一网格上的像素聚类 vs DINO 特征聚类。输出必须是现有 `wallLayerBands` + `InterruptVerdict`。
 
-**对论文：** 人给出走行先验和相邻期锁定，AI 只读最深局部是否还像壁。灰度是工作台对照，DINO 是同走廊的第二种特征。没有工作台折线，不要把探针拼图写成性能。
+**对论文：** 人给出走行和层数先验，AI 在最深窄带做区域聚类得到残存层。灰度是对照，DINO 是同网格的第二种特征。没有工作台折线，不要把探针拼图写成性能。
 
 ---
 
@@ -374,7 +412,9 @@ LVD 与 20260511、层 2 与 11 各出一套。过门：人能看出「两端像
 
 - 分割 adapter 可能抑制壁纹理，必须和 LVD 对照。
 - 工作台笔刷很细，走廊太窄会裁掉外缘，太宽会混进肝和腔。Gate 0 要扫宽度，并对照现网 `acrossHalf`（约笔刷的一半）。
-- 分析焦点是点不是段；加权过度会把医生「想看的地方」直接判成中断。焦点只加权，不改标签定义。
+- k-means 对薄壁很碎；必须加「沿切向平滑 / 多数表决」（现网 M0 已有 3x3 表决），否则层带会断成斑块。
+- 分析焦点是点不是段；加权过度会把医生「想看的地方」直接判成中断。焦点只加重查询列，不改标签定义。
+- 只按亮度排序簇，会把浆膜和肝缘合成一层。必须用法向深度排序。
 - sidecar 现在只认 `interrupted` 布尔。线上并列之前必须先把 `verdict` 送出去，否则 DINO 的「无法判断」会被吃成连续。
 - 前端跑不动 ViT；产品路径只能走分析隧道。
 - 没有折线的历史训练集不能假装有分层 GT。
