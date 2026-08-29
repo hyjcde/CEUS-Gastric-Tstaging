@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Document the current brush pixel layering algorithm
+
+- Scope: `docs/technical/WALL_PIXEL_BRUSH_LAYERING.md`, `docs/DOCUMENT_MAP.md`, pointer in the lesion-aware plan.
+- Reason: The live path is now exclusive top-to-bottom bands inside the brush. Callers need one place that lists every input, output, and step.
+- Key changes: Write the corridor, keep-mask, tertile labels, interfaces, fates, and figure I/O. Does not unlock cT.
+- Validation: documentation only.
+- Deployment: none.
+
 ## 2026-08-29, Split brush pixels into three exclusive top-to-bottom bands
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_natural_y_bands`).

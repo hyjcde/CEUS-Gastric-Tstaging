@@ -9,6 +9,7 @@
 | gastric_tstaging_project_framework_zh.md | **A** | 项目总框架 |
 | gastric_tstaging_project_logic.html | **A** | 可视化总览 |
 | tstaging_current_mainline.md | **A** | 当前执行主线 |
+| clinical_11_field_pack.md | **A** | 11 项临床字段（禁止再叫 22） |
 | agent_api_contract.md | **A** | Agent API 契约 |
 | model_asset_audit.md | B | 模型选型表（持续更新） |
 | tstaging_classifier_architecture_zh.md | B | 分类网络结构 |
@@ -61,6 +62,24 @@
 |------|------|------|
 | references/dinov3/ | C | 202605 DINO 分割/分类探索 |
 | references/segdino/ | C | SegDINO / clean agent 系列 |
+
+## technical/
+
+| 文件 | 层级 | 说明 |
+|------|------|------|
+| technical/COLLABORATOR_ACCESS.md | B | 工作站协作者 SSH 与原始数据 ACL |
+| technical/COMPUTE_LINKAGE.md | B | Mac / 工作站 / 公网算力联动 |
+| technical/WALL_PIXEL_BRUSH_LAYERING.md | B | 当前画笔像素分层：输入输出、走廊、三等分贴标签；不定 cT |
+
+## product/
+
+| 文件 | 层级 | 说明 |
+|------|------|------|
+| product/公网RAG相似病例与指南解释说明.md | B | 公网医生站现网 RAG：相似病例、证据对照、指南解释、隧道与叠加 |
+| product/公网RAG验收与安全后续.md | B | RAG 安全、盲法、版本漂移与临床验收后续（P0 起） |
+| product/医生阅片流程图.drawio | B | 现网医生阅片全流程（draw.io）：登录到保存报告；第 2 页为 T 分期与 Assist/RAG 加细 |
+| meetings/2026-08-28_浆膜预期走行线协议.md | B | 医生画预期走行线、AI 独立判连续；训练无胃壁标注时的评估交互 |
+| plans/DINO_WALL_LAYER_EMBEDDING_20260828.md | B | 研究：走廊内 DINO token 读胃壁层次特征；灰度聚类对照；不进 Assist |
 
 ## 其他 docs 子目录
 

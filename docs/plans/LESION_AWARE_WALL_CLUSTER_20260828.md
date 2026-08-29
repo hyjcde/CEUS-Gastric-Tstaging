@@ -54,6 +54,8 @@ python3 scripts/pack_wall_layer_fixture_v1.py --help
 python3 scripts/pack_wall_layer_fixture_v1.py
 ```
 
+当前像素主路径（按列从上到下三等分，不再用灰度 k-means 贴标签）见 [WALL_PIXEL_BRUSH_LAYERING.md](../technical/WALL_PIXEL_BRUSH_LAYERING.md)。下面「算法」一节是 8 月 28 日第一版对照，不要和主路径搞混。
+
 ## 算法
 
 库：`scripts/wall_lesion_aware_cluster.py`
