@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Search about 12 px past the brush for the gray bands
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`_column_search_profile`), four-case render.
+- Reason: A 2 px pad still looked like equal thirds. Blindly growing the middle by 12 px ate the outer echoes. The gray run may sit a dozen pixels outside the tight brush core.
+- Key changes: Read each image column with a 12 px search pad, drop cavity-like gray, lock one pattern on the flank, and grow the middle band up to 12 px so it covers the visible stripe. Same-x yellow still cannot enter green. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Place the three bands on gray bright/dark edges
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`_band_cuts_1d`), algorithm note, four-case render.

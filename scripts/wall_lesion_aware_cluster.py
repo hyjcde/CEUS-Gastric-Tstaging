@@ -22,8 +22,9 @@ SENSITIVE_ACROSS = 0.15
 # nudges the two cuts; it cannot jump a pixel over a neighboring strip.
 STRIP_MIN_COL = 8
 STRIP_SMOOTH = 9
-GRAY_CUT_PAD = 2
-GRAY_CUT_MIN_SCORE = 8.0
+GRAY_SEARCH_PAD = 12
+GRAY_CUT_PAD = 12
+GRAY_CUT_MIN_SCORE = 4.0
 JOIN_RAY_PX = 28.0
 JOIN_END_PX = 16.0
 JOIN_MAX_GAP = 42.0
@@ -1406,33 +1407,175 @@ def refine_across_cut(across: np.ndarray, values: np.ndarray, seed: float, max_s
     return best
 
 
-def _band_cuts_1d(gray: np.ndarray) -> tuple[int, int]:
-    """Split one column by gray: a brighter or darker middle, plus a 2 px outer pad.
+def _pad_cut_span(
+    i: int,
+    j: int,
+    n: int,
+    pad: int = GRAY_CUT_PAD,
+    sm: np.ndarray | None = None,
+) -> tuple[int, int]:
+    """Grow the middle only while gray still looks like the mid band, up to pad px."""
+    i = int(i)
+    j = int(j)
+    if sm is None or j <= i:
+        grow = min(int(pad), max(0, i - 2), max(0, n - 2 - j))
+        return max(2, i - grow), min(n - 2, j + grow)
+    mid_mu = float(sm[i:j].mean())
+    left_mu = float(sm[:i].mean()) if i > 0 else mid_mu
+    right_mu = float(sm[j:].mean()) if j < n else mid_mu
+    gap_l = max(3.0, abs(mid_mu - left_mu) * 0.35)
+    gap_r = max(3.0, abs(mid_mu - right_mu) * 0.35)
+    start, end = i, j
+    while start > 2 and (i - start) < pad and abs(float(sm[start - 1]) - mid_mu) <= gap_l:
+        start -= 1
+    while end < n - 2 and (end - j) < pad and abs(float(sm[end]) - mid_mu) <= gap_r:
+        end += 1
+    return start, end
 
-    Tertiles are only the fallback when the profile has no clear dark/bright swing.
-    """
-    n = int(len(gray))
-    tertile = (max(1, n // 3), min(n - 1, max(2, 2 * n // 3)))
-    if n < 8:
-        return tertile
+
+def _default_tertile(n: int, overlap: tuple[int, int] | None) -> tuple[int, int]:
+    if overlap is None:
+        return max(1, n // 3), min(n - 1, max(2, 2 * n // 3))
+    lo, hi = int(overlap[0]), int(overlap[1])
+    span = max(3, hi - lo)
+    return lo + span // 3, lo + max(span // 3 + 1, 2 * span // 3)
+
+
+def _best_gray_splits(
+    gray: np.ndarray,
+    overlap: tuple[int, int] | None = None,
+) -> tuple[float, float, tuple[int, int] | None, tuple[int, int] | None]:
+    """Score every pair of cuts: dark-bright-dark versus bright-dark-bright."""
     sm = _smooth1d(np.asarray(gray, dtype=np.float32), 1)
-    best = (-1.0, tertile[0], tertile[1])
+    n = int(len(sm))
+    best_dbd = -1.0e9
+    best_bdb = -1.0e9
+    dbd_ij: tuple[int, int] | None = None
+    bdb_ij: tuple[int, int] | None = None
+    lo, hi = (0, n) if overlap is None else (int(overlap[0]), int(overlap[1]))
+
+    def _ov(a0: int, a1: int) -> int:
+        return max(0, min(a1, hi) - max(a0, lo))
+
     for i in range(2, n - 3):
         for j in range(i + 2, n - 1):
-            a = float(sm[:i].mean())
-            b = float(sm[i:j].mean())
-            c = float(sm[j:].mean())
-            score = max((b - a) + (b - c), (a - b) + (c - b))
-            if score > best[0]:
-                best = (score, i, j)
-    score, i, j = best
-    if score < GRAY_CUT_MIN_SCORE:
+            if overlap is not None and (_ov(0, i) < 1 or _ov(i, j) < 2 or _ov(j, n) < 1):
+                continue
+            if overlap is None:
+                left = float(sm[:i].mean())
+                mid = float(sm[i:j].mean())
+                right = float(sm[j:].mean())
+            else:
+                left_g = sm[lo:min(i, hi)]
+                mid_g = sm[max(i, lo):min(j, hi)]
+                right_g = sm[max(j, lo):hi]
+                if len(left_g) < 1 or len(mid_g) < 2 or len(right_g) < 1:
+                    continue
+                left = float(left_g.mean())
+                mid = float(mid_g.mean())
+                right = float(right_g.mean())
+            width_term = 1.0 + 0.08 * min(float(j - i), 12.0)
+            dbd = (mid - 0.5 * (left + right)) * width_term
+            bdb = (0.5 * (left + right) - mid) * width_term
+            if dbd > best_dbd:
+                best_dbd = dbd
+                dbd_ij = (i, j)
+            if bdb > best_bdb:
+                best_bdb = bdb
+                bdb_ij = (i, j)
+    return best_dbd, best_bdb, dbd_ij, bdb_ij
+
+
+def _band_cuts_1d(
+    gray: np.ndarray,
+    prefer: str | None = None,
+    overlap: tuple[int, int] | None = None,
+) -> tuple[int, int]:
+    """Split one column on the strongest gray contrast that overlaps the wall."""
+    n = int(len(gray))
+    tertile = _default_tertile(n, overlap)
+    if n < 8:
         return tertile
-    i = max(2, int(i) - GRAY_CUT_PAD)
-    j = min(n - 2, int(j) + GRAY_CUT_PAD)
+    best_dbd, best_bdb, dbd_ij, bdb_ij = _best_gray_splits(gray, overlap)
+    if prefer == "dbd":
+        score, pick = best_dbd, dbd_ij
+    elif prefer == "bdb":
+        score, pick = best_bdb, bdb_ij
+    else:
+        dbd_w = float(dbd_ij[1] - dbd_ij[0]) if dbd_ij else 1.0
+        bdb_w = float(bdb_ij[1] - bdb_ij[0]) if bdb_ij else 1.0
+        if dbd_ij is not None and (bdb_ij is None or (best_dbd * dbd_w) >= (best_bdb * bdb_w)):
+            score, pick = best_dbd, dbd_ij
+        else:
+            score, pick = best_bdb, bdb_ij
+    if pick is None or score < GRAY_CUT_MIN_SCORE:
+        return tertile
+    sm = _smooth1d(np.asarray(gray, dtype=np.float32), 1)
+    i, j = _pad_cut_span(int(pick[0]), int(pick[1]), n, sm=sm)
     if j <= i + 1:
         return tertile
     return i, j
+
+
+def _column_pattern_vote(
+    gray: np.ndarray,
+    overlap: tuple[int, int] | None = None,
+) -> str | None:
+    if int(len(gray)) < 8:
+        return None
+    best_dbd, best_bdb, dbd_ij, bdb_ij = _best_gray_splits(gray, overlap)
+    if dbd_ij is None and bdb_ij is None:
+        return None
+    if best_dbd < GRAY_CUT_MIN_SCORE and best_bdb < GRAY_CUT_MIN_SCORE:
+        return None
+    dbd_w = float(dbd_ij[1] - dbd_ij[0]) if dbd_ij else 1.0
+    bdb_w = float(bdb_ij[1] - bdb_ij[0]) if bdb_ij else 1.0
+    return "dbd" if (best_dbd * dbd_w) >= (best_bdb * bdb_w) else "bdb"
+
+
+def _column_search_profile(
+    image: np.ndarray,
+    x: int,
+    y_min: int,
+    y_max: int,
+    search_pad: int = GRAY_SEARCH_PAD,
+    blocked: np.ndarray | None = None,
+) -> tuple[np.ndarray, int, int, int]:
+    """Gray column around the brush, plus about 12 px above and below."""
+    height, width = int(image.shape[0]), int(image.shape[1])
+    x = int(np.clip(x, 0, width - 1))
+    y0 = max(0, int(y_min) - int(search_pad))
+    y1 = min(height - 1, int(y_max) + int(search_pad))
+    profile = np.asarray(image[y0:y1 + 1, x], dtype=np.float32).reshape(-1)
+    if blocked is not None and blocked.shape[:2] == image.shape[:2]:
+        hit = np.asarray(blocked[y0:y1 + 1, x]) > 0
+        if bool(hit.any()) and bool((~hit).any()):
+            good = np.where(~hit)[0]
+            bad = np.where(hit)[0]
+            nearest = good[np.abs(bad[:, None] - good[None, :]).argmin(axis=1)]
+            profile = profile.copy()
+            profile[bad] = profile[nearest]
+    brush_lo = int(y_min) - y0
+    brush_hi = int(y_max) - y0 + 1
+    brush_lo = max(0, brush_lo)
+    brush_hi = min(len(profile), max(brush_lo + 2, brush_hi))
+    brush = profile[brush_lo:brush_hi]
+    if len(brush) >= 3:
+        med = float(np.median(brush))
+        near = np.abs(profile - med) <= 32.0
+        near[brush_lo:brush_hi] = True
+        start = 0
+        while start < brush_lo and not bool(near[start]):
+            start += 1
+        end = len(profile) - 1
+        while end >= brush_hi and not bool(near[end]):
+            end -= 1
+        if start > 0 or end < len(profile) - 1:
+            profile = profile[start:end + 1]
+            y0 += start
+            brush_lo -= start
+            brush_hi -= start
+    return profile, y0, brush_lo, brush_hi
 
 
 def assign_natural_y_bands(
@@ -1440,10 +1583,13 @@ def assign_natural_y_bands(
     keep: np.ndarray,
     assign_lesion: bool,
     k: int,
+    image: np.ndarray | None = None,
+    blocked: np.ndarray | None = None,
 ) -> np.ndarray:
     """Split brush pixels into three exclusive top-to-bottom bands.
 
     No heading-normal, no cavity flip. Same-x pixels stay 0 then 1 then 2.
+    Cuts are read from the image column, including about 12 px past the brush.
     """
     xs = samples["xs"]
     ys = samples["ys"]
@@ -1452,25 +1598,62 @@ def assign_natural_y_bands(
     if int(keep.sum()) < MIN_VALID_PIXELS or k < 2:
         return labels
     across = samples["across"]
-    core = keep & (np.abs(across) <= 0.88)
+    core = keep & (np.abs(across) <= 0.92)
     if int(core.sum()) < MIN_VALID_PIXELS:
         core = keep
     stations = np.unique(xs[core])
-    raw1 = []
-    raw2 = []
-    used = []
+    cols: list[tuple[int, np.ndarray, np.ndarray, int, int, int]] = []
+    votes: list[str] = []
     for x in stations.tolist():
         pix = np.where(core & (xs == x))[0]
         if len(pix) < 4:
             continue
         idx = pix[np.argsort(ys[pix])]
-        if k == 2:
-            i = max(1, len(idx) // 2)
-            j = len(idx)
+        y_min = int(ys[idx[0]])
+        y_max = int(ys[idx[-1]])
+        if image is not None:
+            profile, y0, brush_lo, brush_hi = _column_search_profile(
+                image, int(x), y_min, y_max, GRAY_SEARCH_PAD, blocked,
+            )
+            overlap = (brush_lo, brush_hi)
         else:
-            i, j = _band_cuts_1d(gray[idx])
-        y1 = float(ys[idx[i]]) if i < len(idx) else float(ys[idx[-1]])
-        y2 = float(ys[idx[min(j, len(idx) - 1)]])
+            profile = gray[idx].astype(np.float32)
+            y0 = y_min
+            overlap = None
+        cols.append((int(x), idx, profile, y0, y_min, y_max))
+        kind = _column_pattern_vote(profile, overlap=overlap)
+        if kind:
+            votes.append(kind)
+    prefer = None
+    if votes:
+        prefer = "dbd" if votes.count("dbd") >= votes.count("bdb") else "bdb"
+    raw1 = []
+    raw2 = []
+    used = []
+    for col_i, (x, idx, profile, y0, y_min, y_max) in enumerate(cols):
+        used_profile = profile.astype(np.float32).copy()
+        if col_i > 0 and len(cols[col_i - 1][2]) == len(used_profile):
+            used_profile = used_profile + cols[col_i - 1][2]
+            used_profile = used_profile / 2.0
+            if col_i + 1 < len(cols) and len(cols[col_i + 1][2]) == len(profile):
+                used_profile = (used_profile * 2.0 + cols[col_i + 1][2]) / 3.0
+        elif col_i + 1 < len(cols) and len(cols[col_i + 1][2]) == len(used_profile):
+            used_profile = 0.5 * used_profile + 0.5 * cols[col_i + 1][2]
+        if image is None:
+            overlap = None
+        else:
+            overlap = (int(y_min) - int(y0), int(y_max) - int(y0) + 1)
+        if k == 2:
+            i = max(1, len(used_profile) // 2)
+            j = len(used_profile)
+        else:
+            i, j = _band_cuts_1d(used_profile, prefer=prefer, overlap=overlap)
+        if image is None:
+            y1 = float(ys[idx[i]]) if i < len(idx) else float(ys[idx[-1]])
+            y2 = float(ys[idx[min(j, len(idx) - 1)]])
+        else:
+            y1 = float(y0 + i)
+            y2 = float(y0 + max(i, j - 1))
         if y2 <= y1 + 0.6:
             y2 = y1 + 1.0
         raw1.append(y1)
@@ -1556,10 +1739,14 @@ def assign_strip_layers(
     features: np.ndarray,
     k: int,
     assign_lesion: bool,
+    image: np.ndarray | None = None,
+    blocked: np.ndarray | None = None,
 ) -> np.ndarray:
     """Three exclusive top-to-bottom bands inside the brush."""
     del fit, features
-    return assign_natural_y_bands(samples, keep, assign_lesion, k)
+    return assign_natural_y_bands(
+        samples, keep, assign_lesion, k, image=image, blocked=blocked,
+    )
 
 
 def cluster_brush_band(
@@ -1652,7 +1839,10 @@ def cluster_brush_band(
         if int(fit.sum()) < MIN_VALID_PIXELS:
             fit = keep
     if prefer_strips and k >= 2:
-        labels_all = assign_strip_layers(samples, keep, fit, feat_all, k, assign_lesion)
+        labels_all = assign_strip_layers(
+            samples, keep, fit, feat_all, k, assign_lesion,
+            image=gray, blocked=lesion_d if exclude_lesion else None,
+        )
         labels_fit = labels_all[keep]
     elif sensitive:
         labels_all, labels_fit = assign_sensitive_layers(

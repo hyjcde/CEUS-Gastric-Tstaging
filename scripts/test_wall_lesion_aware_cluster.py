@@ -134,7 +134,10 @@ def main() -> int:
     thin_bright = np.array([40.0] * 5 + [190.0] * 2 + [40.0] * 5, dtype=np.float32)
     cut_i, cut_j = _band_cuts_1d(thin_bright)
     assert cut_i <= 5 and cut_j >= 7, (cut_i, cut_j)
-    assert (cut_j - cut_i) <= 8, (cut_i, cut_j)
+    assert (cut_j - cut_i) <= 10, (cut_i, cut_j)
+    halo = np.array([18.0] * 12 + [210.0] * 4 + [48.0] * 4 + [200.0] * 4 + [18.0] * 12, dtype=np.float32)
+    hi, hj = _band_cuts_1d(halo, prefer="bdb", overlap=(12, 24))
+    assert 14 <= hi <= 18 and 18 <= hj <= 22, (hi, hj)
     first_line = np.asarray(strips.interfaces[0]["points"], dtype=np.float32)
     assert len(first_line) >= 4
     left = [[10.0, 20.0], [18.0, 20.4], [26.0, 20.2]]
