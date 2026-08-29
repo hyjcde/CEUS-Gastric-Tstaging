@@ -59,7 +59,7 @@ LAYER_HEX = {0: "#facc15", 1: "#f9a8d4", 2: "#5eead4"}
 WALL = (254, 240, 180)
 LAYER_BLEND = 0.26
 LESION_BLEND = 0.12
-GAP_PX = 10
+GAP_PX = 1
 CJK_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 CJK = FontProperties(fname=CJK_PATH, size=10)
 LAYER_LEGEND = (
@@ -389,7 +389,7 @@ def choose_arm(
 ):
     return cluster_brush_band(
         gray, wall, lesion_mask,
-        brush_radius=brush, k=3, dilate_px=5, exclude_lesion=True, method=method,
+        brush_radius=brush, k=3, dilate_px=0, exclude_lesion=True, method=method,
         lumen_center=lumen_center, lesion_poly=lesion_poly, cavity_side_source=cavity,
         fit_side=fit_side, assign_lesion=assign_lesion, sensitive=True,
     )
@@ -448,7 +448,7 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     axes[0].set_title(f"A. {time_sec}s  黄线只是走行，不是层边界", fontproperties=CJK, fontsize=11)
     axes[0].axis("off")
     axes[1].imshow(panel_b)
-    axes[1].set_title("B. 黄线旁浅色涂抹：亮 / 暗 / 亮；中间断开 = 消失", fontproperties=CJK, fontsize=11)
+    axes[1].set_title("B. 按像素聚类，走到病灶边才停；中间断开 = 消失", fontproperties=CJK, fontsize=11)
     axes[1].axis("off")
 
     def to_b(x: float, y: float) -> tuple[float, float]:

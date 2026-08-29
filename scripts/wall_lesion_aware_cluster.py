@@ -548,6 +548,65 @@ def assign_from_across_profile(
     return labels_all
 
 
+def assign_walk_until_lesion(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    fit: np.ndarray,
+    assign_lesion: bool,
+) -> np.ndarray | None:
+    """Cluster by gray, walk from the right, stop only at lesion pixels."""
+    seeded = assign_from_across_profile(samples, keep, fit, assign_lesion=False)
+    gray = samples["gray"].astype(np.float32)
+    across = samples["across"].astype(np.float32)
+    along = samples["along_idx"]
+    xs = samples["xs"]
+    labels_all = np.full(len(gray), -1, dtype=np.int32)
+    if seeded is None:
+        return None
+    seed = fit & (seeded >= 0)
+    if int(seed.sum()) < MIN_VALID_PIXELS:
+        return None
+    g_live = np.array([
+        float(gray[seed & (seeded == lab)].mean()) if np.any(seed & (seeded == lab)) else 0.0
+        for lab in range(3)
+    ], dtype=np.float32)
+    a_live = np.array([
+        float(across[seed & (seeded == lab)].mean()) if np.any(seed & (seeded == lab)) else 0.0
+        for lab in range(3)
+    ], dtype=np.float32)
+    stations = np.unique(along)
+    order = sorted(
+        stations.tolist(),
+        key=lambda st: -float(xs[along == st].mean()) if np.any(along == st) else 0.0,
+    )
+    for st in order:
+        pix = (along == st) & keep
+        if int(pix.sum()) < 2:
+            continue
+        dist = (
+            np.abs(gray[pix, None] / 255.0 - g_live[None, :] / 255.0)
+            + SENSITIVE_ACROSS * np.abs(across[pix, None] - a_live[None, :])
+        )
+        lab = dist.argmin(axis=1).astype(np.int32)
+        labels_all[pix] = lab
+        for i in range(3):
+            sel = lab == i
+            if int(sel.sum()) >= 2:
+                g_live[i] = 0.80 * g_live[i] + 0.20 * float(gray[pix][sel].mean())
+                a_live[i] = 0.88 * a_live[i] + 0.12 * float(across[pix][sel].mean())
+    if assign_lesion:
+        rest = ~keep
+        if rest.any():
+            dist = (
+                np.abs(gray[rest, None] / 255.0 - g_live[None, :] / 255.0)
+                + SENSITIVE_ACROSS * np.abs(across[rest, None] - a_live[None, :])
+            )
+            labels_all[rest] = dist.argmin(axis=1).astype(np.int32)
+    if int((labels_all[keep] >= 0).sum()) < MIN_VALID_PIXELS:
+        return seeded
+    return labels_all
+
+
 def assign_sensitive_layers(
     samples: dict[str, np.ndarray],
     keep: np.ndarray,
@@ -563,14 +622,11 @@ def assign_sensitive_layers(
     if int(fit.sum()) < MIN_VALID_PIXELS or k < 2:
         return labels_all, labels_all[keep]
     if k == 3:
+        walked = assign_walk_until_lesion(samples, keep, fit, assign_lesion)
+        if walked is not None:
+            return walked, walked[keep]
         profile = assign_from_across_profile(samples, keep, fit, assign_lesion)
         if profile is not None:
-            sel = profile >= 0
-            if sel.any():
-                cleaned = filter_small_components(
-                    samples["xs"][sel], samples["ys"][sel], profile[sel], shape, min_area=3,
-                )
-                profile[sel] = cleaned
             return profile, profile[keep]
         lab2, centers2 = kmeans_gray_sensitive(gray[fit], 2)
         if float(centers2[0]) > float(centers2[1]):

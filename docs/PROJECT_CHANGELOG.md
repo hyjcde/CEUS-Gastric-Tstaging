@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 walk pixel clusters until the lesion
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_walk_until_lesion`), `scripts/render_wall_layer_thin_bands.py --case P040`.
+- Reason: The wash form was right, but bands stopped early (5 px exclude, 10 px display gap) and were sliced more by depth than by gray.
+- Key changes: Seed on the right, then assign each station by pixel gray and walk left. Stop only on lesion pixels. Display gap is 1 px. Overlay style unchanged. Does not unlock cT.
+- Validation: Synthetic cluster test; offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 transparent but visible three-color wash
 
 - Scope: `scripts/render_wall_layer_thin_bands.py --case P040`.
