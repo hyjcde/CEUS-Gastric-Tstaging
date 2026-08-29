@@ -541,7 +541,7 @@ def render_index(out_dir: Path, panels: list[Path]) -> Path:
         ax.imshow(plt.imread(str(path)))
         ax.set_title(path.name.replace("_thin_bands.png", ""), fontsize=11)
         ax.axis("off")
-    fig.suptitle("ROI lesion mask + magnified peri-lesion wall layers", fontsize=14, y=0.995)
+    fig.suptitle("Wall layers", fontsize=14, fontname="Times New Roman", y=0.995)
     fig.tight_layout()
     dest = out_dir / "index.png"
     fig.savefig(dest, dpi=130, bbox_inches="tight")

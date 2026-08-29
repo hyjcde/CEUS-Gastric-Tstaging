@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Same thin-band panels for P008 P019 P076
+
+- Scope: `scripts/render_wall_layer_thin_bands.py` (all four fixtures). Panels in `results/visualizations/error_cases/CASE-008_thin_bands.png` and siblings.
+- Reason: P040 style is settled. The other three ZML cases need the same English Times figure.
+- Key changes: Render P008 / P019 / P040 / P076 with the same pale wash, walk-until-lesion, and short labels. No public deploy. Does not unlock cT.
+- Validation: Offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 figure text in Times New Roman English
 
 - Scope: `scripts/render_wall_layer_thin_bands.py --case P040`.
