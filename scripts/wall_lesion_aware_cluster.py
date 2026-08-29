@@ -933,9 +933,14 @@ def cluster_brush_band(
     fit_side: str = "all",
     assign_lesion: bool = True,
     sensitive: bool = False,
+    extra_features: np.ndarray | None = None,
 ) -> ClusterArm:
     method = str(method or "kmeans").strip().lower()
     fit_side = str(fit_side or "all").strip().lower()
+    if extra_features is not None:
+        sensitive = False
+        if method in {"kmeans", "kmeans1d_gray", "kmeans1d_across"}:
+            method = "dino_pca"
     name = f"{'exclude' if exclude_lesion else 'full'}_{method}_k{k}_d{dilate_px}_{fit_side}"
     if sensitive:
         name += "_sensitive"
@@ -976,7 +981,16 @@ def cluster_brush_band(
             flanks=flanks,
         )
 
-    feat_all = features_for_method(samples, method)
+    if extra_features is not None:
+        feat_all = np.asarray(extra_features, dtype=np.float32)
+        if feat_all.ndim == 1:
+            feat_all = feat_all.reshape(-1, 1)
+        if len(feat_all) != len(samples["xs"]):
+            raise ValueError("extra_features length must match sampled brush pixels")
+        cluster_method = "kmeans" if method == "dino_pca" else method
+    else:
+        feat_all = features_for_method(samples, method)
+        cluster_method = method
     fit = keep.copy()
     if fit_side in {"right", "left"} and keep.any():
         xs_keep = samples["xs"][keep].astype(np.float32)
@@ -993,7 +1007,7 @@ def cluster_brush_band(
         )
     else:
         feat_fit = feat_all[fit]
-        labels_seed, centers = cluster_features(feat_fit, k, method)
+        labels_seed, centers = cluster_features(feat_fit, k, cluster_method)
         order = np.argsort([
             float(samples["across"][fit][labels_seed == lab].mean()) if np.any(labels_seed == lab) else 0.0
             for lab in range(k)

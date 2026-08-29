@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Compare gray pixel clusters with DINO token clusters
+
+- Scope: `scripts/render_wall_pixel_vs_dino_cluster.py`, `scripts/wall_lesion_aware_cluster.py` (`extra_features`). Four fixtures.
+- Reason: The thin-band figure was a geometric ribbon. The user asked to see real pixel clustering next to DINO feature clustering on the same brush pixels.
+- Key changes: Fit gray k-means and official LVD layer 5/8 token PCA k-means on the lesion-excluded flanks. Paint the labeled pixels. Report token size. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Draw one smooth triple ribbon along the whole heading
 
 - Scope: `scripts/render_wall_layer_thin_bands.py` (all four panels).

@@ -153,6 +153,7 @@ CURRENT_BY_NAME: dict[str, tuple[str, str]] = {
     "eval_lesion_aware_wall_cluster_trad.py": ("current", "analysis"),
     "render_wall_cluster_diagnostics.py": ("current", "analysis"),
     "render_wall_layer_thin_bands.py": ("current", "analysis"),
+    "render_wall_pixel_vs_dino_cluster.py": ("current", "analysis"),
     "render_lesion_aware_wall_cluster_panel.py": ("current", "analysis"),
     "test_wall_lesion_aware_cluster.py": ("current", "analysis"),
 }

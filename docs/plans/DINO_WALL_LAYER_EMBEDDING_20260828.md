@@ -294,18 +294,20 @@ M2（两端像不像）对 T3/T4 浆膜连续性仍然有用，但它**不出层
 - 中栏并列「像素簇 / DINO 簇」；右侧芯片仍是同一套四档，医生点改仍然有效
 - 大字仍是冻结四分类
 
-### 5.4 脚本（还没写）
+### 5.4 脚本
+
+四例固定袋上的 Gate 1 冒烟已经有了：`scripts/render_wall_pixel_vs_dino_cluster.py`。同一笔刷像素，灰度 k-means 对照官方 LVD layer 5/8 token PCA k-means，画出真实簇，不是平行偏移。还不是完整 10–20 帧 Gate 0 缓存。
 
 ```text
+scripts/render_wall_pixel_vs_dino_cluster.py
+    四例固定袋：A 原图，B 像素簇，C DINO 簇
+
 scripts/extract_dino_wall_corridor_tokens.py
     从 doctor_keyframes / mask_overrides 读 wallPolygon
-    走廊裁剪 + 冻结 DINO + 采样点缓存
+    走廊裁剪 + 冻结 DINO + 采样点缓存（还没写）
 
 scripts/eval_dino_wall_corridor_methods.py
-    同一网格跑像素聚类 M0、DINO 聚类 M1、可选 M2 中断
-
-scripts/render_dino_wall_corridor_panel.py
-    工作台线 + 亮暗图 + 像素簇 + DINO 簇（按法向深度着色）
+    同一网格跑像素聚类 M0、DINO 聚类 M1、可选 M2 中断（还没写）
 ```
 
 缓存：`pipeline/data/dino_wall_corridor_tokens/v1/`（大文件，只索引）。不要改 `dinov3_tstaging_region_scalars` 的 schema。先 `--help`，再进 `scripts/script_registry.csv`。
