@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Draw one smooth triple ribbon along the whole heading
+
+- Scope: `scripts/render_wall_layer_thin_bands.py` (all four panels).
+- Reason: Flank-only stacks still looked broken. The three colors need one continuous ribbon, still readable through the mass.
+- Key changes: Collapse a scribbled heading to a skeleton centerline, spline-smooth it, and fill exclusive yellow / red / green strips. Strong on the flanks, faded but visible through the lesion. Does not unlock cT.
+- Validation: Offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Clear side bands, no gray heading through the mass
 
 - Scope: `scripts/render_wall_layer_thin_bands.py` (all four panels).

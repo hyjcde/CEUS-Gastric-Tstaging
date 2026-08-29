@@ -32,6 +32,7 @@ from matplotlib.patches import Patch
 from wall_lesion_aware_cluster import (  # noqa: E402
     DEFAULT_BRUSH,
     as_xy,
+    closest_on_poly,
     cluster_brush_band,
     densify_polyline,
     dilate_mask,
@@ -55,8 +56,8 @@ LAYER_RGB = {
 }
 LAYER_HEX = {0: "#facc15", 1: "#fb7185", 2: "#4ade80"}
 WALL = (254, 240, 138)
-SIDE_BLEND = 0.44
-MID_BLEND = 0.02
+SIDE_BLEND = 0.52
+MID_BLEND = 0.22
 LESION_BLEND = 0.16
 GAP_PX = 1
 HEADING_GAP_PX = 16
@@ -243,45 +244,264 @@ def overlay_blue(rgb: np.ndarray, mask: np.ndarray, alpha: float = LESION_BLEND)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def heading_flank_runs(wall: np.ndarray, lesion: np.ndarray, gap_px: int) -> list[np.ndarray]:
+    wall = as_xy(wall)
+    if len(wall) < 2:
+        return []
+    dense = densify_polyline(wall, 2.0)
+    gap = dilate_mask(lesion, gap_px) if lesion is not None else np.zeros((1, 1), dtype=np.uint8)
+    h, w = gap.shape[:2]
+    run: list[list[float]] = []
+    runs: list[np.ndarray] = []
+    for point in dense:
+        x = float(point[0])
+        y = float(point[1])
+        ix, iy = int(round(x)), int(round(y))
+        hit = 0 <= ix < w and 0 <= iy < h and gap[iy, ix] > 0
+        if hit:
+            if len(run) >= 4:
+                runs.append(np.asarray(run, dtype=np.float32))
+            run = []
+            continue
+        run.append([x, y])
+    if len(run) >= 4:
+        runs.append(np.asarray(run, dtype=np.float32))
+    return [pts for pts in runs if float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1))) >= 12.0]
+
+
+def _neighbors8(x: int, y: int):
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue
+            yield x + dx, y + dy
+
+
+def longest_skeleton_path(skel: np.ndarray) -> np.ndarray:
+    ys, xs = np.where(skel)
+    if len(xs) < 2:
+        return np.zeros((0, 2), dtype=np.float32)
+    pixels = set(zip(xs.tolist(), ys.tolist()))
+    adj = {p: [q for q in _neighbors8(*p) if q in pixels] for p in pixels}
+    seen: set[tuple[int, int]] = set()
+    best_comp: list[tuple[int, int]] = []
+    for start in pixels:
+        if start in seen:
+            continue
+        queue = [start]
+        seen.add(start)
+        comp = []
+        for node in queue:
+            comp.append(node)
+            for nxt in adj[node]:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+        if len(comp) > len(best_comp):
+            best_comp = comp
+    ends = [p for p in best_comp if len(adj[p]) <= 1]
+    if len(ends) < 2:
+        ends = sorted(best_comp, key=lambda p: len(adj[p]))[:12]
+
+    def bfs(src: tuple[int, int]):
+        dist = {src: 0}
+        prev = {src: None}
+        queue = [src]
+        for node in queue:
+            for nxt in adj[node]:
+                if nxt not in dist:
+                    dist[nxt] = dist[node] + 1
+                    prev[nxt] = node
+                    queue.append(nxt)
+        far = max(dist, key=dist.get)
+        return far, dist[far], prev
+
+    picked = None
+    for end in ends[:24]:
+        far, dist, prev = bfs(end)
+        if picked is None or dist > picked[0]:
+            picked = (dist, end, far, prev)
+    if picked is None:
+        return np.zeros((0, 2), dtype=np.float32)
+    _dist, _end, far, prev = picked
+    path = [far]
+    while prev[path[-1]] is not None:
+        path.append(prev[path[-1]])
+    path.reverse()
+    return np.asarray(path, dtype=np.float32)
+
+
+def gaussian_smooth_poly(pts: np.ndarray, sigma: float) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    if len(pts) < 4 or sigma <= 0:
+        return pts
+    pts = densify_polyline(pts, 1.2)
+    arc = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
+    if float(arc[-1]) < 8.0:
+        return pts
+    count = max(8, int(round(float(arc[-1]) / 1.2)))
+    sample = np.linspace(0.0, float(arc[-1]), count)
+    xs = np.interp(sample, arc, pts[:, 0])
+    ys = np.interp(sample, arc, pts[:, 1])
+    radius = max(1, int(round(sigma * 3.0)))
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1, dtype=np.float32) / sigma) ** 2)
+    kernel /= float(kernel.sum())
+    xs = np.convolve(np.pad(xs, (radius, radius), mode="edge"), kernel, mode="valid")
+    ys = np.convolve(np.pad(ys, (radius, radius), mode="edge"), kernel, mode="valid")
+    return np.stack([xs, ys], axis=1).astype(np.float32)
+
+
+def spline_poly(pts: np.ndarray, scale: float) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    if len(pts) < 6:
+        return pts
+    try:
+        from scipy.interpolate import splev, splprep
+    except Exception:
+        return gaussian_smooth_poly(pts, sigma=max(2.8, 2.6 * scale))
+    arc = float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+    if arc < 12.0:
+        return pts
+    smooth = max(8.0, 0.35 * arc)
+    tck, _u = splprep([pts[:, 0], pts[:, 1]], s=smooth, k=3)
+    count = max(80, int(round(arc / 1.1)))
+    xs, ys = splev(np.linspace(0.0, 1.0, count), tck)
+    return np.stack([xs, ys], axis=1).astype(np.float32)
+
+
+def heading_centerline(wall: np.ndarray, shape: tuple[int, int], scale: float) -> np.ndarray:
+    """One smooth curve. Collapses a scribbled stroke to its centerline."""
+    wall = as_xy(wall)
+    h, w = shape[:2]
+    if len(wall) < 2 or h < 2 or w < 2:
+        return wall
+    brush = max(5, int(round(3.6 * scale)))
+    stroke = np.zeros((h, w), dtype=np.uint8)
+    cv2.polylines(stroke, [np.round(wall).astype(np.int32)], False, 255, brush, cv2.LINE_AA)
+    path = np.zeros((0, 2), dtype=np.float32)
+    try:
+        from skimage.morphology import skeletonize
+
+        path = longest_skeleton_path(skeletonize(stroke > 0))
+    except Exception:
+        path = np.zeros((0, 2), dtype=np.float32)
+    if len(path) < 8:
+        path = wall
+    if len(path) >= 2 and float(np.sum((path[0] - wall[0]) ** 2)) > float(np.sum((path[-1] - wall[0]) ** 2)):
+        path = path[::-1]
+    path = gaussian_smooth_poly(path, sigma=max(3.2, 2.8 * scale))
+    path = spline_poly(path, scale)
+    return densify_polyline(np.asarray(path, dtype=np.float32), max(1.0, 1.1 * scale))
+
+
+def polyline_normals(pts: np.ndarray) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    tan = np.zeros_like(pts)
+    tan[1:] = pts[1:] - pts[:-1]
+    tan[0] = tan[1] if len(pts) > 1 else np.array([1.0, 0.0], dtype=np.float32)
+    empty = np.linalg.norm(tan, axis=1) < 1e-6
+    if empty.any() and (~empty).any():
+        tan[empty] = tan[~empty][0]
+    nrm = np.stack([-tan[:, 1], tan[:, 0]], axis=1)
+    leng = np.linalg.norm(nrm, axis=1, keepdims=True)
+    leng = np.where(leng < 1e-6, 1.0, leng)
+    nrm = nrm / leng
+    if len(nrm) >= 5:
+        radius = 4
+        kernel = np.ones(2 * radius + 1, dtype=np.float32)
+        kernel /= float(kernel.sum())
+        nrm[:, 0] = np.convolve(np.pad(nrm[:, 0], (radius, radius), mode="edge"), kernel, mode="valid")
+        nrm[:, 1] = np.convolve(np.pad(nrm[:, 1], (radius, radius), mode="edge"), kernel, mode="valid")
+        leng = np.linalg.norm(nrm, axis=1, keepdims=True)
+        leng = np.where(leng < 1e-6, 1.0, leng)
+        nrm = nrm / leng
+    return nrm.astype(np.float32)
+
+
+def layer_offsets(wall, xs, ys, labels, lesion, scale: float) -> list[float]:
+    xs = np.asarray(xs, dtype=np.float32)
+    ys = np.asarray(ys, dtype=np.float32)
+    labels = np.asarray(labels, dtype=np.int32)
+    wall = as_xy(wall)
+    dense = densify_polyline(wall, 2.0) if len(wall) >= 2 else wall
+    mid = dilate_mask(lesion, max(4, int(round(10 * scale)))) > 0 if lesion is not None else None
+    found: list[float | None] = [None, None, None]
+    if len(dense) >= 2 and len(xs) == len(labels):
+        for lab in (0, 1, 2):
+            cand = []
+            for x, y, lab_i in zip(xs.tolist(), ys.tolist(), labels.tolist()):
+                if int(lab_i) != lab:
+                    continue
+                ix, iy = int(round(x)), int(round(y))
+                if mid is not None and 0 <= iy < mid.shape[0] and 0 <= ix < mid.shape[1] and mid[iy, ix]:
+                    continue
+                cand.append((x, y))
+            if len(cand) > 80:
+                step = max(1, len(cand) // 80)
+                cand = cand[::step]
+            dists = []
+            for x, y in cand:
+                proj, _idx, _d, tan = closest_on_poly(np.array([x, y], dtype=np.float32), dense)
+                normal = np.array([-tan[1], tan[0]], dtype=np.float32)
+                dists.append(float(np.dot(np.array([x, y], dtype=np.float32) - proj, normal)))
+            if len(dists) >= 8:
+                found[lab] = float(np.median(np.asarray(dists, dtype=np.float32)))
+    step = 6.0 * scale
+    mid_off = found[1] if found[1] is not None else 0.0
+    offs = [
+        found[0] if found[0] is not None else mid_off - step,
+        mid_off,
+        found[2] if found[2] is not None else mid_off + step,
+    ]
+    if not (offs[0] < offs[1] < offs[2] and offs[1] - offs[0] >= 3.2 * scale and offs[2] - offs[1] >= 3.2 * scale):
+        offs = [mid_off - step, mid_off, mid_off + step]
+    return offs
+
+
 def overlay_layers(
     rgb: np.ndarray,
     xs,
     ys,
     labels,
+    wall,
     lesion: np.ndarray | None = None,
+    scale: float = 1.0,
 ) -> np.ndarray:
-    """Side bands stay separate and continuous. The middle is almost clear."""
-    xs = np.asarray(xs, dtype=np.int32)
-    ys = np.asarray(ys, dtype=np.int32)
-    labels = np.asarray(labels, dtype=np.int32)
+    """One continuous yellow-red-green ribbon. Strong on the flanks, still visible on the mass."""
     h, w = rgb.shape[:2]
-    ok = (xs >= 0) & (ys >= 0) & (xs < w) & (ys < h) & (labels >= 0)
-    stack = []
-    colors = []
-    for lab, color in LAYER_RGB.items():
-        band = np.zeros((h, w), dtype=np.float32)
-        sel = ok & (labels == lab)
-        if sel.any():
-            band[ys[sel], xs[sel]] = 1.0
-        band = cv2.morphologyEx((band > 0.5).astype(np.uint8), cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
-        band = cv2.GaussianBlur(band.astype(np.float32), (5, 5), 0.70)
-        stack.append(band)
-        colors.append(np.array(color, dtype=np.float32))
-    stack = np.stack(stack, axis=0)
+    wall = as_xy(wall)
+    if len(wall) < 4:
+        return rgb
+    path = heading_centerline(wall, (h, w), scale)
+    if len(path) < 4:
+        return rgb
+    offs = layer_offsets(wall, xs, ys, labels, lesion, scale)
+    normals = polyline_normals(path)
+    half = 0.5 * min(offs[1] - offs[0], offs[2] - offs[1])
+    edges = [offs[0] - half, 0.5 * (offs[0] + offs[1]), 0.5 * (offs[1] + offs[2]), offs[2] + half]
+    masks = [np.zeros((h, w), dtype=np.uint8) for _ in range(3)]
+    for lab in range(3):
+        inner = path + normals * float(edges[lab])
+        outer = path + normals * float(edges[lab + 1])
+        poly = np.vstack([inner, outer[::-1]])
+        cv2.fillPoly(masks[lab], [np.round(poly).astype(np.int32)], 255, cv2.LINE_AA)
+        masks[lab] = cv2.GaussianBlur(masks[lab], (0, 0), max(0.8, 0.55 * scale))
+    stack = np.stack(masks, axis=0).astype(np.float32) / 255.0
     winner = stack.argmax(axis=0)
-    wmax = stack.max(axis=0)
+    cover = stack.max(axis=0)
     wash = np.zeros((h, w, 3), dtype=np.float32)
-    kernel = np.ones((5, 5), np.uint8)
-    for lab, color in enumerate(colors):
-        sel = ((winner == lab) & (wmax >= 0.28)).astype(np.uint8)
-        sel = cv2.morphologyEx(sel, cv2.MORPH_CLOSE, kernel)
-        wash[sel > 0] = color
-    mid = np.zeros((h, w), dtype=bool)
+    for lab, color in LAYER_RGB.items():
+        sel = cover > 0.02
+        sel = sel & (winner == lab)
+        wash[sel] = np.array(color, dtype=np.float32)
+    blend = np.full((h, w), SIDE_BLEND, dtype=np.float32)
     if lesion is not None and lesion.shape[:2] == (h, w):
-        mid = dilate_mask(lesion, 10) > 0
-    cover = (wash.sum(axis=2) > 0).astype(np.float32)
-    blend = np.where(mid, MID_BLEND, SIDE_BLEND).astype(np.float32)
-    alpha = np.clip(cover * blend, 0.0, SIDE_BLEND)[..., None]
+        outside = np.where(lesion > 0, 0, 255).astype(np.uint8)
+        dist = cv2.distanceTransform(outside, cv2.DIST_L2, 5)
+        fade = max(18.0, 14.0 * scale)
+        t = np.clip(dist / fade, 0.0, 1.0)
+        blend = MID_BLEND + t * (SIDE_BLEND - MID_BLEND)
+    alpha = (cover * blend)[..., None]
     out = (1.0 - alpha) * rgb.astype(np.float32) + alpha * wash
     return np.clip(out, 0, 255).astype(np.uint8)
 
@@ -624,16 +844,29 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     panel_a = draw_heading(panel_a, wall_crop, crop_mask)
 
     labeled = overlay_blue(crop_rgb.copy(), crop_mask)
-    if arm is not None and getattr(arm, "status", "") == "ok":
-        labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels, lesion=crop_mask)
     sx1, sy1, sx2, sy2 = wall_strip(labeled, wall_crop, pad=20)
     strip = labeled[sy1:sy2, sx1:sx2]
     scale = 4
     panel_b = cv2.resize(
         strip,
         (strip.shape[1] * scale, strip.shape[0] * scale),
-        interpolation=cv2.INTER_NEAREST,
+        interpolation=cv2.INTER_LINEAR,
     )
+    if arm is not None and getattr(arm, "status", "") == "ok":
+        wall_hi = wall_crop.copy()
+        if len(wall_hi):
+            wall_hi[:, 0] = (wall_hi[:, 0] - sx1) * scale
+            wall_hi[:, 1] = (wall_hi[:, 1] - sy1) * scale
+        lesion_hi = cv2.resize(
+            crop_mask[sy1:sy2, sx1:sx2],
+            (panel_b.shape[1], panel_b.shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        xs_hi = (np.asarray(arm.xs, dtype=np.float32) - sx1) * scale
+        ys_hi = (np.asarray(arm.ys, dtype=np.float32) - sy1) * scale
+        panel_b = overlay_layers(
+            panel_b, xs_hi, ys_hi, arm.labels, wall_hi, lesion=lesion_hi, scale=float(scale),
+        )
 
     time_sec = meta.get("time_sec")
     fates = list(getattr(arm, "fates", None) or [])
