@@ -515,37 +515,82 @@ def assign_from_across_profile(
     across = samples["across"].astype(np.float32)
     if int(fit.sum()) < MIN_VALID_PIXELS:
         return None
-    edges = np.linspace(-1.05, 1.05, 21)
+    edges = np.linspace(-1.05, 1.05, 29)
     mids = 0.5 * (edges[:-1] + edges[1:])
     prof = np.full((len(mids),), np.nan, dtype=np.float32)
+    dark_p = np.full((len(mids),), np.nan, dtype=np.float32)
     for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
         sel = fit & (across >= lo) & (across < hi)
         if int(sel.sum()) >= 3:
             prof[i] = float(gray[sel].mean())
+            dark_p[i] = float(np.percentile(gray[sel], 15))
     ok = np.isfinite(prof)
     if int(ok.sum()) < 7:
         return None
-    prof = np.interp(np.arange(len(prof)), np.where(ok)[0], prof[ok]).astype(np.float32)
-    prof = np.convolve(prof, np.ones(3, dtype=np.float32) / 3.0, mode="same")
-    valley = 2 + int(np.argmin(prof[2:-2]))
+    idx = np.arange(len(prof))
+    prof = np.interp(idx, idx[ok], prof[ok]).astype(np.float32)
+    dark_p = np.interp(idx, idx[np.isfinite(dark_p)], dark_p[np.isfinite(dark_p)]).astype(np.float32)
+    # Thin hypoechoic belts show up in the 15th percentile, not the mean.
+    lo_i, hi_i = 4, len(dark_p) - 4
+    dips = [
+        i for i in range(lo_i, hi_i)
+        if dark_p[i] <= dark_p[i - 1] and dark_p[i] <= dark_p[i + 1]
+    ]
+    valley = int(min(dips, key=lambda i: float(dark_p[i]))) if dips else lo_i + int(np.argmin(dark_p[lo_i:hi_i]))
     left = int(np.argmax(prof[: valley + 1]))
     right = valley + int(np.argmax(prof[valley:]))
     if right <= valley or left >= valley:
         return None
-    if float(prof[left]) < float(prof[valley]) + 8.0 and float(prof[right]) < float(prof[valley]) + 8.0:
+    if float(prof[left]) < float(prof[valley]) + 6.0 and float(prof[right]) < float(prof[valley]) + 6.0:
         return None
     cut_l = 0.5 * (float(mids[left]) + float(mids[valley]))
     cut_r = 0.5 * (float(mids[valley]) + float(mids[right]))
     mid_g = 0.5 * (float(prof[valley]) + float(max(prof[left], prof[right])))
+    dark_thr = float(dark_p[valley]) + 10.0
+    valley_ac = float(mids[valley])
     pred = np.where(across < cut_l, 0, np.where(across > cut_r, 2, 1)).astype(np.int32)
     pred = np.where((gray < mid_g) & (across >= cut_l - 0.10) & (across <= cut_r + 0.10), 1, pred)
     pred = np.where((gray >= mid_g) & (across < cut_l), 0, pred)
     pred = np.where((gray >= mid_g) & (across > cut_r), 2, pred)
+    # Keep the thin bottom hypoechoic strip in the dark layer, not the outer bright.
+    pred = np.where((gray <= dark_thr) & (across >= valley_ac - 0.12) & (np.abs(across) <= 0.88), 1, pred)
+    pred = np.where((np.abs(across) > 0.90) & (gray < mid_g), -1, pred)
     labels_all = np.full(len(gray), -1, dtype=np.int32)
-    labels_all[keep] = pred[keep]
+    keep_lab = keep & (pred >= 0)
+    labels_all[keep_lab] = pred[keep_lab]
     if assign_lesion:
         labels_all[~keep] = pred[~keep]
     return labels_all
+
+
+def pin_thin_hypoechoic(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    fit: np.ndarray,
+    labels: np.ndarray,
+) -> np.ndarray:
+    """Put the darkest thin echo back on muscularis after the walk drifts."""
+    gray = samples["gray"].astype(np.float32)
+    across = samples["across"].astype(np.float32)
+    if int(fit.sum()) < MIN_VALID_PIXELS:
+        return labels
+    interior = np.abs(across) <= 0.88
+    if int((fit & interior).sum()) < MIN_VALID_PIXELS:
+        return labels
+    dark_cut = float(np.percentile(gray[fit & interior], 22))
+    dark_fit = fit & interior & (gray <= dark_cut)
+    if int(dark_fit.sum()) < 8:
+        return labels
+    valley_ac = float(np.median(across[dark_fit]))
+    dark_thr = float(np.percentile(gray[dark_fit], 80))
+    pin = keep & (gray <= dark_thr) & (np.abs(across - valley_ac) <= 0.30)
+    out = labels.copy()
+    out[pin] = 1
+    outer = keep & (across >= 0.58)
+    if int(outer.sum()) >= 8:
+        outer_thr = min(dark_thr + 8.0, float(np.percentile(gray[outer], 18)))
+        out[outer & (gray <= outer_thr)] = 1
+    return out
 
 
 def assign_walk_until_lesion(
@@ -563,7 +608,7 @@ def assign_walk_until_lesion(
     labels_all = np.full(len(gray), -1, dtype=np.int32)
     if seeded is None:
         return None
-    seed = fit & (seeded >= 0)
+    seed = fit & (seeded >= 0) & (np.abs(across) <= 0.88)
     if int(seed.sum()) < MIN_VALID_PIXELS:
         return None
     g_live = np.array([
@@ -592,8 +637,10 @@ def assign_walk_until_lesion(
         for i in range(3):
             sel = lab == i
             if int(sel.sum()) >= 2:
-                g_live[i] = 0.80 * g_live[i] + 0.20 * float(gray[pix][sel].mean())
-                a_live[i] = 0.88 * a_live[i] + 0.12 * float(across[pix][sel].mean())
+                g_live[i] = 0.88 * g_live[i] + 0.12 * float(gray[pix][sel].mean())
+                if i != 1:
+                    a_live[i] = 0.88 * a_live[i] + 0.12 * float(across[pix][sel].mean())
+    labels_all = pin_thin_hypoechoic(samples, keep, fit, labels_all)
     if assign_lesion:
         rest = ~keep
         if rest.any():

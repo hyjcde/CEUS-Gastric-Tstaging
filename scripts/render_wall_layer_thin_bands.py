@@ -568,7 +568,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Segment lesion on a tight wall ROI, then magnify peri-lesion layers.")
     parser.add_argument("--fixtures", default=str(DEFAULT_FIXTURES))
     parser.add_argument("--out", default=str(DEFAULT_OUT))
-    parser.add_argument("--brush", type=float, default=8.0)
+    parser.add_argument("--brush", type=float, default=12.0)
     parser.add_argument("--case", action="append", dest="cases", help="P040 or CASE-040. Repeatable. Default: all.")
     parser.add_argument("--index", action="store_true", help="Also write a 4-case contact sheet.")
     args = parser.parse_args()
