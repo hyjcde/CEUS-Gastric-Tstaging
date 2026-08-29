@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from render_wall_layer_thin_bands import (  # noqa: E402
     DEFAULT_FIXTURES,
     FATE_HEX,
+    LAYER_RGB,
     RoiSegmenter,
     VIS_DIR,
     load_meta,
@@ -105,6 +106,18 @@ def paint_curves(rgb, track, sx1, sy1, sx2, sy2, scale: int) -> np.ndarray:
     if getattr(track, "status", "") != "ok":
         return panel
     colors = {"inner": INNER_RGB, "outer": OUTER_RGB}
+    ribbon_color = {"mucosa": LAYER_RGB[0], "muscularis": LAYER_RGB[1], "serosa": LAYER_RGB[2]}
+    overlay = panel.astype(np.float32)
+    for ribbon in getattr(track, "ribbons", None) or []:
+        poly = _shift(ribbon.get("points") or [], sx1, sy1, scale)
+        if len(poly) < 6:
+            continue
+        mask = np.zeros(panel.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(mask, [np.round(poly).astype(np.int32)], 255)
+        sel = mask > 0
+        wash = np.array(ribbon_color.get(str(ribbon.get("id")), (200, 200, 200)), dtype=np.float32)
+        overlay[sel] = 0.62 * overlay[sel] + 0.38 * wash
+    panel = np.clip(overlay, 0, 255).astype(np.uint8)
     for item in track.boundaries:
         color = colors.get(item.id, (220, 220, 220))
         band = _shift(item.band, sx1, sy1, scale)
@@ -157,7 +170,7 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
     fig, axes = plt.subplots(1, 2, figsize=(16.8, 6.4), gridspec_kw={"width_ratios": [1.0, 1.75]})
     for ax, panel, title in zip(
         axes, (panel_a, panel_b),
-        ("A  Source  (heading is a guide)", "B  Two interfaces  (thick=high conf, dashed=predicted)"),
+        ("A  Source  (heading is a guide)", "B  Smooth gray layers  (bands from two edges)"),
     ):
         ax.imshow(panel)
         ax.set_title(title, fontsize=12)

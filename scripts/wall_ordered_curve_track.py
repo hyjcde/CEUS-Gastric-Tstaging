@@ -18,6 +18,7 @@ from wall_lesion_aware_cluster import (
     dilate_mask,
     polygon_centroid,
     _fill_nan_1d,
+    _finite_median_filter,
     _heading_stations,
     _sample_normal_profile,
     _smooth1d,
@@ -29,8 +30,9 @@ DILATE_PX = 5
 D_MIN = 3
 MIN_EDGE = 5.0
 TOP_K = 12
-LAM_SMOOTH = 0.28
-LAM_THICK = 0.22
+LAM_SMOOTH = 3.2
+LAM_THICK = 1.1
+SMOOTH_SIGMA = 11.0
 LAM_MISS = 9.0
 PREDICT_PX = 18
 WRAP_STEPS = 22
@@ -83,6 +85,7 @@ class CurveTrack:
     cavity_side_source: str
     boundaries: list[Boundary] = field(default_factory=list)
     regions: list[RegionReadout] = field(default_factory=list)
+    ribbons: list[dict[str, Any]] = field(default_factory=list)
     skip_reason: str = ""
 
     @property
@@ -263,18 +266,122 @@ def _viterbi_two_edges(
     return n1, n2, c1, c2
 
 
-def _light_smooth(values: np.ndarray) -> np.ndarray:
-    """Mild 1D smooth. Not a global polynomial."""
+def _arc_length(pts: np.ndarray) -> np.ndarray:
+    if len(pts) == 0:
+        return np.zeros((0,), dtype=np.float32)
+    step = np.sqrt(((pts[1:] - pts[:-1]) ** 2).sum(axis=1))
+    return np.concatenate([[0.0], np.cumsum(step)]).astype(np.float32)
+
+
+def _gauss1d(values: np.ndarray, sigma: float) -> np.ndarray:
+    if len(values) < 3:
+        return values.astype(np.float32)
+    rad = max(2, int(np.ceil(3.0 * sigma)))
+    x = np.arange(-rad, rad + 1, dtype=np.float32)
+    ker = np.exp(-0.5 * (x / max(0.8, sigma)) ** 2)
+    ker = ker / ker.sum()
+    pad = np.pad(values.astype(np.float32), rad, mode="edge")
+    return np.convolve(pad, ker, mode="valid")
+
+
+def _reject_offset_outliers(values: np.ndarray, keep: np.ndarray, max_dev: float = 6.5) -> np.ndarray:
     out = values.astype(np.float32).copy()
-    ok = np.isfinite(out)
+    ok = keep & np.isfinite(out)
     if int(ok.sum()) < 5:
         return out
-    idx = np.arange(len(out))
-    filled = out.copy()
-    filled[~ok] = np.interp(idx[~ok], idx[ok], out[ok])
-    sm = _smooth1d(filled, 2)
-    out[ok] = sm[ok]
+    med = float(np.median(out[ok]))
+    mad = float(np.median(np.abs(out[ok] - med))) + 1.0
+    out[ok & (np.abs(out - med) > max(max_dev, 3.5 * mad))] = np.nan
     return out
+
+
+def _natural_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray) -> np.ndarray:
+    """Low-pass n(s). The wall turns slowly, so the offset must too."""
+    out = np.full(values.shape, np.nan, dtype=np.float32)
+    raw = _reject_offset_outliers(values, keep)
+    ok = keep & np.isfinite(raw)
+    if int(ok.sum()) < 5:
+        return values.astype(np.float32)
+    s = arc[ok]
+    y = raw[ok].astype(np.float32)
+    order = np.argsort(s)
+    s = s[order]
+    y = y[order]
+    win = min(25, (max(5, len(y) // 2) * 2 + 1))
+    y = _finite_median_filter(y, win)
+    y = _gauss1d(y, SMOOTH_SIGMA)
+    out[keep] = np.interp(arc[keep], s, y)
+    return out
+
+
+def _smooth_station_xy(pts: np.ndarray, normals: np.ndarray, offsets: np.ndarray, keep: np.ndarray) -> np.ndarray:
+    """Smooth the interface in image x,y so the line follows the wall, not pixel steps."""
+    xy = np.full((len(pts), 2), np.nan, dtype=np.float32)
+    ok = keep & np.isfinite(offsets)
+    if int(ok.sum()) < 3:
+        return xy
+    raw = pts[ok] + normals[ok] * offsets[ok, None]
+    arc = _arc_length(pts)
+    s = arc[ok]
+    order = np.argsort(s)
+    s = s[order]
+    raw = raw[order]
+    xs = _gauss1d(_finite_median_filter(raw[:, 0], 9), SMOOTH_SIGMA)
+    ys = _gauss1d(_finite_median_filter(raw[:, 1], 9), SMOOTH_SIGMA)
+    xy[keep, 0] = np.interp(arc[keep], s, xs)
+    xy[keep, 1] = np.interp(arc[keep], s, ys)
+    return xy
+
+
+def _dense_from_stations(station_xy: np.ndarray, keep: np.ndarray, step: float = 1.0) -> np.ndarray:
+    ok = keep & np.isfinite(station_xy).all(axis=1)
+    if int(ok.sum()) < 2:
+        return np.zeros((0, 2), dtype=np.float32)
+    p = station_xy[ok]
+    s = _arc_length(p)
+    if float(s[-1]) < 2.0:
+        return p.astype(np.float32)
+    q = np.arange(0.0, float(s[-1]) + 0.5 * step, step, dtype=np.float32)
+    return np.stack([np.interp(q, s, p[:, 0]), np.interp(q, s, p[:, 1])], axis=1).astype(np.float32)
+
+
+def _ribbon_from_xy(top: np.ndarray, bot: np.ndarray, keep: np.ndarray) -> list[list[float]]:
+    ok = keep & np.isfinite(top).all(axis=1) & np.isfinite(bot).all(axis=1)
+    if int(ok.sum()) < 3:
+        return []
+    a = _dense_from_stations(top, ok)
+    b = _dense_from_stations(bot, ok)
+    if len(a) < 3 or len(b) < 3:
+        return []
+    return np.vstack([a, b[::-1]]).tolist()
+
+
+def _dense_curve(pts: np.ndarray, normals: np.ndarray, offsets: np.ndarray, step: float = 1.0) -> np.ndarray:
+    ok = np.isfinite(offsets)
+    if int(ok.sum()) < 2:
+        return np.zeros((0, 2), dtype=np.float32)
+    p, nrm, off = pts[ok], normals[ok], offsets[ok]
+    s = _arc_length(p)
+    if float(s[-1]) < 2.0:
+        return p + nrm * off[:, None]
+    q = np.arange(0.0, float(s[-1]) + 0.5 * step, step, dtype=np.float32)
+    px = np.interp(q, s, p[:, 0])
+    py = np.interp(q, s, p[:, 1])
+    nx = np.interp(q, s, nrm[:, 0])
+    ny = np.interp(q, s, nrm[:, 1])
+    nn = np.maximum(np.hypot(nx, ny), 1e-6)
+    no = np.interp(q, s, off)
+    return np.stack([px + (nx / nn) * no, py + (ny / nn) * no], axis=1).astype(np.float32)
+
+
+def _ribbon(pts: np.ndarray, normals: np.ndarray, lo: np.ndarray, hi: np.ndarray, keep: np.ndarray) -> list[list[float]]:
+    ok = keep & np.isfinite(lo) & np.isfinite(hi) & (hi >= lo + 0.8)
+    idx = np.where(ok)[0]
+    if len(idx) < 3:
+        return []
+    top = pts[idx] + normals[idx] * lo[idx, None]
+    bot = pts[idx] + normals[idx] * hi[idx, None]
+    return np.vstack([top, bot[::-1]]).astype(np.float32).tolist()
 
 
 def _split_conf(xy: np.ndarray, conf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -472,15 +579,38 @@ def track_ordered_layers(
         if near[t]:
             c1[idx] *= 0.72
             c2[idx] *= 0.72
-    n1 = _light_smooth(n1)
-    n2 = _light_smooth(n2)
-    both = np.isfinite(n1) & np.isfinite(n2)
-    n2[both] = np.maximum(n2[both], n1[both] + float(D_MIN))
+    arc = _arc_length(pts)
+    n1 = _natural_offset(n1, arc, valid)
+    n2 = _natural_offset(n2, arc, valid)
+    both = valid & np.isfinite(n1) & np.isfinite(n2)
+    if int(both.sum()) >= 5:
+        thick = np.full(len(n1), np.nan, dtype=np.float32)
+        thick[both] = n2[both] - n1[both]
+        thick = _natural_offset(thick, arc, both)
+        med = float(np.nanmedian(thick))
+        lo_t, hi_t = max(3.5, 0.55 * med), min(14.0, 1.55 * med if med == med else 10.0)
+        thick = np.clip(thick, lo_t, hi_t)
+        n2[valid] = n1[valid] + thick[valid]
 
-    xy1 = _xy(pts, normals, n1)
-    xy2 = _xy(pts, normals, n2)
-    hi1, lo1 = _split_conf(xy1, c1)
-    hi2, lo2 = _split_conf(xy2, c2)
+    st1 = _smooth_station_xy(pts, normals, n1, valid)
+    st2 = _smooth_station_xy(pts, normals, n2, valid)
+    inner_edge = np.full(len(pts), -float(half) + 1.5, dtype=np.float32)
+    outer_edge = np.full(len(pts), float(half) - 1.5, dtype=np.float32)
+    st_in = _smooth_station_xy(pts, normals, inner_edge, valid)
+    st_out = _smooth_station_xy(pts, normals, outer_edge, valid)
+    xy1 = _dense_from_stations(st1, valid)
+    xy2 = _dense_from_stations(st2, valid)
+    hi1, lo1 = xy1, np.zeros((0, 2), dtype=np.float32)
+    hi2, lo2 = xy2, np.zeros((0, 2), dtype=np.float32)
+    ribbons = [
+        {"id": "mucosa", "points": _ribbon_from_xy(st_in, st1, valid), "mean_gray": None},
+        {"id": "muscularis", "points": _ribbon_from_xy(st1, st2, valid), "mean_gray": None},
+        {"id": "serosa", "points": _ribbon_from_xy(st2, st_out, valid), "mean_gray": None},
+    ]
+    for item in ribbons:
+        poly = np.asarray(item["points"], dtype=np.float32)
+        if len(poly) >= 6:
+            item["mean_gray"] = _gray_at(gray, poly[:: max(1, len(poly) // 24)])
     dash1, band1, stop1 = _predict_band(pts, normals, n1, blocked, lesion_center)
     dash2, band2, stop2 = _predict_band(pts, normals, n2, blocked, lesion_center)
 
@@ -548,6 +678,7 @@ def track_ordered_layers(
         cavity_side_source=cavity,
         boundaries=[inner, outer],
         regions=[muc, musc, ser],
+        ribbons=ribbons,
     )
 
 

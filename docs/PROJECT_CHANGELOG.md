@@ -10,6 +10,14 @@ This file records material project changes, their validation, and deployment sta
 - Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Deploy smoke `public_root=200`, `public_clinical=200`.
 - Deployment: Public BUILD `H7-mBkkyDPxoeXLAsgbfk` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
 
+## 2026-08-29, Smooth the two wall edges and paint gray-ordered bands
+
+- Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render.
+- Reason: Discrete per-station cuts still vibrated. The wall should look like a natural curve, and the three layers should read as bright / dark / bright bands, not two jittery polylines.
+- Key changes: Heavy low-pass on offset versus arc length, 1 px resampling, and exclusive yellow / red / green ribbons between the two smooth edges. Does not unlock cT.
+- Validation: Curve unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Track two ordered interfaces from right to left
 
 - Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, algorithm note.

@@ -62,6 +62,12 @@ def main() -> int:
     assert by_b["outer"].n_detected >= 8
     if by_b["inner"].n_mean is not None and by_b["outer"].n_mean is not None:
         assert by_b["inner"].n_mean < by_b["outer"].n_mean
+    solid = np.asarray(by_b["inner"].solid_hi, dtype=np.float32)
+    if len(solid) >= 8:
+        jump = np.sqrt(((solid[1:] - solid[:-1]) ** 2).sum(axis=1))
+        # A natural wall line should not vibrate several pixels every step.
+        assert float(np.percentile(jump, 90)) < 3.5, float(np.percentile(jump, 90))
+    assert any(len(item.get("points") or []) >= 6 for item in track.ribbons)
     assert "lost" not in {item.status for item in track.regions}
     for item in track.boundaries:
         for x, y in item.solid_hi + item.solid_lo:
