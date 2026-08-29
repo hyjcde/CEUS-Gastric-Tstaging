@@ -163,6 +163,7 @@ export default function Home() {
   const reportLocale = resolveGcUsReportLocale(language !== 'en');
   const { readerId: accountReaderId, authHeaders } = useDoctorAccount();
   const { recordOp, setOpsCase, setOpsPage } = useOpsRecorder();
+  const isMobile = useMobileLayout();
   const [conceptState, setConceptState] = useState<ConceptState>(DEFAULT_STATE);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [readerStudyMode, setReaderStudyMode] = useState<ReaderStudyMode>('benign_malignancy');
@@ -183,7 +184,7 @@ export default function Home() {
   })();
   const handleDinoFeatures = useCallback((result: DinoFeatureResult | null) => {
     setDinoFeature(result);
-    if (result?.available) {
+    if (result?.available && !isMobile) {
       setIsEvidencePanelOpen(true);
       const en = language === 'en';
       const dinoImages: GcUsReportImage[] = [];
@@ -216,7 +217,7 @@ export default function Home() {
         setReportEvidenceImages((previous) => mergeReportEvidenceImages(previous, dinoImages));
       }
     }
-  }, [language]);
+  }, [isMobile, language]);
 
   useEffect(() => {
     setSelectedPatient(null);
@@ -250,15 +251,10 @@ export default function Home() {
     if (task === 'task2') setReaderStudyMode('t_staging');
     if (task === 'task1') setReaderStudyMode('benign_malignancy');
   }, [cohortYear]);
-  const isMobile = useMobileLayout();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => (
-    typeof window === 'undefined' || window.innerWidth >= 768
-  ));
-  // Evidence drawer overlays the canvas; keep middle imaging dominant by default.
-  // Default open on desktop so assist/evidence is findable; phones use a sheet.
-  const [isEvidencePanelOpen, setIsEvidencePanelOpen] = useState(() => (
-    typeof window === 'undefined' || window.innerWidth >= 768
-  ));
+  // Start closed so phones hydrate on the ultrasound canvas, not a sheet.
+  // Desktop opens both columns after the first layout read.
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isEvidencePanelOpen, setIsEvidencePanelOpen] = useState(false);
   const [isWallLayerDockOpen, setIsWallLayerDockOpen] = useState(false);
   const [, setIsReportExpanded] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
@@ -298,15 +294,24 @@ export default function Home() {
     });
   }, [reportLocale]);
 
-  const wasMobileRef = useRef<boolean | null>(null);
   useEffect(() => {
-    const previous = wasMobileRef.current;
-    wasMobileRef.current = isMobile;
-    if (previous === false && isMobile) {
-      setIsSidebarOpen(false);
-      setIsEvidencePanelOpen(false);
-    }
-  }, [isMobile]);
+    const media = window.matchMedia('(max-width: 767px)');
+    const apply = (mobile: boolean, initial: boolean) => {
+      if (mobile) {
+        if (!initial) {
+          setIsSidebarOpen(false);
+          setIsEvidencePanelOpen(false);
+        }
+        return;
+      }
+      setIsSidebarOpen(true);
+      setIsEvidencePanelOpen(true);
+    };
+    apply(media.matches, true);
+    const onChange = () => apply(media.matches, false);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   // Do not force-open evidence whenever an AI result exists: that fights bottom-nav
   // reopen of the cases sheet after the doctor records a call / Assist finishes.
@@ -349,7 +354,7 @@ export default function Home() {
     });
     if (isMobile) {
       setIsSidebarOpen(false);
-      setIsEvidencePanelOpen(true);
+      setIsEvidencePanelOpen(false);
     }
   }, [isMobile, recordOp, setOpsCase]);
 
@@ -551,7 +556,7 @@ export default function Home() {
       setSelectedPatient(patients[0] || null);
       if (isMobile && patients[0]) {
         setIsSidebarOpen(false);
-        setIsEvidencePanelOpen(true);
+        setIsEvidencePanelOpen(false);
       }
       setAgentAnalysis(null);
       setMaskOverride(null);
@@ -1522,7 +1527,7 @@ export default function Home() {
 
   return (
     <main className="workbench-shell flex h-screen w-screen min-w-0 flex-col overflow-hidden bg-[#08090a] text-gray-200 selection:bg-blue-500/30">
-      <div className="workbench-header h-12 min-h-0 shrink-0 border-b border-white/10 z-50 sm:h-14 lg:h-16">
+      <div className="workbench-header h-12 min-h-0 shrink-0 border-b border-white/10 z-50 max-md:h-11 sm:h-14 lg:h-16">
         <Header
           onShowStatistics={() => setShowStatistics(true)}
           selectedPatient={selectedPatient}
@@ -1573,6 +1578,17 @@ export default function Home() {
         </button>
 
         <div className="relative z-[60] flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-black shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+          {!selectedPatient ? (
+            <div className="absolute inset-0 z-[10] flex flex-col items-center justify-center bg-[#050608] px-6 text-center">
+              <div className="mb-3 h-14 w-14 rounded-full border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_24px_rgba(34,211,238,0.18)]" />
+              <div className="text-[15px] font-semibold tracking-wide text-slate-100">
+                {language !== 'en' ? '超声阅片' : 'Ultrasound'}
+              </div>
+              <div className="mt-1.5 max-w-xs text-[12px] leading-relaxed text-slate-500">
+                {language !== 'en' ? '正在载入病例视频…' : 'Loading the case cine…'}
+              </div>
+            </div>
+          ) : null}
           {/* 视频综合分析入口（上传选帧）暂隐藏；病例视频分析走主工作台视频画布 */}
           {/* <VideoAnalysisUpload onAnalysisComplete={setAgentAnalysis} /> */}
           {!isReaderStudyQueue ? (

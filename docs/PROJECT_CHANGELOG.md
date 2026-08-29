@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Mobile workbench lands on ultrasound after login
+
+- Scope: `apps/gastric_scan_next` workbench shell (`app/page.tsx`, `MobilePaneNav`, `InteractiveSegPanel`, `Header`, `LoginGate`, `DoctorTutorialModal`, `globals.css`, `ReaderStudyQueuePanel`, `ReaderWorkbench`).
+- Reason: Public phone login opened the judgment sheet over the cine. Doctors need the ultrasound viewer first; judgment stays one tap away.
+- Key changes: Phone panes start on the viewer. Selecting a case (including auto-pick) stays on ultrasound. Assist still opens the result sheet. Mobile chrome is thinner: hide duplicate video title/history/trace, shorten cine clocks, bottom tab is 超声, login copy and tutorial match the new path.
+- Validation: `npx tsc --noEmit` in `apps/gastric_scan_next`. Deploy smoke `public_root=200`, `public_clinical=200`.
+- Deployment: Public BUILD `H7-mBkkyDPxoeXLAsgbfk` via `bash scripts/deploy_public_next.sh`. Hard-refresh http://47.106.33.102 .
+
 ## 2026-08-29, Track two ordered interfaces from right to left
 
 - Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, algorithm note.

@@ -39,6 +39,7 @@ import {
   DEFAULT_CINE_FPS,
   cineFrameIndex,
   estimateCineFpsFromMediaTimes,
+  formatCineClockShort,
   formatCineLabel,
   formatKeyframeTime,
   snapCineTimeToFrame,
@@ -3596,7 +3597,11 @@ export function InteractiveSegPanel({
   }, []);
 
   const paintProgressUi = useCallback((timeSec: number, _options?: { forceSlider?: boolean }) => {
-    const text = formatCineTime(timeSec, videoFpsRef.current);
+    const compact = typeof window !== 'undefined'
+      && window.matchMedia('(max-width: 767px)').matches;
+    const text = compact
+      ? formatCineClockShort(timeSec)
+      : formatCineTime(timeSec, videoFpsRef.current);
     for (const label of videoTimeLabelRefs.current) {
       if (label) label.textContent = text;
     }
@@ -11000,7 +11005,7 @@ export function InteractiveSegPanel({
           <div className={inline
             ? 'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-black'
             : 'flex h-[min(94vh,920px)] w-[min(1380px,98vw)] flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-slate-950 shadow-2xl'}>
-            <div className={`workbench-toolbar flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black px-3 ${simpleVideoMode ? 'py-1.5' : 'py-3'}`}>
+            <div className={`workbench-toolbar flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black px-3 ${simpleVideoMode ? 'py-1.5 max-md:hidden' : 'py-3'}`}>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="min-w-0 truncate text-sm font-bold text-slate-100">
@@ -12712,7 +12717,7 @@ export function InteractiveSegPanel({
             {simpleVideoMode && (
               <div className="workbench-cine-bar shrink-0 border-t border-white/10 bg-black px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-[7.6rem] shrink-0 text-right font-mono text-[10px] tabular-nums text-slate-300">
+                  <span className="w-[7.6rem] shrink-0 text-right font-mono text-[10px] tabular-nums text-slate-300 max-md:w-auto max-md:min-w-[2.85rem]">
                     <span ref={(node) => { videoTimeLabelRefs.current[1] = node; }}>{formatCineTime(videoTime, videoFps)}</span>
                   </span>
                   <CineScrubBar
@@ -12727,8 +12732,9 @@ export function InteractiveSegPanel({
                     onScrub={onVideoProgressChange}
                     onScrubEnd={endVideoScrub}
                   />
-                  <span className="w-[7.6rem] shrink-0 font-mono text-[10px] tabular-nums text-slate-300">
-                    {formatCineTime(videoDuration, videoFps)}
+                  <span className="w-[7.6rem] shrink-0 font-mono text-[10px] tabular-nums text-slate-300 max-md:w-auto max-md:min-w-[2.85rem]">
+                    <span className="hidden md:inline">{formatCineTime(videoDuration, videoFps)}</span>
+                    <span className="md:hidden">{formatCineClockShort(videoDuration)}</span>
                   </span>
                 </div>
                 <div className="mt-1.5 flex items-center justify-between gap-2 max-md:justify-center">
@@ -12833,7 +12839,7 @@ export function InteractiveSegPanel({
                 </div>
               </div>
             )}
-            <div className={`workbench-toolbar flex flex-wrap items-center gap-2 border-t border-white/10 px-4 ${simpleVideoMode ? 'py-1' : 'py-3'}`}>
+            <div className={`workbench-toolbar flex flex-wrap items-center gap-2 border-t border-white/10 px-4 ${simpleVideoMode ? 'py-1 max-md:hidden' : 'py-3'}`}>
               {!simpleVideoMode && (
                 <button
                   type="button"
@@ -13237,8 +13243,9 @@ export function InteractiveSegPanel({
               </div>
             ) : null}
             {message ? (
-              <div className="border-t border-white/5 px-3 py-1 text-[10px] leading-snug text-slate-400">{message}</div>
+              <div className="border-t border-white/5 px-3 py-1 text-[10px] leading-snug text-slate-400 max-md:hidden">{message}</div>
             ) : null}
+            <div className="max-md:hidden">
             <ViewingTraceDock
               zh={zh}
               sessionId={viewingTraceSessionId}
@@ -13247,6 +13254,7 @@ export function InteractiveSegPanel({
               onRefresh={refreshViewingTraceActions}
               onReview={submitViewingTraceReview}
             />
+            </div>
           </div>
         </div>
   ) : null;
