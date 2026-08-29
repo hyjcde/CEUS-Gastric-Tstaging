@@ -2,6 +2,23 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Make the P040 wall bands follow source pixels
+
+- Scope: P040 pixel-band mode in `render_wall_curated_layers.py` and its offline visualization.
+- Reason: Three manually parallel curves did not follow the local dark-bright-dark pixel trajectory to the right of the lesion.
+- Key changes: Use the doctor stroke only as a directional prior, track an ordered bright path and its adjacent dark paths on source-pixel profiles, and retain the contrast-connected interval around the lesion edge. The track now extends leftward into the lesion margin until layer contrast collapses. Rendering uses a subpixel display-only smoother constrained to one pixel from the tracked path and shows the bands on both the full context and pixel zoom.
+- Validation: Tracked `x=168–263` with median grayscale 51 / 141 / 69. The offline render completed, the extended paths remained ordered, and the display smoother cannot move a path by more than one source pixel.
+- Deployment: none (offline figure). No Next deployment required.
+
+## 2026-08-29, Curate four wall-layer line figures from stored records
+
+- Scope: four-fixture manual line metadata, `render_wall_curated_layers.py`, script registry and documentation.
+- Reason: The shared automatic crop and tracker treated a scribbled heading as a layer in one case and reduced two cases to small edge crops. The requested deliverable is a readable per-case line visualization tied to the stored layer ticks.
+- Key changes: Store case-specific control points in crop coordinates, smooth them without geometric overshoot, draw documented unobserved gaps as dashed paths, and omit pT from line placement. A case without valid three-layer ticks is explicitly marked cannot judge.
+- Validation: Coordinate bounds and crop-shape validation passed; four individual PNGs and one contact sheet were rendered and visually reviewed.
+- Deployment: none (offline figure and fixture metadata). No Next deployment required.
+- Follow-up: These lines remain record-assisted review drafts, not pixel ground truth; clinical review is required before any annotation export.
+
 ## 2026-08-29, Draw wall-layer lines and score invasion, not cT
 
 - Scope: `scripts/wall_invasion_readout.py`, `scripts/wall_ordered_curve_track.py`, ordered-curve render, `docs/technical/WALL_ORDERED_CURVE_TRACKING.md`.

@@ -1,0 +1,86 @@
+{
+  "version": "v1",
+  "created_at": "2026-08-29",
+  "coordinate_space": "prepare_crop pixels",
+  "note": "Record-assisted manual line curation. Not pixel ground truth and not a cT.",
+  "cases": {
+    "CASE-008": {
+      "crop_shape": [94, 202],
+      "record_source": "No valid three-layer tick record; the stored wall stroke is a scribble.",
+      "layers": {
+        "mucosa": {
+          "verdict": "cannot_judge",
+          "segments": [[[18, 18], [50, 25], [82, 33], [112, 43], [148, 57], [181, 69]]]
+        },
+        "muscularis": {
+          "verdict": "cannot_judge",
+          "segments": [[[18, 24], [50, 31], [82, 39], [112, 49], [148, 63], [181, 75]]]
+        },
+        "serosa": {
+          "verdict": "cannot_judge",
+          "segments": [[[18, 30], [50, 37], [82, 45], [112, 55], [148, 69], [181, 81]]]
+        }
+      }
+    },
+    "CASE-019": {
+      "crop_shape": [271, 253],
+      "record_source": "Stored pixel ticks: mucosa continuous, muscularis interrupted, serosa continuous; no same-frame lesion mask.",
+      "layers": {
+        "mucosa": {
+          "verdict": "continuous",
+          "segments": [[[33, 230], [67, 204], [105, 178], [142, 151], [170, 120], [192, 82], [215, 42]]]
+        },
+        "muscularis": {
+          "verdict": "interrupted",
+          "segments": [
+            [[39, 237], [73, 211], [111, 185], [139, 165]],
+            [[171, 132], [199, 88], [221, 46]]
+          ]
+        },
+        "serosa": {
+          "verdict": "continuous",
+          "segments": [[[46, 244], [81, 219], [119, 193], [156, 166], [184, 134], [206, 94], [228, 52]]]
+        }
+      }
+    },
+    "CASE-040": {
+      "crop_shape": [159, 295],
+      "record_source": "Stored pixel ticks: mucosa continuous, muscularis continuous, serosa interrupted.",
+      "layers": {
+        "mucosa": {
+          "verdict": "continuous",
+          "segments": [[[196, 68], [216, 65], [237, 66], [258, 69], [279, 71]]]
+        },
+        "muscularis": {
+          "verdict": "continuous",
+          "segments": [[[196, 77], [216, 75], [237, 76], [258, 79], [279, 81]]]
+        },
+        "serosa": {
+          "verdict": "interrupted",
+          "segments": [[[207, 88], [225, 88], [244, 90], [263, 93], [280, 95]]]
+        }
+      }
+    },
+    "CASE-076": {
+      "crop_shape": [291, 483],
+      "record_source": "Stored pixel ticks: mucosa interrupted, muscularis continuous, serosa continuous.",
+      "layers": {
+        "mucosa": {
+          "verdict": "interrupted",
+          "segments": [
+            [[101, 151], [149, 137], [198, 113], [231, 94]],
+            [[326, 98], [364, 132], [399, 179], [426, 225], [440, 253]]
+          ]
+        },
+        "muscularis": {
+          "verdict": "continuous",
+          "segments": [[[104, 145], [153, 126], [206, 98], [260, 70], [314, 79], [359, 114], [397, 169], [430, 224], [449, 247]]]
+        },
+        "serosa": {
+          "verdict": "continuous",
+          "segments": [[[102, 139], [150, 110], [205, 65], [260, 25], [315, 35], [365, 70], [410, 120], [445, 185], [460, 238]]]
+        }
+      }
+    }
+  }
+}
