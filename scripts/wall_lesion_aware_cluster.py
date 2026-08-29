@@ -549,12 +549,13 @@ def assign_from_across_profile(
     dark_thr = float(dark_p[valley]) + 10.0
     valley_ac = float(mids[valley])
     pred = np.where(across < cut_l, 0, np.where(across > cut_r, 2, 1)).astype(np.int32)
-    pred = np.where((gray < mid_g) & (across >= cut_l - 0.10) & (across <= cut_r + 0.10), 1, pred)
+    pred = np.where((gray < mid_g) & (across >= cut_l) & (across <= cut_r), 1, pred)
     pred = np.where((gray >= mid_g) & (across < cut_l), 0, pred)
     pred = np.where((gray >= mid_g) & (across > cut_r), 2, pred)
-    # Keep the thin bottom hypoechoic strip in the dark layer, not the outer bright.
-    pred = np.where((gray <= dark_thr) & (across >= valley_ac - 0.12) & (np.abs(across) <= 0.88), 1, pred)
+    pred = np.where((gray <= dark_thr) & (across >= cut_l) & (across <= cut_r), 1, pred)
     pred = np.where((np.abs(across) > 0.90) & (gray < mid_g), -1, pred)
+    # Muscularis is the middle dark strip. It must not pass the serosa.
+    pred = np.where((pred == 1) & (across > cut_r), 2, pred)
     labels_all = np.full(len(gray), -1, dtype=np.int32)
     keep_lab = keep & (pred >= 0)
     labels_all[keep_lab] = pred[keep_lab]
@@ -583,13 +584,42 @@ def pin_thin_hypoechoic(
         return labels
     valley_ac = float(np.median(across[dark_fit]))
     dark_thr = float(np.percentile(gray[dark_fit], 80))
-    pin = keep & (gray <= dark_thr) & (np.abs(across - valley_ac) <= 0.30)
+    pin = keep & (gray <= dark_thr) & (np.abs(across - valley_ac) <= 0.22)
     out = labels.copy()
     out[pin] = 1
-    outer = keep & (across >= 0.58)
-    if int(outer.sum()) >= 8:
-        outer_thr = min(dark_thr + 8.0, float(np.percentile(gray[outer], 18)))
-        out[outer & (gray <= outer_thr)] = 1
+    return enforce_strip_order(samples, keep, fit, out)
+
+
+def enforce_strip_order(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    fit: np.ndarray,
+    labels: np.ndarray,
+) -> np.ndarray:
+    """Keep three separate strips: inner bright, mid dark, outer bright."""
+    gray = samples["gray"].astype(np.float32)
+    across = samples["across"].astype(np.float32)
+    out = labels.copy()
+    seed = fit & (out >= 0)
+    if int((seed & (out == 2)).sum()) < 8 or int((seed & (out == 1)).sum()) < 8:
+        return out
+    ser_in = float(np.percentile(across[seed & (out == 2)], 20))
+    mus_g = float(np.median(gray[seed & (out == 1)]))
+    ser_g = float(np.median(gray[seed & (out == 2)]))
+    mid_g = 0.5 * (mus_g + ser_g)
+    past = keep & (out == 1) & (across >= ser_in)
+    out[past & (gray >= mid_g)] = 2
+    out[past & (gray < mid_g)] = -1
+    if int((seed & (out == 0)).sum()) >= 8:
+        sha_out = float(np.percentile(across[seed & (out == 0)], 80))
+        cross = keep & (out == 0) & (across >= sha_out)
+        out[cross & (gray < mid_g)] = 1
+        out[cross & (gray >= mid_g) & (across >= ser_in)] = 2
+    xs = samples["xs"]
+    if int((seed & (out == 2)).sum()) >= 8:
+        ser_xmax = float(xs[seed & (out == 2)].max())
+        stick = keep & (out == 1) & (xs > ser_xmax + 1.5)
+        out[stick] = -1
     return out
 
 
@@ -633,6 +663,11 @@ def assign_walk_until_lesion(
             + SENSITIVE_ACROSS * np.abs(across[pix, None] - a_live[None, :])
         )
         lab = dist.argmin(axis=1).astype(np.int32)
+        # Do not let muscularis walk past the live serosa across.
+        if np.isfinite(a_live[2]):
+            past = (lab == 1) & (across[pix] >= a_live[2] - 0.04)
+            lab = np.where(past & (gray[pix] >= 0.5 * (g_live[1] + g_live[2])), 2, lab)
+            lab = np.where(past & (gray[pix] < 0.5 * (g_live[1] + g_live[2])), -1, lab)
         labels_all[pix] = lab
         for i in range(3):
             sel = lab == i

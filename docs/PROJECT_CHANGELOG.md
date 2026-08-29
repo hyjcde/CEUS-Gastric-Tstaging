@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 keep muscularis inside the serosa strip
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (strip order), `scripts/render_wall_layer_thin_bands.py --case P040`.
+- Reason: Pinning outer dark pixels let the pink muscularis wash past the mint serosa. At the right-hand start the three belts must stay separate: inner bright, mid dark, outer bright.
+- Key changes: Assign by gray inside each across strip. Muscularis stops at the inner edge of serosa. Overlay form unchanged. Does not unlock cT.
+- Validation: Synthetic cluster test; offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 keep the thin bottom hypoechoic belt
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (profile valley from the 15th percentile), `scripts/render_wall_layer_thin_bands.py --case P040`.
