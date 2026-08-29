@@ -435,6 +435,7 @@ render_prompt_mask_case_visualizations.py,runtime,module,,scripts,scripts/runtim
 render_roi_margin_compare_panel.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 render_wall_cluster_diagnostics.py,current,analysis,4,scripts,scripts/current,yes,true,
 render_wall_curated_layers.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
+render_wall_directional_interfaces.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 render_wall_directional_joint_bands.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 render_wall_layer_thin_bands.py,current,analysis,4,scripts,scripts/current,yes,true,
 render_wall_ordered_curves.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
@@ -596,6 +597,7 @@ t_stage_evidence_gate.py,runtime,module,,scripts,scripts/runtime,import_only,fal
 temporary_public_next_proxy.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 test_lan_full_stack.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 test_similar_case_cards.py,utility,utility,6,scripts,scripts/analysis,review,true,
+test_wall_directional_interfaces.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 test_wall_directional_joint_bands.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 test_wall_lesion_aware_cluster.py,current,analysis,4,scripts,scripts/current,yes,true,
 test_wall_ordered_curve_track.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,

@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Track wall interfaces instead of only band centers
+
+- Scope: `render_wall_directional_interfaces.py`, its synthetic test, and four offline interface panels.
+- Reason: Centerline paths can sit inside broad bright or dark regions even when several wall boundaries are visible. P008 also needs a clean local direction because its stored heading is a self-crossing scribble.
+- Key changes: Detect the alternating normal-gradient pattern, jointly track four ordered interfaces, and form three translucent bands between those interfaces. P008 uses the record-assisted lines only to define a clean local axis; all four displayed interfaces are then fitted to source-pixel gradients.
+- Validation: The synthetic bright-dark-bright test recovered four boundaries with 0 px median error. P008 retained 66 stations with median edge confidence 12.29 and produced the expected bright-dark-bright pattern. P040 retained 31 stations with dark-bright-dark interfaces. P019 and P076 retained only 5 and 10 interface stations, so their center-band results remain more stable than the four-interface experiment.
+- Deployment: none (offline analysis figures only). No Next deployment required.
+- Follow-up: Clinically review P008 boundary identities. Do not promote the four-interface mode as a universal method until P019 and P076 receive better local-axis seeds or native-frame annotations.
+
 ## 2026-08-29, Probe direction-aware joint wall-band tracking on four cases
 
 - Scope: `render_wall_directional_joint_bands.py`, its synthetic test, and four offline fixture visualizations.
