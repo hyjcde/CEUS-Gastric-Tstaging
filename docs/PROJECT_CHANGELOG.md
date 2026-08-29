@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Split brush pixels into three exclusive top-to-bottom bands
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_natural_y_bands`).
+- Reason: Yellow and green mixed because both dark echoes shared one gray class. The three layers should be three exclusive bands from top to bottom inside the brush, naturally dark-bright-dark or bright-dark-bright.
+- Key changes: Each image column is split by its gray profile into 0 then 1 then 2. No heading-normal or cavity flip. Same-x yellow cannot sit inside green. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Pixel-only figure: full brush on A, zoomed right layers on B
 
 - Scope: `scripts/render_wall_pixel_vs_dino_cluster.py`, `scripts/wall_lesion_aware_cluster.py` (min strip gap).

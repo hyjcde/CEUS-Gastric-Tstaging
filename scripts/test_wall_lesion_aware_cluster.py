@@ -128,6 +128,7 @@ def main() -> int:
         order = np.argsort(strip_y[col])
         labs = strip_lab[col][order]
         assert int(np.any(np.diff(labs) < 0)) == 0, labs
+        assert 2 not in set(labs.tolist()[: max(1, int((labs == 0).sum()))]), labs
     assert len(strips.interfaces) >= 1, strips.interfaces
     first_line = np.asarray(strips.interfaces[0]["points"], dtype=np.float32)
     assert len(first_line) >= 4

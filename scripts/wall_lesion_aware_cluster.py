@@ -1404,6 +1404,126 @@ def refine_across_cut(across: np.ndarray, values: np.ndarray, seed: float, max_s
     return best
 
 
+def _band_cuts_1d(gray: np.ndarray) -> tuple[int, int]:
+    """Split one column into three equal parts, top to bottom."""
+    n = int(len(gray))
+    return max(1, n // 3), min(n - 1, max(2, 2 * n // 3))
+
+
+def assign_natural_y_bands(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    assign_lesion: bool,
+    k: int,
+) -> np.ndarray:
+    """Split brush pixels into three exclusive top-to-bottom bands.
+
+    No heading-normal, no cavity flip. Same-x pixels stay 0 then 1 then 2.
+    """
+    xs = samples["xs"]
+    ys = samples["ys"]
+    gray = samples["gray"].astype(np.float32)
+    labels = np.full((len(xs),), -1, dtype=np.int32)
+    if int(keep.sum()) < MIN_VALID_PIXELS or k < 2:
+        return labels
+    across = samples["across"]
+    core = keep & (np.abs(across) <= 0.88)
+    if int(core.sum()) < MIN_VALID_PIXELS:
+        core = keep
+    stations = np.unique(xs[core])
+    raw1 = []
+    raw2 = []
+    used = []
+    for x in stations.tolist():
+        pix = np.where(core & (xs == x))[0]
+        if len(pix) < 4:
+            continue
+        idx = pix[np.argsort(ys[pix])]
+        if k == 2:
+            i = max(1, len(idx) // 2)
+            j = len(idx)
+        else:
+            i, j = _band_cuts_1d(gray[idx])
+        y1 = float(ys[idx[i]]) if i < len(idx) else float(ys[idx[-1]])
+        y2 = float(ys[idx[min(j, len(idx) - 1)]])
+        if y2 <= y1 + 0.6:
+            y2 = y1 + 1.0
+        raw1.append(y1)
+        raw2.append(y2)
+        used.append(int(x))
+    if len(used) < 3:
+        return labels
+    sm1 = _finite_median_filter(np.asarray(raw1, dtype=np.float32), max(STRIP_SMOOTH, 15))
+    sm2 = _finite_median_filter(np.asarray(raw2, dtype=np.float32), max(STRIP_SMOOTH, 15))
+    sm1 = _smooth1d(sm1, 3)
+    sm2 = _smooth1d(sm2, 3)
+    for i in range(len(sm2)):
+        if sm2[i] <= sm1[i] + 0.8:
+            sm2[i] = sm1[i] + 1.0
+    y1_at = np.interp(stations.astype(np.float32), np.asarray(used, dtype=np.float32), sm1)
+    y2_at = np.interp(stations.astype(np.float32), np.asarray(used, dtype=np.float32), sm2)
+    by_x = {int(x): (float(a), float(b)) for x, a, b in zip(stations.tolist(), y1_at.tolist(), y2_at.tolist())}
+    for i in np.where(core)[0].tolist():
+        cuts = by_x.get(int(xs[i]))
+        if cuts is None:
+            continue
+        y1, y2 = cuts
+        yi = float(ys[i])
+        if k == 2:
+            labels[i] = 0 if yi < y1 else 1
+        elif yi < y1:
+            labels[i] = 0
+        elif yi > y2:
+            labels[i] = 2
+        else:
+            labels[i] = 1
+    if assign_lesion:
+        for i in np.where(~keep)[0].tolist():
+            cuts = by_x.get(int(xs[i]))
+            if cuts is None:
+                continue
+            y1, y2 = cuts
+            yi = float(ys[i])
+            labels[i] = 0 if yi < y1 else (2 if yi > y2 else 1)
+    return labels
+
+
+def interfaces_from_y_bands(
+    samples: dict[str, np.ndarray],
+    labels: np.ndarray,
+    keep: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Thin edges where the three y-bands meet. Yellow and green cannot cross."""
+    xs = samples["xs"]
+    ys = samples["ys"]
+    labels = np.asarray(labels, dtype=np.int32)
+    raw: list[list[list[float]]] = [[], []]
+    for x in np.unique(xs[keep]).tolist():
+        pix = keep & (xs == x) & (labels >= 0)
+        if int(pix.sum()) < 4:
+            continue
+        order = np.argsort(ys[pix])
+        labs = labels[pix][order]
+        yy = ys[pix][order].astype(np.float32)
+        xx = xs[pix][order].astype(np.float32)
+        for edge, left, right in ((0, 0, 1), (1, 1, 2)):
+            hit = np.where((labs[:-1] == left) & (labs[1:] == right))[0]
+            if len(hit) == 0:
+                continue
+            i = int(hit[0])
+            raw[edge].append([
+                float(xx[i]),
+                0.5 * (float(yy[i]) + float(yy[i + 1])),
+                0.0,
+                float(x),
+            ])
+    out = []
+    for edge, pts in enumerate(raw):
+        for run in _split_interface_runs(pts):
+            out.append({"edge": edge, "points": run})
+    return out
+
+
 def assign_strip_layers(
     samples: dict[str, np.ndarray],
     keep: np.ndarray,
@@ -1412,74 +1532,9 @@ def assign_strip_layers(
     k: int,
     assign_lesion: bool,
 ) -> np.ndarray:
-    """Three stacked strips along the heading. Features only slide the two cuts."""
-    feat = np.asarray(features, dtype=np.float32)
-    if feat.ndim == 1:
-        feat = feat.reshape(-1, 1)
-    across = samples["across"].astype(np.float32)
-    along = samples["along_idx"]
-    gray = samples["gray"].astype(np.float32)
-    labels = np.full((len(across),), -1, dtype=np.int32)
-    if int(fit.sum()) < MIN_VALID_PIXELS or k < 2:
-        return labels
-    values = _feature_axis(feat, across)
-    if k == 2:
-        cut = refine_across_cut(across[fit], values[fit], float(np.median(across[fit])))
-        labels[keep] = np.where(across[keep] < cut, 0, 1).astype(np.int32)
-        if assign_lesion:
-            labels[~keep] = np.where(across[~keep] < cut, 0, 1).astype(np.int32)
-        return labels
-    profile = assign_from_across_profile(samples, keep, fit, assign_lesion=False)
-    if profile is not None and int((profile[fit] == 0).sum()) >= 8 and int((profile[fit] == 2).sum()) >= 8:
-        ac0 = across[fit & (profile == 0)]
-        ac1 = across[fit & (profile == 1)]
-        ac2 = across[fit & (profile == 2)]
-        seed_l = 0.5 * (float(np.median(ac0)) + float(np.median(ac1))) if len(ac1) else float(np.quantile(across[fit], 0.33))
-        seed_r = 0.5 * (float(np.median(ac1)) + float(np.median(ac2))) if len(ac1) else float(np.quantile(across[fit], 0.67))
-        shift = 0.05
-    else:
-        seed_l = float(np.quantile(across[fit], 0.28))
-        seed_r = float(np.quantile(across[fit], 0.72))
-        shift = 0.10
-    if seed_r <= seed_l + MIN_STRIP_GAP:
-        seed_l, seed_r = float(np.quantile(across[fit], 0.26)), float(np.quantile(across[fit], 0.74))
-        shift = 0.08
-    cut_l = refine_across_cut(across[fit], values[fit], seed_l, max_shift=shift)
-    cut_r = refine_across_cut(across[fit], values[fit], seed_r, max_shift=shift)
-    if cut_r <= cut_l + MIN_STRIP_GAP:
-        cut_l, cut_r = seed_l, seed_r
-    if cut_r <= cut_l + MIN_STRIP_GAP:
-        mid = 0.5 * (cut_l + cut_r)
-        cut_l, cut_r = mid - 0.5 * MIN_STRIP_GAP, mid + 0.5 * MIN_STRIP_GAP
-    groups = merge_along_columns(along, keep)
-    local_l = []
-    local_r = []
-    for group in groups:
-        pix = keep & np.isin(along, group)
-        if int(pix.sum()) < 6:
-            local_l.append(cut_l)
-            local_r.append(cut_r)
-            continue
-        local_l.append(refine_across_cut(across[pix], values[pix], cut_l, max_shift=0.05))
-        local_r.append(refine_across_cut(across[pix], values[pix], cut_r, max_shift=0.05))
-    if groups:
-        sm_l = _finite_median_filter(np.asarray(local_l, dtype=np.float32), STRIP_SMOOTH)
-        sm_r = _finite_median_filter(np.asarray(local_r, dtype=np.float32), STRIP_SMOOTH)
-        for group, lo, hi in zip(groups, sm_l.tolist(), sm_r.tolist()):
-            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo + MIN_STRIP_GAP:
-                lo, hi = cut_l, cut_r
-            pix = keep & np.isin(along, group)
-            ac = across[pix]
-            labels[pix] = np.where(ac < lo, 0, np.where(ac > hi, 2, 1)).astype(np.int32)
-    else:
-        labels[keep] = np.where(across[keep] < cut_l, 0, np.where(across[keep] > cut_r, 2, 1)).astype(np.int32)
-    labeled = labels >= 0
-    if labeled.any():
-        mid_g = float(np.median(gray[labeled]))
-        labels[labeled & (np.abs(across) >= 0.90) & (gray < mid_g)] = -1
-    if assign_lesion:
-        labels[~keep] = np.where(across[~keep] < cut_l, 0, np.where(across[~keep] > cut_r, 2, 1)).astype(np.int32)
-    return labels
+    """Three exclusive top-to-bottom bands inside the brush."""
+    del fit, features
+    return assign_natural_y_bands(samples, keep, assign_lesion, k)
 
 
 def cluster_brush_band(
@@ -1626,11 +1681,15 @@ def cluster_brush_band(
             "count": int(sel.sum()),
         })
     bdb = False
+    dbd = False
     if k >= 3 and len(gray_means) >= 3:
         bdb = gray_means[0] > gray_means[1] and gray_means[2] > gray_means[1]
+        dbd = gray_means[1] > gray_means[0] and gray_means[1] > gray_means[2]
     pattern = "-".join(names)
     if bdb:
         pattern = "bright-dark-bright"
+    elif dbd:
+        pattern = "dark-bright-dark"
 
     skip = ~keep if (not assign_lesion) else None
     fates = walk_layer_fate(samples, labels_all, keep, fit, lesion_d if exclude_lesion else lesion_mask, names)
@@ -1639,8 +1698,11 @@ def cluster_brush_band(
         along=samples["along_idx"], skip=skip,
     )
     keep_lab = keep & (labels_all >= 0)
-    prefer = cuts_from_labels(samples["across"], labels_all, keep_lab)
-    interfaces = trace_gray_interfaces(samples, keep, prefer_across=prefer or None)
+    if prefer_strips:
+        interfaces = interfaces_from_y_bands(samples, labels_all, keep)
+    else:
+        prefer = cuts_from_labels(samples["across"], labels_all, keep_lab)
+        interfaces = trace_gray_interfaces(samples, keep, prefer_across=prefer or None)
 
     return ClusterArm(
         name=name,
