@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Cut layers on heading-normal gray jumps
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_across_gray_bands`), four-case render.
+- Reason: Image-y columns cut the wall stripes at an angle, so the obvious bright / dark bands were missed. The eye follows thickness, not vertical pixel columns.
+- Key changes: Sample gray along the heading normal, average along the wall, snap two cuts to gradient peaks, lock one pattern on the right flank, then paint exclusive top-to-bottom bands. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Search about 12 px past the brush for the gray bands
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`_column_search_profile`), four-case render.

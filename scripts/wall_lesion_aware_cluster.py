@@ -25,6 +25,10 @@ STRIP_SMOOTH = 9
 GRAY_SEARCH_PAD = 12
 GRAY_CUT_PAD = 12
 GRAY_CUT_MIN_SCORE = 4.0
+ACROSS_SEARCH_PX = 24
+ALONG_AVG = 9
+MIN_GRAD = 5.0
+MIN_CUT_SEP = 5
 JOIN_RAY_PX = 28.0
 JOIN_END_PX = 16.0
 JOIN_MAX_GAP = 42.0
@@ -1459,7 +1463,7 @@ def _best_gray_splits(
 
     for i in range(2, n - 3):
         for j in range(i + 2, n - 1):
-            if overlap is not None and (_ov(0, i) < 1 or _ov(i, j) < 2 or _ov(j, n) < 1):
+            if overlap is not None and (_ov(0, i) < 2 or _ov(i, j) < 2 or _ov(j, n) < 2):
                 continue
             if overlap is None:
                 left = float(sm[:i].mean())
@@ -1578,6 +1582,277 @@ def _column_search_profile(
     return profile, y0, brush_lo, brush_hi
 
 
+def _fill_nan_1d(values: np.ndarray) -> np.ndarray:
+    out = np.asarray(values, dtype=np.float32).copy()
+    good = np.isfinite(out)
+    if int(good.sum()) == 0:
+        return np.zeros_like(out)
+    if bool(good.all()):
+        return out
+    idx = np.arange(len(out))
+    out[~good] = np.interp(idx[~good], idx[good], out[good])
+    return out
+
+
+def _heading_stations(
+    polyline: np.ndarray,
+    lumen_center: np.ndarray | None,
+    lesion_center: np.ndarray | None,
+    deepest: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Densified heading points and unit normals (same flip as sample_band_pixels)."""
+    poly = densify_polyline(as_xy(polyline), 3.0)
+    if len(poly) < 2:
+        empty = np.zeros((0, 2), dtype=np.float32)
+        return empty, empty
+    tangents = np.zeros_like(poly)
+    tangents[:-1] = poly[1:] - poly[:-1]
+    tangents[-1] = tangents[-2]
+    tan_n = np.maximum(np.hypot(tangents[:, 0], tangents[:, 1]), 1e-6)
+    tangent = tangents / tan_n[:, None]
+    normals = np.stack([-tangent[:, 1], tangent[:, 0]], axis=1)
+    if lumen_center is not None:
+        hint = poly - np.asarray(lumen_center, dtype=np.float32).reshape(1, 2)
+    elif deepest is not None and lesion_center is not None:
+        hint = np.broadcast_to(
+            (np.asarray(deepest) - np.asarray(lesion_center)).astype(np.float32),
+            normals.shape,
+        )
+    elif lesion_center is not None:
+        hint = poly - np.asarray(lesion_center, dtype=np.float32).reshape(1, 2)
+    else:
+        hint = None
+    if hint is not None:
+        flip = np.sum(normals * hint, axis=1) < 0
+        normals[flip] *= -1
+    # +across goes down the image so label 0 stays on top.
+    if len(normals) and float(normals[:, 1].mean()) < 0:
+        normals = -normals
+    return poly.astype(np.float32), normals.astype(np.float32)
+
+
+def _sample_normal_profile(
+    image: np.ndarray,
+    origin: np.ndarray,
+    normal: np.ndarray,
+    half: int,
+    blocked: np.ndarray | None = None,
+) -> np.ndarray:
+    height, width = int(image.shape[0]), int(image.shape[1])
+    vals = np.full((2 * int(half) + 1,), np.nan, dtype=np.float32)
+    for i, dist in enumerate(range(-int(half), int(half) + 1)):
+        point = origin + normal * float(dist)
+        x = int(round(float(point[0])))
+        y = int(round(float(point[1])))
+        if 0 <= x < width and 0 <= y < height:
+            if blocked is not None and blocked[y, x] > 0:
+                continue
+            vals[i] = float(image[y, x])
+    return _fill_nan_1d(vals)
+
+
+def _gradient_two_cuts(
+    profile: np.ndarray,
+    prefer: str | None = None,
+    overlap: tuple[int, int] | None = None,
+) -> tuple[int, int]:
+    """Snap two cuts to the strongest gray jumps on one normal profile."""
+    sm = _smooth1d(_fill_nan_1d(profile), 2)
+    n = int(len(sm))
+    tertile = _default_tertile(n, overlap)
+    if n < 10:
+        return tertile
+    grad = np.abs(np.diff(sm))
+    cands: list[tuple[float, int]] = []
+    for i in range(2, n - 3):
+        if grad[i] >= grad[i - 1] and grad[i] >= grad[i + 1] and grad[i] >= MIN_GRAD:
+            cands.append((float(grad[i]), i + 1))
+    lo, hi = (0, n) if overlap is None else (int(overlap[0]), int(overlap[1]))
+
+    def _ov(a0: int, a1: int) -> int:
+        return max(0, min(a1, hi) - max(a0, lo))
+
+    if len(cands) < 2:
+        return _band_cuts_1d(sm, prefer=prefer, overlap=overlap)
+    best: tuple[float, int, int] | None = None
+    for a in range(len(cands)):
+        for b in range(a + 1, len(cands)):
+            i, j = cands[a][1], cands[b][1]
+            if i > j:
+                i, j = j, i
+            if j - i < MIN_CUT_SEP:
+                continue
+            if overlap is not None and (_ov(0, i) < 2 or _ov(i, j) < 2 or _ov(j, n) < 2):
+                continue
+            left = float(sm[max(lo, 0):max(lo + 1, min(i, hi))].mean()) if overlap is not None else float(sm[:i].mean())
+            mid = float(sm[max(i, lo):min(j, hi)].mean()) if overlap is not None else float(sm[i:j].mean())
+            right = float(sm[max(j, lo):hi].mean()) if overlap is not None else float(sm[j:].mean())
+            dbd = mid - 0.5 * (left + right)
+            bdb = 0.5 * (left + right) - mid
+            if prefer == "dbd":
+                score = dbd
+            elif prefer == "bdb":
+                score = bdb
+            else:
+                score = max(dbd, bdb)
+            score = score + 0.20 * (cands[a][0] + cands[b][0])
+            if best is None or score > best[0]:
+                best = (score, i, j)
+    if best is None or best[0] < GRAY_CUT_MIN_SCORE:
+        return _band_cuts_1d(sm, prefer=prefer, overlap=overlap)
+    return int(best[1]), int(best[2])
+
+
+def assign_across_gray_bands(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    assign_lesion: bool,
+    k: int,
+    image: np.ndarray,
+    wall: np.ndarray,
+    brush_radius: float,
+    blocked: np.ndarray | None = None,
+    lumen_center: np.ndarray | None = None,
+    lesion_center: np.ndarray | None = None,
+    deepest: np.ndarray | None = None,
+) -> np.ndarray:
+    """Split the brush on gray jumps along the heading normal.
+
+    The eye sees layers parallel to the heading. Image-y columns cut those
+    stripes at an angle and miss the obvious bright / dark bands.
+    """
+    xs = samples["xs"]
+    ys = samples["ys"]
+    labels = np.full((len(xs),), -1, dtype=np.int32)
+    if int(keep.sum()) < MIN_VALID_PIXELS or k < 2:
+        return labels
+    pts, normals = _heading_stations(wall, lumen_center, lesion_center, deepest)
+    if len(pts) < 3:
+        return labels
+    half = int(ACROSS_SEARCH_PX)
+    rows = np.stack([
+        _sample_normal_profile(image, pts[i], normals[i], half, blocked)
+        for i in range(len(pts))
+    ])
+    win = max(3, int(ALONG_AVG))
+    avg = np.zeros_like(rows)
+    for i in range(len(pts)):
+        lo = max(0, i - win // 2)
+        hi = min(len(pts), i + win // 2 + 1)
+        avg[i] = np.mean(rows[lo:hi], axis=0)
+    radius = max(1.0, float(brush_radius))
+    overlap = (max(0, half - int(round(radius))), min(2 * half + 1, half + int(round(radius)) + 1))
+    vote_sel = np.where(pts[:, 0] >= float(np.quantile(pts[:, 0], 0.55)))[0]
+    if len(vote_sel) < 5:
+        vote_sel = np.arange(len(pts))
+
+    def _mid_side(row: np.ndarray, pref: str) -> float:
+        gi, gj = _gradient_two_cuts(row, prefer=pref, overlap=overlap)
+        lo, hi = overlap
+        if gi < lo + 2 or gj > hi - 2:
+            return -1.0
+        mid = float(row[gi:max(gi + 1, gj)].mean())
+        sides = 0.5 * (float(row[:gi].mean()) + float(row[gj:].mean()))
+        return (mid - sides) if pref == "dbd" else (sides - mid)
+
+    dbd_c = float(np.mean([_mid_side(avg[i], "dbd") for i in vote_sel.tolist()]))
+    bdb_c = float(np.mean([_mid_side(avg[i], "bdb") for i in vote_sel.tolist()]))
+    prefer = "dbd" if dbd_c >= bdb_c else "bdb"
+    raw1 = []
+    raw2 = []
+    for row in avg:
+        if k == 2:
+            i, j = max(1, len(row) // 2), len(row)
+        else:
+            i, j = _gradient_two_cuts(row, prefer=prefer, overlap=overlap)
+        raw1.append(float(i - half))
+        raw2.append(float(max(i, j - 1) - half))
+    sm1 = _finite_median_filter(np.asarray(raw1, dtype=np.float32), STRIP_SMOOTH)
+    sm2 = _finite_median_filter(np.asarray(raw2, dtype=np.float32), STRIP_SMOOTH)
+    sm1 = _smooth1d(sm1, 2)
+    sm2 = _smooth1d(sm2, 2)
+    for i in range(len(sm2)):
+        if sm2[i] <= sm1[i] + 1.0:
+            sm2[i] = sm1[i] + 1.5
+    paint = keep if int((keep & (np.abs(samples["across"]) <= 0.95)).sum()) < MIN_VALID_PIXELS else (
+        keep & (np.abs(samples["across"]) <= 0.95)
+    )
+    pix = np.stack([xs.astype(np.float32), ys.astype(np.float32)], axis=1)
+    d2 = ((pix[:, None, :] - pts[None, :, :]) ** 2).sum(axis=2)
+    nearest = np.argmin(d2, axis=1)
+    signed = np.sum((pix - pts[nearest]) * normals[nearest], axis=1)
+    across_lab = np.full((len(xs),), -1, dtype=np.int32)
+    for i in np.where(paint)[0].tolist():
+        a1 = float(sm1[int(nearest[i])])
+        a2 = float(sm2[int(nearest[i])])
+        si = float(signed[i])
+        if k == 2:
+            across_lab[i] = 0 if si < a1 else 1
+        elif si < a1:
+            across_lab[i] = 0
+        elif si > a2:
+            across_lab[i] = 2
+        else:
+            across_lab[i] = 1
+    have3 = all(int((across_lab == lab).sum()) >= 8 for lab in (0, 1, 2))
+    if not have3:
+        labels[paint] = across_lab[paint]
+        if assign_lesion:
+            rest = (~keep) & (across_lab >= 0)
+            labels[rest] = across_lab[rest]
+        return labels
+    # Exclusive top-to-bottom: y cuts sit on the gray classes found along the normal.
+    by_x: dict[int, tuple[float, float]] = {}
+    for x in np.unique(xs[paint]).tolist():
+        sel = paint & (xs == x) & (across_lab >= 0)
+        if int(sel.sum()) < 4:
+            continue
+        meds = []
+        for lab in (0, 1, 2):
+            hit = sel & (across_lab == lab)
+            meds.append(float(np.median(ys[hit])) if int(hit.sum()) else np.nan)
+        if np.isfinite(meds[0]) and np.isfinite(meds[1]):
+            y1 = 0.5 * (meds[0] + meds[1])
+        elif np.isfinite(meds[1]):
+            y1 = float(meds[1]) - 2.0
+        else:
+            y1 = float(np.median(ys[sel]))
+        if np.isfinite(meds[1]) and np.isfinite(meds[2]):
+            y2 = 0.5 * (meds[1] + meds[2])
+        elif np.isfinite(meds[1]):
+            y2 = float(meds[1]) + 2.0
+        else:
+            y2 = y1 + 2.0
+        if y2 < y1:
+            y1, y2 = y2, y1
+        if y2 <= y1 + 0.8:
+            y2 = y1 + 1.0
+        by_x[int(x)] = (y1, y2)
+    for i in np.where(paint)[0].tolist():
+        cuts = by_x.get(int(xs[i]))
+        if cuts is None:
+            continue
+        y1, y2 = cuts
+        yi = float(ys[i])
+        if k == 2:
+            labels[i] = 0 if yi < y1 else 1
+        elif yi < y1:
+            labels[i] = 0
+        elif yi > y2:
+            labels[i] = 2
+        else:
+            labels[i] = 1
+    if assign_lesion:
+        for i in np.where(~keep)[0].tolist():
+            cuts = by_x.get(int(xs[i]))
+            if cuts is None:
+                continue
+            y1, y2 = cuts
+            yi = float(ys[i])
+            labels[i] = 0 if yi < y1 else (2 if yi > y2 else 1)
+    return labels
+
+
 def assign_natural_y_bands(
     samples: dict[str, np.ndarray],
     keep: np.ndarray,
@@ -1585,12 +1860,19 @@ def assign_natural_y_bands(
     k: int,
     image: np.ndarray | None = None,
     blocked: np.ndarray | None = None,
+    wall: np.ndarray | None = None,
+    brush_radius: float = DEFAULT_BRUSH,
+    lumen_center: np.ndarray | None = None,
+    lesion_center: np.ndarray | None = None,
+    deepest: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Split brush pixels into three exclusive top-to-bottom bands.
-
-    No heading-normal, no cavity flip. Same-x pixels stay 0 then 1 then 2.
-    Cuts are read from the image column, including about 12 px past the brush.
-    """
+    """Split brush pixels into three exclusive bands along wall thickness."""
+    if image is not None and wall is not None and len(np.asarray(wall)) >= 2:
+        return assign_across_gray_bands(
+            samples, keep, assign_lesion, k, image, wall, brush_radius,
+            blocked=blocked, lumen_center=lumen_center,
+            lesion_center=lesion_center, deepest=deepest,
+        )
     xs = samples["xs"]
     ys = samples["ys"]
     gray = samples["gray"].astype(np.float32)
@@ -1611,17 +1893,10 @@ def assign_natural_y_bands(
         idx = pix[np.argsort(ys[pix])]
         y_min = int(ys[idx[0]])
         y_max = int(ys[idx[-1]])
-        if image is not None:
-            profile, y0, brush_lo, brush_hi = _column_search_profile(
-                image, int(x), y_min, y_max, GRAY_SEARCH_PAD, blocked,
-            )
-            overlap = (brush_lo, brush_hi)
-        else:
-            profile = gray[idx].astype(np.float32)
-            y0 = y_min
-            overlap = None
+        profile = gray[idx].astype(np.float32)
+        y0 = y_min
         cols.append((int(x), idx, profile, y0, y_min, y_max))
-        kind = _column_pattern_vote(profile, overlap=overlap)
+        kind = _column_pattern_vote(profile)
         if kind:
             votes.append(kind)
     prefer = None
@@ -1630,30 +1905,14 @@ def assign_natural_y_bands(
     raw1 = []
     raw2 = []
     used = []
-    for col_i, (x, idx, profile, y0, y_min, y_max) in enumerate(cols):
-        used_profile = profile.astype(np.float32).copy()
-        if col_i > 0 and len(cols[col_i - 1][2]) == len(used_profile):
-            used_profile = used_profile + cols[col_i - 1][2]
-            used_profile = used_profile / 2.0
-            if col_i + 1 < len(cols) and len(cols[col_i + 1][2]) == len(profile):
-                used_profile = (used_profile * 2.0 + cols[col_i + 1][2]) / 3.0
-        elif col_i + 1 < len(cols) and len(cols[col_i + 1][2]) == len(used_profile):
-            used_profile = 0.5 * used_profile + 0.5 * cols[col_i + 1][2]
-        if image is None:
-            overlap = None
-        else:
-            overlap = (int(y_min) - int(y0), int(y_max) - int(y0) + 1)
+    for _col_i, (x, idx, profile, y0, y_min, y_max) in enumerate(cols):
         if k == 2:
-            i = max(1, len(used_profile) // 2)
-            j = len(used_profile)
+            i = max(1, len(profile) // 2)
+            j = len(profile)
         else:
-            i, j = _band_cuts_1d(used_profile, prefer=prefer, overlap=overlap)
-        if image is None:
-            y1 = float(ys[idx[i]]) if i < len(idx) else float(ys[idx[-1]])
-            y2 = float(ys[idx[min(j, len(idx) - 1)]])
-        else:
-            y1 = float(y0 + i)
-            y2 = float(y0 + max(i, j - 1))
+            i, j = _band_cuts_1d(profile, prefer=prefer)
+        y1 = float(ys[idx[i]]) if i < len(idx) else float(ys[idx[-1]])
+        y2 = float(ys[idx[min(j, len(idx) - 1)]])
         if y2 <= y1 + 0.6:
             y2 = y1 + 1.0
         raw1.append(y1)
@@ -1741,11 +2000,18 @@ def assign_strip_layers(
     assign_lesion: bool,
     image: np.ndarray | None = None,
     blocked: np.ndarray | None = None,
+    wall: np.ndarray | None = None,
+    brush_radius: float = DEFAULT_BRUSH,
+    lumen_center: np.ndarray | None = None,
+    lesion_center: np.ndarray | None = None,
+    deepest: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Three exclusive top-to-bottom bands inside the brush."""
+    """Three exclusive bands along wall thickness."""
     del fit, features
     return assign_natural_y_bands(
         samples, keep, assign_lesion, k, image=image, blocked=blocked,
+        wall=wall, brush_radius=brush_radius, lumen_center=lumen_center,
+        lesion_center=lesion_center, deepest=deepest,
     )
 
 
@@ -1842,6 +2108,8 @@ def cluster_brush_band(
         labels_all = assign_strip_layers(
             samples, keep, fit, feat_all, k, assign_lesion,
             image=gray, blocked=lesion_d if exclude_lesion else None,
+            wall=wall, brush_radius=brush_radius, lumen_center=lumen_center,
+            lesion_center=lesion_center, deepest=deepest,
         )
         labels_fit = labels_all[keep]
     elif sensitive:

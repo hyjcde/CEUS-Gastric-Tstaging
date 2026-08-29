@@ -18,6 +18,7 @@ from wall_lesion_aware_cluster import (  # noqa: E402
     CLUSTER_METHODS,
     INSUFFICIENT,
     _band_cuts_1d,
+    _gradient_two_cuts,
     _split_interface_runs,
     cluster_brush_band,
     rasterize_polygon,
@@ -138,6 +139,13 @@ def main() -> int:
     halo = np.array([18.0] * 12 + [210.0] * 4 + [48.0] * 4 + [200.0] * 4 + [18.0] * 12, dtype=np.float32)
     hi, hj = _band_cuts_1d(halo, prefer="bdb", overlap=(12, 24))
     assert 14 <= hi <= 18 and 18 <= hj <= 22, (hi, hj)
+    # P040-like: bright, then a dark 6 px stripe, then bright. Cuts must hit the dark.
+    wallish = np.array(
+        [90.0] * 16 + [165.0] * 6 + [50.0] * 6 + [120.0] * 8 + [90.0] * 13,
+        dtype=np.float32,
+    )
+    gi, gj = _gradient_two_cuts(wallish, prefer="bdb", overlap=(16, 36))
+    assert 20 <= gi <= 24 and 26 <= gj <= 30, (gi, gj)
     first_line = np.asarray(strips.interfaces[0]["points"], dtype=np.float32)
     assert len(first_line) >= 4
     left = [[10.0, 20.0], [18.0, 20.4], [26.0, 20.2]]
