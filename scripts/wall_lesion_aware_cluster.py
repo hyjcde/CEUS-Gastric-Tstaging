@@ -468,12 +468,20 @@ class ClusterArm:
     labels: list[int] = field(default_factory=list)
     layer_polylines: dict[str, list[list[float]]] = field(default_factory=dict)
     fates: list[dict[str, Any]] = field(default_factory=list)
+    interfaces: list[list[list[float]]] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         data = asdict(self)
         data.pop("xs", None)
         data.pop("ys", None)
         data.pop("labels", None)
+        slim_if = []
+        for item in data.get("interfaces") or []:
+            pts = item.get("points") if isinstance(item, dict) else item
+            pts = pts or []
+            step = max(1, len(pts) // 24)
+            slim_if.append({"edge": item.get("edge", 0) if isinstance(item, dict) else 0, "points": pts[::step][:30]})
+        data["interfaces"] = slim_if
         slim = []
         for seg in data.get("flanks") or []:
             pts = seg.get("points") or []
@@ -921,6 +929,128 @@ def walk_layer_fate(
     return fates
 
 
+def _smooth1d(values: np.ndarray, radius: int = 2) -> np.ndarray:
+    if len(values) < 3:
+        return values.astype(np.float32)
+    kernel = np.arange(1, 2 * radius + 2, dtype=np.float32)
+    kernel = np.minimum(kernel, kernel[::-1])
+    kernel /= float(kernel.sum())
+    return np.convolve(np.pad(values.astype(np.float32), (radius, radius), mode="edge"), kernel, mode="valid")
+
+
+def cuts_from_labels(across: np.ndarray, labels: np.ndarray, keep: np.ndarray) -> list[float]:
+    cuts = []
+    for left, right in ((0, 1), (1, 2)):
+        a = keep & (labels == left)
+        b = keep & (labels == right)
+        if int(a.sum()) < 6 or int(b.sum()) < 6:
+            continue
+        cuts.append(0.5 * (float(np.median(across[a])) + float(np.median(across[b]))))
+    return cuts
+
+
+def _column_gray_peaks(xs, ys, gray, across, pix: np.ndarray) -> list[dict[str, float]]:
+    if int(pix.sum()) < 5:
+        return []
+    order = np.argsort(across[pix])
+    ac = across[pix][order]
+    gg = gray[pix][order]
+    xx = xs[pix][order].astype(np.float32)
+    yy = ys[pix][order].astype(np.float32)
+    if float(ac[-1] - ac[0]) < 0.12:
+        return []
+    grid = np.linspace(float(ac[0]), float(ac[-1]), max(18, int(round(24.0 * (ac[-1] - ac[0])))))
+    g_i = np.interp(grid, ac, gg)
+    x_i = np.interp(grid, ac, xx)
+    y_i = np.interp(grid, ac, yy)
+    smooth = _smooth1d(g_i, 2)
+    grad = np.gradient(smooth)
+    mag = np.abs(grad)
+    peaks = []
+    for i in range(2, len(mag) - 2):
+        if mag[i] >= mag[i - 1] and mag[i] >= mag[i + 1] and mag[i] >= 5.0:
+            peaks.append({
+                "across": float(grid[i]),
+                "mag": float(mag[i]),
+                "grad": float(grad[i]),
+                "x": float(x_i[i]),
+                "y": float(y_i[i]),
+            })
+    return peaks
+
+
+def _split_interface_runs(points: list[list[float]]) -> list[list[list[float]]]:
+    if len(points) < 3:
+        return []
+    arr = np.asarray(points, dtype=np.float32)
+    for axis in (0, 1):
+        arr[:, axis] = _finite_median_filter(arr[:, axis], 5)
+    runs: list[list[list[float]]] = []
+    run = [arr[0].tolist()]
+    for pt in arr[1:]:
+        prev = np.asarray(run[-1], dtype=np.float32)
+        if float(np.hypot(pt[0] - prev[0], pt[1] - prev[1])) > 14.0:
+            if len(run) >= 4:
+                runs.append(run)
+            run = [pt.tolist()]
+        else:
+            run.append(pt.tolist())
+    if len(run) >= 4:
+        runs.append(run)
+    return runs
+
+
+def trace_gray_interfaces(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    prefer_across: list[float] | None = None,
+) -> list[dict[str, Any]]:
+    """Thin bright/dark gray boundaries along the heading, snapped to real gradients."""
+    xs = samples["xs"]
+    ys = samples["ys"]
+    gray = samples["gray"]
+    across = samples["across"]
+    along = samples["along_idx"]
+    groups = merge_along_columns(along, keep, min_pix=6)
+    seeds = [float(v) for v in (prefer_across or []) if np.isfinite(v)]
+    raw: list[list[list[float]]] = [[], []] if len(seeds) < 2 else [[] for _ in seeds]
+    if not raw:
+        raw = [[], []]
+    for group in groups:
+        pix = keep & np.isin(along, group)
+        peaks = _column_gray_peaks(xs, ys, gray, across, pix)
+        if not peaks:
+            continue
+        if seeds:
+            used = set()
+            for slot, seed in enumerate(seeds[: len(raw)]):
+                cand = [
+                    (abs(p["across"] - seed), i, p)
+                    for i, p in enumerate(peaks)
+                    if i not in used and abs(p["across"] - seed) <= 0.38
+                ]
+                if not cand:
+                    continue
+                _d, idx, peak = min(cand, key=lambda item: item[0])
+                used.add(idx)
+                raw[slot].append([peak["x"], peak["y"]])
+            continue
+        falling = [p for p in peaks if p["grad"] < 0]
+        rising = [p for p in peaks if p["grad"] > 0]
+        if falling:
+            fall = max(falling, key=lambda p: p["mag"])
+            raw[0].append([fall["x"], fall["y"]])
+            rising = [p for p in rising if p["across"] > fall["across"] + 0.06]
+        if rising:
+            rise = max(rising, key=lambda p: p["mag"])
+            raw[1].append([rise["x"], rise["y"]])
+    out = []
+    for edge, pts in enumerate(raw):
+        for run in _split_interface_runs(pts):
+            out.append({"edge": edge, "points": run})
+    return out
+
+
 def merge_along_columns(along: np.ndarray, keep: np.ndarray, min_pix: int = STRIP_MIN_COL) -> list[np.ndarray]:
     stations = np.unique(along[keep]) if keep.any() else np.unique(along)
     groups: list[list[int]] = []
@@ -1217,6 +1347,9 @@ def cluster_brush_band(
         samples["xs"], samples["ys"], labels_all, names,
         along=samples["along_idx"], skip=skip,
     )
+    keep_lab = keep & (labels_all >= 0)
+    prefer = cuts_from_labels(samples["across"], labels_all, keep_lab)
+    interfaces = trace_gray_interfaces(samples, keep, prefer_across=prefer or None)
 
     return ClusterArm(
         name=name,
@@ -1236,6 +1369,7 @@ def cluster_brush_band(
         labels=labels_all.tolist(),
         layer_polylines=ridges,
         fates=fates,
+        interfaces=interfaces,
     )
 
 

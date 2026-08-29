@@ -125,6 +125,9 @@ def main() -> int:
         order = np.argsort(strip_y[col])
         labs = strip_lab[col][order]
         assert int(np.any(np.diff(labs) < 0)) == 0, labs
+    assert len(strips.interfaces) >= 1, strips.interfaces
+    first_line = np.asarray(strips.interfaces[0]["points"], dtype=np.float32)
+    assert len(first_line) >= 4
     # Spatial-only 1D may slice equally and still miss the gray pattern.
     assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {

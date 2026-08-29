@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Draw thin lines on real bright-to-dark gray edges
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`trace_gray_interfaces`), `scripts/render_wall_pixel_vs_dino_cluster.py`.
+- Reason: Colored washes hid the echo. The doctor needs to see the actual gray transition, with only a very thin edge.
+- Key changes: Wash alpha is almost transparent. Lines snap to along-heading gray gradient peaks (bright-to-dark and dark-to-bright). DINO only chooses which peak. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Prefer thin exclusive strips when clustering wall pixels
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`prefer_strips`), `scripts/render_wall_pixel_vs_dino_cluster.py`.

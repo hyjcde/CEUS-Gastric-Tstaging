@@ -22,6 +22,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 from render_wall_layer_thin_bands import (  # noqa: E402
@@ -60,7 +61,12 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 DINO_SIZE = 512
 DINO_LAYERS = (5, 8)
 PCA_DIM = 16
-PIXEL_BLEND = 0.48
+PIXEL_BLEND = 0.055
+EDGE_RGB = {
+    0: (255, 224, 70),
+    1: (248, 80, 96),
+    2: (52, 211, 110),
+}
 
 plt.rcParams.update({
     "font.family": "Times New Roman",
@@ -162,7 +168,7 @@ def pca_reduce(tokens: np.ndarray, fit: np.ndarray, dim: int = PCA_DIM) -> tuple
 
 
 def overlay_cluster_pixels(rgb: np.ndarray, xs, ys, labels, scale: float = 1.0) -> np.ndarray:
-    """Paint the clustered brush pixels. This is the cluster, not a ribbon."""
+    """Very faint strip wash. The gray image must stay readable."""
     out = rgb.astype(np.float32)
     xs = np.asarray(xs, dtype=np.float32)
     ys = np.asarray(ys, dtype=np.float32)
@@ -170,7 +176,7 @@ def overlay_cluster_pixels(rgb: np.ndarray, xs, ys, labels, scale: float = 1.0) 
     h, w = out.shape[:2]
     cover = np.zeros((h, w), dtype=np.float32)
     wash = np.zeros((h, w, 3), dtype=np.float32)
-    radius = max(1, int(round(1.2 * scale)))
+    radius = max(1, int(round(0.7 * scale)))
     for lab, color in LAYER_RGB.items():
         layer = np.zeros((h, w), dtype=np.uint8)
         for x, y, lab_i in zip(xs.tolist(), ys.tolist(), labels.tolist()):
@@ -186,6 +192,46 @@ def overlay_cluster_pixels(rgb: np.ndarray, xs, ys, labels, scale: float = 1.0) 
     alpha = (cover * PIXEL_BLEND)[..., None]
     painted = (1.0 - alpha) * out + alpha * wash
     return np.clip(painted, 0, 255).astype(np.uint8)
+
+
+def overlay_gray_glow(rgb: np.ndarray, gray: np.ndarray, xs, ys, scale: float) -> np.ndarray:
+    """Faint highlight on real gray transitions inside the brush."""
+    if gray.ndim != 2 or gray.shape[:2] != rgb.shape[:2]:
+        return rgb
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    mag = cv2.magnitude(gx, gy)
+    brush = np.zeros(gray.shape, dtype=np.uint8)
+    radius = max(1, int(round(1.1 * scale)))
+    for x, y in zip(np.asarray(xs).tolist(), np.asarray(ys).tolist()):
+        ix, iy = int(round(float(x))), int(round(float(y)))
+        if 0 <= ix < gray.shape[1] and 0 <= iy < gray.shape[0]:
+            cv2.circle(brush, (ix, iy), radius, 255, -1)
+    if not brush.any():
+        return rgb
+    local = mag[brush > 0]
+    thr = float(np.percentile(local, 72)) if len(local) else 20.0
+    glow = np.clip((mag - thr) / max(12.0, float(np.percentile(local, 96) - thr)), 0.0, 1.0)
+    glow[brush == 0] = 0.0
+    alpha = (0.16 * glow)[..., None]
+    tint = np.array([248, 250, 252], dtype=np.float32)
+    out = (1.0 - alpha) * rgb.astype(np.float32) + alpha * tint
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def draw_interface_lines(rgb: np.ndarray, interfaces, sx1: float, sy1: float, scale: float) -> np.ndarray:
+    """Very thin edges sitting on bright-to-dark gray boundaries."""
+    out = rgb.copy()
+    thick = 1 if scale < 3 else 2
+    for item in interfaces or []:
+        pts = np.asarray(item.get("points") or [], dtype=np.float32)
+        if len(pts) < 2:
+            continue
+        pts[:, 0] = (pts[:, 0] - sx1) * scale
+        pts[:, 1] = (pts[:, 1] - sy1) * scale
+        color = EDGE_RGB.get(int(item.get("edge", 0)), EDGE_RGB[0])
+        cv2.polylines(out, [np.round(pts).astype(np.int32)], False, color, thick, cv2.LINE_AA)
+    return out
 
 
 def choose_arm(gray, wall, lesion_mask, lumen_center, lesion_poly, cavity, brush, extra=None, method="kmeans1d_gray"):
@@ -257,7 +303,7 @@ def prepare_crop(meta: dict, seg: RoiSegmenter):
     }
 
 
-def paint_arm(rgb, wall, lesion_mask, arm, sx1, sy1, sx2, sy2, scale: int):
+def paint_arm(rgb, gray, arm, sx1, sy1, sx2, sy2, scale: int):
     strip = rgb[sy1:sy2, sx1:sx2]
     panel = cv2.resize(
         strip, (strip.shape[1] * scale, strip.shape[0] * scale), interpolation=cv2.INTER_LINEAR,
@@ -266,7 +312,14 @@ def paint_arm(rgb, wall, lesion_mask, arm, sx1, sy1, sx2, sy2, scale: int):
         return panel
     xs = (np.asarray(arm.xs, dtype=np.float32) - sx1) * scale
     ys = (np.asarray(arm.ys, dtype=np.float32) - sy1) * scale
-    return overlay_cluster_pixels(panel, xs, ys, arm.labels, scale=float(scale))
+    gray_hi = cv2.resize(
+        gray[sy1:sy2, sx1:sx2],
+        (panel.shape[1], panel.shape[0]),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    panel = overlay_cluster_pixels(panel, xs, ys, arm.labels, scale=float(scale))
+    panel = overlay_gray_glow(panel, gray_hi, xs, ys, scale=float(scale))
+    return draw_interface_lines(panel, getattr(arm, "interfaces", None), sx1, sy1, float(scale))
 
 
 def render_case(pack: dict, dino: CorridorDino, out_dir: Path, brush: float) -> dict:
@@ -319,14 +372,14 @@ def render_case(pack: dict, dino: CorridorDino, out_dir: Path, brush: float) -> 
         ((sx2 - sx1) * scale, (sy2 - sy1) * scale),
         interpolation=cv2.INTER_LINEAR,
     )
-    panel_b = paint_arm(overlay_blue(crop_rgb.copy(), crop_mask), wall_crop, crop_mask, pixel, sx1, sy1, sx2, sy2, scale)
-    panel_c = paint_arm(overlay_blue(crop_rgb.copy(), crop_mask), wall_crop, crop_mask, dino_arm, sx1, sy1, sx2, sy2, scale)
+    panel_b = paint_arm(overlay_blue(crop_rgb.copy(), crop_mask), gray, pixel, sx1, sy1, sx2, sy2, scale)
+    panel_c = paint_arm(overlay_blue(crop_rgb.copy(), crop_mask), gray, dino_arm, sx1, sy1, sx2, sy2, scale)
 
     fig, axes = plt.subplots(1, 3, figsize=(16.4, 5.6))
     titles = (
         "A  Source",
-        "B  Pixel strips  (gray + across)",
-        "C  DINO strips  (token PCA + across)",
+        "B  Pixel  (gray edges)",
+        "C  DINO  (cuts on gray edges)",
     )
     for ax, panel, title in zip(axes, (panel_a, panel_b, panel_c), titles):
         ax.imshow(panel)
@@ -341,7 +394,8 @@ def render_case(pack: dict, dino: CorridorDino, out_dir: Path, brush: float) -> 
         fontname="Times New Roman",
         y=0.98,
     )
-    handles = [Patch(facecolor=LAYER_HEX[lab], edgecolor="#6b7280", label=en) for lab, _key, en in LAYER_LEGEND]
+    handles = [Patch(facecolor=LAYER_HEX[lab], edgecolor="#6b7280", label=en, alpha=0.35) for lab, _key, en in LAYER_LEGEND]
+    handles.append(Line2D([0], [0], color="#fde047", lw=1.2, label="Bright / dark edge"))
     fig.legend(
         handles=handles,
         loc="lower center",
@@ -454,7 +508,7 @@ def main() -> int:
                 "created_at": "2026-08-29",
                 "backbone": "lvd1689m",
                 "layers": list(DINO_LAYERS),
-                "note": "Same brush pixels. Gray vs DINO, both assigned as thin heading strips. Not a cT.",
+                "note": "Very faint wash plus thin lines on real gray bright/dark edges. Not a cT.",
                 "cases": rows,
                 "index": index_path,
             },
