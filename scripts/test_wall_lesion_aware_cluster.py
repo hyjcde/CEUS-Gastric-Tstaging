@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from wall_lesion_aware_cluster import (  # noqa: E402
     CLUSTER_METHODS,
     INSUFFICIENT,
+    _band_cuts_1d,
     _split_interface_runs,
     cluster_brush_band,
     rasterize_polygon,
@@ -130,6 +131,10 @@ def main() -> int:
         assert int(np.any(np.diff(labs) < 0)) == 0, labs
         assert 2 not in set(labs.tolist()[: max(1, int((labs == 0).sum()))]), labs
     assert len(strips.interfaces) >= 1, strips.interfaces
+    thin_bright = np.array([40.0] * 5 + [190.0] * 2 + [40.0] * 5, dtype=np.float32)
+    cut_i, cut_j = _band_cuts_1d(thin_bright)
+    assert cut_i <= 5 and cut_j >= 7, (cut_i, cut_j)
+    assert (cut_j - cut_i) <= 8, (cut_i, cut_j)
     first_line = np.asarray(strips.interfaces[0]["points"], dtype=np.float32)
     assert len(first_line) >= 4
     left = [[10.0, 20.0], [18.0, 20.4], [26.0, 20.2]]

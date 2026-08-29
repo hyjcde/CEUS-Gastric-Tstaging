@@ -22,6 +22,8 @@ SENSITIVE_ACROSS = 0.15
 # nudges the two cuts; it cannot jump a pixel over a neighboring strip.
 STRIP_MIN_COL = 8
 STRIP_SMOOTH = 9
+GRAY_CUT_PAD = 2
+GRAY_CUT_MIN_SCORE = 8.0
 JOIN_RAY_PX = 28.0
 JOIN_END_PX = 16.0
 JOIN_MAX_GAP = 42.0
@@ -1405,9 +1407,32 @@ def refine_across_cut(across: np.ndarray, values: np.ndarray, seed: float, max_s
 
 
 def _band_cuts_1d(gray: np.ndarray) -> tuple[int, int]:
-    """Split one column into three equal parts, top to bottom."""
+    """Split one column by gray: a brighter or darker middle, plus a 2 px outer pad.
+
+    Tertiles are only the fallback when the profile has no clear dark/bright swing.
+    """
     n = int(len(gray))
-    return max(1, n // 3), min(n - 1, max(2, 2 * n // 3))
+    tertile = (max(1, n // 3), min(n - 1, max(2, 2 * n // 3)))
+    if n < 8:
+        return tertile
+    sm = _smooth1d(np.asarray(gray, dtype=np.float32), 1)
+    best = (-1.0, tertile[0], tertile[1])
+    for i in range(2, n - 3):
+        for j in range(i + 2, n - 1):
+            a = float(sm[:i].mean())
+            b = float(sm[i:j].mean())
+            c = float(sm[j:].mean())
+            score = max((b - a) + (b - c), (a - b) + (c - b))
+            if score > best[0]:
+                best = (score, i, j)
+    score, i, j = best
+    if score < GRAY_CUT_MIN_SCORE:
+        return tertile
+    i = max(2, int(i) - GRAY_CUT_PAD)
+    j = min(n - 2, int(j) + GRAY_CUT_PAD)
+    if j <= i + 1:
+        return tertile
+    return i, j
 
 
 def assign_natural_y_bands(
@@ -1453,10 +1478,10 @@ def assign_natural_y_bands(
         used.append(int(x))
     if len(used) < 3:
         return labels
-    sm1 = _finite_median_filter(np.asarray(raw1, dtype=np.float32), max(STRIP_SMOOTH, 15))
-    sm2 = _finite_median_filter(np.asarray(raw2, dtype=np.float32), max(STRIP_SMOOTH, 15))
-    sm1 = _smooth1d(sm1, 3)
-    sm2 = _smooth1d(sm2, 3)
+    sm1 = _finite_median_filter(np.asarray(raw1, dtype=np.float32), STRIP_SMOOTH)
+    sm2 = _finite_median_filter(np.asarray(raw2, dtype=np.float32), STRIP_SMOOTH)
+    sm1 = _smooth1d(sm1, 2)
+    sm2 = _smooth1d(sm2, 2)
     for i in range(len(sm2)):
         if sm2[i] <= sm1[i] + 0.8:
             sm2[i] = sm1[i] + 1.0

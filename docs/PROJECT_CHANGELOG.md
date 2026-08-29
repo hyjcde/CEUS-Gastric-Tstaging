@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Place the three bands on gray bright/dark edges
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`_band_cuts_1d`), algorithm note, four-case render.
+- Reason: Equal-count thirds looked too uniform. Layers should follow the column gray profile, with the middle band allowed to sit a couple of pixels past each transition.
+- Key changes: Score dark-bright-dark versus bright-dark-bright on each image column. Expand the middle cut by 2 px. Tertiles only if contrast is weak. Same-x yellow still cannot enter green. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Document the current brush pixel layering algorithm
 
 - Scope: `docs/technical/WALL_PIXEL_BRUSH_LAYERING.md`, `docs/DOCUMENT_MAP.md`, pointer in the lesion-aware plan.
