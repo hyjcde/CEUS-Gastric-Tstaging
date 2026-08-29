@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Probe direction-aware joint wall-band tracking on four cases
+
+- Scope: `render_wall_directional_joint_bands.py`, its synthetic test, and four offline fixture visualizations.
+- Reason: Independent column extrema were still stepped and case-specific. The experiment needed a wall-oriented coordinate system, speckle-resistant evidence, jointly ordered paths, and explicit rejection of invalid headings.
+- Key changes: Unwrap source pixels along the smoothed doctor heading, apply anisotropic tangent-direction filtering, jointly optimize dark-bright-dark paths with spacing and curvature costs, retain only a confidence-connected segment, and constrain display smoothing to one pixel. Reject self-crossing headings before emitting bands.
+- Validation: Synthetic median path-index error was 1 px and maximum display shift was 0.3125 px. After rejecting paths that hug the normal-search boundary, P019, P040, and P076 retained 92, 52, and 35 stations with median minimum contrast 108.83, 64.34, and 41.47. P008 was correctly rejected because heading tortuosity was 8.91 with a 171.34-degree local turn.
+- Deployment: none (offline analysis figures only). No Next deployment required.
+- Follow-up: P019 and P076 still require clinical confirmation that the strongest ordered echo triplet is the intended gastric-wall triplet; contrast confidence alone does not establish anatomy.
+
 ## 2026-08-29, Make the P040 wall bands follow source pixels
 
 - Scope: P040 pixel-band mode in `render_wall_curated_layers.py` and its offline visualization.
