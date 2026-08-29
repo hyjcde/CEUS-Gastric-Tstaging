@@ -30,11 +30,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 117.4,
-          "peri_gray": 117.0,
-          "seed_count": 306,
-          "peri_count": 221,
-          "inside_count": 395
+          "seed_gray": 94.7,
+          "peri_gray": 101.7,
+          "seed_count": 257,
+          "peri_count": 137,
+          "inside_count": 195
         },
         {
           "id": "muscularis",
@@ -42,11 +42,11 @@
           "status": "fused",
           "status_zh": "\u878d\u5408",
           "fuse_with": "dark-mass",
-          "seed_gray": 82.5,
-          "peri_gray": 83.8,
-          "seed_count": 1514,
-          "peri_count": 633,
-          "inside_count": 2879
+          "seed_gray": 75.9,
+          "peri_gray": 89.8,
+          "seed_count": 439,
+          "peri_count": 200,
+          "inside_count": 1972
         },
         {
           "id": "serosa",
@@ -54,11 +54,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 136.4,
-          "peri_gray": 120.9,
-          "seed_count": 871,
-          "peri_count": 386,
-          "inside_count": 335
+          "seed_gray": 110.2,
+          "peri_gray": 109.7,
+          "seed_count": 891,
+          "peri_count": 357,
+          "inside_count": 514
         }
       ]
     }

@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 pale smear bands, no ridge curves
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (across-profile BDB), `scripts/render_wall_layer_thin_bands.py --case P040`.
+- Reason: Jagged red/green ridge curves looked unlike wall echoes. The doctor asked for very pale smeared belts: bright, dark, bright, next to the yellow heading, still clusterable even when thin.
+- Key changes: Drop ridge polylines. Overlay is a blurred pale wash. Right-side profile finds the thin bright-dark-bright before painting. Legend uses color patches, not red curves. Does not unlock cT.
+- Validation: Synthetic cluster test; offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 paler stacked bands plus layer legend
 
 - Scope: `scripts/render_wall_layer_thin_bands.py --case P040`. Panel `results/visualizations/error_cases/CASE-040_thin_bands.png`.

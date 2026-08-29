@@ -51,18 +51,13 @@ DINO_CKPT = (
 
 LESION_BLUE = (191, 219, 254)
 LAYER_RGB = {
-    0: (253, 230, 138),
-    1: (254, 202, 202),
-    2: (167, 243, 208),
+    0: (254, 243, 199),
+    1: (226, 232, 240),
+    2: (209, 250, 229),
 }
-RIDGE_RGB = {
-    0: (234, 179, 8),
-    1: (244, 63, 94),
-    2: (16, 185, 129),
-}
-LAYER_HEX = {0: "#eab308", 1: "#f43f5e", 2: "#10b981"}
+LAYER_HEX = {0: "#fde68a", 1: "#cbd5e1", 2: "#a7f3d0"}
 WALL = (254, 240, 180)
-LAYER_BLEND = 0.16
+LAYER_BLEND = 0.11
 LESION_BLEND = 0.12
 GAP_PX = 10
 CJK_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
@@ -155,37 +150,14 @@ def overlay_blue(rgb: np.ndarray, mask: np.ndarray, alpha: float = LESION_BLEND)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def overlay_ridges(rgb: np.ndarray, polylines: dict, origin: tuple[int, int] = (0, 0), gap: np.ndarray | None = None) -> np.ndarray:
-    out = rgb.copy()
-    ox, oy = origin
-    names = ("shallow", "muscularis", "serosa")
-    height, width = out.shape[:2]
-    for lab, name in enumerate(names):
-        pts = np.asarray(polylines.get(name) or [], dtype=np.float32)
-        if len(pts) < 2:
-            continue
-        shifted = np.round(pts - np.array([ox, oy], dtype=np.float32)).astype(np.int32)
-        if gap is not None:
-            keep_pts = []
-            for x, y in shifted.tolist():
-                if 0 <= x < width and 0 <= y < height and gap[y, x] > 0:
-                    if len(keep_pts) >= 2:
-                        cv2.polylines(out, [np.asarray(keep_pts, dtype=np.int32)], False, RIDGE_RGB[lab], 1, cv2.LINE_AA)
-                    keep_pts = []
-                    continue
-                keep_pts.append([x, y])
-            shifted = np.asarray(keep_pts, dtype=np.int32) if keep_pts else np.zeros((0, 2), dtype=np.int32)
-        if len(shifted) >= 2:
-            cv2.polylines(out, [shifted], False, RIDGE_RGB[lab], 1, cv2.LINE_AA)
-    return out
-
-
 def overlay_layers(rgb: np.ndarray, xs, ys, labels, gap: np.ndarray | None = None) -> np.ndarray:
-    out = rgb.astype(np.float32)
+    """Very pale smeared bands. No ridge curves."""
     xs = np.asarray(xs, dtype=np.int32)
     ys = np.asarray(ys, dtype=np.int32)
     labels = np.asarray(labels, dtype=np.int32)
-    h, w = out.shape[:2]
+    h, w = rgb.shape[:2]
+    wash = np.zeros((h, w, 3), dtype=np.float32)
+    weight = np.zeros((h, w), dtype=np.float32)
     ok = (xs >= 0) & (ys >= 0) & (xs < w) & (ys < h) & (labels >= 0)
     if gap is not None:
         ok = ok & (gap[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)] == 0)
@@ -193,7 +165,14 @@ def overlay_layers(rgb: np.ndarray, xs, ys, labels, gap: np.ndarray | None = Non
         sel = ok & (labels == lab)
         if not sel.any():
             continue
-        out[ys[sel], xs[sel]] = (1.0 - LAYER_BLEND) * out[ys[sel], xs[sel]] + LAYER_BLEND * np.array(color, dtype=np.float32)
+        wash[ys[sel], xs[sel]] = np.array(color, dtype=np.float32)
+        weight[ys[sel], xs[sel]] = 1.0
+    wash = cv2.GaussianBlur(wash, (9, 9), 1.6)
+    weight = cv2.GaussianBlur(weight, (9, 9), 1.6)
+    if gap is not None:
+        weight = weight * (gap == 0).astype(np.float32)
+    alpha = np.clip(weight * LAYER_BLEND, 0.0, LAYER_BLEND)[..., None]
+    out = (1.0 - alpha) * rgb.astype(np.float32) + alpha * wash
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
@@ -450,7 +429,6 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     labeled = overlay_blue(crop_rgb.copy(), crop_mask)
     if arm is not None and getattr(arm, "status", "") == "ok":
         labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels, gap=gap)
-        labeled = overlay_ridges(labeled, getattr(arm, "layer_polylines", {}) or {}, gap=gap)
     labeled = draw_heading(labeled, wall_crop, crop_mask)
     sx1, sy1, sx2, sy2 = wall_strip(labeled, wall_crop, pad=20)
     strip = labeled[sy1:sy2, sx1:sx2]
@@ -458,7 +436,7 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     panel_b = cv2.resize(
         strip,
         (strip.shape[1] * scale, strip.shape[0] * scale),
-        interpolation=cv2.INTER_NEAREST,
+        interpolation=cv2.INTER_LINEAR,
     )
 
     time_sec = meta.get("time_sec")
@@ -470,28 +448,36 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     axes[0].set_title(f"A. {time_sec}s  黄线只是走行，不是层边界", fontproperties=CJK, fontsize=11)
     axes[0].axis("off")
     axes[1].imshow(panel_b)
-    axes[1].set_title("B. 右侧三层浅色叠在一起；中间条带断开 = 消失", fontproperties=CJK, fontsize=11)
+    axes[1].set_title("B. 黄线旁浅色涂抹：亮 / 暗 / 亮；中间断开 = 消失", fontproperties=CJK, fontsize=11)
     axes[1].axis("off")
 
     def to_b(x: float, y: float) -> tuple[float, float]:
         return (x - sx1) * scale, (y - sy1) * scale
 
-    polylines = getattr(arm, "layer_polylines", {}) or {}
-    for lab, key, zh, _hint in LAYER_LEGEND:
-        pts = np.asarray(polylines.get(key) or [], dtype=np.float32)
-        if len(pts) < 2:
-            continue
-        right = pts[int(np.argmax(pts[:, 0]))]
-        axes[1].annotate(
-            zh,
-            xy=to_b(float(right[0]), float(right[1])),
-            xytext=(12, (-18, 0, 18)[lab]),
-            textcoords="offset points",
-            color=LAYER_HEX[lab],
-            fontproperties=CJK,
-            fontsize=10,
-            arrowprops={"arrowstyle": "-", "color": LAYER_HEX[lab], "lw": 0.8},
-        )
+    xs_lab = np.asarray(getattr(arm, "xs", []) or [], dtype=np.int32)
+    ys_lab = np.asarray(getattr(arm, "ys", []) or [], dtype=np.int32)
+    labs = np.asarray(getattr(arm, "labels", []) or [], dtype=np.int32)
+    if len(xs_lab) and len(labs) == len(xs_lab):
+        right_cut = float(np.quantile(xs_lab, 0.78)) if len(xs_lab) else 0.0
+        for lab, _key, zh, _hint in LAYER_LEGEND:
+            sel = (labs == lab) & (xs_lab >= right_cut)
+            if gap is not None and sel.any():
+                inside = (
+                    (ys_lab >= 0) & (ys_lab < gap.shape[0])
+                    & (xs_lab >= 0) & (xs_lab < gap.shape[1])
+                )
+                sel = sel & inside & (gap[np.clip(ys_lab, 0, gap.shape[0] - 1), np.clip(xs_lab, 0, gap.shape[1] - 1)] == 0)
+            if int(sel.sum()) < 8:
+                continue
+            axes[1].text(
+                *to_b(float(xs_lab[sel].mean()), float(ys_lab[sel].mean())),
+                zh,
+                color="#e5e7eb",
+                fontproperties=CJK,
+                fontsize=9,
+                ha="left",
+                va="center",
+            )
     mid = vanish_xy(wall_crop, crop_mask)
     if mid is not None:
         axes[1].annotate(
@@ -499,19 +485,19 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
             xy=to_b(mid[0], mid[1]),
             xytext=(0, -36),
             textcoords="offset points",
-            color="#fca5a5",
+            color="#e5e7eb",
             fontproperties=CJK,
             fontsize=11,
             ha="center",
-            arrowprops={"arrowstyle": "->", "color": "#fca5a5", "lw": 1.1},
+            arrowprops={"arrowstyle": "->", "color": "#d1d5db", "lw": 1.0},
         )
 
     handles = []
     for lab, key, zh, hint in LAYER_LEGEND:
         fate = fate_by_id.get(key) or {}
         status = FATE_ZH.get(str(fate.get("status") or ""), str(fate.get("status") or ""))
-        handles.append(Line2D(
-            [0], [0], color=LAYER_HEX[lab], lw=3,
+        handles.append(Patch(
+            facecolor=LAYER_HEX[lab], edgecolor="#6b7280", alpha=0.85,
             label=f"{zh}  {hint}  {status}",
         ))
     handles.append(Line2D([0], [0], color="#fde68a", lw=1.6, label="预期走行线（不是层边界）"))
@@ -581,7 +567,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Segment lesion on a tight wall ROI, then magnify peri-lesion layers.")
     parser.add_argument("--fixtures", default=str(DEFAULT_FIXTURES))
     parser.add_argument("--out", default=str(DEFAULT_OUT))
-    parser.add_argument("--brush", type=float, default=12.0)
+    parser.add_argument("--brush", type=float, default=8.0)
     parser.add_argument("--case", action="append", dest="cases", help="P040 or CASE-040. Repeatable. Default: all.")
     parser.add_argument("--index", action="store_true", help="Also write a 4-case contact sheet.")
     args = parser.parse_args()

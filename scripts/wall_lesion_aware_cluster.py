@@ -504,6 +504,50 @@ def kmeans_gray_sensitive(values: np.ndarray, k: int, n_iter: int = 28) -> tuple
     return labels, centers
 
 
+def assign_from_across_profile(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    fit: np.ndarray,
+    assign_lesion: bool,
+) -> np.ndarray | None:
+    """Thin bright-dark-bright from the right-side gray profile across the heading."""
+    gray = samples["gray"].astype(np.float32)
+    across = samples["across"].astype(np.float32)
+    if int(fit.sum()) < MIN_VALID_PIXELS:
+        return None
+    edges = np.linspace(-1.05, 1.05, 21)
+    mids = 0.5 * (edges[:-1] + edges[1:])
+    prof = np.full((len(mids),), np.nan, dtype=np.float32)
+    for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+        sel = fit & (across >= lo) & (across < hi)
+        if int(sel.sum()) >= 3:
+            prof[i] = float(gray[sel].mean())
+    ok = np.isfinite(prof)
+    if int(ok.sum()) < 7:
+        return None
+    prof = np.interp(np.arange(len(prof)), np.where(ok)[0], prof[ok]).astype(np.float32)
+    prof = np.convolve(prof, np.ones(3, dtype=np.float32) / 3.0, mode="same")
+    valley = 2 + int(np.argmin(prof[2:-2]))
+    left = int(np.argmax(prof[: valley + 1]))
+    right = valley + int(np.argmax(prof[valley:]))
+    if right <= valley or left >= valley:
+        return None
+    if float(prof[left]) < float(prof[valley]) + 8.0 and float(prof[right]) < float(prof[valley]) + 8.0:
+        return None
+    cut_l = 0.5 * (float(mids[left]) + float(mids[valley]))
+    cut_r = 0.5 * (float(mids[valley]) + float(mids[right]))
+    mid_g = 0.5 * (float(prof[valley]) + float(max(prof[left], prof[right])))
+    pred = np.where(across < cut_l, 0, np.where(across > cut_r, 2, 1)).astype(np.int32)
+    pred = np.where((gray < mid_g) & (across >= cut_l - 0.10) & (across <= cut_r + 0.10), 1, pred)
+    pred = np.where((gray >= mid_g) & (across < cut_l), 0, pred)
+    pred = np.where((gray >= mid_g) & (across > cut_r), 2, pred)
+    labels_all = np.full(len(gray), -1, dtype=np.int32)
+    labels_all[keep] = pred[keep]
+    if assign_lesion:
+        labels_all[~keep] = pred[~keep]
+    return labels_all
+
+
 def assign_sensitive_layers(
     samples: dict[str, np.ndarray],
     keep: np.ndarray,
@@ -519,6 +563,15 @@ def assign_sensitive_layers(
     if int(fit.sum()) < MIN_VALID_PIXELS or k < 2:
         return labels_all, labels_all[keep]
     if k == 3:
+        profile = assign_from_across_profile(samples, keep, fit, assign_lesion)
+        if profile is not None:
+            sel = profile >= 0
+            if sel.any():
+                cleaned = filter_small_components(
+                    samples["xs"][sel], samples["ys"][sel], profile[sel], shape, min_area=3,
+                )
+                profile[sel] = cleaned
+            return profile, profile[keep]
         lab2, centers2 = kmeans_gray_sensitive(gray[fit], 2)
         if float(centers2[0]) > float(centers2[1]):
             lab2 = 1 - lab2
