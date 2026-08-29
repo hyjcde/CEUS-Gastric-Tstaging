@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Stitch gray-edge fragments with tangent extrapolation
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (interface join).
+- Reason: Thin gray-edge lines broke at small gaps. Local tangent and curvature should decide whether two fragments are the same strip.
+- Key changes: Extrapolate each end a short way along its tangent. If the ray meets another end within a threshold, and the turn is mild, interpolate a Hermite bridge. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Draw thin lines on real bright-to-dark gray edges
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`trace_gray_interfaces`), `scripts/render_wall_pixel_vs_dino_cluster.py`.

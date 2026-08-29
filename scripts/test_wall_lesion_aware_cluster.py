@@ -19,6 +19,8 @@ from wall_lesion_aware_cluster import (  # noqa: E402
     INSUFFICIENT,
     cluster_brush_band,
     rasterize_polygon,
+    stitch_interface_runs,
+    try_join_runs,
 )
 
 
@@ -128,6 +130,13 @@ def main() -> int:
     assert len(strips.interfaces) >= 1, strips.interfaces
     first_line = np.asarray(strips.interfaces[0]["points"], dtype=np.float32)
     assert len(first_line) >= 4
+    left = [[10.0, 20.0], [18.0, 20.4], [26.0, 20.2]]
+    right = [[38.0, 20.6], [46.0, 20.3], [54.0, 20.1]]
+    joined = try_join_runs(left, right)
+    assert joined is not None and len(joined) >= 7
+    stitched = stitch_interface_runs([left, right])
+    assert len(stitched) == 1
+    assert stitched[0][0][0] < 12.0 and stitched[0][-1][0] > 50.0
     # Spatial-only 1D may slice equally and still miss the gray pattern.
     assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {

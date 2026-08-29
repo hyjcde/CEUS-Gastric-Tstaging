@@ -22,6 +22,10 @@ SENSITIVE_ACROSS = 0.15
 # nudges the two cuts; it cannot jump a pixel over a neighboring strip.
 STRIP_MIN_COL = 8
 STRIP_SMOOTH = 9
+JOIN_RAY_PX = 16.0
+JOIN_END_PX = 11.0
+JOIN_MAX_GAP = 26.0
+JOIN_MAX_TURN_DEG = 40.0
 DEFAULT_BRUSH = 8.0
 FATE_ZH = {
     "present": "还在",
@@ -979,6 +983,116 @@ def _column_gray_peaks(xs, ys, gray, across, pix: np.ndarray) -> list[dict[str, 
     return peaks
 
 
+def _poly_tangent(pts: np.ndarray, at_start: bool) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    if len(pts) < 2:
+        return np.array([1.0, 0.0], dtype=np.float32)
+    span = min(3, len(pts) - 1)
+    if at_start:
+        delta = pts[0] - pts[span]
+    else:
+        delta = pts[-1] - pts[-1 - span]
+    leng = float(np.hypot(delta[0], delta[1])) or 1.0
+    return (delta / leng).astype(np.float32)
+
+
+def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.degrees(np.arccos(float(np.clip(np.dot(a, b), -1.0, 1.0)))))
+
+
+def _hermite_bridge(p0: np.ndarray, t0: np.ndarray, p1: np.ndarray, t1: np.ndarray) -> list[list[float]]:
+    gap = float(np.hypot(*(p1 - p0)))
+    m0 = t0 * gap
+    m1 = t1 * gap
+    count = max(3, int(round(gap / 3.0)))
+    out = []
+    for t in np.linspace(0.0, 1.0, count + 2)[1:-1]:
+        t2 = t * t
+        t3 = t2 * t
+        point = (
+            (2 * t3 - 3 * t2 + 1) * p0
+            + (t3 - 2 * t2 + t) * m0
+            + (-2 * t3 + 3 * t2) * p1
+            + (t3 - t2) * m1
+        )
+        out.append([float(point[0]), float(point[1])])
+    return out
+
+
+def try_join_runs(left: np.ndarray, right: np.ndarray) -> np.ndarray | None:
+    """Join left's end to right's start if tangent rays almost meet."""
+    left = np.asarray(left, dtype=np.float32)
+    right = np.asarray(right, dtype=np.float32)
+    if len(left) < 2 or len(right) < 2:
+        return None
+    t_left = _poly_tangent(left, False)
+    t_right_out = _poly_tangent(right, True)
+    t_right = -t_right_out
+    p0 = left[-1]
+    p1 = right[0]
+    gap_vec = p1 - p0
+    dist = float(np.hypot(gap_vec[0], gap_vec[1]))
+    if dist <= 1.6:
+        return np.vstack([left, right[1:]])
+    if dist > JOIN_MAX_GAP:
+        return None
+    chord = gap_vec / dist
+    if _angle_deg(t_left, chord) > JOIN_MAX_TURN_DEG:
+        return None
+    if _angle_deg(chord, t_right) > JOIN_MAX_TURN_DEG:
+        return None
+    if _angle_deg(t_left, t_right) > JOIN_MAX_TURN_DEG + 12.0:
+        return None
+    ray = p0 + t_left * JOIN_RAY_PX
+    other_ray = p1 + t_right_out * JOIN_RAY_PX
+    along = float(np.dot(p1 - p0, t_left))
+    closest = p0 + t_left * float(np.clip(along, 0.0, JOIN_RAY_PX + 6.0))
+    if (
+        float(np.hypot(*(ray - p1))) > JOIN_END_PX
+        and float(np.hypot(*(other_ray - p0))) > JOIN_END_PX
+        and float(np.hypot(*(closest - p1))) > JOIN_END_PX
+    ):
+        return None
+    bridge = _hermite_bridge(p0, t_left, p1, t_right)
+    mid = np.asarray(bridge, dtype=np.float32) if bridge else np.zeros((0, 2), dtype=np.float32)
+    if len(mid):
+        return np.vstack([left, mid, right])
+    return np.vstack([left, right])
+
+
+def stitch_interface_runs(runs: list[list[list[float]]]) -> list[list[list[float]]]:
+    """Extrapolate each end along its tangent and interpolate if another end is close."""
+    polys = [np.asarray(run, dtype=np.float32) for run in runs if len(run) >= 2]
+    changed = True
+    while changed and len(polys) > 1:
+        changed = False
+        best = None
+        for i, one in enumerate(polys):
+            for j, two in enumerate(polys):
+                if i == j:
+                    continue
+                variants = (
+                    (one, two),
+                    (one, two[::-1]),
+                    (one[::-1], two),
+                    (one[::-1], two[::-1]),
+                )
+                for left, right in variants:
+                    joined = try_join_runs(left, right)
+                    if joined is None:
+                        continue
+                    dist = float(np.hypot(*(left[-1] - right[0])))
+                    if best is None or dist < best[0]:
+                        best = (dist, i, j, joined)
+        if best is None:
+            break
+        _dist, i, j, joined = best
+        polys = [poly for idx, poly in enumerate(polys) if idx not in {i, j}]
+        polys.append(joined)
+        changed = True
+    return [poly.tolist() for poly in polys if len(poly) >= 4]
+
+
 def _split_interface_runs(points: list[list[float]]) -> list[list[list[float]]]:
     if len(points) < 3:
         return []
@@ -989,15 +1103,22 @@ def _split_interface_runs(points: list[list[float]]) -> list[list[list[float]]]:
     run = [arr[0].tolist()]
     for pt in arr[1:]:
         prev = np.asarray(run[-1], dtype=np.float32)
-        if float(np.hypot(pt[0] - prev[0], pt[1] - prev[1])) > 14.0:
-            if len(run) >= 4:
-                runs.append(run)
-            run = [pt.tolist()]
-        else:
+        delta = np.asarray(pt, dtype=np.float32) - prev
+        dist = float(np.hypot(delta[0], delta[1]))
+        keep = dist <= 14.0
+        if not keep and dist <= 22.0 and len(run) >= 2:
+            tan = _poly_tangent(np.asarray(run, dtype=np.float32), False)
+            direc = delta / max(dist, 1e-6)
+            keep = float(np.dot(tan, direc)) >= 0.78 and _angle_deg(tan, direc) <= JOIN_MAX_TURN_DEG
+        if keep:
             run.append(pt.tolist())
+            continue
+        if len(run) >= 4:
+            runs.append(run)
+        run = [pt.tolist()]
     if len(run) >= 4:
         runs.append(run)
-    return runs
+    return stitch_interface_runs(runs)
 
 
 def trace_gray_interfaces(
