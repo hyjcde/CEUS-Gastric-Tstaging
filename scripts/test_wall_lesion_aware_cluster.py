@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from wall_lesion_aware_cluster import (  # noqa: E402
     CLUSTER_METHODS,
     INSUFFICIENT,
+    _split_interface_runs,
     cluster_brush_band,
     rasterize_polygon,
     stitch_interface_runs,
@@ -137,6 +138,18 @@ def main() -> int:
     stitched = stitch_interface_runs([left, right])
     assert len(stitched) == 1
     assert stitched[0][0][0] < 12.0 and stitched[0][-1][0] > 50.0
+    ys = [p[1] for p in stitched[0]]
+    assert max(ys) - min(ys) < 3.0
+    corner_l = [[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]]
+    corner_r = [[20.0, 12.0], [20.0, 24.0], [20.0, 36.0]]
+    assert try_join_runs(corner_l, corner_r) is None
+    zig = [[float(i * 3), 20.0 + (8.0 if i % 2 else -8.0)] for i in range(16)]
+    zig[0][1] = 20.0
+    zig[-1][1] = 20.0
+    flat = _split_interface_runs(zig)
+    assert len(flat) == 1
+    zig_ys = [p[1] for p in flat[0]]
+    assert max(zig_ys) - min(zig_ys) < 10.0
     # Spatial-only 1D may slice equally and still miss the gray pattern.
     assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {

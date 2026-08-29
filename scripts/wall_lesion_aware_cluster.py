@@ -22,10 +22,15 @@ SENSITIVE_ACROSS = 0.15
 # nudges the two cuts; it cannot jump a pixel over a neighboring strip.
 STRIP_MIN_COL = 8
 STRIP_SMOOTH = 9
-JOIN_RAY_PX = 16.0
-JOIN_END_PX = 11.0
-JOIN_MAX_GAP = 26.0
-JOIN_MAX_TURN_DEG = 40.0
+JOIN_RAY_PX = 28.0
+JOIN_END_PX = 16.0
+JOIN_MAX_GAP = 42.0
+JOIN_MAX_TURN_DEG = 22.0
+SPLIT_ALONG = 8.0
+SPLIT_XY_PX = 40.0
+MIN_ACROSS_SEP = 0.22
+ALONG_SMOOTH_SIGMA = 8.0
+ACROSS_OUTLIER = 0.18
 DEFAULT_BRUSH = 8.0
 FATE_ZH = {
     "present": "还在",
@@ -987,7 +992,7 @@ def _poly_tangent(pts: np.ndarray, at_start: bool) -> np.ndarray:
     pts = np.asarray(pts, dtype=np.float32)
     if len(pts) < 2:
         return np.array([1.0, 0.0], dtype=np.float32)
-    span = min(3, len(pts) - 1)
+    span = min(8, len(pts) - 1)
     if at_start:
         delta = pts[0] - pts[span]
     else:
@@ -1001,10 +1006,12 @@ def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _hermite_bridge(p0: np.ndarray, t0: np.ndarray, p1: np.ndarray, t1: np.ndarray) -> list[list[float]]:
+    """Short, almost-straight bridge. Full-gap tangents overshoot and look too bent."""
     gap = float(np.hypot(*(p1 - p0)))
-    m0 = t0 * gap
-    m1 = t1 * gap
-    count = max(3, int(round(gap / 3.0)))
+    handle = 0.22 * gap
+    m0 = t0 * handle
+    m1 = t1 * handle
+    count = max(2, int(round(gap / 4.0)))
     out = []
     for t in np.linspace(0.0, 1.0, count + 2)[1:-1]:
         t2 = t * t
@@ -1019,8 +1026,94 @@ def _hermite_bridge(p0: np.ndarray, t0: np.ndarray, p1: np.ndarray, t1: np.ndarr
     return out
 
 
+def smooth_open_poly(pts: np.ndarray, sigma: float = 3.2) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    if len(pts) < 4 or sigma <= 0:
+        return pts
+    pts = densify_polyline(pts, 1.6)
+    radius = max(1, int(round(sigma * 2.4)))
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1, dtype=np.float32) / sigma) ** 2)
+    kernel /= float(kernel.sum())
+    xs = np.convolve(np.pad(pts[:, 0], (radius, radius), mode="edge"), kernel, mode="valid")
+    ys = np.convolve(np.pad(pts[:, 1], (radius, radius), mode="edge"), kernel, mode="valid")
+    return np.stack([xs, ys], axis=1).astype(np.float32)
+
+
+def smooth_by_along(pts: np.ndarray, along: np.ndarray | None = None, sigma: float = ALONG_SMOOTH_SIGMA) -> np.ndarray:
+    """Smooth x(along), y(along). Arc-length smooth cannot kill a sawtooth."""
+    pts = np.asarray(pts, dtype=np.float32)[:, :2]
+    if len(pts) < 4 or sigma <= 0:
+        return pts
+    if along is None:
+        along = np.arange(len(pts), dtype=np.float32)
+    else:
+        along = np.asarray(along, dtype=np.float32).reshape(-1)
+        if len(along) != len(pts):
+            along = np.arange(len(pts), dtype=np.float32)
+    order = np.argsort(along)
+    along = along[order]
+    pts = pts[order]
+    span = float(along[-1] - along[0])
+    n_grid = max(len(pts), int(round(span)) + 1, 8)
+    grid = np.linspace(float(along[0]), float(along[-1]), n_grid)
+    xs = np.interp(grid, along, pts[:, 0])
+    ys = np.interp(grid, along, pts[:, 1])
+    radius = max(1, int(round(sigma * 2.4)))
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1, dtype=np.float32) / sigma) ** 2)
+    kernel /= float(kernel.sum())
+    xs = np.convolve(np.pad(xs, (radius, radius), mode="edge"), kernel, mode="valid")
+    ys = np.convolve(np.pad(ys, (radius, radius), mode="edge"), kernel, mode="valid")
+    out = np.stack([xs, ys], axis=1).astype(np.float32)
+    out[0] = pts[0]
+    out[-1] = pts[-1]
+    return out
+
+
+def gentle_curve(pts: np.ndarray, along: np.ndarray | None = None) -> np.ndarray:
+    """Low-order curve vs heading: keep the wall arc, drop sawtooth hooks."""
+    pts = np.asarray(pts, dtype=np.float32)[:, :2]
+    if len(pts) < 4:
+        return pts
+    if along is None or len(np.asarray(along).reshape(-1)) != len(pts):
+        along = np.arange(len(pts), dtype=np.float32)
+    else:
+        along = np.asarray(along, dtype=np.float32).reshape(-1)
+    order = np.argsort(along)
+    along = along[order]
+    pts = pts[order]
+    t = along - float(along.mean())
+    span = float(along[-1] - along[0])
+    degree = 1 if span < 12.0 or len(pts) < 8 else 2
+    try:
+        px = np.polyfit(t, pts[:, 0], degree)
+        py = np.polyfit(t, pts[:, 1], degree)
+    except (np.linalg.LinAlgError, ValueError):
+        return smooth_by_along(pts, along)
+    n_grid = max(len(pts), int(round(float(np.hypot(*(pts[-1] - pts[0]))))), 8)
+    grid = np.linspace(float(t[0]), float(t[-1]), n_grid)
+    return np.stack([np.polyval(px, grid), np.polyval(py, grid)], axis=1).astype(np.float32)
+
+
+def reject_sharp_turns(pts: np.ndarray, max_deg: float = 30.0) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    if len(pts) < 3:
+        return pts
+    kept = [pts[0]]
+    for i in range(1, len(pts) - 1):
+        incoming = pts[i] - kept[-1]
+        outgoing = pts[i + 1] - pts[i]
+        if float(np.hypot(*incoming)) < 0.4 or float(np.hypot(*outgoing)) < 0.4:
+            continue
+        a = incoming / max(float(np.hypot(*incoming)), 1e-6)
+        b = outgoing / max(float(np.hypot(*outgoing)), 1e-6)
+        if _angle_deg(a, b) <= max_deg:
+            kept.append(pts[i])
+    kept.append(pts[-1])
+    return np.asarray(kept, dtype=np.float32)
+
+
 def try_join_runs(left: np.ndarray, right: np.ndarray) -> np.ndarray | None:
-    """Join left's end to right's start if tangent rays almost meet."""
+    """Join left's end to right's start if the two ends keep a mild heading."""
     left = np.asarray(left, dtype=np.float32)
     right = np.asarray(right, dtype=np.float32)
     if len(left) < 2 or len(right) < 2:
@@ -1037,24 +1130,40 @@ def try_join_runs(left: np.ndarray, right: np.ndarray) -> np.ndarray | None:
     if dist > JOIN_MAX_GAP:
         return None
     chord = gap_vec / dist
-    if _angle_deg(t_left, chord) > JOIN_MAX_TURN_DEG:
-        return None
-    if _angle_deg(chord, t_right) > JOIN_MAX_TURN_DEG:
-        return None
-    if _angle_deg(t_left, t_right) > JOIN_MAX_TURN_DEG + 12.0:
+    turn_l = _angle_deg(t_left, chord)
+    turn_r = _angle_deg(chord, t_right)
+    overall_l = left[-1] - left[0]
+    overall_r = right[-1] - right[0]
+    ol_n = float(np.hypot(*overall_l))
+    or_n = float(np.hypot(*overall_r))
+    mild_strip = (
+        ol_n > 12.0
+        and or_n > 12.0
+        and _angle_deg(overall_l / ol_n, chord) <= 24.0
+        and _angle_deg(chord, overall_r / or_n) <= 24.0
+        and dist <= 22.0
+    )
+    if turn_l > JOIN_MAX_TURN_DEG or turn_r > JOIN_MAX_TURN_DEG:
+        if not mild_strip:
+            return None
+    if _angle_deg(t_left, t_right) > JOIN_MAX_TURN_DEG + 8.0 and not mild_strip:
         return None
     ray = p0 + t_left * JOIN_RAY_PX
     other_ray = p1 + t_right_out * JOIN_RAY_PX
     along = float(np.dot(p1 - p0, t_left))
-    closest = p0 + t_left * float(np.clip(along, 0.0, JOIN_RAY_PX + 6.0))
-    if (
-        float(np.hypot(*(ray - p1))) > JOIN_END_PX
-        and float(np.hypot(*(other_ray - p0))) > JOIN_END_PX
-        and float(np.hypot(*(closest - p1))) > JOIN_END_PX
-    ):
+    closest = p0 + t_left * float(np.clip(along, 0.0, JOIN_RAY_PX + 8.0))
+    near = min(
+        float(np.hypot(*(ray - p1))),
+        float(np.hypot(*(other_ray - p0))),
+        float(np.hypot(*(closest - p1))),
+    )
+    if near > JOIN_END_PX and (turn_l > 16.0 or turn_r > 16.0):
         return None
-    bridge = _hermite_bridge(p0, t_left, p1, t_right)
-    mid = np.asarray(bridge, dtype=np.float32) if bridge else np.zeros((0, 2), dtype=np.float32)
+    if turn_l <= 14.0 and turn_r <= 14.0:
+        mid = np.linspace(p0, p1, max(3, int(round(dist / 4.0))))[1:-1]
+    else:
+        bridge = _hermite_bridge(p0, t_left, p1, t_right)
+        mid = np.asarray(bridge, dtype=np.float32) if bridge else np.zeros((0, 2), dtype=np.float32)
     if len(mid):
         return np.vstack([left, mid, right])
     return np.vstack([left, right])
@@ -1090,35 +1199,71 @@ def stitch_interface_runs(runs: list[list[list[float]]]) -> list[list[list[float
         polys = [poly for idx, poly in enumerate(polys) if idx not in {i, j}]
         polys.append(joined)
         changed = True
-    return [poly.tolist() for poly in polys if len(poly) >= 4]
+    out = []
+    for poly in polys:
+        if len(poly) < 4:
+            continue
+        curve = gentle_curve(poly)
+        if len(curve) < 4:
+            continue
+        step = np.hypot(np.diff(curve[:, 0]), np.diff(curve[:, 1]))
+        if float(step.sum()) < 16.0:
+            continue
+        out.append(curve.tolist())
+    return out
+
+
+def reject_across_outliers(
+    xy: np.ndarray,
+    along: np.ndarray,
+    across: np.ndarray | None,
+    win: int = 11,
+    max_dev: float = ACROSS_OUTLIER,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    """Drop sudden across spikes. A local hook toward the mass should not bend the strip."""
+    if across is None or len(xy) < 5:
+        return xy, along, across
+    med = _finite_median_filter(np.asarray(across, dtype=np.float32), win)
+    keep = np.abs(np.asarray(across, dtype=np.float32) - med) <= max_dev
+    if int(keep.sum()) < 4:
+        return xy, along, across
+    next_ac = np.asarray(across, dtype=np.float32)[keep]
+    return xy[keep], along[keep], next_ac
 
 
 def _split_interface_runs(points: list[list[float]]) -> list[list[list[float]]]:
+    """Split only on real heading gaps, then smooth each fragment vs along-index."""
     if len(points) < 3:
         return []
     arr = np.asarray(points, dtype=np.float32)
+    xy = arr[:, :2].copy()
+    along = arr[:, 3] if arr.shape[1] >= 4 else np.arange(len(arr), dtype=np.float32)
+    across = arr[:, 2] if arr.shape[1] >= 3 else None
+    order = np.argsort(along)
+    xy = xy[order]
+    along = np.asarray(along, dtype=np.float32)[order]
+    if across is not None:
+        across = np.asarray(across, dtype=np.float32)[order]
+    xy, along, across = reject_across_outliers(xy, along, across)
     for axis in (0, 1):
-        arr[:, axis] = _finite_median_filter(arr[:, axis], 5)
-    runs: list[list[list[float]]] = []
-    run = [arr[0].tolist()]
-    for pt in arr[1:]:
-        prev = np.asarray(run[-1], dtype=np.float32)
-        delta = np.asarray(pt, dtype=np.float32) - prev
-        dist = float(np.hypot(delta[0], delta[1]))
-        keep = dist <= 14.0
-        if not keep and dist <= 22.0 and len(run) >= 2:
-            tan = _poly_tangent(np.asarray(run, dtype=np.float32), False)
-            direc = delta / max(dist, 1e-6)
-            keep = float(np.dot(tan, direc)) >= 0.78 and _angle_deg(tan, direc) <= JOIN_MAX_TURN_DEG
-        if keep:
-            run.append(pt.tolist())
+        xy[:, axis] = _finite_median_filter(xy[:, axis], 7)
+    if across is not None:
+        across = _finite_median_filter(across, 7)
+    starts = [0]
+    for i in range(1, len(xy)):
+        da = float(along[i] - along[i - 1])
+        dxy = float(np.hypot(*(xy[i] - xy[i - 1])))
+        if da > SPLIT_ALONG or dxy > SPLIT_XY_PX:
+            starts.append(i)
+    starts.append(len(xy))
+    cleaned: list[list[list[float]]] = []
+    for a, b in zip(starts[:-1], starts[1:]):
+        if b - a < 3:
             continue
-        if len(run) >= 4:
-            runs.append(run)
-        run = [pt.tolist()]
-    if len(run) >= 4:
-        runs.append(run)
-    return stitch_interface_runs(runs)
+        sm = gentle_curve(xy[a:b], along[a:b])
+        if len(sm) >= 4:
+            cleaned.append(sm.tolist())
+    return stitch_interface_runs(cleaned)
 
 
 def trace_gray_interfaces(
@@ -1132,43 +1277,64 @@ def trace_gray_interfaces(
     gray = samples["gray"]
     across = samples["across"]
     along = samples["along_idx"]
-    groups = merge_along_columns(along, keep, min_pix=6)
     seeds = [float(v) for v in (prefer_across or []) if np.isfinite(v)]
     raw: list[list[list[float]]] = [[], []] if len(seeds) < 2 else [[] for _ in seeds]
     if not raw:
         raw = [[], []]
-    for group in groups:
-        pix = keep & np.isin(along, group)
+    for along_id, pix in _along_windows(along, keep, radius=2, min_pix=5):
         peaks = _column_gray_peaks(xs, ys, gray, across, pix)
         if not peaks:
             continue
         if seeds:
-            used = set()
+            used: set[int] = set()
+            taken_ac: list[float] = []
             for slot, seed in enumerate(seeds[: len(raw)]):
-                cand = [
-                    (abs(p["across"] - seed), i, p)
-                    for i, p in enumerate(peaks)
-                    if i not in used and abs(p["across"] - seed) <= 0.38
-                ]
+                cand = []
+                for i, p in enumerate(peaks):
+                    if i in used or abs(p["across"] - seed) > 0.38:
+                        continue
+                    if any(abs(p["across"] - ac) < MIN_ACROSS_SEP for ac in taken_ac):
+                        continue
+                    cand.append((abs(p["across"] - seed), i, p))
                 if not cand:
                     continue
                 _d, idx, peak = min(cand, key=lambda item: item[0])
                 used.add(idx)
-                raw[slot].append([peak["x"], peak["y"]])
+                taken_ac.append(peak["across"])
+                raw[slot].append([peak["x"], peak["y"], peak["across"], along_id])
             continue
         falling = [p for p in peaks if p["grad"] < 0]
         rising = [p for p in peaks if p["grad"] > 0]
         if falling:
             fall = max(falling, key=lambda p: p["mag"])
-            raw[0].append([fall["x"], fall["y"]])
-            rising = [p for p in rising if p["across"] > fall["across"] + 0.06]
+            raw[0].append([fall["x"], fall["y"], fall["across"], along_id])
+            rising = [p for p in rising if p["across"] > fall["across"] + MIN_ACROSS_SEP]
         if rising:
             rise = max(rising, key=lambda p: p["mag"])
-            raw[1].append([rise["x"], rise["y"]])
+            raw[1].append([rise["x"], rise["y"], rise["across"], along_id])
     out = []
     for edge, pts in enumerate(raw):
         for run in _split_interface_runs(pts):
             out.append({"edge": edge, "points": run})
+    return out
+
+
+def _along_windows(
+    along: np.ndarray,
+    keep: np.ndarray,
+    radius: int = 2,
+    min_pix: int = 5,
+) -> list[tuple[float, np.ndarray]]:
+    """One heading station at a time, with a small neighbor window for a stable 1D profile."""
+    stations = np.unique(along[keep]) if keep.any() else np.array([], dtype=np.int32)
+    out: list[tuple[float, np.ndarray]] = []
+    for i, st in enumerate(stations.tolist()):
+        lo = max(0, i - radius)
+        hi = min(len(stations), i + radius + 1)
+        pix = keep & np.isin(along, stations[lo:hi])
+        if int(pix.sum()) < min_pix:
+            continue
+        out.append((float(st), pix))
     return out
 
 

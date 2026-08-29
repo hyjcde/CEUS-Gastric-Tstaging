@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Smoother thin gray-edge strips, keep layers apart
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (along-index smooth, gentler join), `scripts/render_wall_pixel_vs_dino_cluster.py` (1 px edges).
+- Reason: Arc-length smooth could not kill sawtooth peaks. Hermite handles the size of the gap made joins look too bent. Yellow and red edges were collapsing into one scribble.
+- Key changes: Split on heading gaps first. Smooth x and y vs along-station. Join only mild turns, with a nearly straight bridge. Keep a minimum across-gap between edges. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Stitch gray-edge fragments with tangent extrapolation
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (interface join).

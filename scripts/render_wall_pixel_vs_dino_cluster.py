@@ -63,9 +63,9 @@ DINO_LAYERS = (5, 8)
 PCA_DIM = 16
 PIXEL_BLEND = 0.055
 EDGE_RGB = {
-    0: (255, 224, 70),
-    1: (248, 80, 96),
-    2: (52, 211, 110),
+    0: (255, 214, 32),
+    1: (244, 63, 94),
+    2: (16, 185, 129),
 }
 
 plt.rcParams.update({
@@ -222,7 +222,7 @@ def overlay_gray_glow(rgb: np.ndarray, gray: np.ndarray, xs, ys, scale: float) -
 def draw_interface_lines(rgb: np.ndarray, interfaces, sx1: float, sy1: float, scale: float) -> np.ndarray:
     """Very thin edges sitting on bright-to-dark gray boundaries."""
     out = rgb.copy()
-    thick = 1 if scale < 3 else 2
+    thick = 1
     for item in interfaces or []:
         pts = np.asarray(item.get("points") or [], dtype=np.float32)
         if len(pts) < 2:
