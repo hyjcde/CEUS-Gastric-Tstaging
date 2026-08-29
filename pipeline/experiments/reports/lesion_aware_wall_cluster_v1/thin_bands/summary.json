@@ -1,14 +1,15 @@
 {
   "created_at": "2026-08-29",
-  "segmenter": "dino_roi_lora_m025",
+  "segmenter": "unet_crop",
   "cases": [
     {
       "case_id": "CASE-008",
       "display_id": "P008",
       "status": "ok",
       "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-008_thin_bands.png",
-      "seg": "dino_roi_lora_m025",
-      "mask_px": 1518,
+      "seg": "doctor_polygon",
+      "mask_source": "doctor_polygon",
+      "mask_px": 1156,
       "roi": [
         646,
         330,
@@ -27,26 +28,26 @@
         {
           "id": "shallow",
           "name_zh": "\u6d45\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
+          "status": "present",
+          "status_zh": "\u8fd8\u5728",
           "fuse_with": "",
-          "seed_gray": 109.8,
-          "peri_gray": 110.3,
-          "seed_count": 1024,
-          "peri_count": 495,
-          "inside_count": 141
+          "seed_gray": 129.5,
+          "peri_gray": 135.0,
+          "seed_count": 998,
+          "peri_count": 433,
+          "inside_count": 299
         },
         {
           "id": "muscularis",
           "name_zh": "\u56fa\u6709\u808c\u5c42",
-          "status": "present",
-          "status_zh": "\u8fd8\u5728",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 114.3,
-          "peri_gray": 108.1,
-          "seed_count": 856,
-          "peri_count": 562,
-          "inside_count": 812
+          "seed_gray": 112.6,
+          "peri_gray": 113.0,
+          "seed_count": 345,
+          "peri_count": 235,
+          "inside_count": 83
         },
         {
           "id": "serosa",
@@ -54,11 +55,11 @@
           "status": "present",
           "status_zh": "\u8fd8\u5728",
           "fuse_with": "",
-          "seed_gray": 96.9,
-          "peri_gray": 94.4,
-          "seed_count": 1814,
-          "peri_count": 1410,
-          "inside_count": 551
+          "seed_gray": 102.9,
+          "peri_gray": 103.0,
+          "seed_count": 2349,
+          "peri_count": 1024,
+          "inside_count": 774
         }
       ]
     },
@@ -67,7 +68,8 @@
       "display_id": "P019",
       "status": "ok",
       "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-019_thin_bands.png",
-      "seg": "unet_crop",
+      "seg": "model_unet_crop",
+      "mask_source": "model_unet_crop",
       "mask_px": 5929,
       "roi": [
         503,
@@ -127,8 +129,9 @@
       "display_id": "P040",
       "status": "ok",
       "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-040_thin_bands.png",
-      "seg": "unet_crop",
-      "mask_px": 9216,
+      "seg": "doctor_polygon",
+      "mask_source": "doctor_polygon",
+      "mask_px": 10789,
       "roi": [
         520,
         383,
@@ -150,11 +153,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 105.1,
-          "peri_gray": 111.5,
-          "seed_count": 519,
-          "peri_count": 290,
-          "inside_count": 62
+          "seed_gray": 106.4,
+          "peri_gray": 110.7,
+          "seed_count": 744,
+          "peri_count": 284,
+          "inside_count": 408
         },
         {
           "id": "muscularis",
@@ -162,11 +165,11 @@
           "status": "fused",
           "status_zh": "\u878d\u5408",
           "fuse_with": "dark-mass",
-          "seed_gray": 72.6,
-          "peri_gray": 56.1,
-          "seed_count": 582,
-          "peri_count": 87,
-          "inside_count": 2445
+          "seed_gray": 72.5,
+          "peri_gray": 69.8,
+          "seed_count": 486,
+          "peri_count": 106,
+          "inside_count": 2532
         },
         {
           "id": "serosa",
@@ -174,11 +177,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 122.3,
-          "peri_gray": 124.1,
-          "seed_count": 1605,
-          "peri_count": 988,
-          "inside_count": 14
+          "seed_gray": 119.5,
+          "peri_gray": 119.5,
+          "seed_count": 999,
+          "peri_count": 525,
+          "inside_count": 393
         }
       ]
     },
@@ -187,13 +190,14 @@
       "display_id": "P076",
       "status": "ok",
       "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/thin_bands/CASE-076_thin_bands.png",
-      "seg": "dino_roi_lora_m025",
-      "mask_px": 20705,
+      "seg": "doctor_polygon",
+      "mask_source": "doctor_polygon",
+      "mask_px": 14376,
       "roi": [
         258,
-        148,
-        741,
-        427
+        135,
+        755,
+        421
       ],
       "time_sec": 0.179,
       "zml_keyframe_id": "dkf_0.179_q6hl53",
@@ -207,14 +211,14 @@
         {
           "id": "shallow",
           "name_zh": "\u6d45\u5c42",
-          "status": "present",
-          "status_zh": "\u8fd8\u5728",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 161.8,
-          "peri_gray": 151.0,
-          "seed_count": 2651,
-          "peri_count": 438,
-          "inside_count": 1200
+          "seed_gray": 166.5,
+          "peri_gray": 161.4,
+          "seed_count": 1403,
+          "peri_count": 338,
+          "inside_count": 20
         },
         {
           "id": "muscularis",
@@ -222,11 +226,11 @@
           "status": "present",
           "status_zh": "\u8fd8\u5728",
           "fuse_with": "",
-          "seed_gray": 93.9,
-          "peri_gray": 93.5,
-          "seed_count": 3955,
-          "peri_count": 2575,
-          "inside_count": 2048
+          "seed_gray": 94.9,
+          "peri_gray": 94.5,
+          "seed_count": 4542,
+          "peri_count": 662,
+          "inside_count": 363
         },
         {
           "id": "serosa",
@@ -234,11 +238,11 @@
           "status": "present",
           "status_zh": "\u8fd8\u5728",
           "fuse_with": "",
-          "seed_gray": 170.3,
-          "peri_gray": 151.8,
-          "seed_count": 785,
-          "peri_count": 147,
-          "inside_count": 888
+          "seed_gray": 165.0,
+          "peri_gray": 169.4,
+          "seed_count": 3498,
+          "peri_count": 574,
+          "inside_count": 214
         }
       ]
     }

@@ -1,3 +1,3 @@
 # wall_layer_fixtures v1
 
-Prefers public ZML wall strokes. Frame is extracted at the paint time, not the old frozen keyframe. Pair a lesion only if it sits on the same frame, or within 0.30 s. Distant keyframes stay unused.
+Prefers public ZML wall strokes. Frame is extracted at the paint time, not the old frozen keyframe. Pair a doctor lesion if it sits on the same frame, or within 0.60 s (nearby cine). Frames several seconds away stay unused. Figures must draw that doctor box, not a model-found mask.

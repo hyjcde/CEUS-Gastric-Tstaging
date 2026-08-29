@@ -52,7 +52,9 @@ LUMEN_BACKUP = (
 DEFAULT_OUT = ROOT / "pipeline/data/wall_layer_fixtures/v1"
 PUBLIC_PULL = Path("/tmp/zml_runtime_20260829")
 MEDIA = ROOT / "docs/clinical_validation/reader_study_v150"
-NEAR_LESION_SEC = 0.30
+# Same frame first. Nearby cine (P076 wall 0.179s / lesion 0.728s) is still
+# the doctor's box. Frames several seconds away stay unused.
+NEAR_LESION_SEC = 0.60
 
 
 def load_json(path: Path, default):
@@ -407,16 +409,26 @@ def main() -> int:
         "lesion_source", "zml_keyframe_id", "cavity_side_source", "brush_radius",
         "skip_reason", "frame_path",
     ]
+    merged = []
+    seen = set()
+    for meta_path in sorted(out_root.glob("CASE-*/meta.json")):
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        merged.append(meta)
+        seen.add(str(meta.get("case_id")))
+    for meta in rows:
+        if str(meta.get("case_id")) not in seen:
+            merged.append(meta)
     with manifest.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
-        for meta in rows:
+        for meta in merged:
             writer.writerow({key: meta.get(key, "") for key in fields})
     readme = (
         "# wall_layer_fixtures v1\n\n"
         "Prefers public ZML wall strokes. Frame is extracted at the paint time, "
-        "not the old frozen keyframe. Pair a lesion only if it sits on the same "
-        "frame, or within 0.30 s. Distant keyframes stay unused.\n"
+        "not the old frozen keyframe. Pair a doctor lesion if it sits on the same "
+        "frame, or within 0.60 s (nearby cine). Frames several seconds away stay "
+        "unused. Figures must draw that doctor box, not a model-found mask.\n"
     )
     (out_root / "README.md").write_text(readme, encoding="utf-8")
     print(f"wrote {manifest}", flush=True)

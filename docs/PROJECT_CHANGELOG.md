@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P076 blue box is the doctor lesion, not model blobs
+
+- Scope: `scripts/render_wall_layer_thin_bands.py`, `scripts/pack_wall_layer_fixture_v1.py`, `pipeline/data/wall_layer_fixtures/v1/CASE-076`.
+- Reason: P076 showed several model-found blobs in the wrong places. The doctor boxed the mass at 0.728 s. That polygon sits on the 0.179 s wall frame.
+- Key changes: Pair a nearby doctor lesion within 0.60 s. Figures draw `lesion_polygon` first. Model mask is fallback only (P019 still has no nearby doctor box). Clustering excludes that doctor box. Does not unlock cT.
+- Validation: Offline P076 re-render; cluster unit tests.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Same thin-band panels for P008 P019 P076
 
 - Scope: `scripts/render_wall_layer_thin_bands.py` (all four fixtures). Panels in `results/visualizations/error_cases/CASE-008_thin_bands.png` and siblings.

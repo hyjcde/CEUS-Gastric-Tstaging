@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Tight ROI lesion segmentation, then magnify peri-lesion wall layers.
+"""Tight ROI wall layers with the doctor's lesion box when the fixture has one.
 
-Crop a small ROI around the yellow wall line (P008 drops the empty top).
-Segment the whole lesion on that ROI. Overlay the mask in blue. Zoom the
-peri-lesion wall and split three thin layers. No charts. Not a cT.
+Crop around the yellow wall line (P008 drops the empty top). Draw the
+doctor polygon in blue. Fall back to one model blob only if the fixture
+has no doctor lesion. Zoom the peri-lesion wall and split three thin
+layers. No charts. Not a cT.
 
   python3 scripts/render_wall_layer_thin_bands.py --help
 """
@@ -109,7 +110,20 @@ def mask_to_polygon(mask: np.ndarray) -> np.ndarray:
     return pts.astype(np.float32)
 
 
-def tight_roi(image: np.ndarray, wall: np.ndarray, case_id: str) -> tuple[np.ndarray, int, int, int, int]:
+def polygon_mask(shape_hw: tuple[int, int], polygon) -> np.ndarray:
+    mask = np.zeros(shape_hw, dtype=np.uint8)
+    pts = as_xy(polygon)
+    if len(pts) >= 3:
+        cv2.fillPoly(mask, [np.round(pts).astype(np.int32)], 255)
+    return mask
+
+
+def tight_roi(
+    image: np.ndarray,
+    wall: np.ndarray,
+    case_id: str,
+    lesion=None,
+) -> tuple[np.ndarray, int, int, int, int]:
     h, w = image.shape[:2]
     hint = CROP_HINT.get(case_id, {"pad": 28})
     pad = int(hint.get("pad", 28))
@@ -124,11 +138,20 @@ def tight_roi(image: np.ndarray, wall: np.ndarray, case_id: str) -> tuple[np.nda
     drop = hint.get("drop_above_wall")
     if drop is not None:
         y1 = max(y1, int(np.floor(wall[:, 1].min()) - int(drop)))
+    lesion = as_xy(lesion)
+    if len(lesion) >= 3:
+        x1 = min(x1, max(0, int(np.floor(lesion[:, 0].min()) - 8)))
+        x2 = max(x2, min(w, int(np.ceil(lesion[:, 0].max()) + 8)))
+        y1 = min(y1, max(0, int(np.floor(lesion[:, 1].min()) - 8)))
+        y2 = max(y2, min(h, int(np.ceil(lesion[:, 1].max()) + 8)))
     max_h = hint.get("max_h")
     if max_h and (y2 - y1) > int(max_h):
         mid = 0.5 * (y1 + y2)
         y1 = max(0, int(mid - int(max_h) / 2))
         y2 = min(h, y1 + int(max_h))
+        if len(lesion) >= 3:
+            y1 = min(y1, max(0, int(np.floor(lesion[:, 1].min()) - 8)))
+            y2 = max(y2, min(h, int(np.ceil(lesion[:, 1].max()) + 8)))
     if x2 - x1 < 48 or y2 - y1 < 40:
         return image, 0, 0, w, h
     return image[y1:y2, x1:x2].copy(), x1, y1, x2, y2
@@ -398,11 +421,19 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     lumen = as_xy(meta.get("lumen_polygon"))
     lumen_center = lumen.mean(axis=0) if len(lumen) >= 3 else None
     cavity = str(meta.get("cavity_side_source") or "heuristic")
-    crop, x1, y1, x2, y2 = tight_roi(image, wall_full, str(meta.get("case_id")))
-    crop_mask = seg.segment_crop(crop)
-    full_mask = np.zeros(image.shape[:2], dtype=np.uint8)
-    full_mask[y1:y2, x1:x2] = crop_mask
-    lesion_poly = mask_to_polygon(full_mask)
+    doctor_poly = as_xy(meta.get("lesion_polygon"))
+    crop, x1, y1, x2, y2 = tight_roi(image, wall_full, str(meta.get("case_id")), doctor_poly)
+    if len(doctor_poly) >= 3:
+        full_mask = polygon_mask(image.shape[:2], doctor_poly)
+        crop_mask = full_mask[y1:y2, x1:x2].copy()
+        lesion_poly = doctor_poly - np.array([x1, y1], dtype=np.float32)
+        mask_source = "doctor_polygon"
+    else:
+        crop_mask = keep_largest(seg.segment_crop(crop))
+        full_mask = np.zeros(image.shape[:2], dtype=np.uint8)
+        full_mask[y1:y2, x1:x2] = crop_mask
+        lesion_poly = mask_to_polygon(full_mask)
+        mask_source = f"model_{seg.kind}"
     wall_crop = wall_full.copy()
     if len(wall_crop):
         wall_crop[:, 0] -= x1
@@ -518,7 +549,8 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         "display_id": meta.get("display_id"),
         "status": "ok",
         "panel": str(dest),
-        "seg": seg.kind,
+        "seg": mask_source,
+        "mask_source": mask_source,
         "mask_px": area,
         "roi": [x1, y1, x2, y2],
         "time_sec": meta.get("time_sec"),
