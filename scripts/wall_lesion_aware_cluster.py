@@ -28,7 +28,8 @@ JOIN_MAX_GAP = 42.0
 JOIN_MAX_TURN_DEG = 22.0
 SPLIT_ALONG = 8.0
 SPLIT_XY_PX = 40.0
-MIN_ACROSS_SEP = 0.22
+MIN_ACROSS_SEP = 0.28
+MIN_STRIP_GAP = 0.32
 ALONG_SMOOTH_SIGMA = 8.0
 ACROSS_OUTLIER = 0.18
 DEFAULT_BRUSH = 8.0
@@ -1440,13 +1441,16 @@ def assign_strip_layers(
         seed_l = float(np.quantile(across[fit], 0.28))
         seed_r = float(np.quantile(across[fit], 0.72))
         shift = 0.10
-    if seed_r <= seed_l + 0.10:
-        seed_l, seed_r = float(np.quantile(across[fit], 0.28)), float(np.quantile(across[fit], 0.72))
+    if seed_r <= seed_l + MIN_STRIP_GAP:
+        seed_l, seed_r = float(np.quantile(across[fit], 0.26)), float(np.quantile(across[fit], 0.74))
         shift = 0.08
     cut_l = refine_across_cut(across[fit], values[fit], seed_l, max_shift=shift)
     cut_r = refine_across_cut(across[fit], values[fit], seed_r, max_shift=shift)
-    if cut_r <= cut_l + 0.08:
+    if cut_r <= cut_l + MIN_STRIP_GAP:
         cut_l, cut_r = seed_l, seed_r
+    if cut_r <= cut_l + MIN_STRIP_GAP:
+        mid = 0.5 * (cut_l + cut_r)
+        cut_l, cut_r = mid - 0.5 * MIN_STRIP_GAP, mid + 0.5 * MIN_STRIP_GAP
     groups = merge_along_columns(along, keep)
     local_l = []
     local_r = []
@@ -1462,7 +1466,7 @@ def assign_strip_layers(
         sm_l = _finite_median_filter(np.asarray(local_l, dtype=np.float32), STRIP_SMOOTH)
         sm_r = _finite_median_filter(np.asarray(local_r, dtype=np.float32), STRIP_SMOOTH)
         for group, lo, hi in zip(groups, sm_l.tolist(), sm_r.tolist()):
-            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo + MIN_STRIP_GAP:
                 lo, hi = cut_l, cut_r
             pix = keep & np.isin(along, group)
             ac = across[pix]

@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Pixel-only figure: full brush on A, zoomed right layers on B
+
+- Scope: `scripts/render_wall_pixel_vs_dino_cluster.py`, `scripts/wall_lesion_aware_cluster.py` (min strip gap).
+- Reason: Finish the pixel arm first. Source must show the complete heading brush. The right-hand layers were too close to read. DINO panel C is parked.
+- Key changes: A draws the full brush. B is an 8x crop of the right heading. Three strips keep a minimum across gap. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Smoother thin gray-edge strips, keep layers apart
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (along-index smooth, gentler join), `scripts/render_wall_pixel_vs_dino_cluster.py` (1 px edges).
