@@ -2,4 +2,4 @@ display_id,case_id,pT_ref,site,time_sec,wall_source,lesion_source,zml_keyframe_i
 P008,CASE-008,T1,胃体,0.35,zml_mask_override,same_frame,zml::CASE-008,lumen_bbox,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-008/frame.jpg
 P019,CASE-019,T2,贲门/胃底,3.924,zml_keyframe,other_kf_dkf_8.395_4miq48_dt4.471_not_used,dkf_3.924_j1v8ij,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-019/frame.jpg
 P040,CASE-040,T3,贲门/胃底,1.85,zml_keyframe,nearest_kf_dkf_1.950_l3u29r_dt0.100,dkf_1.850_s8gyvd,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-040/frame.jpg
-P076,CASE-076,T4,贲门/胃底,0.179,zml_keyframe,nearest_kf_dkf_0.728_hb06id_dt0.549,dkf_0.179_q6hl53,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-076/frame.jpg
+P076,CASE-076,T4,贲门/胃底,0.179,zml_keyframe,redrawn_on_0.179_from_nearest_kf_dkf_0.728_hb06id_dt0.549,dkf_0.179_q6hl53,heuristic,8.0,,pipeline/data/wall_layer_fixtures/v1/CASE-076/frame.jpg

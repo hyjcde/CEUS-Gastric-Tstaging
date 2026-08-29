@@ -118,6 +118,67 @@ def polygon_mask(shape_hw: tuple[int, int], polygon) -> np.ndarray:
     return mask
 
 
+def lesion_dt_sec(source: str) -> float | None:
+    text = str(source or "")
+    marker = "_dt"
+    if marker not in text:
+        return None
+    tail = text.split(marker, 1)[1]
+    token = tail.split("_", 1)[0]
+    try:
+        return float(token)
+    except ValueError:
+        return None
+
+
+def smooth_mask(mask: np.ndarray) -> np.ndarray:
+    closed = cv2.morphologyEx((mask > 0).astype(np.uint8) * 255, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    blur = cv2.GaussianBlur(closed, (7, 7), 1.4)
+    return keep_largest((blur >= 80).astype(np.uint8) * 255)
+
+
+def redraw_lesion_on_frame(image: np.ndarray, prior, seg: "RoiSegmenter", pad: int = 22) -> tuple[np.ndarray, np.ndarray]:
+    """Doctor box says where. Redraw the mass on this frame."""
+    prior = as_xy(prior)
+    h, w = image.shape[:2]
+    if len(prior) < 3:
+        return np.zeros((h, w), dtype=np.uint8), np.zeros((0, 2), dtype=np.float32)
+    x1 = max(0, int(np.floor(prior[:, 0].min()) - pad))
+    y1 = max(0, int(np.floor(prior[:, 1].min()) - pad))
+    x2 = min(w, int(np.ceil(prior[:, 0].max()) + pad))
+    y2 = min(h, int(np.ceil(prior[:, 1].max()) + pad))
+    crop = image[y1:y2, x1:x2]
+    raw = seg.segment_crop(crop) if crop.size else np.zeros((0, 0), dtype=np.uint8)
+    full = np.zeros((h, w), dtype=np.uint8)
+    if raw.size:
+        full[y1:y2, x1:x2] = raw
+    prior_dil = dilate_mask(polygon_mask((h, w), prior), 28)
+    n_lab, labels, stats, _ = cv2.connectedComponentsWithStats((full > 0).astype(np.uint8), connectivity=8)
+    kept = np.zeros((h, w), dtype=np.uint8)
+    for idx in range(1, n_lab):
+        comp = labels == idx
+        if int((comp & (prior_dil > 0)).sum()) >= 40:
+            kept[comp] = 255
+    if int((kept > 0).sum()) < 80:
+        kept = cv2.bitwise_and(full, prior_dil)
+    kept = smooth_mask(kept)
+    return kept, mask_to_polygon(kept)
+
+
+def write_preview(image_path: Path, wall, lesion) -> None:
+    image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if image is None:
+        return
+    preview = image.copy()
+    lesion_xy = as_xy(lesion)
+    wall_xy = as_xy(wall)
+    if len(lesion_xy) >= 3:
+        cv2.polylines(preview, [np.round(lesion_xy).astype(np.int32)], True, (0, 0, 220), 2)
+    if len(wall_xy) >= 2:
+        cv2.polylines(preview, [np.round(wall_xy).astype(np.int32)], False, (0, 210, 255), 2)
+    cv2.imwrite(str(image_path.parent / "preview.jpg"), preview)
+
+
 def tight_roi(
     image: np.ndarray,
     wall: np.ndarray,
@@ -422,8 +483,24 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     lumen_center = lumen.mean(axis=0) if len(lumen) >= 3 else None
     cavity = str(meta.get("cavity_side_source") or "heuristic")
     doctor_poly = as_xy(meta.get("lesion_polygon"))
+    source = str(meta.get("lesion_source") or "")
+    dt = lesion_dt_sec(source)
+    redraw = bool(source.startswith("redrawn_")) or (len(doctor_poly) >= 3 and dt is not None and dt > 0.30)
     crop, x1, y1, x2, y2 = tight_roi(image, wall_full, str(meta.get("case_id")), doctor_poly)
-    if len(doctor_poly) >= 3:
+    if redraw and len(doctor_poly) >= 3:
+        full_mask, redrawn = redraw_lesion_on_frame(image, doctor_poly, seg)
+        if len(redrawn) >= 3:
+            doctor_poly = redrawn
+            crop, x1, y1, x2, y2 = tight_roi(image, wall_full, str(meta.get("case_id")), doctor_poly)
+            crop_mask = full_mask[y1:y2, x1:x2].copy()
+            lesion_poly = doctor_poly - np.array([x1, y1], dtype=np.float32)
+            mask_source = "redrawn_on_frame"
+        else:
+            full_mask = polygon_mask(image.shape[:2], doctor_poly)
+            crop_mask = full_mask[y1:y2, x1:x2].copy()
+            lesion_poly = doctor_poly - np.array([x1, y1], dtype=np.float32)
+            mask_source = "doctor_polygon"
+    elif len(doctor_poly) >= 3:
         full_mask = polygon_mask(image.shape[:2], doctor_poly)
         crop_mask = full_mask[y1:y2, x1:x2].copy()
         lesion_poly = doctor_poly - np.array([x1, y1], dtype=np.float32)
@@ -562,6 +639,7 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         "sensitive": True,
         "bright_dark_bright": bool(getattr(arm, "bright_dark_bright", False)),
         "fates": fates,
+        "redrawn_polygon": doctor_poly.tolist() if mask_source == "redrawn_on_frame" and len(doctor_poly) >= 3 else [],
     }
 
 
@@ -588,6 +666,11 @@ def main() -> int:
     parser.add_argument("--brush", type=float, default=12.0)
     parser.add_argument("--case", action="append", dest="cases", help="P040 or CASE-040. Repeatable. Default: all.")
     parser.add_argument("--index", action="store_true", help="Also write a 4-case contact sheet.")
+    parser.add_argument(
+        "--save-redrawn",
+        action="store_true",
+        help="Write the on-frame redrawn lesion back into the fixture meta.",
+    )
     args = parser.parse_args()
     wanted = {str(token).upper().replace("P", "CASE-") if str(token).upper().startswith("P") else str(token).upper() for token in (args.cases or [])}
     wanted = {item if item.startswith("CASE-") else f"CASE-{item}" for item in wanted}
@@ -600,6 +683,13 @@ def main() -> int:
         if wanted and str(meta.get("case_id")) not in wanted:
             continue
         row = render_case(meta, seg, Path(args.out), max(DEFAULT_BRUSH, float(args.brush)))
+        if args.save_redrawn and row.get("mask_source") == "redrawn_on_frame" and row.get("redrawn_polygon"):
+            meta["lesion_polygon"] = [[round(float(x), 2), round(float(y), 2)] for x, y in row["redrawn_polygon"]]
+            old_src = str(meta.get("lesion_source") or "")
+            meta["lesion_source"] = f"redrawn_on_{meta.get('time_sec')}_from_{old_src}"
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            write_preview(resolve_frame(meta), meta.get("wall_polygon"), meta.get("lesion_polygon"))
+            print(f"saved redrawn lesion {len(meta['lesion_polygon'])} pts", flush=True)
         rows.append(row)
         if row.get("panel"):
             panels.append(Path(row["panel"]))

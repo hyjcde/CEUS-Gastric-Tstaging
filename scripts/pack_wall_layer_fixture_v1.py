@@ -307,6 +307,12 @@ def pack_one(
             lesion_source = f"nearest_kf_{near_id}_dt{dt:.3f}"
         elif len(near) >= 3:
             lesion_source = f"other_kf_{near_id}_dt{dt:.3f}_not_used"
+    existing_meta = dest / "meta.json"
+    if existing_meta.exists():
+        old = load_json(existing_meta, {})
+        if str(old.get("lesion_source") or "").startswith("redrawn_") and len(old.get("lesion_polygon") or []) >= 3:
+            lesion = old["lesion_polygon"]
+            lesion_source = str(old.get("lesion_source"))
     video = video_path_for(case_id, package)
     frame = grab_frame(video, time_sec) if video else None
     image_path = dest / "frame.jpg"
@@ -427,8 +433,9 @@ def main() -> int:
         "# wall_layer_fixtures v1\n\n"
         "Prefers public ZML wall strokes. Frame is extracted at the paint time, "
         "not the old frozen keyframe. Pair a doctor lesion if it sits on the same "
-        "frame, or within 0.60 s (nearby cine). Frames several seconds away stay "
-        "unused. Figures must draw that doctor box, not a model-found mask.\n"
+        "frame, or within 0.60 s (nearby cine). If that box comes from another "
+        "nearby frame, redraw the mass on this frame. Frames several seconds "
+        "away stay unused.\n"
     )
     (out_root / "README.md").write_text(readme, encoding="utf-8")
     print(f"wrote {manifest}", flush=True)

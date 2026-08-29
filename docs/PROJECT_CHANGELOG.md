@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Redraw P076 lesion on the 0.179 s frame
+
+- Scope: `scripts/render_wall_layer_thin_bands.py`, `pipeline/data/wall_layer_fixtures/v1/CASE-076`.
+- Reason: The 0.728 s doctor box was in the right place, but it was still the old stroke. The mass on the 0.179 s wall frame needed a new outline.
+- Key changes: Use the doctor box as a location prior, then redraw the lesion on this frame. Save that polygon. Wall clustering still excludes the new box. Does not unlock cT.
+- Validation: Offline P076 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P076 blue box is the doctor lesion, not model blobs
 
 - Scope: `scripts/render_wall_layer_thin_bands.py`, `scripts/pack_wall_layer_fixture_v1.py`, `pipeline/data/wall_layer_fixtures/v1/CASE-076`.
