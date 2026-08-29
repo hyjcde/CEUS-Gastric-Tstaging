@@ -69,7 +69,7 @@
 |------|------|------|
 | technical/COLLABORATOR_ACCESS.md | B | 工作站协作者 SSH 与原始数据 ACL |
 | technical/COMPUTE_LINKAGE.md | B | Mac / 工作站 / 公网算力联动 |
-| technical/WALL_PIXEL_BRUSH_LAYERING.md | B | 当前画笔像素分层：输入输出、走廊、三等分贴标签；不定 cT |
+| technical/WALL_PIXEL_BRUSH_LAYERING.md | B | 当前画笔像素分层：整廊灰度聚类后再按深度拆层；不定 cT |
 
 ## product/
 

@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Cluster the corridor by overall gray, then split layers by depth
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_global_gray_clusters`, `LABEL_PAD_PX=4`), algorithm note, four-case render.
+- Reason: A 16 px pad was too wide. Layers must stay separate. Clustering should use the whole corridor gray, not per-station gradient cuts.
+- Key changes: One gray k-means on all keep pixels. If one tone wraps the other, split that tone by heading-normal depth so yellow / red / green do not mix. Paint only 4 px past the brush. Settled steps live in `docs/technical/WALL_PIXEL_BRUSH_LAYERING.md`. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Paint wall layers wider than the heading brush
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`label_pad_px=16`), four-case render, algorithm note.

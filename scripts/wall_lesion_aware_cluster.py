@@ -29,7 +29,9 @@ ACROSS_SEARCH_PX = 36
 ALONG_AVG = 9
 MIN_GRAD = 5.0
 MIN_CUT_SEP = 5
-LABEL_PAD_PX = 16
+LABEL_PAD_PX = 4
+# Two k-means gray centers closer than this are the same echo tone.
+GRAY_SAME_TOL = 18.0
 JOIN_RAY_PX = 28.0
 JOIN_END_PX = 16.0
 JOIN_MAX_GAP = 42.0
@@ -1704,6 +1706,189 @@ def _gradient_two_cuts(
     return int(best[1]), int(best[2])
 
 
+def _gray_class_wraps(flank_across: np.ndarray, mid_mean: float, mid_std: float) -> bool:
+    """True if one gray tone sits on both sides of the other tone."""
+    if len(flank_across) < 8:
+        return False
+    left = flank_across < mid_mean
+    right = flank_across > mid_mean
+    if int(left.sum()) < 4 or int(right.sum()) < 4:
+        return False
+    flank_std = float(flank_across.std()) if len(flank_across) > 1 else 0.0
+    return flank_std > float(mid_std) * 0.85
+
+
+def _order_clusters_by_across(
+    raw: np.ndarray,
+    across: np.ndarray,
+    n_k: int,
+) -> np.ndarray:
+    means = []
+    for lab in range(n_k):
+        sel = raw == lab
+        means.append(float(across[sel].mean()) if np.any(sel) else 0.0)
+    order = np.argsort(np.asarray(means, dtype=np.float32))
+    remap = {int(old): int(new) for new, old in enumerate(order.tolist())}
+    return np.array([remap[int(lab)] for lab in raw], dtype=np.int32)
+
+
+def _layer_cuts_from_seed(across: np.ndarray, seed: np.ndarray, k: int) -> list[float] | None:
+    """Depth cuts sit between the gray-cluster medians, not at equal thirds."""
+    meds: list[float] = []
+    for lab in range(k):
+        sel = seed == lab
+        if int(sel.sum()) < 2:
+            continue
+        meds.append(float(np.median(across[sel])))
+    if len(meds) < 2:
+        return None
+    meds.sort()
+    return [0.5 * (meds[i] + meds[i + 1]) for i in range(len(meds) - 1)]
+
+
+def _paint_exclusive_by_across(
+    samples: dict[str, np.ndarray],
+    use: np.ndarray,
+    seed: np.ndarray,
+    k: int,
+) -> np.ndarray:
+    """Paint 0 / 1 / 2 as exclusive depth bands. Cuts come from gray clusters."""
+    across = samples["across"].astype(np.float32)
+    out = np.full(len(across), -1, dtype=np.int32)
+    if k < 2 or int(use.sum()) < MIN_VALID_PIXELS:
+        return out
+    cuts = _layer_cuts_from_seed(across[use], seed[use], k)
+    if cuts is None:
+        out[use] = seed[use]
+        return out
+    ac = across[use]
+    assigned = np.full(int(use.sum()), max(0, k - 1), dtype=np.int32)
+    assigned[ac < cuts[0]] = 0
+    if k >= 3 and len(cuts) >= 2:
+        assigned[(ac >= cuts[0]) & (ac < cuts[1])] = 1
+        assigned[ac >= cuts[1]] = 2
+    else:
+        assigned[ac >= cuts[0]] = 1 if k == 2 else 2
+    out[use] = assigned
+    return out
+
+
+def assign_global_gray_clusters(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    assign_lesion: bool,
+    k: int,
+    shape: tuple[int, int] | None = None,
+) -> np.ndarray:
+    """Cluster the whole corridor by gray, then split same-tone sides by depth.
+
+    One k-means on all keep pixels (gray only). If the two tones wrap
+    (bright-dark-bright or dark-bright-dark), the wrapping tone is split
+    at the other tone's mean across so the three layers stay separate.
+    """
+    xs = samples["xs"]
+    ys = samples["ys"]
+    gray = samples["gray"].astype(np.float32)
+    across = samples["across"].astype(np.float32)
+    labels = np.full((len(xs),), -1, dtype=np.int32)
+    if int(keep.sum()) < MIN_VALID_PIXELS or k < 2:
+        return labels
+    use = keep.copy()
+    core = keep & (np.abs(across) <= 0.70)
+    if int(core.sum()) >= 12:
+        floor = float(np.percentile(gray[core], 12)) - 14.0
+        use = keep & (gray >= floor)
+    if int(use.sum()) < MIN_VALID_PIXELS:
+        use = keep
+    feat = gray[use].reshape(-1, 1)
+    ac = across[use]
+    ordered: np.ndarray | None = None
+    mid_across = 0.0
+    wrap_used = False
+    gray_centers = None
+
+    if k >= 3:
+        raw2, centers2 = kmeans_features(feat, 2)
+        if len(centers2) >= 2:
+            for flank, mid in ((0, 1), (1, 0)):
+                sel_f = raw2 == flank
+                sel_m = raw2 == mid
+                if int(sel_f.sum()) < 8 or int(sel_m.sum()) < 4:
+                    continue
+                mid_m = float(ac[sel_m].mean())
+                mid_s = float(ac[sel_m].std()) if int(sel_m.sum()) > 1 else 0.1
+                if not _gray_class_wraps(ac[sel_f], mid_m, mid_s):
+                    continue
+                out = np.ones((len(raw2),), dtype=np.int32)
+                out[sel_m] = 1
+                out[sel_f] = np.where(ac[sel_f] < mid_m, 0, 2).astype(np.int32)
+                ordered = out
+                mid_across = mid_m
+                wrap_used = True
+                gray_centers = np.array([
+                    float(feat[sel_f].mean()),
+                    float(feat[sel_m].mean()),
+                    float(feat[sel_f].mean()),
+                ], dtype=np.float32)
+                break
+
+    if ordered is None:
+        raw, centers = kmeans_features(feat, k)
+        ordered = _order_clusters_by_across(raw, ac, k)
+        if k >= 3:
+            gray_of = []
+            for lab in range(k):
+                sel = ordered == lab
+                gray_of.append(float(feat[sel].mean()) if np.any(sel) else 0.0)
+            inner_outer_same = abs(gray_of[0] - gray_of[2]) <= GRAY_SAME_TOL
+            mid_distinct = (
+                abs(gray_of[1] - gray_of[0]) > GRAY_SAME_TOL
+                or abs(gray_of[1] - gray_of[2]) > GRAY_SAME_TOL
+            )
+            if inner_outer_same and mid_distinct:
+                mid_across = float(ac[ordered == 1].mean()) if np.any(ordered == 1) else 0.0
+                wrap_used = True
+            elif abs(gray_of[0] - gray_of[1]) <= GRAY_SAME_TOL or abs(gray_of[1] - gray_of[2]) <= GRAY_SAME_TOL:
+                # k=3 split one echo into two; fall back to k=2 wrap if possible
+                raw2, _c2 = kmeans_features(feat, 2)
+                for flank, mid in ((0, 1), (1, 0)):
+                    sel_f = raw2 == flank
+                    sel_m = raw2 == mid
+                    if int(sel_f.sum()) < 8 or int(sel_m.sum()) < 4:
+                        continue
+                    mid_m = float(ac[sel_m].mean())
+                    mid_s = float(ac[sel_m].std()) if int(sel_m.sum()) > 1 else 0.1
+                    if _gray_class_wraps(ac[sel_f], mid_m, mid_s):
+                        out = np.ones((len(raw2),), dtype=np.int32)
+                        out[sel_m] = 1
+                        out[sel_f] = np.where(ac[sel_f] < mid_m, 0, 2).astype(np.int32)
+                        ordered = out
+                        mid_across = mid_m
+                        wrap_used = True
+                        break
+        gray_centers = np.array([
+            float(feat[ordered == lab].mean()) if np.any(ordered == lab) else 0.0
+            for lab in range(k)
+        ], dtype=np.float32)
+
+    seed = np.full(len(xs), -1, dtype=np.int32)
+    seed[use] = ordered
+    labels = _paint_exclusive_by_across(samples, use, seed, k)
+    if assign_lesion and int((~keep).sum()) > 0:
+        rest = ~keep
+        if wrap_used:
+            labels[rest] = np.where(
+                across[rest] < mid_across,
+                0,
+                np.where(np.abs(across[rest] - mid_across) < 0.18, 1, 2),
+            ).astype(np.int32)
+        elif gray_centers is not None and len(gray_centers) >= k:
+            d2 = (gray[rest, None] - gray_centers.reshape(1, -1)) ** 2
+            labels[rest] = np.argmin(d2, axis=1).astype(np.int32)
+    del shape
+    return labels
+
+
 def assign_across_gray_bands(
     samples: dict[str, np.ndarray],
     keep: np.ndarray,
@@ -1818,93 +2003,12 @@ def assign_natural_y_bands(
     lesion_center: np.ndarray | None = None,
     deepest: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Split brush pixels into three exclusive bands along wall thickness."""
-    if image is not None and wall is not None and len(np.asarray(wall)) >= 2:
-        return assign_across_gray_bands(
-            samples, keep, assign_lesion, k, image, wall, brush_radius,
-            blocked=blocked, lumen_center=lumen_center,
-            lesion_center=lesion_center, deepest=deepest,
-        )
-    xs = samples["xs"]
-    ys = samples["ys"]
-    gray = samples["gray"].astype(np.float32)
-    labels = np.full((len(xs),), -1, dtype=np.int32)
-    if int(keep.sum()) < MIN_VALID_PIXELS or k < 2:
-        return labels
-    across = samples["across"]
-    core = keep & (np.abs(across) <= 0.92)
-    if int(core.sum()) < MIN_VALID_PIXELS:
-        core = keep
-    stations = np.unique(xs[core])
-    cols: list[tuple[int, np.ndarray, np.ndarray, int, int, int]] = []
-    votes: list[str] = []
-    for x in stations.tolist():
-        pix = np.where(core & (xs == x))[0]
-        if len(pix) < 4:
-            continue
-        idx = pix[np.argsort(ys[pix])]
-        y_min = int(ys[idx[0]])
-        y_max = int(ys[idx[-1]])
-        profile = gray[idx].astype(np.float32)
-        y0 = y_min
-        cols.append((int(x), idx, profile, y0, y_min, y_max))
-        kind = _column_pattern_vote(profile)
-        if kind:
-            votes.append(kind)
-    prefer = None
-    if votes:
-        prefer = "dbd" if votes.count("dbd") >= votes.count("bdb") else "bdb"
-    raw1 = []
-    raw2 = []
-    used = []
-    for _col_i, (x, idx, profile, y0, y_min, y_max) in enumerate(cols):
-        if k == 2:
-            i = max(1, len(profile) // 2)
-            j = len(profile)
-        else:
-            i, j = _band_cuts_1d(profile, prefer=prefer)
-        y1 = float(ys[idx[i]]) if i < len(idx) else float(ys[idx[-1]])
-        y2 = float(ys[idx[min(j, len(idx) - 1)]])
-        if y2 <= y1 + 0.6:
-            y2 = y1 + 1.0
-        raw1.append(y1)
-        raw2.append(y2)
-        used.append(int(x))
-    if len(used) < 3:
-        return labels
-    sm1 = _finite_median_filter(np.asarray(raw1, dtype=np.float32), STRIP_SMOOTH)
-    sm2 = _finite_median_filter(np.asarray(raw2, dtype=np.float32), STRIP_SMOOTH)
-    sm1 = _smooth1d(sm1, 2)
-    sm2 = _smooth1d(sm2, 2)
-    for i in range(len(sm2)):
-        if sm2[i] <= sm1[i] + 0.8:
-            sm2[i] = sm1[i] + 1.0
-    y1_at = np.interp(stations.astype(np.float32), np.asarray(used, dtype=np.float32), sm1)
-    y2_at = np.interp(stations.astype(np.float32), np.asarray(used, dtype=np.float32), sm2)
-    by_x = {int(x): (float(a), float(b)) for x, a, b in zip(stations.tolist(), y1_at.tolist(), y2_at.tolist())}
-    for i in np.where(core)[0].tolist():
-        cuts = by_x.get(int(xs[i]))
-        if cuts is None:
-            continue
-        y1, y2 = cuts
-        yi = float(ys[i])
-        if k == 2:
-            labels[i] = 0 if yi < y1 else 1
-        elif yi < y1:
-            labels[i] = 0
-        elif yi > y2:
-            labels[i] = 2
-        else:
-            labels[i] = 1
-    if assign_lesion:
-        for i in np.where(~keep)[0].tolist():
-            cuts = by_x.get(int(xs[i]))
-            if cuts is None:
-                continue
-            y1, y2 = cuts
-            yi = float(ys[i])
-            labels[i] = 0 if yi < y1 else (2 if yi > y2 else 1)
-    return labels
+    """Prefer global gray clusters; unused args kept for callers."""
+    del image, blocked, wall, brush_radius, lumen_center, lesion_center, deepest
+    shape = None
+    if len(samples["xs"]):
+        shape = (int(samples["ys"].max()) + 2, int(samples["xs"].max()) + 2)
+    return assign_global_gray_clusters(samples, keep, assign_lesion, k, shape)
 
 
 def interfaces_from_y_bands(

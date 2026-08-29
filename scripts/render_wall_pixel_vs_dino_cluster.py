@@ -48,6 +48,7 @@ from render_wall_layer_thin_bands import (  # noqa: E402
 )
 from wall_lesion_aware_cluster import (  # noqa: E402
     DEFAULT_BRUSH,
+    LABEL_PAD_PX,
     as_xy,
     cluster_brush_band,
     densify_polyline,
@@ -239,7 +240,7 @@ def draw_full_brush(rgb: np.ndarray, wall: np.ndarray, brush_radius: float) -> n
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def right_layer_box(shape, wall, lesion_poly, brush: float, pad: int = 16) -> tuple[int, int, int, int]:
+def right_layer_box(shape, wall, lesion_poly, brush: float, pad: int = 8) -> tuple[int, int, int, int]:
     """Tight window on the right-hand heading, so B can be enlarged."""
     h, w = shape[:2]
     wall = as_xy(wall)
@@ -249,7 +250,7 @@ def right_layer_box(shape, wall, lesion_poly, brush: float, pad: int = 16) -> tu
     right = wall[wall[:, 0] >= cut]
     if len(right) < 4:
         right = wall
-    rad = float(brush) + pad + 16
+    rad = float(brush) + pad + float(LABEL_PAD_PX)
     x1 = max(0, int(np.floor(right[:, 0].min() - rad)))
     x2 = min(w, int(np.ceil(right[:, 0].max() + rad)))
     y1 = max(0, int(np.floor(right[:, 1].min() - rad)))
@@ -290,7 +291,7 @@ def draw_interface_lines(rgb: np.ndarray, interfaces, sx1: float, sy1: float, sc
 def choose_arm(gray, wall, lesion_mask, lumen_center, lesion_poly, cavity, brush, extra=None, method="kmeans1d_gray"):
     return cluster_brush_band(
         gray, wall, lesion_mask,
-        brush_radius=brush, label_pad_px=16, k=3, dilate_px=0, exclude_lesion=True,
+        brush_radius=brush, label_pad_px=LABEL_PAD_PX, k=3, dilate_px=0, exclude_lesion=True,
         method=method,
         lumen_center=lumen_center, lesion_poly=lesion_poly, cavity_side_source=cavity,
         fit_side="right", assign_lesion=False, sensitive=False,

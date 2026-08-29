@@ -12,7 +12,7 @@
 - 单测：`scripts/test_wall_lesion_aware_cluster.py`
 - 固定袋：`pipeline/data/wall_layer_fixtures/v1/CASE-*/`
 
-一句话：医生画一条走行线。程序沿这条线的**法向**（墙的厚度）读灰度，找到两条最陡的亮暗跳变，把线两侧比画笔更宽的一条走廊涂成黄 / 红 / 绿三带。带是顺着墙走的，不是竖着切图像列，也不是整图 k-means。
+一句话：医生画一条走行线。程序只看这条线两侧很窄的一条走廊里**全部像素的灰度**，先聚成亮 / 暗两类；若同一种灰度出现在墙的两侧，再按到走行线的法向距离拆成浅层 / 肌层 / 浆膜。三层是分开的色带，不是按图像列切，也不是按人数三等分。
 
 ---
 
@@ -33,7 +33,7 @@
 | 不是 DINO 分层 | `CorridorDino` 还在脚本里，当前出图不跑 C 图 |
 | 不是现网 56x28 亮度分堆 | 现网 `clarifyDeepestEcho` 仍按最深点小窗亮度聚；本文是整条画笔走廊 |
 
-### 1.3 当前主路径（2026-08-29 下午）
+### 1.3 当前主路径（已沉淀）
 
 出图脚本调用：
 
@@ -41,18 +41,21 @@
 cluster_brush_band(
     ...,
     brush_radius=12,          # A 图上的细画笔
-    label_pad_px=16,          # 真正采点/涂色比画笔每侧再宽 16 px
+    label_pad_px=4,           # 采点/涂色只比画笔每侧再宽 4 px
     k=3,
     dilate_px=0,
     exclude_lesion=True,
-    method="kmeans1d_gray",   # prefer_strips 时特征几乎不用
+    method="kmeans1d_gray",   # prefer_strips 时改走整体灰度聚类
     fit_side="right",         # 只影响 fate 的种子侧，不再切层
     assign_lesion=False,      # 病灶像素不贴层号
-    prefer_strips=True,       # 走 assign_natural_y_bands
+    prefer_strips=True,       # 走 assign_global_gray_clusters
 )
 ```
 
-`prefer_strips=True` 时：先在走行线的**法向**上读灰度（眼睛看到的分层是顺着墙厚，不是竖着的图像列），用灰度跳变定两刀；再投影回每一列，从上到下涂成 0 / 1 / 2，黄绿不交叉。
+`prefer_strips=True` 时只做两件事：
+
+1. **整体灰度聚类**：走廊里所有 `keep` 像素一起做灰度 k-means（先 k=2 亮/暗）。
+2. **按深度拆层**：同一种灰度若包在另一侧的两侧，就按 `across`（到走行线的有符号距离）拆成浅层和浆膜，中间留下另一类。每个走行站位上 0 / 1 / 2 互斥，黄不会在同一法向位置掺进绿。
 
 ---
 
@@ -186,18 +189,19 @@ wall = densify_polyline(wall, step=3.0)
 ### 5.2 画笔 mask（走廊）
 
 ```text
-brush = rasterize_brush(gray.shape, wall, brush_radius)
+sample_radius = brush_radius + LABEL_PAD_PX   # 出图 12 + 4
+brush = rasterize_brush(gray.shape, wall, sample_radius)
 ```
 
 用 `cv2.polylines` 沿中心线画一条实心带子：
 
 ```text
-thickness = round(2 * brush_radius + 1)
+thickness = round(2 * sample_radius + 1)
 ```
 
-`brush_radius=12` 时带宽约 25 px。带内所有像素都是候选。这就是「画笔范围」。
+A 图仍只画半径 12 的细黄笔，方便对照医生线。色带只比笔宽出约 4 px，不再大幅外扩。
 
-图 A 上半透明黄带就是这个 mask；中间细黄线是完整 `wall`，包括穿过病灶的一段。
+图 A 上半透明黄带是细画笔；中间细黄线是完整 `wall`，包括穿过病灶的一段。
 
 ### 5.3 挖掉病灶
 
@@ -231,50 +235,61 @@ keep_pixel = (brush > 0) and (lesion_d == 0)   # exclude_lesion=True 时
 3. 若有胃腔中心，让法向指向「离开胃腔」；否则用病灶最深点方向
 4. `across = 点到中心线的有符号距离 / brush_radius`
 
-**贴标签用 `across`（到走行线的法向距离）。** 涂色走廊是画笔半径再加 16 px。A 图仍只画细画笔，方便对照医生线。
+**聚类用整条走廊的灰度。拆层用 `across`（到走行线的法向距离）。** 涂色走廊是画笔半径再加 4 px。
 
-`along_idx` 当前主路径也不切层，只留在 `ClusterArm` 里给旧 fate / 中心线函数用。
+`along_idx` 不参与灰度聚类，只用来在每个走行站位上把 0 / 1 / 2 按 `across` 排成互斥带。
 
 ---
 
-## 6. 当前贴标签：`assign_across_gray_bands`
+## 6. 当前贴标签：`assign_global_gray_clusters`
 
-这是 2026-08-29 下午的像素分层核心。`prefer_strips=True` 时由 `assign_natural_y_bands` 转进来。
-
-### 6.1 为什么不按图像竖列切
-
-胃壁亮暗带平行于走行线。按同一 `x` 从上往下切，墙一斜就会斜着穿过三层，肉眼很清楚的亮带/暗带会被平均掉。
-
-正确的尺子是**法向距离**（点到走行线的有符号距离，代码里的 `across`）。
-
-### 6.2 步骤（从线到三色带）
+这是已沉淀的像素分层核心。`prefer_strips=True` 时：
 
 ```text
-1. 医生走行线加密，每隔约 3 px 一个站位
-2. 每个站位沿法向左右各读 ACROSS_SEARCH_PX=36 px 的灰度
-3. 相邻 ALONG_AVG=9 个站位平均，压掉超声斑点
-4. 在剖面上找梯度峰：灰度跳得最陡的两个位置，至少相距 5 px
-5. 右侧走廊比较「中亮两侧暗」和「中暗两侧亮」，整条线锁定同一种
-6. 两条切点沿走行线做中值+平滑
-7. 走廊像素（画笔半径 + LABEL_PAD_PX=16，比 A 上细画笔更宽）按到中心线的距离贴 0 / 1 / 2
+cluster_brush_band
+  -> assign_strip_layers
+  -> assign_natural_y_bands
+  -> assign_global_gray_clusters
 ```
+
+### 6.1 为什么这样切
+
+胃壁在超声上通常是**两种整体灰度**交替：亮-暗-亮（BDB）或暗-亮-暗（DBD）。  
+两个暗回声灰度几乎一样，若只按灰度分成三类，黄和绿会搅在一起。  
+所以：
+
+- **类从哪来**：整条走廊所有 `keep` 像素的灰度，一次 k-means，不是逐列、也不是人数三等分。
+- **层怎么分开**：同一种灰度如果出现在墙的两侧，按 `across` 拆成浅层和浆膜。
+
+### 6.2 步骤
 
 ```text
-across < 切点1     -> 标签 0  浅层 / 黄
-切点1 到 切点2    -> 标签 1  固有肌 / 红
-across > 切点2     -> 标签 2  浆膜 / 绿
+1. 丢掉比走廊核心还暗一截的近黑像素（胃腔），避免外圈黑边变成一层
+2. 取出剩余 keep 像素的灰度，做成 (N, 1) 特征
+3. 灰度 k-means，k=2  ->  亮一类，暗一类
+4. 看哪一类「包住」另一类：
+     若 A 的 across 同时落在 B 的均值两侧，且 A 比 B 更散
+     -> A 是两侧同色（两层亮或两层暗）
+     -> B 是中间那一层
+5. 拆层：
+     across < mean(across_B)  的 A  -> 标签 0  浅层 / 黄
+     全部 B                         -> 标签 1  固有肌 / 红
+     across > mean(across_B)  的 A  -> 标签 2  浆膜 / 绿
+6. 若 k=2 分不出「包住」（三种灰度都不同）：
+     改做灰度 k-means k=3，再按各簇的 mean(across) 排成 0 / 1 / 2
+     若 0 和 2 灰度很近（差 <= 18），仍按 BDB / DBD 理解
+7. 用三类的 across 中位数做两刀（不是人数三等分）
+8. 走廊里每个像素只按自己的 across 贴 0 / 1 / 2，同一法向位置只有一种颜色
 ```
 
-中间带可以比两侧薄或厚。黄绿是否「上下」取决于法向：约定 `+across` 朝图像下方，黄在较上的一侧。
+中间带可以比两侧薄或厚，厚度由灰度簇实际落在哪决定，不是画笔三等分。
 
-对比太弱时退回人数三等分，只当兜底。
-
-### 6.3 走廊比画笔宽
+### 6.3 走廊只比画笔宽 4 px
 
 A 图仍画医生细画笔（半径 12）。  
-真正采点和涂色用 `sample_radius = 12 + 16 = 28`，所以色带可以比黄笔更宽，盖住画笔外那一截肉眼分层。
+真正采点和涂色用 `sample_radius = 12 + 4 = 16`。不要再扩十几像素。
 
-灶内（`assign_lesion=False`）不涂色。`fit_side` / `features` 不参与切层。
+灶内（`assign_lesion=False`）不涂色。`fit_side` / 旧特征矩阵不参与切层。
 
 ### 6.4 标签语义
 
@@ -327,7 +342,7 @@ A 图仍画医生细画笔（半径 12）。
 | `status` | 字符串 | `ok` 或 `insufficient_normal_wall` |
 | `skip_reason` | 字符串 | 失败时等于 `insufficient_normal_wall` |
 | `k` | 整数 | 请求的层数 |
-| `method` | 字符串 | 请求的方法名；strips 路径下不等于「真的做了 k-means」 |
+| `method` | 字符串 | 请求的方法名；strips 路径实际走整体灰度 k-means |
 | `n_pixels` | 整数 | 笔刷内像素数（含灶内） |
 | `n_valid` | 整数 | `keep` 为真的点数 |
 | `dilate_px` | 整数 | 排除灶时的膨胀 |
@@ -376,7 +391,7 @@ A 图仍画医生细画笔（半径 12）。
 | 标签透明度 | `PIXEL_BLEND = 0.28` |
 | 线宽 | 1 px |
 
-B 的窗口：走行线 `x` 大于 55% 分位的那段，外扩 `brush + 16`，并尽量带一点灶的右缘。
+B 的窗口：走行线 `x` 大于 55% 分位的那段，外扩 `brush + 16 + LABEL_PAD_PX`，并尽量带一点灶的右缘。这只是放大框，不是涂色宽度。
 
 落盘：
 
@@ -401,10 +416,11 @@ results/visualizations/error_cases/   # 同名拷贝，方便 IDE 打开
 
 | 开关 | 函数 | 在做什么 |
 |------|------|----------|
-| `prefer_strips=False` 且 `sensitive=False` | `cluster_features` | 在 `fit` 上对灰度（或灰度+across）做 k-means / GMM / Ward / FCM，再按 `across` 均值把簇排成 0/1/2 |
-| `sensitive=True` | `assign_from_across_profile` + 沿 heading 走 | 用法向剖面找亮-暗-亮谷，再一列列往左走 |
-| `extra_features=` | 同上，特征换成 DINO PCA | 出图已停 |
-| `trace_gray_interfaces` | 沿 across 找灰度梯度峰 | `prefer_strips` 时不用，改走 `interfaces_from_y_bands` |
+| `prefer_strips=False` 且 `sensitive=False` | `cluster_features` | 在 `fit` 上对灰度（或灰度+across）做 k-means，再按 `across` 排序；两个暗回声会合成一类，黄绿易混 |
+| `sensitive=True` | `assign_from_across_profile` | 用法向剖面找亮-暗-亮谷 |
+| `assign_across_gray_bands` | 法向梯度两刀 | 已退出主路径，库里仍在 |
+| `extra_features=` | 特征换成 DINO PCA | 出图已停 |
+| `trace_gray_interfaces` | 沿 across 找灰度梯度峰 | `prefer_strips` 时改走 `interfaces_from_y_bands` |
 | `kmeans1d_across` | 只按法向深度切三带 | 旧对照 |
 
 `features_for_method`：
@@ -415,7 +431,7 @@ results/visualizations/error_cases/   # 同名拷贝，方便 IDE 打开
 | `kmeans1d_across` | `[across * 0.60]` |
 | 其他 | `[gray/255, across * 0.60]` |
 
-旧路径必须用 `across` 给簇排序，否则两个暗簇会对调。这也是黄绿夹杂的根因，所以主路径不再走它。
+旧路径把两个暗回声收进同一个灰度类，就会在不同深度涂成同一种颜色。主路径先按整体灰度分亮/暗，再用 `across` 把同色两侧拆开。
 
 ---
 
@@ -426,13 +442,13 @@ results/visualizations/error_cases/   # 同名拷贝，方便 IDE 打开
 | `MIN_VALID_PIXELS` | 40 | 少于此不聚类 |
 | `MIN_FLANK_ARC_PX` | 12 | 排除灶后侧段太短则放弃 |
 | `DEFAULT_BRUSH` | 8 | 库默认半宽；出图覆盖为 12 |
-| `STRIP_SMOOTH` | 9 | 分界中值窗口下限；贴标签时用 `max(9, 15)=15` |
-| `across` 核心阈值 | 0.92 | 丢掉笔刷外圈 |
-| 法向搜索 | 36 px | 每个站位沿墙厚左右各读一截 |
-| 涂色外扩 | 16 px | 比 A 上细画笔每侧更宽，盖住画笔外的分层 |
+| `LABEL_PAD_PX` | 4 | 采点/涂色比细画笔每侧多 4 px |
+| `GRAY_SAME_TOL` | 18 | 两个灰度中心近于此时视为同一种回声 |
 | `JOIN_*` / `gentle_curve` | 见库顶 | 只平滑分界折线，不改标签 |
 
-出图另有 `A_SCALE=3`，`B_SCALE=8`，`BRUSH_BLEND=0.20`。
+`GRAY_SEARCH_PAD` / `ACROSS_SEARCH_PX` / 梯度峰只给旧的 `assign_across_gray_bands` 用，主路径不用。
+
+出图另有 `A_SCALE=3`，`B_SCALE=8`，`BRUSH_BLEND=0.20`，`PIXEL_BLEND=0.28`。
 
 ---
 
@@ -454,7 +470,7 @@ lumen_center = lumen.mean(axis=0) if len(lumen) >= 3 else None
 
 arm = cluster_brush_band(
     gray, wall, lesion_mask,
-    brush_radius=12, k=3, dilate_px=0,
+    brush_radius=12, label_pad_px=4, k=3, dilate_px=0,
     exclude_lesion=True,
     method="kmeans1d_gray",
     lumen_center=lumen_center,
@@ -485,7 +501,7 @@ frame.jpg + meta.wall_polygon + meta.lesion_polygon
   gray, wall_crop, lesion_mask
         |
         v
-  densify wall -> rasterize_brush(radius)
+  densify wall -> rasterize_brush(brush + 4)
         |
         +-- 减灶 --> keep 像素
         |
@@ -493,11 +509,12 @@ frame.jpg + meta.wall_polygon + meta.lesion_polygon
   sample_band_pixels: xs, ys, gray, across, along_idx
         |
         v
-  assign_natural_y_bands
-        每列 y 排序 -> 按灰度找中亮或中暗
-        -> 沿法向读 24 px，梯度峰定两刀，再投影回列
-        -> 法向梯度两刀，沿 heading 抹顺
-        -> 宽走廊按 across 贴 0/1/2
+  assign_global_gray_clusters
+        全部 keep 灰度 k-means k=2
+        -> 同色包住另一色则按 across 拆成 0 和 2
+        -> 否则灰度 k=3，按 mean(across) 排序
+        -> 用三类 across 中位数切两刀
+        -> 按 across 互斥涂 0 / 1 / 2
         |
         +-- interfaces_from_y_bands --> 两条分界线
         +-- walk_layer_fate ----------> lost / fused 旁证
@@ -506,25 +523,26 @@ frame.jpg + meta.wall_polygon + meta.lesion_polygon
   ClusterArm
         |
         v
-  A: 完整画笔    B: 右侧 8x 层带
+  A: 完整细画笔    B: 右侧 8x 层带
 ```
 
 ---
 
 ## 14. 已知限制
 
-1. **「从上到下」假设墙大致水平。** P040 右侧成立。走行线很斜（P019）或竖着走时，图像列不再等于墙厚，三带会切歪。那时应改回沿 `across` 切，而不是图像 `y`。
-2. **P008 heading 是涂鸦。** 完整画笔在 A 上会缠成一团，B 的「右侧」窗口也会脏。这是笔画问题，不是三等分公式错了。
-3. **中段外扩最多 12 px 仍不是解剖金标准。** 只是让色带盖住肉眼看到的那条灰带。对比度不够时才退回三等分。
+1. **三层灰度很接近时（例如 P040 约 90 附近），亮暗两类本身就糊。** 算法仍会按深度拆开，但颜色对比会软。
+2. **P008 heading 是涂鸦。** 完整画笔在 A 上会缠成一团，B 的右侧窗口也会脏。这是笔画问题。
+3. **`LABEL_PAD_PX=4` 盖不住画笔外很远的回声。** 那是刻意的：不要把走廊扩成另一条几何带。
 4. **`fates` 常和医生 ticks、病理不一致。** 只写在图底，不当分期。
 5. **P019 无同帧医生灶；P076 重画灶不是 0.179 s 的原笔。** 挖灶不完整时，暗肿块仍可能进走廊。
-6. **DINO 对照、完整 Gate 0–3 走廊脚本还没按计划写完。** 不要把本文件当成 DINO 产品说明。
-7. **公网未接。** 改本文算法不要 deploy Next。
+6. **分界折线仍按图像列找 0->1 / 1->2。** 墙很斜时线会不如色带准；色带本身已按 `across` 互斥。
+7. **DINO 对照、完整 Gate 0–3 走廊脚本还没按计划写完。** 不要把本文件当成 DINO 产品说明。
+8. **公网未接。** 改本文算法不要 deploy Next。
 
 ---
 
 ## 15. 和旧文档的关系
 
-[LESION_AWARE_WALL_CLUSTER_20260828.md](../plans/LESION_AWARE_WALL_CLUSTER_20260828.md) 里「特征 = 灰度 + 0.60*across，再 k-means」是 **8 月 28 日第一版**。那一版在两层暗回声上会把黄和绿搅在一起。
+[LESION_AWARE_WALL_CLUSTER_20260828.md](../plans/LESION_AWARE_WALL_CLUSTER_20260828.md) 里「特征 = 灰度 + 0.60*across，再 k-means」是 **8 月 28 日第一版**。后来还试过人数三等分、按列灰度切、法向梯度两刀、把走廊扩 16 px。那些都退出主路径。
 
 **以本文第 6 节为准。** 排除病灶、固定袋、不定 cT、不接工作台，那几条仍然有效。

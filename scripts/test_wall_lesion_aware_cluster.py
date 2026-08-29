@@ -20,6 +20,7 @@ from wall_lesion_aware_cluster import (  # noqa: E402
     _band_cuts_1d,
     _gradient_two_cuts,
     _split_interface_runs,
+    assign_global_gray_clusters,
     cluster_brush_band,
     rasterize_polygon,
     stitch_interface_runs,
@@ -122,6 +123,37 @@ def main() -> int:
     )
     assert strips.status == "ok", strips.skip_reason
     assert strips.bright_dark_bright, strips.classes
+    # Direct gray clustering on a 210 / 48 / 200 corridor.
+    n = 90
+    samples = {
+        "xs": np.tile(np.arange(30, dtype=np.int32), 3),
+        "ys": np.concatenate([
+            np.full(30, 10, dtype=np.int32),
+            np.full(30, 14, dtype=np.int32),
+            np.full(30, 18, dtype=np.int32),
+        ]),
+        "gray": np.concatenate([
+            np.full(30, 210.0, dtype=np.float32),
+            np.full(30, 48.0, dtype=np.float32),
+            np.full(30, 200.0, dtype=np.float32),
+        ]),
+        "across": np.concatenate([
+            np.full(30, -0.6, dtype=np.float32),
+            np.full(30, 0.0, dtype=np.float32),
+            np.full(30, 0.6, dtype=np.float32),
+        ]),
+        "along_idx": np.tile(np.arange(30, dtype=np.int32), 3),
+    }
+    keep = np.ones(n, dtype=bool)
+    direct = assign_global_gray_clusters(samples, keep, False, 3, shape=(24, 40))
+    assert set(direct.tolist()) == {0, 1, 2}
+    assert float(samples["gray"][direct == 1].mean()) < 80
+    assert float(samples["across"][direct == 0].mean()) < float(samples["across"][direct == 2].mean())
+    # Two close brights (210 / 200) must not collapse into one color.
+    strip_cls = {item["id"]: item for item in strips.classes}
+    assert strip_cls["shallow"]["mean_gray"] > strip_cls["muscularis"]["mean_gray"] + 40
+    assert strip_cls["serosa"]["mean_gray"] > strip_cls["muscularis"]["mean_gray"] + 40
+    assert strip_cls["shallow"]["mean_across"] < strip_cls["serosa"]["mean_across"]
     strip_lab = np.asarray(strips.labels, dtype=np.int32)
     strip_x = np.asarray(strips.xs, dtype=np.int32)
     strip_y = np.asarray(strips.ys, dtype=np.int32)
