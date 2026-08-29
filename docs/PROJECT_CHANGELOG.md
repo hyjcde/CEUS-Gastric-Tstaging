@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Track ordered wall curves instead of painting three pixel classes
+
+- Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, `docs/technical/WALL_ORDERED_CURVE_TRACKING.md`. Pixel clustering stays as a candidate baseline only.
+- Reason: Same-gray echoes and the lesion can share a cluster. The job is to track thin, ordered, parallel ridges / valleys outside the lesion, then mark missing, fused, or wrap. That is not a 3-class paint.
+- Key changes: Dilate the lesion 5 px and learn only on the right-hand heading. Detect a bright peak, dark valley, and bright peak on each normal. Smooth each curve, allow a layer to be absent, draw solid detections and dashed predictions, and never auto-join across the lesion. Does not unlock cT.
+- Validation: New curve unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Cluster the corridor by overall gray, then split layers by depth
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_global_gray_clusters`, `LABEL_PAD_PX=4`), algorithm note, four-case render.

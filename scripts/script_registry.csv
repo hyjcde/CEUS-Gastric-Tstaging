@@ -435,6 +435,7 @@ render_prompt_mask_case_visualizations.py,runtime,module,,scripts,scripts/runtim
 render_roi_margin_compare_panel.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 render_wall_cluster_diagnostics.py,current,analysis,4,scripts,scripts/current,yes,true,
 render_wall_layer_thin_bands.py,current,analysis,4,scripts,scripts/current,yes,true,
+render_wall_ordered_curves.py,current,analysis,4,scripts,scripts/current,yes,true,
 render_wall_pixel_vs_dino_cluster.py,current,analysis,4,scripts,scripts/current,yes,true,
 reorganize_project_logic_white_html.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 repo_env.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -594,6 +595,7 @@ temporary_public_next_proxy.py,unknown,unknown,,scripts,needs_review,review,fals
 test_lan_full_stack.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 test_similar_case_cards.py,utility,utility,6,scripts,scripts/analysis,review,true,
 test_wall_lesion_aware_cluster.py,current,analysis,4,scripts,scripts/current,yes,true,
+test_wall_ordered_curve_track.py,current,analysis,4,scripts,scripts/current,yes,true,
 tnm_nm_label_map.py,current,data_governance,3,scripts,scripts/current,review_paths,false,
 train_accuracy_weighted_late_fusion.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_adapter_dinov3_case_rag_from_cache.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -658,6 +660,7 @@ viz_static_wall_dash_6cases_20260814.py,current,visualization,5,scripts,scripts/
 wait_and_run_tabfm_20260815.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 wait_for_sam31_ready.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 wall_lesion_aware_cluster.py,current,analysis,4,scripts,scripts/current,review_paths,false,
+wall_ordered_curve_track.py,current,analysis,4,scripts,scripts/current,review_paths,false,
 watch_gastricus_dual_finish.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 watch_gastricus_next_gpu.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 watch_sam31_epoch3_then_continue.sh,utility,shell,7,scripts,scripts/analysis,review,false,
