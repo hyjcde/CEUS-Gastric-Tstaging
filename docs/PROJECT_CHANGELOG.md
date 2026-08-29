@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Draw wall-layer lines and score invasion, not cT
+
+- Scope: `scripts/wall_invasion_readout.py`, `scripts/wall_ordered_curve_track.py`, ordered-curve render, `docs/technical/WALL_ORDERED_CURVE_TRACKING.md`.
+- Reason: The job is two gray-interface lines plus a protocol invasion readout. Pixel blobs and a loose wrap were not that job. One frame cannot confirm interrupt, and none of this is a cT.
+- Key changes: Restate the requirement from the serosal-trajectory protocol. Score each layer as continuous / displaced / fused / suspected_interrupt / cannot_judge. Wrap must match the outer-echo template. Figure B shows the lines and the readout.
+- Validation: Curve unit tests plus dedicated invasion cases; offline four-case render.
+- Deployment: none (offline figure). Do not deploy Next.
+
 ## 2026-08-29, Wall layer colors sit on the source pixels
 
 - Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, algorithm note.

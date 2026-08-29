@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from wall_lesion_aware_cluster import rasterize_polygon
+from wall_invasion_readout import analyze_invasion
 from wall_ordered_curve_track import pick_interfaces, track_ordered_layers
 
 
@@ -109,6 +110,25 @@ def main() -> int:
         resid = y[4:-4] - trend
         assert float(np.percentile(np.abs(resid), 90)) < 0.85, float(np.percentile(np.abs(resid), 90))
     assert "lost" not in {item.status for item in track.regions}
+    inv = {item.id: item.verdict for item in track.invasion}
+    assert set(inv) == {"mucosa", "muscularis", "serosa"}
+    assert inv["muscularis"] in {"fused", "continuous"}, inv
+    assert "interrupted" not in inv.values(), inv
+    assert all(item.confidence <= 0.62 for item in track.invasion)
+
+    # Protocol: one frame cannot confirm interrupt.
+    one = analyze_invasion(
+        inner_n=12, outer_n=12, path_meets_lesion=True, wrapped=False,
+        wrap_steps=0, mid_gray=40.0, lesion_gray=38.0, outer_stop_gray=36.0,
+        single_frame=True,
+    )
+    assert {item.id: item.verdict for item in one}["serosa"] == "suspected_interrupt"
+    wrap = analyze_invasion(
+        inner_n=12, outer_n=12, path_meets_lesion=True, wrapped=True,
+        wrap_steps=12, mid_gray=80.0, lesion_gray=30.0, outer_stop_gray=90.0,
+        single_frame=True,
+    )
+    assert {item.id: item.verdict for item in wrap}["serosa"] == "displaced"
     for item in track.boundaries:
         for x, y in item.solid_hi + item.solid_lo:
             xi, yi = int(round(x)), int(round(y))

@@ -12,6 +12,7 @@ from typing import Any
 import cv2
 import numpy as np
 
+from wall_invasion_readout import analyze_invasion, region_status
 from wall_lesion_aware_cluster import (
     as_xy,
     densify_polyline,
@@ -91,6 +92,7 @@ class CurveTrack:
     regions: list[RegionReadout] = field(default_factory=list)
     ribbons: list[dict[str, Any]] = field(default_factory=list)
     pixels: dict[str, Any] = field(default_factory=dict)
+    invasion: list[Any] = field(default_factory=list)
     skip_reason: str = ""
 
     @property
@@ -662,6 +664,7 @@ def _wrap_outer(
     outer: np.ndarray,
     gray: np.ndarray,
     seed_gray: float | None,
+    lesion_gray: float | None = None,
 ) -> tuple[np.ndarray, bool]:
     contours, _ = cv2.findContours(lesion_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not contours:
@@ -681,23 +684,40 @@ def _wrap_outer(
         if 0 <= x < width and 0 <= y < height:
             path.append([float(q[0]), float(q[1])])
             grays.append(float(gray[y, x]))
-    if len(grays) < 6 or seed_gray is None:
+    if len(grays) < 8 or seed_gray is None:
         return np.zeros((0, 2), dtype=np.float32), False
-    ok = float(np.mean(grays)) >= float(seed_gray) - 28.0
+    seed = float(seed_gray)
+    match = sum(1 for g in grays if abs(float(g) - seed) <= 16.0)
+    brighter = True
+    if lesion_gray is not None:
+        brighter = sum(1 for g in grays if float(g) >= float(lesion_gray) + 15.0) >= 8
+    ok = match >= 8 and brighter and abs(float(np.mean(grays)) - seed) <= 18.0
     return (np.asarray(path, dtype=np.float32) if ok else np.zeros((0, 2), dtype=np.float32)), ok
 
 
-def _gray_between(gray: np.ndarray, a: np.ndarray, b: np.ndarray) -> float | None:
+def _gray_between(
+    gray: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    toward: np.ndarray | None = None,
+) -> float | None:
     if len(a) == 0 or len(b) == 0:
         return None
-    n = min(len(a), len(b), 12)
+    n = min(len(a), len(b))
+    aa = np.asarray(a[:n], dtype=np.float32)
+    bb = np.asarray(b[:n], dtype=np.float32)
+    mid = 0.5 * (aa + bb)
+    if toward is not None and len(mid):
+        order = np.argsort(np.linalg.norm(mid - toward.reshape(1, 2), axis=1))
+        mid = mid[order[:12]]
+    else:
+        mid = mid[-12:]
     vals = []
     height, width = gray.shape[:2]
-    for p, q in zip(a[-n:], b[-n:]):
-        mid = 0.5 * (np.asarray(p) + np.asarray(q))
-        x, y = int(round(float(mid[0]))), int(round(float(mid[1])))
-        if 0 <= x < width and 0 <= y < height:
-            vals.append(float(gray[y, x]))
+    for x, y in mid.tolist():
+        xi, yi = int(round(float(x))), int(round(float(y)))
+        if 0 <= xi < width and 0 <= yi < height:
+            vals.append(float(gray[yi, xi]))
     return None if not vals else float(np.mean(vals))
 
 
@@ -834,28 +854,38 @@ def track_ordered_layers(
     wrap_xy = np.zeros((0, 2), dtype=np.float32)
     wrapped = False
     seed_g = _gray_at(gray, solid2)
+    lesion_g = float(gray[lesion_mask > 0].mean()) if int((lesion_mask > 0).sum()) >= 20 else None
     if len(solid2) >= 2:
         start = solid2[-1] if float(solid2[-1, 0]) <= float(solid2[0, 0]) else solid2[0]
         nid = int(np.argmin(((pts - start.reshape(1, 2)) ** 2).sum(axis=1)))
-        wrap_xy, wrapped = _wrap_outer(start, blocked, normals[nid], gray, seed_g)
+        wrap_xy, wrapped = _wrap_outer(start, blocked, normals[nid], gray, seed_g, lesion_g)
         if len(wrap_xy) >= 6:
             wrap_xy = _smooth_heading(wrap_xy, sigma_px=10.0)
 
-    mid_g = _gray_between(gray, _finite(xy1), _finite(xy2))
-    lesion_g = float(gray[lesion_mask > 0].mean()) if int((lesion_mask > 0).sum()) >= 20 else None
-    fused = bool(mid_g is not None and lesion_g is not None and abs(mid_g - lesion_g) <= FUSE_GRAY_TOL)
+    mid_g = _gray_between(gray, _finite(xy1), _finite(xy2), lesion_center)
+    stop_g = _gray_at(gray, np.asarray([stop2], dtype=np.float32)) if stop2 is not None else None
+    path_meets = bool(stop1 is not None or stop2 is not None)
+    invasion = analyze_invasion(
+        inner_n=int(np.isfinite(n1).sum()),
+        outer_n=int(np.isfinite(n2).sum()),
+        path_meets_lesion=path_meets,
+        wrapped=wrapped,
+        wrap_steps=len(wrap_xy),
+        mid_gray=mid_g,
+        lesion_gray=lesion_g,
+        outer_stop_gray=stop_g,
+        single_frame=True,
+    )
+    by_inv = {item.id: item for item in invasion}
 
-    def _bound_status(solid_n: int, wrapped_flag: bool) -> tuple[str, str]:
-        if wrapped_flag:
-            return "displaced", "outer echo follows the lesion rim"
-        if solid_n >= 6:
-            return "visible", ""
-        if solid_n > 0:
-            return "obscured", "short or weak edge"
-        return "missing", ""
+    def _bound_status(solid_n: int, layer_id: str) -> tuple[str, str]:
+        item = by_inv.get(layer_id)
+        if item is None:
+            return ("visible" if solid_n >= 6 else "missing"), ""
+        return region_status(item.verdict), item.note
 
-    s1, note1 = _bound_status(len(hi1) + len(lo1), False)
-    s2, note2 = _bound_status(len(hi2) + len(lo2), wrapped)
+    s1, note1 = _bound_status(len(hi1) + len(lo1), "mucosa")
+    s2, note2 = _bound_status(len(hi2) + len(lo2), "serosa")
     inner = Boundary(
         id="inner", name_zh="上层-肌层界面",
         solid_hi=hi1.tolist(), solid_lo=lo1.tolist(),
@@ -871,23 +901,10 @@ def track_ordered_layers(
         n_detected=int(np.isfinite(n2).sum()), status=s2, note=note2,
     )
 
-    if fused:
-        musc = _region("muscularis", "固有肌层", "fused", "mid-band gray meets the lesion")
-    elif inner.n_detected >= 6 and outer.n_detected >= 6:
-        musc = _region("muscularis", "固有肌层", "visible")
-    elif inner.n_detected + outer.n_detected > 0:
-        musc = _region("muscularis", "固有肌层", "obscured")
-    else:
-        musc = _region("muscularis", "固有肌层", "missing")
-    muc = _region("mucosa", "黏膜复合层", "visible" if inner.n_detected >= 6 else ("obscured" if inner.n_detected else "missing"))
-    if wrapped:
-        ser = _region("serosa", "浆膜侧", "displaced", "outer line continues around the lesion")
-    elif outer.n_detected >= 6:
-        ser = _region("serosa", "浆膜侧", "visible")
-    elif outer.n_detected:
-        ser = _region("serosa", "浆膜侧", "obscured")
-    else:
-        ser = _region("serosa", "浆膜侧", "missing")
+    muc_i, mus_i, ser_i = (by_inv["mucosa"], by_inv["muscularis"], by_inv["serosa"])
+    muc = _region("mucosa", "黏膜复合层", region_status(muc_i.verdict), muc_i.note)
+    musc = _region("muscularis", "固有肌层", region_status(mus_i.verdict), mus_i.note)
+    ser = _region("serosa", "浆膜侧", region_status(ser_i.verdict), ser_i.note)
     # A missing image line is not serosal invasion and is not a cT.
 
     return CurveTrack(
@@ -898,6 +915,7 @@ def track_ordered_layers(
         regions=[muc, musc, ser],
         ribbons=ribbons,
         pixels=pixels,
+        invasion=invasion,
     )
 
 
@@ -921,4 +939,5 @@ def summary(track: CurveTrack) -> dict[str, Any]:
             {"id": item.id, "status": item.status, "note": item.note}
             for item in track.regions
         ],
+        "invasion": [item.as_dict() for item in getattr(track, "invasion", []) or []],
     }

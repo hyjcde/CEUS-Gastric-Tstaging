@@ -126,7 +126,7 @@ def _paint_pixel_layers(panel: np.ndarray, track, sx1: int, sy1: int, sx2: int, 
         if not sel.any():
             continue
         wash = np.array(color, dtype=np.float32)
-        overlay[sel] = 0.50 * overlay[sel] + 0.50 * wash
+        overlay[sel] = 0.78 * overlay[sel] + 0.22 * wash
     return np.clip(overlay, 0, 255).astype(np.uint8)
 
 
@@ -191,7 +191,7 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
     fig, axes = plt.subplots(1, 2, figsize=(16.8, 6.4), gridspec_kw={"width_ratios": [1.0, 1.75]})
     for ax, panel, title in zip(
         axes, (panel_a, panel_b),
-        ("A  Source  (heading is a guide)", "B  Layers sit on the gray pixels"),
+        ("A  Source  (heading is a guide, not a layer)", "B  Layer lines and invasion readout"),
     ):
         ax.imshow(panel)
         ax.set_title(title, fontsize=12)
@@ -211,15 +211,30 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
         labelcolor="white", fontsize=10, bbox_to_anchor=(0.5, 0.02),
         prop={"family": "Times New Roman", "size": 10},
     )
-    x = 0.12
-    fig.text(0.06, 0.086, "Region", color="#f8fafc", fontsize=11, fontname="Times New Roman", fontweight="bold")
-    for item in track.regions:
+    x = 0.10
+    fig.text(0.04, 0.086, "Invasion", color="#f8fafc", fontsize=11, fontname="Times New Roman", fontweight="bold")
+    rows = getattr(track, "invasion", None) or []
+    if not rows:
+        rows = track.regions
+    for item in rows:
+        verdict = getattr(item, "verdict", None) or STATUS_EN.get(getattr(item, "status", ""), getattr(item, "status", ""))
+        color_key = getattr(item, "verdict", None) and {
+            "continuous": "visible",
+            "suspected_interrupt": "interrupted",
+            "interrupted": "interrupted",
+            "cannot_judge": "obscured",
+            "displaced": "displaced",
+            "fused": "fused",
+            "missing": "missing",
+        }.get(item.verdict, "obscured")
+        if color_key is None:
+            color_key = getattr(item, "status", "missing")
         fig.text(
-            x, 0.086, f"{item.id} {STATUS_EN.get(item.status, item.status)}",
-            color=STATUS_COLOR.get(item.status, "#e5e7eb"),
+            x, 0.086, f"{item.id} {verdict}",
+            color=STATUS_COLOR.get(color_key, "#e5e7eb"),
             fontsize=10, fontname="Times New Roman",
         )
-        x += 0.18
+        x += 0.20
     fig.tight_layout(rect=[0, 0.12, 1, 0.95])
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{meta.get('case_id')}_ordered_curves.png"

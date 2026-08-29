@@ -69,7 +69,7 @@
 |------|------|------|
 | technical/COLLABORATOR_ACCESS.md | B | 工作站协作者 SSH 与原始数据 ACL |
 | technical/COMPUTE_LINKAGE.md | B | Mac / 工作站 / 公网算力联动 |
-| technical/WALL_ORDERED_CURVE_TRACKING.md | B | 当前胃壁分层主方法：病灶外有序细线追踪；不定 cT |
+| technical/WALL_ORDERED_CURVE_TRACKING.md | B | 当前胃壁分层主方法：画两条灰度界面，再做单帧浸润判定；不定 cT |
 | technical/WALL_PIXEL_BRUSH_LAYERING.md | B | 像素三类聚类对照（已不是主方法）；不定 cT |
 
 ## product/
