@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 paler stacked bands plus layer legend
+
+- Scope: `scripts/render_wall_layer_thin_bands.py --case P040`. Panel `results/visualizations/error_cases/CASE-040_thin_bands.png`.
+- Reason: The three right-hand belts sat on top of each other with colors too strong. The middle gap was easy to miss, and there was no legend for 浅层 / 固有肌层 / 浆膜层.
+- Key changes: Overlay alpha is lower. Display gap around the mass is wider; heading is dashed through the lesion and marked 条带消失. Legend and right-end callouts name each layer. Does not unlock cT.
+- Validation: Offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 sensitive gray bands and near-lesion fate
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`sensitive`, `walk_layer_fate`), `scripts/render_wall_layer_thin_bands.py --case P040`.

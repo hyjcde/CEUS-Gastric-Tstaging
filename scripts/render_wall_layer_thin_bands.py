@@ -25,11 +25,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "pipeline"))
 
+from matplotlib.font_manager import FontProperties
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+
 from wall_lesion_aware_cluster import (  # noqa: E402
     DEFAULT_BRUSH,
+    FATE_ZH,
+    LAYER_NAMES_ZH,
     as_xy,
     cluster_brush_band,
     densify_polyline,
+    dilate_mask,
     to_gray,
 )
 
@@ -44,18 +51,27 @@ DINO_CKPT = (
 
 LESION_BLUE = (191, 219, 254)
 LAYER_RGB = {
-    0: (250, 204, 21),
-    1: (251, 113, 133),
-    2: (52, 211, 153),
+    0: (253, 230, 138),
+    1: (254, 202, 202),
+    2: (167, 243, 208),
 }
 RIDGE_RGB = {
     0: (234, 179, 8),
     1: (244, 63, 94),
     2: (16, 185, 129),
 }
+LAYER_HEX = {0: "#eab308", 1: "#f43f5e", 2: "#10b981"}
 WALL = (254, 240, 180)
-LAYER_BLEND = 0.30
-LESION_BLEND = 0.14
+LAYER_BLEND = 0.16
+LESION_BLEND = 0.12
+GAP_PX = 10
+CJK_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+CJK = FontProperties(fname=CJK_PATH, size=10)
+LAYER_LEGEND = (
+    (0, "shallow", "浅层", "黏膜侧亮带"),
+    (1, "muscularis", "固有肌层", "中间暗带"),
+    (2, "serosa", "浆膜层", "外侧亮带"),
+)
 
 # Tight pads. P008 lesion sits on the lower wall; drop the empty upper sector.
 CROP_HINT = {
@@ -139,32 +155,87 @@ def overlay_blue(rgb: np.ndarray, mask: np.ndarray, alpha: float = LESION_BLEND)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def overlay_ridges(rgb: np.ndarray, polylines: dict, origin: tuple[int, int] = (0, 0)) -> np.ndarray:
+def overlay_ridges(rgb: np.ndarray, polylines: dict, origin: tuple[int, int] = (0, 0), gap: np.ndarray | None = None) -> np.ndarray:
     out = rgb.copy()
     ox, oy = origin
     names = ("shallow", "muscularis", "serosa")
+    height, width = out.shape[:2]
     for lab, name in enumerate(names):
         pts = np.asarray(polylines.get(name) or [], dtype=np.float32)
         if len(pts) < 2:
             continue
         shifted = np.round(pts - np.array([ox, oy], dtype=np.float32)).astype(np.int32)
-        cv2.polylines(out, [shifted], False, RIDGE_RGB[lab], 1, cv2.LINE_AA)
+        if gap is not None:
+            keep_pts = []
+            for x, y in shifted.tolist():
+                if 0 <= x < width and 0 <= y < height and gap[y, x] > 0:
+                    if len(keep_pts) >= 2:
+                        cv2.polylines(out, [np.asarray(keep_pts, dtype=np.int32)], False, RIDGE_RGB[lab], 1, cv2.LINE_AA)
+                    keep_pts = []
+                    continue
+                keep_pts.append([x, y])
+            shifted = np.asarray(keep_pts, dtype=np.int32) if keep_pts else np.zeros((0, 2), dtype=np.int32)
+        if len(shifted) >= 2:
+            cv2.polylines(out, [shifted], False, RIDGE_RGB[lab], 1, cv2.LINE_AA)
     return out
 
 
-def overlay_layers(rgb: np.ndarray, xs, ys, labels) -> np.ndarray:
+def overlay_layers(rgb: np.ndarray, xs, ys, labels, gap: np.ndarray | None = None) -> np.ndarray:
     out = rgb.astype(np.float32)
     xs = np.asarray(xs, dtype=np.int32)
     ys = np.asarray(ys, dtype=np.int32)
     labels = np.asarray(labels, dtype=np.int32)
     h, w = out.shape[:2]
     ok = (xs >= 0) & (ys >= 0) & (xs < w) & (ys < h) & (labels >= 0)
+    if gap is not None:
+        ok = ok & (gap[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)] == 0)
     for lab, color in LAYER_RGB.items():
         sel = ok & (labels == lab)
         if not sel.any():
             continue
         out[ys[sel], xs[sel]] = (1.0 - LAYER_BLEND) * out[ys[sel], xs[sel]] + LAYER_BLEND * np.array(color, dtype=np.float32)
     return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def draw_heading(rgb: np.ndarray, wall: np.ndarray, lesion_mask: np.ndarray) -> np.ndarray:
+    """Solid heading on normal wall, dashed through the lesion so the gap is obvious."""
+    out = rgb.copy()
+    wall = as_xy(wall)
+    if len(wall) < 2:
+        return out
+    dense = densify_polyline(wall, 2.0)
+    gap = dilate_mask(lesion_mask, GAP_PX)
+    h, w = gap.shape[:2]
+    solid, dashed = [], []
+    for point in dense:
+        x = int(round(float(point[0])))
+        y = int(round(float(point[1])))
+        hit = 0 <= x < w and 0 <= y < h and gap[y, x] > 0
+        (dashed if hit else solid).append([x, y])
+    if len(solid) >= 2:
+        cv2.polylines(out, [np.asarray(solid, dtype=np.int32)], False, WALL, 1, cv2.LINE_AA)
+    for i, point in enumerate(dashed):
+        if i % 4 < 2:
+            cv2.circle(out, (int(point[0]), int(point[1])), 1, (180, 180, 180), -1, cv2.LINE_AA)
+    return out
+
+
+def vanish_xy(wall: np.ndarray, lesion_mask: np.ndarray) -> tuple[float, float] | None:
+    wall = as_xy(wall)
+    if len(wall) < 2 or lesion_mask is None:
+        return None
+    gap = dilate_mask(lesion_mask, GAP_PX)
+    h, w = gap.shape[:2]
+    hits = []
+    for point in densify_polyline(wall, 2.0):
+        x = int(round(float(point[0])))
+        y = int(round(float(point[1])))
+        if 0 <= x < w and 0 <= y < h and gap[y, x] > 0:
+            hits.append([float(x), float(y)])
+    if not hits:
+        return None
+    arr = np.asarray(hits, dtype=np.float32)
+    return float(arr[:, 0].mean()), float(arr[:, 1].mean())
 
 
 def wall_strip(rgb: np.ndarray, wall: np.ndarray, pad: int = 22) -> tuple[int, int, int, int]:
@@ -372,56 +443,100 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         method="kmeans1d_gray", fit_side="right", assign_lesion=False,
     )
 
+    gap = dilate_mask(crop_mask, GAP_PX)
     panel_a = overlay_blue(crop_rgb, crop_mask)
-    if len(wall_crop) >= 2:
-        cv2.polylines(panel_a, [np.round(wall_crop).astype(np.int32)], False, WALL, 1, cv2.LINE_AA)
+    panel_a = draw_heading(panel_a, wall_crop, crop_mask)
 
     labeled = overlay_blue(crop_rgb.copy(), crop_mask)
     if arm is not None and getattr(arm, "status", "") == "ok":
-        labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels)
-        labeled = overlay_ridges(labeled, getattr(arm, "layer_polylines", {}) or {})
-    if len(wall_crop) >= 2:
-        cv2.polylines(labeled, [np.round(wall_crop).astype(np.int32)], False, WALL, 1, cv2.LINE_AA)
+        labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels, gap=gap)
+        labeled = overlay_ridges(labeled, getattr(arm, "layer_polylines", {}) or {}, gap=gap)
+    labeled = draw_heading(labeled, wall_crop, crop_mask)
     sx1, sy1, sx2, sy2 = wall_strip(labeled, wall_crop, pad=20)
     strip = labeled[sy1:sy2, sx1:sx2]
+    scale = 4
     panel_b = cv2.resize(
         strip,
-        (strip.shape[1] * 4, strip.shape[0] * 4),
+        (strip.shape[1] * scale, strip.shape[0] * scale),
         interpolation=cv2.INTER_NEAREST,
     )
 
     time_sec = meta.get("time_sec")
     kf = str(meta.get("zml_keyframe_id") or "")
     fates = list(getattr(arm, "fates", None) or [])
-    fate_txt = "   ".join(
-        f"{item.get('id')}: {item.get('status')}"
-        + (f" -> {item.get('fuse_with')}" if item.get("fuse_with") and item.get("fuse_with") != item.get("id") else "")
-        for item in fates
-    ) or "no layer fate"
-    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.6), gridspec_kw={"width_ratios": [1.0, 1.35]})
+    fate_by_id = {str(item.get("id")): item for item in fates}
+    fig, axes = plt.subplots(1, 2, figsize=(13.4, 6.2), gridspec_kw={"width_ratios": [1.0, 1.35]})
     axes[0].imshow(panel_a)
-    axes[0].set_title(f"A. {time_sec}s painted frame; yellow = heading only", fontsize=11)
+    axes[0].set_title(f"A. {time_sec}s  黄线只是走行，不是层边界", fontproperties=CJK, fontsize=11)
     axes[0].axis("off")
     axes[1].imshow(panel_b)
-    axes[1].set_title("B. Gray split, parallel walk; near-lesion fate", fontsize=11)
+    axes[1].set_title("B. 右侧三层浅色叠在一起；中间条带断开 = 消失", fontproperties=CJK, fontsize=11)
     axes[1].axis("off")
+
+    def to_b(x: float, y: float) -> tuple[float, float]:
+        return (x - sx1) * scale, (y - sy1) * scale
+
+    polylines = getattr(arm, "layer_polylines", {}) or {}
+    for lab, key, zh, _hint in LAYER_LEGEND:
+        pts = np.asarray(polylines.get(key) or [], dtype=np.float32)
+        if len(pts) < 2:
+            continue
+        right = pts[int(np.argmax(pts[:, 0]))]
+        axes[1].annotate(
+            zh,
+            xy=to_b(float(right[0]), float(right[1])),
+            xytext=(12, (-18, 0, 18)[lab]),
+            textcoords="offset points",
+            color=LAYER_HEX[lab],
+            fontproperties=CJK,
+            fontsize=10,
+            arrowprops={"arrowstyle": "-", "color": LAYER_HEX[lab], "lw": 0.8},
+        )
+    mid = vanish_xy(wall_crop, crop_mask)
+    if mid is not None:
+        axes[1].annotate(
+            "条带消失",
+            xy=to_b(mid[0], mid[1]),
+            xytext=(0, -36),
+            textcoords="offset points",
+            color="#fca5a5",
+            fontproperties=CJK,
+            fontsize=11,
+            ha="center",
+            arrowprops={"arrowstyle": "->", "color": "#fca5a5", "lw": 1.1},
+        )
+
+    handles = []
+    for lab, key, zh, hint in LAYER_LEGEND:
+        fate = fate_by_id.get(key) or {}
+        status = FATE_ZH.get(str(fate.get("status") or ""), str(fate.get("status") or ""))
+        handles.append(Line2D(
+            [0], [0], color=LAYER_HEX[lab], lw=3,
+            label=f"{zh}  {hint}  {status}",
+        ))
+    handles.append(Line2D([0], [0], color="#fde68a", lw=1.6, label="预期走行线（不是层边界）"))
+    handles.append(Line2D([0], [0], color="#9ca3af", lw=1.2, linestyle="--", label="走行穿过病灶（虚线）"))
+    handles.append(Patch(facecolor="#93c5fd", edgecolor="#93c5fd", alpha=0.45, label="病灶"))
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        ncol=3,
+        frameon=True,
+        facecolor="#111111",
+        edgecolor="#444444",
+        labelcolor="white",
+        prop=CJK,
+        bbox_to_anchor=(0.5, 0.01),
+    )
     area = int((crop_mask > 0).sum())
     fig.suptitle(
         f"{meta.get('display_id')}  {time_sec}s  {kf}  pT {meta.get('pT_ref') or '?'}  "
-        f"{getattr(arm, 'pattern', '') or ''}  {fate_txt}",
-        fontsize=11,
+        f"{getattr(arm, 'pattern', '') or ''}  不定 cT",
+        fontproperties=CJK,
+        fontsize=12,
         y=0.98,
     )
-    fig.text(
-        0.5,
-        0.015,
-        f"Yellow line is the painted heading, not a layer edge. "
-        f"Gold / rose / mint = brighter / darker / brighter pixels walked along the strip. "
-        f"Near the lesion: {fate_txt or 'n/a'}. Not a cT.",
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=[0, 0.05, 1, 0.93])
+    fig.tight_layout(rect=[0, 0.14, 1, 0.94])
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{meta.get('case_id')}_thin_bands.png"
     fig.savefig(dest, dpi=170, bbox_inches="tight")
