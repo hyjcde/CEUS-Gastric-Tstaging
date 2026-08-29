@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Mark layer breakthrough on all four thin-band figures
+
+- Scope: `scripts/render_wall_layer_thin_bands.py` and the four fixture panels.
+- Reason: A single faint Lost mark was easy to miss. Each layer should show intact / lost / fused at the mass. The other three cases need the same P076 treatment.
+- Key changes: Red X cuts on the heading at the lesion. A Break arrow. A Breakthrough row under the panels. Redraw P008 on this frame from the same-frame doctor box. P040 keeps the nearby doctor box. P019 still has no nearby doctor box. Gray fates only; does not unlock cT.
+- Validation: Offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Redraw P076 lesion on the 0.179 s frame
 
 - Scope: `scripts/render_wall_layer_thin_bands.py`, `pipeline/data/wall_layer_fixtures/v1/CASE-076`.

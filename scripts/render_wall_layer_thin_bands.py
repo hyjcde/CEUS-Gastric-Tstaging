@@ -56,13 +56,25 @@ LAYER_RGB = {
 LAYER_HEX = {0: "#facc15", 1: "#f9a8d4", 2: "#5eead4"}
 WALL = (254, 240, 180)
 LAYER_BLEND = 0.26
-LESION_BLEND = 0.12
+LESION_BLEND = 0.16
 GAP_PX = 1
 LAYER_LEGEND = (
     (0, "shallow", "Mucosa"),
     (1, "muscularis", "Muscularis"),
     (2, "serosa", "Serosa"),
 )
+FATE_EN = {
+    "present": "intact",
+    "vanished": "lost",
+    "fused": "fused",
+    "uncertain": "unclear",
+}
+FATE_HEX = {
+    "intact": "#86efac",
+    "lost": "#fca5a5",
+    "fused": "#fdba74",
+    "unclear": "#d1d5db",
+}
 
 # Tight pads. P008 lesion sits on the lower wall; drop the empty upper sector.
 CROP_HINT = {
@@ -225,7 +237,7 @@ def overlay_blue(rgb: np.ndarray, mask: np.ndarray, alpha: float = LESION_BLEND)
         tint = np.array(LESION_BLUE, dtype=np.float32)
         out[sel] = (1.0 - alpha) * out[sel] + alpha * tint
         contours, _ = cv2.findContours(sel.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(out, contours, -1, LESION_BLUE, 1, cv2.LINE_AA)
+        cv2.drawContours(out, contours, -1, LESION_BLUE, 2, cv2.LINE_AA)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
@@ -276,6 +288,35 @@ def draw_heading(rgb: np.ndarray, wall: np.ndarray, lesion_mask: np.ndarray) -> 
         if i % 4 < 2:
             cv2.circle(out, (int(point[0]), int(point[1])), 1, (180, 180, 180), -1, cv2.LINE_AA)
     return out
+
+
+def heading_cuts(wall: np.ndarray, lesion_mask: np.ndarray) -> list[tuple[float, float]]:
+    """Entry and exit of the heading through the lesion."""
+    wall = as_xy(wall)
+    if len(wall) < 2 or lesion_mask is None:
+        return []
+    gap = dilate_mask(lesion_mask, GAP_PX)
+    h, w = gap.shape[:2]
+    flags = []
+    pts = []
+    for point in densify_polyline(wall, 2.0):
+        x = int(round(float(point[0])))
+        y = int(round(float(point[1])))
+        flags.append(0 <= x < w and 0 <= y < h and gap[y, x] > 0)
+        pts.append((float(x), float(y)))
+    cuts = [pts[i] for i in range(1, len(flags)) if flags[i] != flags[i - 1]]
+    if len(cuts) >= 2:
+        return [cuts[0], cuts[-1]]
+    return cuts
+
+
+def fate_rows(fates: list) -> list[tuple[int, str, str]]:
+    by_id = {str(row.get("id")): row for row in fates if isinstance(row, dict)}
+    rows = []
+    for lab, key, en in LAYER_LEGEND:
+        status = FATE_EN.get(str((by_id.get(key) or {}).get("status") or ""), "unclear")
+        rows.append((lab, en, status))
+    return rows
 
 
 def vanish_xy(wall: np.ndarray, lesion_mask: np.ndarray) -> tuple[float, float] | None:
@@ -485,7 +526,9 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     doctor_poly = as_xy(meta.get("lesion_polygon"))
     source = str(meta.get("lesion_source") or "")
     dt = lesion_dt_sec(source)
-    redraw = bool(source.startswith("redrawn_")) or (len(doctor_poly) >= 3 and dt is not None and dt > 0.30)
+    redraw = bool(source.startswith("redrawn_")) or (
+        len(doctor_poly) >= 3 and (source == "same_frame" or (dt is not None and dt > 0.30))
+    )
     crop, x1, y1, x2, y2 = tight_roi(image, wall_full, str(meta.get("case_id")), doctor_poly)
     if redraw and len(doctor_poly) >= 3:
         full_mask, redrawn = redraw_lesion_on_frame(image, doctor_poly, seg)
@@ -544,7 +587,7 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
 
     time_sec = meta.get("time_sec")
     fates = list(getattr(arm, "fates", None) or [])
-    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.4), gridspec_kw={"width_ratios": [1.0, 1.35]})
+    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.8), gridspec_kw={"width_ratios": [1.0, 1.35]})
     axes[0].imshow(panel_a)
     axes[0].set_title("A", fontsize=12)
     axes[0].axis("off")
@@ -579,19 +622,32 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
                 ha="left",
                 va="center",
             )
+    cuts = heading_cuts(wall_crop, crop_mask)
     mid = vanish_xy(wall_crop, crop_mask)
+    for cut in cuts:
+        bx, by = to_b(cut[0], cut[1])
+        axes[1].plot(
+            [bx - 7, bx + 7], [by - 11, by + 11],
+            color="#f8fafc", lw=1.8, solid_capstyle="round", zorder=6,
+        )
+        axes[1].plot(
+            [bx + 7, bx - 7], [by - 11, by + 11],
+            color="#f87171", lw=1.5, solid_capstyle="round", zorder=7,
+        )
     if mid is not None:
         axes[1].annotate(
-            "Lost",
+            "Break",
             xy=to_b(mid[0], mid[1]),
-            xytext=(0, -28),
+            xytext=(0, -32),
             textcoords="offset points",
-            color="#e5e7eb",
-            fontsize=10,
+            color="#fecaca",
+            fontsize=11,
             fontname="Times New Roman",
+            fontweight="bold",
             ha="center",
-            arrowprops={"arrowstyle": "->", "color": "#d1d5db", "lw": 0.9},
+            arrowprops={"arrowstyle": "->", "color": "#f87171", "lw": 1.3},
         )
+    plate = fate_rows(fates)
 
     handles = [
         Patch(facecolor=LAYER_HEX[lab], edgecolor="#6b7280", label=en)
@@ -616,7 +672,22 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         fontname="Times New Roman",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0.08, 1, 0.95])
+    fig.tight_layout(rect=[0, 0.14, 1, 0.95])
+    if plate:
+        fig.text(
+            0.12, 0.078, "Breakthrough",
+            color="#f8fafc", fontsize=11, fontname="Times New Roman",
+            fontweight="bold", ha="left", va="center",
+        )
+        x = 0.30
+        for _lab, en, status in plate:
+            fig.text(
+                x, 0.078, f"{en}  {status}",
+                color=FATE_HEX.get(status, "#e5e7eb"),
+                fontsize=11, fontname="Times New Roman",
+                ha="left", va="center",
+            )
+            x += 0.20
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{meta.get('case_id')}_thin_bands.png"
     fig.savefig(dest, dpi=170, bbox_inches="tight")
@@ -686,6 +757,8 @@ def main() -> int:
         if args.save_redrawn and row.get("mask_source") == "redrawn_on_frame" and row.get("redrawn_polygon"):
             meta["lesion_polygon"] = [[round(float(x), 2), round(float(y), 2)] for x, y in row["redrawn_polygon"]]
             old_src = str(meta.get("lesion_source") or "")
+            while old_src.startswith("redrawn_on_") and "_from_" in old_src:
+                old_src = old_src.split("_from_", 1)[1]
             meta["lesion_source"] = f"redrawn_on_{meta.get('time_sec')}_from_{old_src}"
             meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             write_preview(resolve_frame(meta), meta.get("wall_polygon"), meta.get("lesion_polygon"))
