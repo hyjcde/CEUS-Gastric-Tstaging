@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Public Next deploy after wall-layer figure work
+
+- Scope: `bash scripts/deploy_public_next.sh` (reader-only Next on Aliyun).
+- Reason: Sync the public doctor site. The four thin-band figures stay offline; they are not a new workbench card and do not unlock cT.
+- Key changes: Rebuilt and swapped the public Next bundle.
+- Validation: `public_root=200`, `public_clinical=200`, loopback Next `:3000` 200 after restart.
+- Deployment: public Next BUILD `D5z63Sogy73z-Eke5bqwu`. Hard-refresh http://47.106.33.102 . Rollback: Aliyun `.next-public-deploy-dist.bak_*`.
+
 ## 2026-08-29, Mark layer breakthrough on all four thin-band figures
 
 - Scope: `scripts/render_wall_layer_thin_bands.py` and the four fixture panels.
