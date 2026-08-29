@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P076 Break points at the right-hand bulge
+
+- Scope: `scripts/render_wall_layer_thin_bands.py --case P076`.
+- Reason: Break was the heading-in-lesion midpoint. The doctor reading is the right-hand protrusion, where serosa is gone.
+- Key changes: Point Break at the high-x lesion bulge farthest from the heading. Add Serosa lost there when the gray fate says lost. Does not unlock cT.
+- Validation: Offline P076 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Public Next deploy after wall-layer figure work
 
 - Scope: `bash scripts/deploy_public_next.sh` (reader-only Next on Aliyun).

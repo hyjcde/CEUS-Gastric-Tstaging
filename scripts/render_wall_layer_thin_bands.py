@@ -337,6 +337,30 @@ def vanish_xy(wall: np.ndarray, lesion_mask: np.ndarray) -> tuple[float, float] 
     return float(arr[:, 0].mean()), float(arr[:, 1].mean())
 
 
+def break_xy(wall: np.ndarray, lesion_mask: np.ndarray) -> tuple[float, float] | None:
+    """Right-hand bulge: lesion pixels far from the heading, on the high-x side."""
+    wall = as_xy(wall)
+    if lesion_mask is None or not np.any(lesion_mask):
+        return vanish_xy(wall, lesion_mask)
+    ys, xs = np.where(lesion_mask > 0)
+    if len(xs) < 8:
+        return vanish_xy(wall, lesion_mask)
+    step = max(1, len(xs) // 900)
+    px = xs[::step].astype(np.float32)
+    py = ys[::step].astype(np.float32)
+    right = px >= float(np.quantile(px, 0.62))
+    if int(right.sum()) >= 12:
+        px, py = px[right], py[right]
+    heading = densify_polyline(wall, 3.0) if len(wall) >= 2 else np.zeros((0, 2), dtype=np.float32)
+    if len(heading) >= 2:
+        d2 = (px[:, None] - heading[None, :, 0]) ** 2 + (py[:, None] - heading[None, :, 1]) ** 2
+        score = d2.min(axis=1)
+    else:
+        score = px.copy()
+    idx = int(np.argmax(score))
+    return float(px[idx]), float(py[idx])
+
+
 def wall_strip(rgb: np.ndarray, wall: np.ndarray, pad: int = 22) -> tuple[int, int, int, int]:
     """Keep the full painted stroke, including the right-hand start."""
     h, w = rgb.shape[:2]
@@ -622,8 +646,12 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
                 ha="left",
                 va="center",
             )
+    plate = fate_rows(fates)
     cuts = heading_cuts(wall_crop, crop_mask)
-    mid = vanish_xy(wall_crop, crop_mask)
+    mid = break_xy(wall_crop, crop_mask)
+    if cuts:
+        # Keep the right-hand cut; that is the bulge side.
+        cuts = [max(cuts, key=lambda pt: pt[0])]
     for cut in cuts:
         bx, by = to_b(cut[0], cut[1])
         axes[1].plot(
@@ -638,16 +666,26 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
         axes[1].annotate(
             "Break",
             xy=to_b(mid[0], mid[1]),
-            xytext=(0, -32),
+            xytext=(22, 18),
             textcoords="offset points",
             color="#fecaca",
             fontsize=11,
             fontname="Times New Roman",
             fontweight="bold",
-            ha="center",
-            arrowprops={"arrowstyle": "->", "color": "#f87171", "lw": 1.3},
+            ha="left",
+            arrowprops={"arrowstyle": "->", "color": "#f87171", "lw": 1.4},
         )
-    plate = fate_rows(fates)
+        if any(en == "Serosa" and status == "lost" for _lab, en, status in plate):
+            axes[1].annotate(
+                "Serosa lost",
+                xy=to_b(mid[0], mid[1]),
+                xytext=(22, -6),
+                textcoords="offset points",
+                color=FATE_HEX["lost"],
+                fontsize=10,
+                fontname="Times New Roman",
+                ha="left",
+            )
 
     handles = [
         Patch(facecolor=LAYER_HEX[lab], edgecolor="#6b7280", label=en)
