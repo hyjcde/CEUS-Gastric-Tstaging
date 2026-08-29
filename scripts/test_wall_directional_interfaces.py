@@ -2,9 +2,10 @@
 """Synthetic checks for four-interface wall tracking."""
 from __future__ import annotations
 
+import cv2
 import numpy as np
 
-from render_wall_directional_interfaces import _track_interfaces
+from render_wall_directional_interfaces import _expand_p008_lesion, _track_interfaces
 
 
 def main() -> None:
@@ -25,9 +26,21 @@ def main() -> None:
     assert result["phase"] == 1
     assert float(np.median(error)) <= 1.0
     assert np.all(np.diff(result["indices"], axis=1) >= 3)
+
+    mask = np.zeros((60, 80), dtype=np.uint8)
+    cv2.ellipse(mask, (40, 28), (8, 4), 0, 0, 360, 255, -1)
+    expanded = _expand_p008_lesion({
+        "crop_mask": mask,
+        "lesion_poly": np.zeros((0, 2), dtype=np.float32),
+    })
+    before_xy = np.asarray(np.where(mask > 0))[::-1].mean(axis=1)
+    after_xy = np.asarray(np.where(expanded["crop_mask"] > 0))[::-1].mean(axis=1)
+    assert expanded["lesion_adjustment"]["area_after"] > expanded["lesion_adjustment"]["area_before"]
+    assert float(np.linalg.norm(before_xy - after_xy)) < 0.5
     print({
         "phase": "bright-dark-bright",
         "median_boundary_error_px": float(np.median(error)),
+        "lesion_center_shift_px": float(np.linalg.norm(before_xy - after_xy)),
     })
 
 

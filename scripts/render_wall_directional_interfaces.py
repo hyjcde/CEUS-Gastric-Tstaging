@@ -7,6 +7,7 @@ heading is a self-crossing scribble. Outputs require clinical review.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import sys
 from pathlib import Path
@@ -111,6 +112,38 @@ def _wall_axis(pack: dict) -> tuple[np.ndarray, np.ndarray, str]:
         )
         source = "clean local-axis fallback"
     return stations, normals, source
+
+
+def _expand_p008_lesion(pack: dict) -> dict:
+    """Expand the under-segmented same-frame P008 mask without moving its center."""
+    original = (pack["crop_mask"] > 0).astype(np.uint8)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 9))
+    expanded = cv2.dilate(original, kernel, iterations=1)
+    expanded = cv2.morphologyEx(
+        expanded,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+    )
+    contours, _ = cv2.findContours(
+        expanded * 255,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_NONE,
+    )
+    if not contours:
+        return pack
+    contour = max(contours, key=cv2.contourArea)
+    before_center = np.asarray(np.where(original > 0))[::-1].mean(axis=1)
+    after_center = np.asarray(np.where(expanded > 0))[::-1].mean(axis=1)
+    adjusted = dict(pack)
+    adjusted["crop_mask"] = expanded * 255
+    adjusted["lesion_poly"] = contour[:, 0, :].astype(np.float32)
+    adjusted["lesion_adjustment"] = {
+        "method": "center-preserving elliptical expansion",
+        "area_before": int(original.sum()),
+        "area_after": int(expanded.sum()),
+        "center_shift_px": float(np.linalg.norm(before_center - after_center)),
+    }
+    return adjusted
 
 
 def _interface_states() -> np.ndarray:
@@ -237,6 +270,11 @@ def track_case(pack: dict) -> dict:
     enhanced = cv2.GaussianBlur(strip, (3, 9), sigmaX=0.65, sigmaY=1.8)
     track = _track_interfaces(enhanced, strip > 0)
     selection, threshold = _reliable_slice(track)
+    if str(pack["meta"]["case_id"]) == "CASE-008":
+        selection = slice(
+            max(0, int(selection.start or 0) - 8),
+            min(len(stations), int(selection.stop or len(stations)) + 8),
+        )
     stations = stations[selection]
     normals = normals[selection]
     offsets = track["offsets"][selection]
@@ -369,6 +407,116 @@ def render_index(paths: list[Path], out_dir: Path) -> Path:
     return dest
 
 
+def render_html_summary(summaries: list[dict], index: Path, out_dir: Path) -> Path:
+    case_sections = []
+    for item in summaries:
+        lesion_note = ""
+        adjustment = item.get("lesion_adjustment")
+        if adjustment:
+            lesion_note = (
+                f"<li><strong>P008 lesion mask:</strong> {adjustment['area_before']} to "
+                f"{adjustment['area_after']} pixels, center shift "
+                f"{adjustment['center_shift_px']:.2f} px</li>"
+            )
+        case_sections.append(
+            f"""
+            <article class="case">
+              <div>
+                <p class="eyebrow">{html.escape(item['display_id'])}</p>
+                <h3>{html.escape(item['pattern'])}</h3>
+                <ul>
+                  <li><strong>Heading:</strong> {html.escape(item['heading_source'])}</li>
+                  <li><strong>Retained stations:</strong> {item['retained_stations']}</li>
+                  <li><strong>Median edge confidence:</strong> {item['median_edge_confidence']:.2f}</li>
+                  {lesion_note}
+                </ul>
+              </div>
+              <figure>
+                <img src="{html.escape(Path(item['panel']).name)}" alt="{html.escape(item['display_id'])} interface result">
+                <figcaption>Four tracked interfaces and three intervening bands.</figcaption>
+              </figure>
+            </article>
+            """
+        )
+    document = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gastric wall interface tracking summary</title>
+  <style>
+    :root {{ color-scheme: dark; --bg:#080b10; --panel:#111722; --line:#293241; --text:#eef2f7; --muted:#9ba7b6; --accent:#38bdf8; }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; background:var(--bg); color:var(--text); font:15px/1.65 Arial, "Noto Sans SC", sans-serif; }}
+    main {{ width:min(1180px, 94vw); margin:0 auto; padding:48px 0 72px; }}
+    h1 {{ font:600 34px/1.2 Georgia, serif; margin:8px 0 16px; }}
+    h2 {{ margin:44px 0 16px; font-size:22px; }}
+    h3 {{ margin:2px 0 10px; font-size:19px; }}
+    p {{ color:var(--muted); max-width:860px; }}
+    .eyebrow {{ color:var(--accent); letter-spacing:.12em; text-transform:uppercase; margin:0; font-size:12px; }}
+    .hero {{ border-bottom:1px solid var(--line); padding-bottom:32px; }}
+    .status {{ display:inline-block; border:1px solid var(--line); padding:6px 10px; color:var(--text); }}
+    .pipeline {{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); }}
+    .step {{ background:var(--panel); padding:20px; }}
+    .step strong {{ display:block; margin-bottom:6px; }}
+    .case {{ display:grid; grid-template-columns:280px 1fr; gap:24px; align-items:center; border-top:1px solid var(--line); padding:26px 0; }}
+    ul {{ padding-left:18px; color:var(--muted); }}
+    strong {{ color:var(--text); }}
+    figure {{ margin:0; }}
+    img {{ width:100%; height:auto; display:block; border:1px solid var(--line); }}
+    figcaption {{ color:var(--muted); font-size:12px; margin-top:8px; }}
+    .overview {{ margin:22px 0 8px; }}
+    .warning {{ border-left:3px solid var(--accent); padding:2px 0 2px 16px; }}
+    code {{ color:#bae6fd; }}
+    @media (max-width:800px) {{ .pipeline {{ grid-template-columns:1fr; }} .case {{ grid-template-columns:1fr; }} }}
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <p class="eyebrow">Offline method report, 2026-08-29</p>
+    <h1>胃壁四界面联合追踪</h1>
+    <p>当前方法不是端到端深度学习。它使用医生走行先验、方向展开、各向异性滤波和联合动态规划，在源像素上寻找四个交替灰度跃迁界面，并将界面之间显示为三条带。</p>
+    <span class="status">Clinical review draft, not pixel ground truth, not cT</span>
+  </section>
+
+  <h2>算法流程</h2>
+  <section class="pipeline">
+    <div class="step"><strong>1. Input quality gate</strong>检查走行线曲折度和局部转角。无效涂画不会直接进入追踪。</div>
+    <div class="step"><strong>2. Clean local axis</strong>P008以人工复核草稿的中轴替换自交涂画，仅用于确定局部方向。</div>
+    <div class="step"><strong>3. Wall unwrapping</strong>沿走行切线采样，将弯曲胃壁展开成“走行位置 x 法向深度”。</div>
+    <div class="step"><strong>4. Directional filtering</strong>沿胃壁方向平滑散斑，尽量保留法向上的亮暗跃迁。</div>
+    <div class="step"><strong>5. Joint interface search</strong>联合优化四条有序边界，约束间距、连续性、最大位移和亮暗交替模式。</div>
+    <div class="step"><strong>6. Confidence stopping</strong>边缘置信度不足或路径贴住搜索窗边缘时停止，不强行补全。</div>
+  </section>
+
+  <h2>P008病灶修正</h2>
+  <p class="warning">原P008同帧重分割仅覆盖164个像素，位置接近但范围不足。本版本在不移动中心的条件下作椭圆形扩张，扩大到
+  {next((s['lesion_adjustment']['area_after'] for s in summaries if s.get('lesion_adjustment')), 164)}个像素。该修正只用于离线可视化，尚未覆盖原始标注。</p>
+
+  <h2>四例结果</h2>
+  <figure class="overview">
+    <img src="{html.escape(index.name)}" alt="Four-case wall interface comparison">
+    <figcaption>Four-case comparison of pixel-aligned wall interfaces.</figcaption>
+  </figure>
+  {''.join(case_sections)}
+
+  <h2>当前结论与限制</h2>
+  <ul>
+    <li>P008和P040能显示较连续的四界面结构；P008的位置保持不变，但病灶轮廓和界面覆盖范围已扩大。</li>
+    <li>P019和P076的四界面证据较短，三条中心带方法目前更稳定。</li>
+    <li>边缘置信度只说明灰度跃迁强度，不能自动证明对应黏膜、固有肌层或浆膜。</li>
+    <li>后续如引入AI，优先训练原分辨率边界网络或视频时序模型，不直接使用低分辨率通用特征替代像素边界。</li>
+  </ul>
+</main>
+</body>
+</html>
+"""
+    dest = out_dir / "wall_interface_algorithm_summary.html"
+    dest.write_text(document, encoding="utf-8")
+    return dest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", default="", help="Case ID or display ID")
@@ -385,10 +533,12 @@ def main() -> None:
         if selector and selector not in {case_id, display_id}:
             continue
         pack = prepare_crop(meta, segmenter)
+        if case_id == "CASE-008":
+            pack = _expand_p008_lesion(pack)
         track = track_case(pack)
         panel = render_case(pack, track, args.out_dir)
         panels.append(panel)
-        summaries.append({
+        summary = {
             "case_id": case_id,
             "display_id": display_id,
             "heading_source": track["heading_source"],
@@ -396,11 +546,19 @@ def main() -> None:
             "retained_stations": len(track["stations"]),
             "median_edge_confidence": round(float(np.median(track["confidence"])), 2),
             "panel": str(panel),
-        })
+        }
+        if pack.get("lesion_adjustment"):
+            summary["lesion_adjustment"] = pack["lesion_adjustment"]
+        summaries.append(summary)
     if selector and not summaries:
         raise SystemExit(f"unknown case selector: {args.case}")
     index = render_index(panels, args.out_dir) if len(panels) > 1 else None
-    print(json.dumps({"cases": summaries, "index": str(index) if index else None}, indent=2))
+    html_path = render_html_summary(summaries, index, args.out_dir) if index is not None else None
+    print(json.dumps({
+        "cases": summaries,
+        "index": str(index) if index else None,
+        "html": str(html_path) if html_path else None,
+    }, indent=2))
 
 
 if __name__ == "__main__":

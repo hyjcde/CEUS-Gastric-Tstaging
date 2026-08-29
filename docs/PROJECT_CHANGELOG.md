@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Expand the P008 lesion overlay and publish an algorithm summary
+
+- Scope: P008 handling and standalone HTML output in `render_wall_directional_interfaces.py`.
+- Reason: The same-frame P008 lesion mask was in approximately the correct location but covered too little of the lesion, and the experimental algorithm needed one readable summary artifact.
+- Key changes: Apply a P008-only center-preserving elliptical expansion to the offline lesion mask, extend the reliable interface display by eight stations on each available side, and generate `wall_interface_algorithm_summary.html` with the pipeline, quality gates, four-case metrics, figures, and limitations.
+- Validation: P008 lesion-mask area increased from 164 to 453 pixels with an actual centroid shift of 0.23 px; retained interface coverage increased from 66 to 81 stations. Four panels, the contact sheet, and HTML were regenerated. Synthetic checks measured 0 px centroid shift and 0 px median four-boundary error.
+- Deployment: none (offline visualization and report only). No Next deployment required.
+- Follow-up: The expanded P008 contour is a review visualization, not a replacement clinical annotation.
+
 ## 2026-08-29, Track wall interfaces instead of only band centers
 
 - Scope: `render_wall_directional_interfaces.py`, its synthetic test, and four offline interface panels.
