@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Wall layer colors sit on the source pixels
+
+- Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, algorithm note.
+- Reason: Heavy heading smooth and constant-offset ribbons left the color blocks beside the real bright / dark / bright pixels.
+- Key changes: Keep the heading on the wall, follow local gray edges, label the corridor pixels themselves, and nearest-neighbor upscale those labels. Visibility is still not a cT.
+- Validation: Curve unit tests now check synthetic pixel grays, plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Wall layers follow a smooth heading and split by gray
 
 - Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, `docs/technical/WALL_ORDERED_CURVE_TRACKING.md`.

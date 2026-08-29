@@ -98,6 +98,38 @@ def _draw_curve(panel: np.ndarray, points, sx1: float, sy1: float, scale: float,
         cv2.polylines(panel, [xy], False, color, thick, cv2.LINE_AA)
 
 
+def _paint_pixel_layers(panel: np.ndarray, track, sx1: int, sy1: int, sx2: int, sy2: int, scale: int) -> np.ndarray:
+    """Nearest-neighbor upscale so each source pixel keeps its own color."""
+    pix = getattr(track, "pixels", None) or {}
+    xs = np.asarray(pix.get("xs", []), dtype=np.int32)
+    ys = np.asarray(pix.get("ys", []), dtype=np.int32)
+    labs = np.asarray(pix.get("labels", []), dtype=np.int32)
+    if len(xs) == 0:
+        return panel
+    # Full-crop labels, then cut the B window.
+    full_h = max(sy2, int(ys.max()) + 1 if len(ys) else sy2)
+    full_w = max(sx2, int(xs.max()) + 1 if len(xs) else sx2)
+    lab_img = np.full((full_h, full_w), -1, dtype=np.int16)
+    on = (xs >= 0) & (ys >= 0) & (xs < full_w) & (ys < full_h)
+    lab_img[ys[on], xs[on]] = labs[on].astype(np.int16)
+    crop = lab_img[sy1:sy2, sx1:sx2]
+    if crop.size == 0:
+        return panel
+    lab_up = cv2.resize(
+        crop.astype(np.float32),
+        (crop.shape[1] * scale, crop.shape[0] * scale),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    overlay = panel.astype(np.float32)
+    for lab, color in LAYER_RGB.items():
+        sel = np.round(lab_up) == int(lab)
+        if not sel.any():
+            continue
+        wash = np.array(color, dtype=np.float32)
+        overlay[sel] = 0.50 * overlay[sel] + 0.50 * wash
+    return np.clip(overlay, 0, 255).astype(np.uint8)
+
+
 def paint_curves(rgb, track, sx1, sy1, sx2, sy2, scale: int) -> np.ndarray:
     strip = rgb[sy1:sy2, sx1:sx2]
     panel = cv2.resize(
@@ -106,18 +138,7 @@ def paint_curves(rgb, track, sx1, sy1, sx2, sy2, scale: int) -> np.ndarray:
     if getattr(track, "status", "") != "ok":
         return panel
     colors = {"inner": INNER_RGB, "outer": OUTER_RGB}
-    ribbon_color = {"mucosa": LAYER_RGB[0], "muscularis": LAYER_RGB[1], "serosa": LAYER_RGB[2]}
-    overlay = panel.astype(np.float32)
-    for ribbon in getattr(track, "ribbons", None) or []:
-        poly = _shift(ribbon.get("points") or [], sx1, sy1, scale)
-        if len(poly) < 6:
-            continue
-        mask = np.zeros(panel.shape[:2], dtype=np.uint8)
-        cv2.fillPoly(mask, [np.round(poly).astype(np.int32)], 255)
-        sel = mask > 0
-        wash = np.array(ribbon_color.get(str(ribbon.get("id")), (200, 200, 200)), dtype=np.float32)
-        overlay[sel] = 0.50 * overlay[sel] + 0.50 * wash
-    panel = np.clip(overlay, 0, 255).astype(np.uint8)
+    panel = _paint_pixel_layers(panel, track, sx1, sy1, sx2, sy2, scale)
     for item in track.boundaries:
         color = colors.get(item.id, (220, 220, 220))
         band = _shift(item.band, sx1, sy1, scale)
@@ -170,7 +191,7 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
     fig, axes = plt.subplots(1, 2, figsize=(16.8, 6.4), gridspec_kw={"width_ratios": [1.0, 1.75]})
     for ax, panel, title in zip(
         axes, (panel_a, panel_b),
-        ("A  Source  (heading is a guide)", "B  Gray layers along a smooth wall"),
+        ("A  Source  (heading is a guide)", "B  Layers sit on the gray pixels"),
     ):
         ax.imshow(panel)
         ax.set_title(title, fontsize=12)

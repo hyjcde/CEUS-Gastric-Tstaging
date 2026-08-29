@@ -78,6 +78,18 @@ def main() -> int:
         if len(width) >= 6:
             assert float(np.percentile(width, 90) / max(1.0, np.percentile(width, 10))) < 2.4
     assert any(len(item.get("points") or []) >= 6 for item in track.ribbons)
+    pix = getattr(track, "pixels", None) or {}
+    xs_p = np.asarray(pix.get("xs", []), dtype=np.int32)
+    ys_p = np.asarray(pix.get("ys", []), dtype=np.int32)
+    labs_p = np.asarray(pix.get("labels", []), dtype=np.int32)
+    assert len(xs_p) >= 40, len(xs_p)
+    # Labeled pixels must sit on the synthetic bright / dark / bright bands.
+    for lab, lo, hi in ((0, 160.0, 255.0), (1, 20.0, 80.0), (2, 150.0, 255.0)):
+        sel = labs_p == lab
+        if int(sel.sum()) < 8:
+            continue
+        mean_g = float(gray[ys_p[sel], xs_p[sel]].mean())
+        assert lo <= mean_g <= hi, (lab, mean_g)
 
     rng = np.random.RandomState(0)
     xs = np.linspace(20.0, 260.0, 90)

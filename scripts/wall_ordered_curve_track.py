@@ -17,6 +17,7 @@ from wall_lesion_aware_cluster import (
     densify_polyline,
     dilate_mask,
     polygon_centroid,
+    rasterize_brush,
     _fill_nan_1d,
     _finite_median_filter,
     _sample_normal_profile,
@@ -31,11 +32,11 @@ MIN_EDGE = 5.0
 TOP_K = 12
 LAM_SMOOTH = 5.0
 LAM_THICK = 1.4
-SMOOTH_SIGMA = 18.0
-HEADING_SIGMA_PX = 22.0
+SMOOTH_SIGMA = 6.0
+HEADING_SIGMA_PX = 8.0
 STATION_STEP = 2.0
 SIDE_BAND_PX = 5.5
-PRIOR_SLACK = 2.6
+PRIOR_SLACK = 5.5
 LAM_MISS = 9.0
 PREDICT_PX = 18
 WRAP_STEPS = 22
@@ -89,6 +90,7 @@ class CurveTrack:
     boundaries: list[Boundary] = field(default_factory=list)
     regions: list[RegionReadout] = field(default_factory=list)
     ribbons: list[dict[str, Any]] = field(default_factory=list)
+    pixels: dict[str, Any] = field(default_factory=dict)
     skip_reason: str = ""
 
     @property
@@ -302,13 +304,13 @@ def _resample_polyline(pts: np.ndarray, step: float = STATION_STEP) -> np.ndarra
 
 
 def _smooth_heading(pts: np.ndarray, sigma_px: float = HEADING_SIGMA_PX) -> np.ndarray:
-    """Turn a doctor stroke into a naturally bending wall axis."""
+    """Lightly round the doctor stroke without walking off the wall pixels."""
     raw = _resample_polyline(densify_polyline(as_xy(pts), 2.0), 2.0)
     if len(raw) < 6:
         return raw
-    sig = max(3.5, float(sigma_px) / 2.0)
-    xs = _gauss1d(_gauss1d(raw[:, 0], sig), sig)
-    ys = _gauss1d(_gauss1d(raw[:, 1], sig), sig)
+    sig = max(2.2, float(sigma_px) / 2.0)
+    xs = _gauss1d(raw[:, 0], sig)
+    ys = _gauss1d(raw[:, 1], sig)
     return _resample_polyline(np.stack([xs, ys], axis=1), STATION_STEP)
 
 
@@ -354,10 +356,10 @@ def _smooth_wall_stations(
     return pts.astype(np.float32), normals.astype(np.float32)
 
 
-def _median_band_priors(profiles: list[np.ndarray], half: int) -> tuple[float, float, float, float]:
+def _median_band_priors(profiles: list[np.ndarray], half: int) -> tuple[float, float, float, float, tuple[float, float, float]]:
     """One gray reading for the whole right-hand wall: bright / dark / bright."""
     if not profiles:
-        return -2.0, 4.0, -2.0 - SIDE_BAND_PX, 4.0 + SIDE_BAND_PX
+        return -2.0, 4.0, -2.0 - SIDE_BAND_PX, 4.0 + SIDE_BAND_PX, (180.0, 50.0, 180.0)
     med = np.nanmedian(np.stack(profiles, axis=0), axis=0)
     sm = _smooth1d(_fill_nan_1d(med), 3)
     b1, b2 = pick_interfaces(sm)
@@ -374,26 +376,28 @@ def _median_band_priors(profiles: list[np.ndarray], half: int) -> tuple[float, f
         b2 = min(len(sm) - 2, int(b1) + max(D_MIN, 6))
     n1 = float(b1 - half)
     n2 = float(b2 - half)
-    muc_w = SIDE_BAND_PX
-    ser_w = SIDE_BAND_PX
-    valley = float(sm[int(np.clip(int(0.5 * (b1 + b2)), 0, len(sm) - 1))])
-    inner_peak = float(np.max(sm[max(0, b1 - 8): max(1, b1)])) if b1 > 0 else valley + 20.0
-    outer_peak = float(np.max(sm[b2: min(len(sm), b2 + 9)])) if b2 < len(sm) else valley + 20.0
-    thr_in = valley + 0.28 * max(8.0, inner_peak - valley)
-    thr_out = valley + 0.28 * max(8.0, outer_peak - valley)
-    walk = 0
-    for i in range(int(b1) - 1, max(-1, int(b1) - 9), -1):
+    valley = float(np.min(sm[int(b1): int(b2) + 1])) if int(b2) > int(b1) else float(sm[int(b1)])
+    inner_slice = sm[: max(1, int(b1))]
+    outer_slice = sm[int(b2): min(len(sm), int(b2) + 10)]
+    inner_peak_i = int(np.argmax(inner_slice)) if len(inner_slice) else 0
+    outer_peak_i = int(b2) + int(np.argmax(outer_slice)) if len(outer_slice) else int(b2)
+    inner_peak = float(sm[inner_peak_i])
+    outer_peak = float(sm[min(outer_peak_i, len(sm) - 1)])
+    thr_in = valley + 0.40 * max(8.0, inner_peak - valley)
+    thr_out = valley + 0.40 * max(8.0, outer_peak - valley)
+    lo = inner_peak_i
+    for i in range(inner_peak_i, max(-1, inner_peak_i - 4), -1):
         if float(sm[i]) < thr_in:
             break
-        walk += 1
-    muc_w = float(np.clip(max(3.6, walk), 3.6, 7.2))
-    walk = 0
-    for i in range(int(b2) + 1, min(len(sm), int(b2) + 9)):
+        lo = i
+    hi = outer_peak_i
+    for i in range(outer_peak_i, min(len(sm), outer_peak_i + 5)):
         if float(sm[i]) < thr_out:
             break
-        walk += 1
-    ser_w = float(np.clip(max(3.6, walk), 3.6, 7.2))
-    return n1, n2, n1 - muc_w, n2 + ser_w
+        hi = i
+    muc_lo = min(float(lo - half), n1 - 2.5)
+    ser_hi = max(float(hi - half), n2 + 2.5)
+    return n1, n2, muc_lo, ser_hi, (inner_peak, valley, outer_peak)
 
 
 def _pull_to_prior(values: np.ndarray, prior: float, keep: np.ndarray, slack: float = PRIOR_SLACK) -> np.ndarray:
@@ -432,9 +436,9 @@ def _natural_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray) -> np
 
 
 def _slow_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray, sigma: float = SMOOTH_SIGMA) -> np.ndarray:
-    """Almost-parallel offset: kill local vibration, keep a slow wall trend."""
+    """Kill single-pixel jumps, but stay on the local gray edge."""
     out = np.full(values.shape, np.nan, dtype=np.float32)
-    raw = _reject_offset_outliers(values, keep, max_dev=4.0)
+    raw = _reject_offset_outliers(values, keep, max_dev=5.5)
     ok = keep & np.isfinite(raw)
     if int(ok.sum()) < 5:
         return values.astype(np.float32)
@@ -443,13 +447,82 @@ def _slow_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray, sigma: f
     order = np.argsort(s)
     s = s[order]
     y = y[order]
-    win = min(31, (max(7, len(y) // 2) * 2 + 1))
+    win = min(11, (max(5, len(y) // 4) * 2 + 1))
     y = _finite_median_filter(y, win)
-    y = _gauss1d(y, max(8.0, float(sigma)))
-    med = float(np.median(y))
-    y = 0.28 * y + 0.72 * med
+    y = _gauss1d(y, max(3.5, float(sigma)))
     out[keep] = np.interp(arc[keep], s, y)
     return out
+
+
+def _label_corridor_pixels(
+    gray: np.ndarray,
+    pts: np.ndarray,
+    normals: np.ndarray,
+    n1: np.ndarray,
+    n2: np.ndarray,
+    muc_lo: np.ndarray,
+    ser_hi: np.ndarray,
+    blocked: np.ndarray,
+    valid: np.ndarray,
+    gray_centers: tuple[float, float, float] | None = None,
+) -> dict[str, Any]:
+    """Paint the actual corridor pixels that sit between the two gray edges."""
+    empty = {
+        "xs": np.zeros((0,), dtype=np.int32),
+        "ys": np.zeros((0,), dtype=np.int32),
+        "labels": np.zeros((0,), dtype=np.int32),
+    }
+    ok = valid & np.isfinite(n1) & np.isfinite(n2) & np.isfinite(muc_lo) & np.isfinite(ser_hi)
+    if int(ok.sum()) < 3:
+        return empty
+    rad = float(np.nanmax(np.maximum(np.abs(muc_lo[ok]), np.abs(ser_hi[ok])))) + 1.5
+    brush = rasterize_brush(gray.shape[:2], pts[ok], max(3.0, rad))
+    if blocked is not None:
+        brush[blocked > 0] = 0
+    ys, xs = np.where(brush > 0)
+    if len(xs) == 0:
+        return empty
+    pix = np.stack([xs.astype(np.float32), ys.astype(np.float32)], axis=1)
+    sta = pts[ok]
+    # Chunk the distance search so a long heading stays cheap.
+    nearest = np.zeros((len(pix),), dtype=np.int32)
+    best = np.full((len(pix),), 1.0e18, dtype=np.float32)
+    chunk = 80
+    for start in range(0, len(sta), chunk):
+        block = sta[start:start + chunk]
+        d2 = ((pix[:, None, :] - block[None, :, :]) ** 2).sum(axis=2)
+        local = d2.argmin(axis=1).astype(np.int32)
+        dist = d2[np.arange(len(pix)), local]
+        take = dist < best
+        best[take] = dist[take]
+        nearest[take] = local[take] + start
+    idx = np.where(ok)[0][nearest]
+    rel = pix - pts[idx]
+    nrm = (rel * normals[idx]).sum(axis=1)
+    keep = (nrm >= muc_lo[idx]) & (nrm <= ser_hi[idx])
+    if int(keep.sum()) < 8:
+        return empty
+    lab = np.full((int(keep.sum()),), 1, dtype=np.int32)
+    n_use = nrm[keep]
+    i_use = idx[keep]
+    lab[n_use < n1[i_use]] = 0
+    lab[n_use >= n2[i_use]] = 2
+    xs_k = xs[keep].astype(np.int32)
+    ys_k = ys[keep].astype(np.int32)
+    if gray_centers is not None and len(xs_k):
+        g0, g1, g2 = [float(v) for v in gray_centers]
+        g = gray[ys_k, xs_k].astype(np.float32)
+        centers = np.array([g0, g1, g2], dtype=np.float32)
+        dist = np.abs(g[:, None] - centers[None, :])
+        nearest = dist.argmin(axis=1).astype(np.int32)
+        own = dist[np.arange(len(lab)), lab]
+        stay = (nearest == lab) | ((own - dist.min(axis=1)) < 10.0)
+        xs_k, ys_k, lab = xs_k[stay], ys_k[stay], lab[stay]
+    return {
+        "xs": xs_k,
+        "ys": ys_k,
+        "labels": lab,
+    }
 
 
 def _dense_from_stations(station_xy: np.ndarray, keep: np.ndarray, step: float = 1.0) -> np.ndarray:
@@ -684,7 +757,7 @@ def track_ordered_layers(
         for idx in use.tolist()
     ]
     off1, off2, conf1, conf2 = _viterbi_two_edges(profiles, half, near)
-    n1_prior, n2_prior, muc_lo0, ser_hi0 = _median_band_priors(profiles, half)
+    n1_prior, n2_prior, muc_lo0, ser_hi0, gray_centers = _median_band_priors(profiles, half)
 
     # Map the right-to-left series back onto heading stations.
     n1 = np.full((len(pts),), np.nan, dtype=np.float32)
@@ -700,6 +773,7 @@ def track_ordered_layers(
             c1[idx] *= 0.72
             c2[idx] *= 0.72
     arc = _arc_length(pts)
+    # Fill gaps with the gray prior, but do not pin every station to one offset.
     n1 = _pull_to_prior(n1, n1_prior, valid)
     n2 = _pull_to_prior(n2, n2_prior, valid)
     n1 = _slow_offset(n1, arc, valid)
@@ -708,22 +782,22 @@ def track_ordered_layers(
     if int(both.sum()) >= 5:
         thick = np.full(len(n1), np.nan, dtype=np.float32)
         thick[both] = n2[both] - n1[both]
-        thick = _slow_offset(thick, arc, both)
+        thick = _slow_offset(thick, arc, both, sigma=4.5)
         med = float(np.nanmedian(thick))
         if not np.isfinite(med):
-            med = max(3.8, n2_prior - n1_prior)
-        lo_t, hi_t = max(3.8, 0.82 * med), min(16.0, 1.22 * med)
+            med = max(3.0, n2_prior - n1_prior)
+        lo_t, hi_t = max(2.8, 0.60 * med), min(16.0, 1.55 * med)
         thick = np.clip(thick, lo_t, hi_t)
         n2[valid] = n1[valid] + thick[valid]
-    gap = valid & np.isfinite(n1) & np.isfinite(n2) & ((n2 - n1) < 3.8)
-    n2[gap] = n1[gap] + 5.8
+    flip = valid & np.isfinite(n1) & np.isfinite(n2) & (n2 < n1 + 2.5)
+    n2[flip] = n1[flip] + max(3.0, n2_prior - n1_prior)
 
     muc_lo = np.full(len(pts), muc_lo0, dtype=np.float32)
     ser_hi = np.full(len(pts), ser_hi0, dtype=np.float32)
     ok_in = valid & np.isfinite(n1)
     ok_out = valid & np.isfinite(n2)
-    muc_lo[ok_in] = np.clip(np.minimum(muc_lo[ok_in], n1[ok_in] - 3.4), -float(half) + 1.0, n1[ok_in] - 3.2)
-    ser_hi[ok_out] = np.clip(np.maximum(ser_hi[ok_out], n2[ok_out] + 3.4), n2[ok_out] + 3.2, float(half) - 1.0)
+    muc_lo[ok_in] = np.clip(np.minimum(muc_lo[ok_in], n1[ok_in] - 2.5), -float(half) + 0.5, n1[ok_in] - 2.0)
+    ser_hi[ok_out] = np.clip(np.maximum(ser_hi[ok_out], n2[ok_out] + 2.5), n2[ok_out] + 2.0, float(half) - 0.5)
     st1 = _xy(pts, normals, n1)
     st2 = _xy(pts, normals, n2)
     st_in = _xy(pts, normals, muc_lo)
@@ -737,10 +811,22 @@ def track_ordered_layers(
         {"id": "muscularis", "points": _ribbon_from_xy(st1, st2, valid), "mean_gray": None},
         {"id": "serosa", "points": _ribbon_from_xy(st2, st_out, valid), "mean_gray": None},
     ]
+    pixels = _label_corridor_pixels(
+        gray, pts, normals, n1, n2, muc_lo, ser_hi, blocked, valid, gray_centers,
+    )
+    lab_of = {"mucosa": 0, "muscularis": 1, "serosa": 2}
+    xs_p = np.asarray(pixels.get("xs", []), dtype=np.int32)
+    ys_p = np.asarray(pixels.get("ys", []), dtype=np.int32)
+    labs_p = np.asarray(pixels.get("labels", []), dtype=np.int32)
     for item in ribbons:
-        poly = np.asarray(item["points"], dtype=np.float32)
-        if len(poly) >= 6:
-            item["mean_gray"] = _gray_at(gray, poly[:: max(1, len(poly) // 24)])
+        lab = lab_of.get(str(item["id"]), -1)
+        sel = labs_p == lab
+        if int(sel.sum()) >= 8:
+            item["mean_gray"] = float(gray[ys_p[sel], xs_p[sel]].mean())
+        else:
+            poly = np.asarray(item["points"], dtype=np.float32)
+            if len(poly) >= 6:
+                item["mean_gray"] = _gray_at(gray, poly[:: max(1, len(poly) // 24)])
     dash1, band1, stop1 = _predict_band(pts, normals, n1, blocked, lesion_center)
     dash2, band2, stop2 = _predict_band(pts, normals, n2, blocked, lesion_center)
 
@@ -811,6 +897,7 @@ def track_ordered_layers(
         boundaries=[inner, outer],
         regions=[muc, musc, ser],
         ribbons=ribbons,
+        pixels=pixels,
     )
 
 
