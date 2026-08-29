@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 transparent but visible three-color wash
+
+- Scope: `scripts/render_wall_layer_thin_bands.py --case P040`.
+- Reason: The last wash was too faint and the middle band was gray, so the three layers vanished into the ultrasound.
+- Key changes: Gold / pink / mint smear at alpha 0.26. Labels sit on the right-hand belts. Still no ridge curves. Does not unlock cT.
+- Validation: Offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 pale smear bands, no ridge curves
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (across-profile BDB), `scripts/render_wall_layer_thin_bands.py --case P040`.

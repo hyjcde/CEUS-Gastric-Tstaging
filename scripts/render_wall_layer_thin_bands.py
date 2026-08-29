@@ -51,13 +51,13 @@ DINO_CKPT = (
 
 LESION_BLUE = (191, 219, 254)
 LAYER_RGB = {
-    0: (254, 243, 199),
-    1: (226, 232, 240),
-    2: (209, 250, 229),
+    0: (253, 224, 71),
+    1: (249, 168, 212),
+    2: (94, 234, 212),
 }
-LAYER_HEX = {0: "#fde68a", 1: "#cbd5e1", 2: "#a7f3d0"}
+LAYER_HEX = {0: "#facc15", 1: "#f9a8d4", 2: "#5eead4"}
 WALL = (254, 240, 180)
-LAYER_BLEND = 0.11
+LAYER_BLEND = 0.26
 LESION_BLEND = 0.12
 GAP_PX = 10
 CJK_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
@@ -167,8 +167,8 @@ def overlay_layers(rgb: np.ndarray, xs, ys, labels, gap: np.ndarray | None = Non
             continue
         wash[ys[sel], xs[sel]] = np.array(color, dtype=np.float32)
         weight[ys[sel], xs[sel]] = 1.0
-    wash = cv2.GaussianBlur(wash, (9, 9), 1.6)
-    weight = cv2.GaussianBlur(weight, (9, 9), 1.6)
+    wash = cv2.GaussianBlur(wash, (7, 7), 1.15)
+    weight = cv2.GaussianBlur(weight, (7, 7), 1.15)
     if gap is not None:
         weight = weight * (gap == 0).astype(np.float32)
     alpha = np.clip(weight * LAYER_BLEND, 0.0, LAYER_BLEND)[..., None]
@@ -472,11 +472,12 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
             axes[1].text(
                 *to_b(float(xs_lab[sel].mean()), float(ys_lab[sel].mean())),
                 zh,
-                color="#e5e7eb",
+                color=LAYER_HEX[lab],
                 fontproperties=CJK,
-                fontsize=9,
+                fontsize=10,
                 ha="left",
                 va="center",
+                bbox={"facecolor": "#111111", "edgecolor": LAYER_HEX[lab], "alpha": 0.55, "pad": 1.6},
             )
     mid = vanish_xy(wall_crop, crop_mask)
     if mid is not None:
