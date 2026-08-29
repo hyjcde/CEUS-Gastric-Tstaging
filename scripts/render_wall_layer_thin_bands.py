@@ -49,15 +49,17 @@ DINO_CKPT = (
 
 LESION_BLUE = (191, 219, 254)
 LAYER_RGB = {
-    0: (253, 224, 71),
-    1: (249, 168, 212),
-    2: (94, 234, 212),
+    0: (255, 210, 40),
+    1: (239, 68, 88),
+    2: (34, 197, 94),
 }
-LAYER_HEX = {0: "#facc15", 1: "#f9a8d4", 2: "#5eead4"}
-WALL = (254, 240, 180)
-LAYER_BLEND = 0.26
+LAYER_HEX = {0: "#facc15", 1: "#fb7185", 2: "#4ade80"}
+WALL = (254, 240, 138)
+SIDE_BLEND = 0.44
+MID_BLEND = 0.02
 LESION_BLEND = 0.16
 GAP_PX = 1
+HEADING_GAP_PX = 16
 LAYER_LEGEND = (
     (0, "shallow", "Mucosa"),
     (1, "muscularis", "Muscularis"),
@@ -241,52 +243,77 @@ def overlay_blue(rgb: np.ndarray, mask: np.ndarray, alpha: float = LESION_BLEND)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def overlay_layers(rgb: np.ndarray, xs, ys, labels, gap: np.ndarray | None = None) -> np.ndarray:
-    """Very pale smeared bands. No ridge curves."""
+def overlay_layers(
+    rgb: np.ndarray,
+    xs,
+    ys,
+    labels,
+    lesion: np.ndarray | None = None,
+) -> np.ndarray:
+    """Side bands stay separate and continuous. The middle is almost clear."""
     xs = np.asarray(xs, dtype=np.int32)
     ys = np.asarray(ys, dtype=np.int32)
     labels = np.asarray(labels, dtype=np.int32)
     h, w = rgb.shape[:2]
-    wash = np.zeros((h, w, 3), dtype=np.float32)
-    weight = np.zeros((h, w), dtype=np.float32)
     ok = (xs >= 0) & (ys >= 0) & (xs < w) & (ys < h) & (labels >= 0)
-    if gap is not None:
-        ok = ok & (gap[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)] == 0)
+    stack = []
+    colors = []
     for lab, color in LAYER_RGB.items():
+        band = np.zeros((h, w), dtype=np.float32)
         sel = ok & (labels == lab)
-        if not sel.any():
-            continue
-        wash[ys[sel], xs[sel]] = np.array(color, dtype=np.float32)
-        weight[ys[sel], xs[sel]] = 1.0
-    wash = cv2.GaussianBlur(wash, (7, 7), 1.15)
-    weight = cv2.GaussianBlur(weight, (7, 7), 1.15)
-    if gap is not None:
-        weight = weight * (gap == 0).astype(np.float32)
-    alpha = np.clip(weight * LAYER_BLEND, 0.0, LAYER_BLEND)[..., None]
+        if sel.any():
+            band[ys[sel], xs[sel]] = 1.0
+        band = cv2.morphologyEx((band > 0.5).astype(np.uint8), cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+        band = cv2.GaussianBlur(band.astype(np.float32), (5, 5), 0.70)
+        stack.append(band)
+        colors.append(np.array(color, dtype=np.float32))
+    stack = np.stack(stack, axis=0)
+    winner = stack.argmax(axis=0)
+    wmax = stack.max(axis=0)
+    wash = np.zeros((h, w, 3), dtype=np.float32)
+    kernel = np.ones((5, 5), np.uint8)
+    for lab, color in enumerate(colors):
+        sel = ((winner == lab) & (wmax >= 0.28)).astype(np.uint8)
+        sel = cv2.morphologyEx(sel, cv2.MORPH_CLOSE, kernel)
+        wash[sel > 0] = color
+    mid = np.zeros((h, w), dtype=bool)
+    if lesion is not None and lesion.shape[:2] == (h, w):
+        mid = dilate_mask(lesion, 10) > 0
+    cover = (wash.sum(axis=2) > 0).astype(np.float32)
+    blend = np.where(mid, MID_BLEND, SIDE_BLEND).astype(np.float32)
+    alpha = np.clip(cover * blend, 0.0, SIDE_BLEND)[..., None]
     out = (1.0 - alpha) * rgb.astype(np.float32) + alpha * wash
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def draw_heading(rgb: np.ndarray, wall: np.ndarray, lesion_mask: np.ndarray) -> np.ndarray:
-    """Solid heading on normal wall, dashed through the lesion so the gap is obvious."""
+    """Yellow heading on the two flanks only. No gray stroke through the mass."""
     out = rgb.copy()
     wall = as_xy(wall)
     if len(wall) < 2:
         return out
     dense = densify_polyline(wall, 2.0)
-    gap = dilate_mask(lesion_mask, GAP_PX)
+    gap = dilate_mask(lesion_mask, HEADING_GAP_PX)
     h, w = gap.shape[:2]
-    solid, dashed = [], []
+    run: list[list[int]] = []
+    runs: list[np.ndarray] = []
     for point in dense:
         x = int(round(float(point[0])))
         y = int(round(float(point[1])))
         hit = 0 <= x < w and 0 <= y < h and gap[y, x] > 0
-        (dashed if hit else solid).append([x, y])
-    if len(solid) >= 2:
-        cv2.polylines(out, [np.asarray(solid, dtype=np.int32)], False, WALL, 1, cv2.LINE_AA)
-    for i, point in enumerate(dashed):
-        if i % 4 < 2:
-            cv2.circle(out, (int(point[0]), int(point[1])), 1, (180, 180, 180), -1, cv2.LINE_AA)
+        if hit:
+            if len(run) >= 2:
+                runs.append(np.asarray(run, dtype=np.int32))
+            run = []
+            continue
+        run.append([x, y])
+    if len(run) >= 2:
+        runs.append(np.asarray(run, dtype=np.int32))
+    for pts in runs:
+        if len(pts) >= 4:
+            pts = cv2.approxPolyDP(pts, 1.6, False).reshape(-1, 2)
+        if len(pts) >= 2:
+            cv2.polylines(out, [pts.astype(np.int32)], False, WALL, 2, cv2.LINE_AA)
     return out
 
 
@@ -598,15 +625,14 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
 
     labeled = overlay_blue(crop_rgb.copy(), crop_mask)
     if arm is not None and getattr(arm, "status", "") == "ok":
-        labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels, gap=gap)
-    labeled = draw_heading(labeled, wall_crop, crop_mask)
+        labeled = overlay_layers(labeled, arm.xs, arm.ys, arm.labels, lesion=crop_mask)
     sx1, sy1, sx2, sy2 = wall_strip(labeled, wall_crop, pad=20)
     strip = labeled[sy1:sy2, sx1:sx2]
     scale = 4
     panel_b = cv2.resize(
         strip,
         (strip.shape[1] * scale, strip.shape[0] * scale),
-        interpolation=cv2.INTER_LINEAR,
+        interpolation=cv2.INTER_NEAREST,
     )
 
     time_sec = meta.get("time_sec")

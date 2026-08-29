@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Clear side bands, no gray heading through the mass
+
+- Scope: `scripts/render_wall_layer_thin_bands.py` (all four panels).
+- Reason: Gray dashed heading cluttered the mass. The three colors were mixing. Only the two flanks need a continuous strip; the middle can stay almost clear.
+- Key changes: Drop the gray stroke. Winner-take-all yellow / pink / mint on the sides. Through the lesion the wash is very transparent. Does not unlock cT.
+- Validation: Offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P076 Break points at the right-hand bulge
 
 - Scope: `scripts/render_wall_layer_thin_bands.py --case P076`.
