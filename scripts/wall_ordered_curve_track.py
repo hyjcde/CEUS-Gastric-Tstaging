@@ -19,7 +19,6 @@ from wall_lesion_aware_cluster import (
     polygon_centroid,
     _fill_nan_1d,
     _finite_median_filter,
-    _heading_stations,
     _sample_normal_profile,
     _smooth1d,
 )
@@ -30,9 +29,13 @@ DILATE_PX = 5
 D_MIN = 3
 MIN_EDGE = 5.0
 TOP_K = 12
-LAM_SMOOTH = 3.2
-LAM_THICK = 1.1
-SMOOTH_SIGMA = 11.0
+LAM_SMOOTH = 5.0
+LAM_THICK = 1.4
+SMOOTH_SIGMA = 18.0
+HEADING_SIGMA_PX = 22.0
+STATION_STEP = 2.0
+SIDE_BAND_PX = 5.5
+PRIOR_SLACK = 2.6
 LAM_MISS = 9.0
 PREDICT_PX = 18
 WRAP_STEPS = 22
@@ -152,13 +155,27 @@ def _top_idx(score: np.ndarray, min_score: float) -> list[int]:
     return hits
 
 
-def _station_valid(pts: np.ndarray, blocked: np.ndarray, fit_side: str) -> np.ndarray:
+def _station_valid(
+    pts: np.ndarray,
+    blocked: np.ndarray,
+    fit_side: str,
+    lesion_poly: np.ndarray | None = None,
+) -> np.ndarray:
     height, width = blocked.shape[:2]
     ok = np.ones((len(pts),), dtype=bool)
     xs = pts[:, 0]
     side = str(fit_side or "all").strip().lower()
     if side == "right" and len(pts):
-        ok &= xs >= float(np.quantile(xs, 0.55))
+        cut = float(np.quantile(xs, 0.50))
+        if lesion_poly is not None and len(lesion_poly) >= 3:
+            lesion_right = float(np.percentile(lesion_poly[:, 0], 88))
+            if float(xs.min()) < lesion_right < float(xs.max()):
+                cut = lesion_right + 2.0
+        cand = xs >= cut
+        if int(cand.sum()) >= MIN_VALID_STATIONS:
+            ok &= cand
+        else:
+            ok &= xs >= float(np.quantile(xs, 0.55))
     elif side == "left" and len(pts):
         ok &= xs <= float(np.quantile(xs, 0.45))
     for i, (x, y) in enumerate(pts.tolist()):
@@ -273,6 +290,121 @@ def _arc_length(pts: np.ndarray) -> np.ndarray:
     return np.concatenate([[0.0], np.cumsum(step)]).astype(np.float32)
 
 
+def _resample_polyline(pts: np.ndarray, step: float = STATION_STEP) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32)
+    if len(pts) < 2:
+        return pts.copy()
+    s = _arc_length(pts)
+    if float(s[-1]) < step:
+        return pts.copy()
+    q = np.arange(0.0, float(s[-1]) + 0.5 * step, step, dtype=np.float32)
+    return np.stack([np.interp(q, s, pts[:, 0]), np.interp(q, s, pts[:, 1])], axis=1).astype(np.float32)
+
+
+def _smooth_heading(pts: np.ndarray, sigma_px: float = HEADING_SIGMA_PX) -> np.ndarray:
+    """Turn a doctor stroke into a naturally bending wall axis."""
+    raw = _resample_polyline(densify_polyline(as_xy(pts), 2.0), 2.0)
+    if len(raw) < 6:
+        return raw
+    sig = max(3.5, float(sigma_px) / 2.0)
+    xs = _gauss1d(_gauss1d(raw[:, 0], sig), sig)
+    ys = _gauss1d(_gauss1d(raw[:, 1], sig), sig)
+    return _resample_polyline(np.stack([xs, ys], axis=1), STATION_STEP)
+
+
+def _smooth_wall_stations(
+    polyline: np.ndarray,
+    lumen_center: np.ndarray | None,
+    lesion_center: np.ndarray | None,
+    deepest: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Stations and one consistent outward normal from the smoothed heading."""
+    pts = _smooth_heading(polyline)
+    if len(pts) < 2:
+        empty = np.zeros((0, 2), dtype=np.float32)
+        return empty, empty
+    tangents = np.zeros_like(pts)
+    if len(pts) >= 3:
+        tangents[1:-1] = pts[2:] - pts[:-2]
+        tangents[0] = pts[1] - pts[0]
+        tangents[-1] = pts[-1] - pts[-2]
+    else:
+        tangents[0] = pts[-1] - pts[0]
+        tangents[-1] = tangents[0]
+    tan_n = np.maximum(np.hypot(tangents[:, 0], tangents[:, 1]), 1e-6)
+    tangent = tangents / tan_n[:, None]
+    normals = np.stack([-tangent[:, 1], tangent[:, 0]], axis=1)
+    if lumen_center is not None:
+        hint = pts - np.asarray(lumen_center, dtype=np.float32).reshape(1, 2)
+    elif deepest is not None and lesion_center is not None:
+        hint = np.broadcast_to(
+            (np.asarray(deepest) - np.asarray(lesion_center)).astype(np.float32),
+            normals.shape,
+        )
+    elif lesion_center is not None:
+        hint = pts - np.asarray(lesion_center, dtype=np.float32).reshape(1, 2)
+    else:
+        hint = None
+    if hint is not None:
+        votes = np.sum(normals * hint, axis=1) < 0
+        if int(votes.sum()) > 0.5 * len(votes):
+            normals = -normals
+    if len(normals) and float(normals[:, 1].mean()) < 0:
+        normals = -normals
+    return pts.astype(np.float32), normals.astype(np.float32)
+
+
+def _median_band_priors(profiles: list[np.ndarray], half: int) -> tuple[float, float, float, float]:
+    """One gray reading for the whole right-hand wall: bright / dark / bright."""
+    if not profiles:
+        return -2.0, 4.0, -2.0 - SIDE_BAND_PX, 4.0 + SIDE_BAND_PX
+    med = np.nanmedian(np.stack(profiles, axis=0), axis=0)
+    sm = _smooth1d(_fill_nan_1d(med), 3)
+    b1, b2 = pick_interfaces(sm)
+    if b1 is None and b2 is None:
+        core = sm[5:-5] if len(sm) > 12 else sm
+        valley = int(np.argmin(core)) + (5 if len(sm) > 12 else 0)
+        b1 = max(5, valley - 4)
+        b2 = min(len(sm) - 6, valley + 4)
+    elif b1 is None:
+        b1 = max(5, int(b2) - 6)
+    elif b2 is None:
+        b2 = min(len(sm) - 6, int(b1) + 6)
+    if int(b2) < int(b1) + D_MIN:
+        b2 = min(len(sm) - 2, int(b1) + max(D_MIN, 6))
+    n1 = float(b1 - half)
+    n2 = float(b2 - half)
+    muc_w = SIDE_BAND_PX
+    ser_w = SIDE_BAND_PX
+    valley = float(sm[int(np.clip(int(0.5 * (b1 + b2)), 0, len(sm) - 1))])
+    inner_peak = float(np.max(sm[max(0, b1 - 8): max(1, b1)])) if b1 > 0 else valley + 20.0
+    outer_peak = float(np.max(sm[b2: min(len(sm), b2 + 9)])) if b2 < len(sm) else valley + 20.0
+    thr_in = valley + 0.28 * max(8.0, inner_peak - valley)
+    thr_out = valley + 0.28 * max(8.0, outer_peak - valley)
+    walk = 0
+    for i in range(int(b1) - 1, max(-1, int(b1) - 9), -1):
+        if float(sm[i]) < thr_in:
+            break
+        walk += 1
+    muc_w = float(np.clip(max(3.6, walk), 3.6, 7.2))
+    walk = 0
+    for i in range(int(b2) + 1, min(len(sm), int(b2) + 9)):
+        if float(sm[i]) < thr_out:
+            break
+        walk += 1
+    ser_w = float(np.clip(max(3.6, walk), 3.6, 7.2))
+    return n1, n2, n1 - muc_w, n2 + ser_w
+
+
+def _pull_to_prior(values: np.ndarray, prior: float, keep: np.ndarray, slack: float = PRIOR_SLACK) -> np.ndarray:
+    out = values.astype(np.float32).copy()
+    ok = keep & np.isfinite(out)
+    out[ok] = np.clip(out[ok], prior - slack, prior + slack)
+    missing = keep & ~np.isfinite(out)
+    out[missing] = prior
+    return out
+
+
 def _gauss1d(values: np.ndarray, sigma: float) -> np.ndarray:
     if len(values) < 3:
         return values.astype(np.float32)
@@ -296,9 +428,13 @@ def _reject_offset_outliers(values: np.ndarray, keep: np.ndarray, max_dev: float
 
 
 def _natural_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray) -> np.ndarray:
-    """Low-pass n(s). The wall turns slowly, so the offset must too."""
+    return _slow_offset(values, arc, keep)
+
+
+def _slow_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray, sigma: float = SMOOTH_SIGMA) -> np.ndarray:
+    """Almost-parallel offset: kill local vibration, keep a slow wall trend."""
     out = np.full(values.shape, np.nan, dtype=np.float32)
-    raw = _reject_offset_outliers(values, keep)
+    raw = _reject_offset_outliers(values, keep, max_dev=4.0)
     ok = keep & np.isfinite(raw)
     if int(ok.sum()) < 5:
         return values.astype(np.float32)
@@ -307,30 +443,13 @@ def _natural_offset(values: np.ndarray, arc: np.ndarray, keep: np.ndarray) -> np
     order = np.argsort(s)
     s = s[order]
     y = y[order]
-    win = min(25, (max(5, len(y) // 2) * 2 + 1))
+    win = min(31, (max(7, len(y) // 2) * 2 + 1))
     y = _finite_median_filter(y, win)
-    y = _gauss1d(y, SMOOTH_SIGMA)
+    y = _gauss1d(y, max(8.0, float(sigma)))
+    med = float(np.median(y))
+    y = 0.28 * y + 0.72 * med
     out[keep] = np.interp(arc[keep], s, y)
     return out
-
-
-def _smooth_station_xy(pts: np.ndarray, normals: np.ndarray, offsets: np.ndarray, keep: np.ndarray) -> np.ndarray:
-    """Smooth the interface in image x,y so the line follows the wall, not pixel steps."""
-    xy = np.full((len(pts), 2), np.nan, dtype=np.float32)
-    ok = keep & np.isfinite(offsets)
-    if int(ok.sum()) < 3:
-        return xy
-    raw = pts[ok] + normals[ok] * offsets[ok, None]
-    arc = _arc_length(pts)
-    s = arc[ok]
-    order = np.argsort(s)
-    s = s[order]
-    raw = raw[order]
-    xs = _gauss1d(_finite_median_filter(raw[:, 0], 9), SMOOTH_SIGMA)
-    ys = _gauss1d(_finite_median_filter(raw[:, 1], 9), SMOOTH_SIGMA)
-    xy[keep, 0] = np.interp(arc[keep], s, xs)
-    xy[keep, 1] = np.interp(arc[keep], s, ys)
-    return xy
 
 
 def _dense_from_stations(station_xy: np.ndarray, keep: np.ndarray, step: float = 1.0) -> np.ndarray:
@@ -544,13 +663,13 @@ def track_ordered_layers(
     if len(lesion) >= 2 and lesion_center is not None:
         deepest = lesion[int(np.argmax(np.linalg.norm(lesion - lesion_center, axis=1)))]
     blocked = dilate_mask(lesion_mask, int(dilate_px))
-    pts, normals = _heading_stations(wall, lumen_center, lesion_center, deepest)
+    pts, normals = _smooth_wall_stations(wall, lumen_center, lesion_center, deepest)
     cavity = "lumen" if lumen_center is not None else "heuristic"
     if len(pts) < MIN_VALID_STATIONS:
         return CurveTrack(status="insufficient_normal_wall", dilate_px=dilate_px, cavity_side_source=cavity, skip_reason="short_heading")
-    valid = _station_valid(pts, blocked, fit_side)
+    valid = _station_valid(pts, blocked, fit_side, lesion)
     if int(valid.sum()) < MIN_VALID_STATIONS:
-        valid = _station_valid(pts, blocked, "all")
+        valid = _station_valid(pts, blocked, "all", lesion)
     if int(valid.sum()) < MIN_VALID_STATIONS:
         return CurveTrack(status="insufficient_normal_wall", dilate_px=dilate_px, cavity_side_source=cavity, skip_reason="no_flank")
 
@@ -565,6 +684,7 @@ def track_ordered_layers(
         for idx in use.tolist()
     ]
     off1, off2, conf1, conf2 = _viterbi_two_edges(profiles, half, near)
+    n1_prior, n2_prior, muc_lo0, ser_hi0 = _median_band_priors(profiles, half)
 
     # Map the right-to-left series back onto heading stations.
     n1 = np.full((len(pts),), np.nan, dtype=np.float32)
@@ -580,24 +700,34 @@ def track_ordered_layers(
             c1[idx] *= 0.72
             c2[idx] *= 0.72
     arc = _arc_length(pts)
-    n1 = _natural_offset(n1, arc, valid)
-    n2 = _natural_offset(n2, arc, valid)
+    n1 = _pull_to_prior(n1, n1_prior, valid)
+    n2 = _pull_to_prior(n2, n2_prior, valid)
+    n1 = _slow_offset(n1, arc, valid)
+    n2 = _slow_offset(n2, arc, valid)
     both = valid & np.isfinite(n1) & np.isfinite(n2)
     if int(both.sum()) >= 5:
         thick = np.full(len(n1), np.nan, dtype=np.float32)
         thick[both] = n2[both] - n1[both]
-        thick = _natural_offset(thick, arc, both)
+        thick = _slow_offset(thick, arc, both)
         med = float(np.nanmedian(thick))
-        lo_t, hi_t = max(3.5, 0.55 * med), min(14.0, 1.55 * med if med == med else 10.0)
+        if not np.isfinite(med):
+            med = max(3.8, n2_prior - n1_prior)
+        lo_t, hi_t = max(3.8, 0.82 * med), min(16.0, 1.22 * med)
         thick = np.clip(thick, lo_t, hi_t)
         n2[valid] = n1[valid] + thick[valid]
+    gap = valid & np.isfinite(n1) & np.isfinite(n2) & ((n2 - n1) < 3.8)
+    n2[gap] = n1[gap] + 5.8
 
-    st1 = _smooth_station_xy(pts, normals, n1, valid)
-    st2 = _smooth_station_xy(pts, normals, n2, valid)
-    inner_edge = np.full(len(pts), -float(half) + 1.5, dtype=np.float32)
-    outer_edge = np.full(len(pts), float(half) - 1.5, dtype=np.float32)
-    st_in = _smooth_station_xy(pts, normals, inner_edge, valid)
-    st_out = _smooth_station_xy(pts, normals, outer_edge, valid)
+    muc_lo = np.full(len(pts), muc_lo0, dtype=np.float32)
+    ser_hi = np.full(len(pts), ser_hi0, dtype=np.float32)
+    ok_in = valid & np.isfinite(n1)
+    ok_out = valid & np.isfinite(n2)
+    muc_lo[ok_in] = np.clip(np.minimum(muc_lo[ok_in], n1[ok_in] - 3.4), -float(half) + 1.0, n1[ok_in] - 3.2)
+    ser_hi[ok_out] = np.clip(np.maximum(ser_hi[ok_out], n2[ok_out] + 3.4), n2[ok_out] + 3.2, float(half) - 1.0)
+    st1 = _xy(pts, normals, n1)
+    st2 = _xy(pts, normals, n2)
+    st_in = _xy(pts, normals, muc_lo)
+    st_out = _xy(pts, normals, ser_hi)
     xy1 = _dense_from_stations(st1, valid)
     xy2 = _dense_from_stations(st2, valid)
     hi1, lo1 = xy1, np.zeros((0, 2), dtype=np.float32)
@@ -622,6 +752,8 @@ def track_ordered_layers(
         start = solid2[-1] if float(solid2[-1, 0]) <= float(solid2[0, 0]) else solid2[0]
         nid = int(np.argmin(((pts - start.reshape(1, 2)) ** 2).sum(axis=1)))
         wrap_xy, wrapped = _wrap_outer(start, blocked, normals[nid], gray, seed_g)
+        if len(wrap_xy) >= 6:
+            wrap_xy = _smooth_heading(wrap_xy, sigma_px=10.0)
 
     mid_g = _gray_between(gray, _finite(xy1), _finite(xy2))
     lesion_g = float(gray[lesion_mask > 0].mean()) if int((lesion_mask > 0).sum()) >= 20 else None

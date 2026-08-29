@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Wall layers follow a smooth heading and split by gray
+
+- Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, `docs/technical/WALL_ORDERED_CURVE_TRACKING.md`.
+- Reason: Interface lines still looked jittery because the doctor heading kinked and per-point normals flipped. Outer ribbons used the full search window, so yellow / red / green pinched and lost layering.
+- Key changes: Low-pass the heading first and keep one consistent normal. Place the two edges from the median gray profile (bright / dark / bright), pull local traces toward that prior, and paint three nearly parallel bands. Visibility is still not a cT.
+- Validation: Curve unit tests, including a wiggly heading residual check, plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Mobile workbench lands on ultrasound after login
 
 - Scope: `apps/gastric_scan_next` workbench shell (`app/page.tsx`, `MobilePaneNav`, `InteractiveSegPanel`, `Header`, `LoginGate`, `DoctorTutorialModal`, `globals.css`, `ReaderStudyQueuePanel`, `ReaderWorkbench`).

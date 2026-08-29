@@ -66,8 +66,36 @@ def main() -> int:
     if len(solid) >= 8:
         jump = np.sqrt(((solid[1:] - solid[:-1]) ** 2).sum(axis=1))
         # A natural wall line should not vibrate several pixels every step.
-        assert float(np.percentile(jump, 90)) < 3.5, float(np.percentile(jump, 90))
+        assert float(np.percentile(jump, 90)) < 2.2, float(np.percentile(jump, 90))
+        if len(solid) >= 12:
+            d2 = np.linalg.norm(np.diff(np.diff(solid, axis=0), axis=0), axis=1)
+            assert float(np.percentile(d2, 90)) < 0.28, float(np.percentile(d2, 90))
+    musc = next((item for item in track.ribbons if item.get("id") == "muscularis"), None)
+    if musc and len(musc.get("points") or []) >= 8:
+        poly = np.asarray(musc["points"], dtype=np.float32)
+        half = len(poly) // 2
+        width = np.linalg.norm(poly[:half] - poly[half:][::-1][:half], axis=1)
+        if len(width) >= 6:
+            assert float(np.percentile(width, 90) / max(1.0, np.percentile(width, 10))) < 2.4
     assert any(len(item.get("points") or []) >= 6 for item in track.ribbons)
+
+    rng = np.random.RandomState(0)
+    xs = np.linspace(20.0, 260.0, 90)
+    wiggly = np.stack([xs, 80.0 + 2.2 * np.sin(xs / 9.0) + rng.normal(0.0, 1.6, size=len(xs))], axis=1)
+    noisy = track_ordered_layers(
+        gray, wiggly, lesion_mask,
+        lumen_center=lumen.mean(axis=0),
+        lesion_poly=lesion,
+        dilate_px=5,
+        fit_side="right",
+    )
+    wig_solid = np.asarray({item.id: item for item in noisy.boundaries}["inner"].solid_hi, dtype=np.float32)
+    if len(wig_solid) >= 16:
+        y = wig_solid[:, 1]
+        kernel = np.ones(9, dtype=np.float32) / 9.0
+        trend = np.convolve(y, kernel, mode="valid")
+        resid = y[4:-4] - trend
+        assert float(np.percentile(np.abs(resid), 90)) < 0.85, float(np.percentile(np.abs(resid), 90))
     assert "lost" not in {item.status for item in track.regions}
     for item in track.boundaries:
         for x, y in item.solid_hi + item.solid_lo:

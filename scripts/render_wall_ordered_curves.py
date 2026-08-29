@@ -116,7 +116,7 @@ def paint_curves(rgb, track, sx1, sy1, sx2, sy2, scale: int) -> np.ndarray:
         cv2.fillPoly(mask, [np.round(poly).astype(np.int32)], 255)
         sel = mask > 0
         wash = np.array(ribbon_color.get(str(ribbon.get("id")), (200, 200, 200)), dtype=np.float32)
-        overlay[sel] = 0.62 * overlay[sel] + 0.38 * wash
+        overlay[sel] = 0.50 * overlay[sel] + 0.50 * wash
     panel = np.clip(overlay, 0, 255).astype(np.uint8)
     for item in track.boundaries:
         color = colors.get(item.id, (220, 220, 220))
@@ -170,7 +170,7 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
     fig, axes = plt.subplots(1, 2, figsize=(16.8, 6.4), gridspec_kw={"width_ratios": [1.0, 1.75]})
     for ax, panel, title in zip(
         axes, (panel_a, panel_b),
-        ("A  Source  (heading is a guide)", "B  Smooth gray layers  (bands from two edges)"),
+        ("A  Source  (heading is a guide)", "B  Gray layers along a smooth wall"),
     ):
         ax.imshow(panel)
         ax.set_title(title, fontsize=12)
