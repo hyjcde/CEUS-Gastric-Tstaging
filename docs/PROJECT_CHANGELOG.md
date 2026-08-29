@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Track two ordered interfaces from right to left
+
+- Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, algorithm note.
+- Reason: Three painted classes still jumped vertically. The useful object is two ordered edges, not pixel labels. Forcing three layers at the lesion tip hides fusion and missing states. Image-not-visible is not serosal invasion.
+- Key changes: Right-to-left Viterbi on bright-to-dark and dark-to-bright edges, with thickness, order, and missing nodes. High/low-confidence solids, a widening predicted band, a stop mark, and outer wrap. Region labels are visible / obscured / fused / displaced. Does not unlock cT.
+- Validation: Curve unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Track ordered wall curves instead of painting three pixel classes
 
 - Scope: `scripts/wall_ordered_curve_track.py`, ordered-curve render, `docs/technical/WALL_ORDERED_CURVE_TRACKING.md`. Pixel clustering stays as a candidate baseline only.

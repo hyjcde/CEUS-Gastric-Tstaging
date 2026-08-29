@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Lesion-aware ordered curve tracking for gastric wall layers.
+"""Two ordered wall interfaces, tracked right to left.
 
-Clustering can propose bright / dark candidates. This module is the main
-path: find thin, ordered, locally parallel ridges / valleys outside the
-lesion, then decide missing / fused / wrap. Does not unlock cT.
+The result is b1 (bright-to-dark) and b2 (dark-to-bright), not three
+pixel classes. Does not unlock cT.
 """
 from __future__ import annotations
 
@@ -19,46 +18,61 @@ from wall_lesion_aware_cluster import (
     dilate_mask,
     polygon_centroid,
     _fill_nan_1d,
-    _finite_median_filter,
     _heading_stations,
     _sample_normal_profile,
     _smooth1d,
 )
 
 SEARCH_PX = 18
+NEAR_SEARCH_PX = 24
 DILATE_PX = 5
-MIN_PROM = 7.0
-MIN_SEP = 4
-JUMP_PX = 5.5
-GAP_FILL = 2
-PREDICT_PX = 26
-WRAP_STEPS = 16
+D_MIN = 3
+MIN_EDGE = 5.0
+TOP_K = 12
+LAM_SMOOTH = 0.28
+LAM_THICK = 0.22
+LAM_MISS = 9.0
+PREDICT_PX = 18
+WRAP_STEPS = 22
 FUSE_GRAY_TOL = 18.0
 MIN_VALID_STATIONS = 8
-LAYER_IDS = ("shallow", "muscularis", "serosa")
-LAYER_ZH = {"shallow": "浅层", "muscularis": "固有肌层", "serosa": "浆膜层"}
+HI_CONF = 0.55
+LO_CONF = 0.22
+MAX_SLOPE = 1.15
+MAX_CURV = 0.12
+
 STATUS_ZH = {
-    "detected": "检测到",
-    "missing": "缺失",
-    "fused": "融合",
-    "uncertain": "不可判断",
-    "wrap": "外侧绕行",
+    "visible": "可见",
+    "obscured": "影像不清",
+    "displaced": "受压绕行",
+    "interrupted": "局部中断",
+    "fused": "与灶融合",
+    "missing": "未检出",
 }
 
 
 @dataclass
-class LayerCurve:
+class Boundary:
     id: str
     name_zh: str
-    kind: str
+    solid_hi: list[list[float]] = field(default_factory=list)
+    solid_lo: list[list[float]] = field(default_factory=list)
+    dashed: list[list[float]] = field(default_factory=list)
+    band: list[list[float]] = field(default_factory=list)
+    wrap: list[list[float]] = field(default_factory=list)
+    stop: list[float] | None = None
+    n_mean: float | None = None
+    n_detected: int = 0
+    status: str = "missing"
+    note: str = ""
+
+
+@dataclass
+class RegionReadout:
+    id: str
+    name_zh: str
     status: str
     status_zh: str
-    solid: list[list[float]] = field(default_factory=list)
-    dashed: list[list[float]] = field(default_factory=list)
-    wrap: list[list[float]] = field(default_factory=list)
-    n_mean: float | None = None
-    gray_mean: float | None = None
-    n_detected: int = 0
     note: str = ""
 
 
@@ -67,203 +81,289 @@ class CurveTrack:
     status: str
     dilate_px: int
     cavity_side_source: str
-    layers: list[LayerCurve] = field(default_factory=list)
+    boundaries: list[Boundary] = field(default_factory=list)
+    regions: list[RegionReadout] = field(default_factory=list)
     skip_reason: str = ""
 
+    @property
+    def layers(self) -> list[RegionReadout]:
+        return self.regions
 
-def _extrema(profile: np.ndarray, mode: str) -> list[tuple[int, float, float]]:
-    """Local max (bright ridge) or min (dark valley) with a simple prominence."""
+
+def interface_scores(profile: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Bright-to-dark (inner) and dark-to-bright (outer) scores along one normal."""
     sm = _smooth1d(_fill_nan_1d(profile), 2)
     n = int(len(sm))
-    hits: list[tuple[int, float, float]] = []
-    for i in range(2, n - 2):
-        if mode == "max":
-            if not (sm[i] >= sm[i - 1] and sm[i] >= sm[i + 1]):
+    inner = np.full((n,), -1.0e6, dtype=np.float32)
+    outer = np.full((n,), -1.0e6, dtype=np.float32)
+    half = n // 2
+    for i in range(5, n - 5):
+        left = float(sm[i - 3:i].mean())
+        right = float(sm[i:i + 3].mean())
+        # Prefer edges near the heading, not the search-window ends.
+        w = max(0.45, 1.0 - 0.035 * abs(i - half))
+        inner[i] = (left - right) * w
+        outer[i] = (right - left) * w
+    return inner, outer
+
+
+def pick_interfaces(profile: np.ndarray) -> tuple[int | None, int | None]:
+    inner, outer = interface_scores(profile)
+    ii = _top_idx(inner, MIN_EDGE)
+    jj = _top_idx(outer, MIN_EDGE)
+    best = None
+    for i in ii:
+        for j in jj:
+            if j < i + D_MIN:
                 continue
-            neigh = min(float(sm[max(0, i - 5):i].min()), float(sm[i + 1:min(n, i + 6)].min()))
-            prom = float(sm[i] - neigh)
-        else:
-            if not (sm[i] <= sm[i - 1] and sm[i] <= sm[i + 1]):
-                continue
-            neigh = max(float(sm[max(0, i - 5):i].max()), float(sm[i + 1:min(n, i + 6)].max()))
-            prom = float(neigh - sm[i])
-        if prom >= MIN_PROM:
-            hits.append((i, float(sm[i]), prom))
-    return hits
-
-
-def _best(cands: list[tuple[int, float, float]], toward: int, brighter: bool) -> tuple[int, float, float] | None:
-    if not cands:
-        return None
-    sign = 1.0 if brighter else -1.0
-
-    def score(item: tuple[int, float, float]) -> float:
-        return sign * item[1] + 0.25 * item[2] - 0.12 * abs(item[0] - toward)
-
-    return max(cands, key=score)
+            score = float(inner[i] + outer[j])
+            if best is None or score > best[0]:
+                best = (score, i, j)
+    if best is not None:
+        return int(best[1]), int(best[2])
+    b1 = int(np.argmax(inner)) if float(inner.max()) >= MIN_EDGE else None
+    b2 = int(np.argmax(outer)) if float(outer.max()) >= MIN_EDGE else None
+    if b1 is not None and b2 is not None and b2 < b1 + D_MIN:
+        return (b1, None) if float(inner[b1]) >= float(outer[b2]) else (None, b2)
+    return b1, b2
 
 
 def pick_ordered_candidates(profile: np.ndarray) -> dict[str, int | None]:
-    """One station: optional upper peak, mid valley, lower peak. Any slot may be empty."""
-    half = len(profile) // 2
-    peaks = _extrema(profile, "max")
-    valleys = _extrema(profile, "min")
-    valley = None
-    if valleys:
-        valley = min(valleys, key=lambda item: abs(item[0] - half) - 0.08 * item[2])
-    shallow = None
-    serosa = None
-    if valley is not None:
-        left = [p for p in peaks if p[0] <= valley[0] - MIN_SEP]
-        right = [p for p in peaks if p[0] >= valley[0] + MIN_SEP]
-        shallow = _best(left, valley[0], True)
-        serosa = _best(right, valley[0], True)
-    elif peaks:
-        strongest = max(peaks, key=lambda item: item[1] + 0.2 * item[2])
-        if strongest[0] < half - 1:
-            shallow = strongest
-        elif strongest[0] > half + 1:
-            serosa = strongest
-    return {
-        "shallow": None if shallow is None else int(shallow[0]),
-        "muscularis": None if valley is None else int(valley[0]),
-        "serosa": None if serosa is None else int(serosa[0]),
-    }
+    """Kept for the old peak/valley unit test. Main path uses pick_interfaces."""
+    b1, b2 = pick_interfaces(profile)
+    mid = None
+    if b1 is not None and b2 is not None:
+        mid = int(round(0.5 * (b1 + b2)))
+    elif b1 is not None:
+        mid = min(len(profile) - 1, b1 + 2)
+    elif b2 is not None:
+        mid = max(0, b2 - 2)
+    return {"shallow": b1, "muscularis": mid, "serosa": b2}
 
 
-def _series_from_picks(
-    picks: list[dict[str, int | None]],
-    key: str,
-    half: int,
-) -> np.ndarray:
-    out = np.full((len(picks),), np.nan, dtype=np.float32)
-    for i, pick in enumerate(picks):
-        idx = pick.get(key)
-        if idx is not None:
-            out[i] = float(idx) - float(half)
-    return out
+def _top_idx(score: np.ndarray, min_score: float) -> list[int]:
+    order = np.argsort(-score)
+    hits = [int(i) for i in order.tolist() if float(score[int(i)]) >= min_score][:TOP_K]
+    if not hits and float(score[int(order[0])]) > 0:
+        hits = [int(order[0])]
+    return hits
 
 
-def _smooth_offset(values: np.ndarray) -> np.ndarray:
-    """Keep a layer thin and continuous. Do not invent long missing stretches."""
-    out = values.astype(np.float32).copy()
-    finite = np.isfinite(out)
-    if int(finite.sum()) < 3:
-        return out
-    med = out.copy()
-    work = out.copy()
-    work[~finite] = np.nan
-    filled = work.copy()
-    idx = np.arange(len(work))
-    if int(np.isfinite(work).sum()) >= 2:
-        good = np.isfinite(work)
-        filled[~good] = np.interp(idx[~good], idx[good], work[good])
-        med = _finite_median_filter(filled, 7)
-        med = _smooth1d(med, 2)
-    for i in range(len(out)):
-        if np.isfinite(out[i]) and abs(float(out[i]) - float(med[i])) > JUMP_PX:
-            out[i] = np.nan
-    # Fill only tiny holes so speckle does not become a fake layer.
-    finite = np.isfinite(out)
-    if int(finite.sum()) >= 2:
-        i = 0
-        while i < len(out):
-            if np.isfinite(out[i]):
-                i += 1
-                continue
-            j = i
-            while j < len(out) and not np.isfinite(out[j]):
-                j += 1
-            left = i > 0 and np.isfinite(out[i - 1])
-            right = j < len(out) and np.isfinite(out[j])
-            if left and right and (j - i) <= GAP_FILL:
-                out[i:j] = np.interp(np.arange(i, j), [i - 1, j], [out[i - 1], out[j]])
-            i = j
-    return out
+def _station_valid(pts: np.ndarray, blocked: np.ndarray, fit_side: str) -> np.ndarray:
+    height, width = blocked.shape[:2]
+    ok = np.ones((len(pts),), dtype=bool)
+    xs = pts[:, 0]
+    side = str(fit_side or "all").strip().lower()
+    if side == "right" and len(pts):
+        ok &= xs >= float(np.quantile(xs, 0.55))
+    elif side == "left" and len(pts):
+        ok &= xs <= float(np.quantile(xs, 0.45))
+    for i, (x, y) in enumerate(pts.tolist()):
+        xi, yi = int(round(x)), int(round(y))
+        if xi < 0 or yi < 0 or xi >= width or yi >= height or blocked[yi, xi] > 0:
+            ok[i] = False
+    return ok
 
 
-def _enforce_order(n0: np.ndarray, n1: np.ndarray, n2: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Layers may not cross. Drop the weaker side if they do."""
-    a, b, c = n0.copy(), n1.copy(), n2.copy()
-    for i in range(len(a)):
-        if np.isfinite(a[i]) and np.isfinite(b[i]) and a[i] > b[i] - 1.0:
-            a[i] = np.nan
-        if np.isfinite(b[i]) and np.isfinite(c[i]) and b[i] > c[i] - 1.0:
-            b[i] = np.nan
-        if np.isfinite(a[i]) and np.isfinite(c[i]) and a[i] > c[i] - 2.0:
-            a[i] = np.nan
-    return a, b, c
-
-
-def _xy_from_offset(pts: np.ndarray, normals: np.ndarray, offsets: np.ndarray) -> np.ndarray:
-    xy = np.full((len(pts), 2), np.nan, dtype=np.float32)
+def _xy(pts: np.ndarray, normals: np.ndarray, offsets: np.ndarray) -> np.ndarray:
+    out = np.full((len(pts), 2), np.nan, dtype=np.float32)
     ok = np.isfinite(offsets)
-    xy[ok] = pts[ok] + normals[ok] * offsets[ok, None]
-    return xy
+    out[ok] = pts[ok] + normals[ok] * offsets[ok, None]
+    return out
 
 
-def _polyline_finite(xy: np.ndarray) -> np.ndarray:
-    ok = np.isfinite(xy).all(axis=1)
-    return xy[ok]
+def _finite(xy: np.ndarray) -> np.ndarray:
+    return xy[np.isfinite(xy).all(axis=1)]
 
 
-def _facing_tangent(solid: np.ndarray, lesion_center: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
-    if len(solid) < 2:
-        empty = np.zeros((2,), dtype=np.float32)
-        return solid[-1] if len(solid) else empty, empty
-    if lesion_center is None:
-        start, tan = solid[-1], solid[-1] - solid[-2]
-    elif float(np.linalg.norm(solid[0] - lesion_center)) <= float(np.linalg.norm(solid[-1] - lesion_center)):
-        start, tan = solid[0], solid[0] - solid[1]
-    else:
-        start, tan = solid[-1], solid[-1] - solid[-2]
-    nrm = float(np.linalg.norm(tan))
-    if nrm < 1e-6:
-        return start, np.zeros((2,), dtype=np.float32)
-    return start.astype(np.float32), (tan / nrm).astype(np.float32)
+def _viterbi_two_edges(
+    profiles: list[np.ndarray],
+    half: int,
+    near: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Right-to-left joint path. Index 0 is the rightmost valid station."""
+    t_count = len(profiles)
+    n1 = np.full((t_count,), np.nan, dtype=np.float32)
+    n2 = np.full((t_count,), np.nan, dtype=np.float32)
+    c1 = np.zeros((t_count,), dtype=np.float32)
+    c2 = np.zeros((t_count,), dtype=np.float32)
+    if t_count == 0:
+        return n1, n2, c1, c2
+
+    cands: list[list[tuple[int, int]]] = []
+    inn_all = []
+    out_all = []
+    for t, profile in enumerate(profiles):
+        floor = 3.5 if near[t] else MIN_EDGE
+        inn, out = interface_scores(profile)
+        inn_all.append(inn)
+        out_all.append(out)
+        ii = _top_idx(inn, floor) + [-1]
+        jj = _top_idx(out, floor) + [-1]
+        pairs = []
+        for i in ii:
+            for j in jj:
+                if i >= 0 and j >= 0 and j < i + D_MIN:
+                    continue
+                pairs.append((i, j))
+        cands.append(pairs or [(-1, -1)])
+
+    prev: list[list[int]] = []
+    best: list[np.ndarray] = []
+    for t in range(t_count):
+        states = cands[t]
+        cost = np.full((len(states),), 1.0e9, dtype=np.float32)
+        back = np.full((len(states),), -1, dtype=np.int32)
+        inn, out = inn_all[t], out_all[t]
+        for k, (i, j) in enumerate(states):
+            img = 0.0
+            miss = 0.0
+            if i >= 0:
+                img -= float(inn[i])
+            else:
+                miss += LAM_MISS if float(inn.max()) >= MIN_EDGE else 0.4
+            if j >= 0:
+                img -= float(out[j])
+            else:
+                miss += LAM_MISS if float(out.max()) >= MIN_EDGE else 0.4
+            if t == 0:
+                cost[k] = img + miss
+                continue
+            for p, (pi, pj) in enumerate(cands[t - 1]):
+                sm = 0.0
+                th = 0.0
+                if i >= 0 and pi >= 0:
+                    sm += (i - pi) ** 2
+                if j >= 0 and pj >= 0:
+                    sm += (j - pj) ** 2
+                if i >= 0 and j >= 0 and pi >= 0 and pj >= 0:
+                    th += ((j - i) - (pj - pi)) ** 2
+                tot = float(best[t - 1][p] + img + miss + LAM_SMOOTH * sm + LAM_THICK * th)
+                if tot < cost[k]:
+                    cost[k] = tot
+                    back[k] = p
+        best.append(cost)
+        prev.append(back)
+
+    k = int(np.argmin(best[-1]))
+    path = [(-1, -1)] * t_count
+    for t in range(t_count - 1, -1, -1):
+        path[t] = cands[t][k]
+        k = int(prev[t][k]) if t > 0 and prev[t][k] >= 0 else 0
+    for t, (i, j) in enumerate(path):
+        inn, out = inn_all[t], out_all[t]
+        peak_i = max(float(inn.max()), 1.0)
+        peak_j = max(float(out.max()), 1.0)
+        if i >= 0:
+            n1[t] = float(i - half)
+            c1[t] = float(np.clip(inn[i] / peak_i, 0.0, 1.0))
+        if j >= 0:
+            n2[t] = float(j - half)
+            c2[t] = float(np.clip(out[j] / peak_j, 0.0, 1.0))
+    return n1, n2, c1, c2
 
 
-def _extrapolate_dashed(
-    solid: np.ndarray,
-    lesion_mask: np.ndarray,
+def _light_smooth(values: np.ndarray) -> np.ndarray:
+    """Mild 1D smooth. Not a global polynomial."""
+    out = values.astype(np.float32).copy()
+    ok = np.isfinite(out)
+    if int(ok.sum()) < 5:
+        return out
+    idx = np.arange(len(out))
+    filled = out.copy()
+    filled[~ok] = np.interp(idx[~ok], idx[ok], out[ok])
+    sm = _smooth1d(filled, 2)
+    out[ok] = sm[ok]
+    return out
+
+
+def _split_conf(xy: np.ndarray, conf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    hi = xy.copy()
+    lo = xy.copy()
+    hi[conf < HI_CONF] = np.nan
+    lo[(conf < LO_CONF) | (conf >= HI_CONF)] = np.nan
+    return _finite(hi), _finite(lo)
+
+
+def _local_motion(values: np.ndarray) -> tuple[float, float]:
+    finite = values[np.isfinite(values)]
+    if len(finite) < 3:
+        return 0.0, 0.0
+    tail = finite[-6:]
+    d1 = float(np.mean(np.diff(tail)))
+    d2 = float(np.mean(np.diff(np.diff(tail)))) if len(tail) >= 4 else 0.0
+    d1 = float(np.clip(d1, -MAX_SLOPE, MAX_SLOPE))
+    d2 = float(np.clip(d2, -MAX_CURV, MAX_CURV))
+    return d1, d2
+
+
+def _predict_band(
+    pts: np.ndarray,
+    normals: np.ndarray,
+    offsets: np.ndarray,
+    blocked: np.ndarray,
     lesion_center: np.ndarray | None,
-) -> np.ndarray:
-    """Predict a short dashed path toward the lesion. Never jump to the other flank."""
-    if len(solid) < 2:
-        return np.zeros((0, 2), dtype=np.float32)
-    start, tan = _facing_tangent(solid, lesion_center)
-    if float(np.linalg.norm(tan)) < 1e-6:
-        return np.zeros((0, 2), dtype=np.float32)
-    height, width = lesion_mask.shape[:2]
-    dashed: list[list[float]] = []
+) -> tuple[np.ndarray, np.ndarray, list[float] | None]:
+    """Short clipped-curvature forecast with a widening uncertainty band."""
+    ok = np.isfinite(offsets)
+    if int(ok.sum()) < 3:
+        empty = np.zeros((0, 2), dtype=np.float32)
+        return empty, empty, None
+    hit = np.where(ok)[0]
+    if lesion_center is not None:
+        last = int(hit[np.argmin(np.linalg.norm(pts[hit] - lesion_center.reshape(1, 2), axis=1))])
+    else:
+        last = int(hit[np.argmin(pts[hit, 0])])
+    direction = -1 if last <= float(hit.mean()) else 1
+    start = pts[last] + normals[last] * float(offsets[last])
+    along = offsets[hit] if direction > 0 else offsets[hit[::-1]]
+    slope, curv = _local_motion(along)
+    height, width = blocked.shape[:2]
+    dashed = []
+    ring = []
     entered = False
-    point = start.copy()
-    for _ in range(int(PREDICT_PX)):
-        point = point + tan
-        x, y = int(round(float(point[0]))), int(round(float(point[1])))
+    stop = None
+    for step in range(1, PREDICT_PX + 1):
+        idx = int(np.clip(last + direction * step, 0, len(pts) - 1))
+        dn = slope * step + 0.5 * curv * step * step
+        nrm = normals[idx]
+        center = pts[idx] + nrm * (float(offsets[last]) + dn)
+        x, y = int(round(float(center[0]))), int(round(float(center[1])))
         if x < 0 or y < 0 or x >= width or y >= height:
             break
-        inside = bool(lesion_mask[y, x] > 0)
+        inside = bool(blocked[y, x] > 0)
         if inside:
             entered = True
-            dashed.append([float(point[0]), float(point[1])])
-            continue
-        if entered:
-            # Left the lesion on the far side: stop. Do not reconnect.
+        elif entered:
             break
-        if lesion_center is not None:
-            dashed.append([float(point[0]), float(point[1])])
-    return np.asarray(dashed, dtype=np.float32) if dashed else np.zeros((0, 2), dtype=np.float32)
+        half_w = 1.4 + 0.32 * step
+        dashed.append([float(center[0]), float(center[1])])
+        ring.append((center + nrm * half_w).tolist())
+        stop = [float(center[0]), float(center[1])]
+    if not dashed:
+        empty = np.zeros((0, 2), dtype=np.float32)
+        return empty, empty, None
+    minus_pts = []
+    for step in range(len(dashed), 0, -1):
+        idx = int(np.clip(last + direction * step, 0, len(pts) - 1))
+        nrm = normals[idx]
+        center = np.asarray(dashed[step - 1], dtype=np.float32)
+        half_w = 1.4 + 0.32 * step
+        minus_pts.append((center - nrm * half_w).tolist())
+    return (
+        np.asarray(dashed, dtype=np.float32),
+        np.asarray(ring + minus_pts, dtype=np.float32),
+        stop,
+    )
 
 
-def _wrap_along_lesion(
+def _wrap_outer(
     start: np.ndarray,
     lesion_mask: np.ndarray,
     outer: np.ndarray,
     gray: np.ndarray,
     seed_gray: float | None,
 ) -> tuple[np.ndarray, bool]:
-    """See whether a bright outer layer continues along the lesion rim."""
     contours, _ = cv2.findContours(lesion_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not contours:
         return np.zeros((0, 2), dtype=np.float32), False
@@ -271,13 +371,10 @@ def _wrap_along_lesion(
     if len(ring) < 8:
         return np.zeros((0, 2), dtype=np.float32), False
     nearest = int(np.argmin(((ring - start.reshape(1, 2)) ** 2).sum(axis=1)))
-    step = 1
     nxt = ring[(nearest + 1) % len(ring)]
     prv = ring[(nearest - 1) % len(ring)]
-    if float(np.dot(nxt - ring[nearest], outer)) < float(np.dot(prv - ring[nearest], outer)):
-        step = -1
-    path = []
-    grays = []
+    step = 1 if float(np.dot(nxt - ring[nearest], outer)) >= float(np.dot(prv - ring[nearest], outer)) else -1
+    path, grays = [], []
     height, width = gray.shape[:2]
     for k in range(1, WRAP_STEPS + 1):
         q = ring[(nearest + step * k) % len(ring)]
@@ -287,26 +384,22 @@ def _wrap_along_lesion(
             grays.append(float(gray[y, x]))
     if len(grays) < 6 or seed_gray is None:
         return np.zeros((0, 2), dtype=np.float32), False
-    bright = float(np.mean(grays)) >= float(seed_gray) - 25.0
-    return (np.asarray(path, dtype=np.float32) if bright else np.zeros((0, 2), dtype=np.float32)), bright
+    ok = float(np.mean(grays)) >= float(seed_gray) - 28.0
+    return (np.asarray(path, dtype=np.float32) if ok else np.zeros((0, 2), dtype=np.float32)), ok
 
 
-def _station_valid(pts: np.ndarray, blocked: np.ndarray, fit_side: str) -> np.ndarray:
-    height, width = blocked.shape[:2]
-    ok = np.ones((len(pts),), dtype=bool)
-    xs = pts[:, 0]
-    side = str(fit_side or "all").strip().lower()
-    if side == "right" and len(pts):
-        cut = float(np.quantile(xs, 0.55))
-        ok &= xs >= cut
-    elif side == "left" and len(pts):
-        cut = float(np.quantile(xs, 0.45))
-        ok &= xs <= cut
-    for i, (x, y) in enumerate(pts.tolist()):
-        xi, yi = int(round(x)), int(round(y))
-        if xi < 0 or yi < 0 or xi >= width or yi >= height or blocked[yi, xi] > 0:
-            ok[i] = False
-    return ok
+def _gray_between(gray: np.ndarray, a: np.ndarray, b: np.ndarray) -> float | None:
+    if len(a) == 0 or len(b) == 0:
+        return None
+    n = min(len(a), len(b), 12)
+    vals = []
+    height, width = gray.shape[:2]
+    for p, q in zip(a[-n:], b[-n:]):
+        mid = 0.5 * (np.asarray(p) + np.asarray(q))
+        x, y = int(round(float(mid[0]))), int(round(float(mid[1])))
+        if 0 <= x < width and 0 <= y < height:
+            vals.append(float(gray[y, x]))
+    return None if not vals else float(np.mean(vals))
 
 
 def _gray_at(gray: np.ndarray, xy: np.ndarray) -> float | None:
@@ -318,9 +411,11 @@ def _gray_at(gray: np.ndarray, xy: np.ndarray) -> float | None:
         xi, yi = int(round(x)), int(round(y))
         if 0 <= xi < width and 0 <= yi < height:
             vals.append(float(gray[yi, xi]))
-    if not vals:
-        return None
-    return float(np.mean(vals))
+    return None if not vals else float(np.mean(vals))
+
+
+def _region(name: str, zh: str, status: str, note: str = "") -> RegionReadout:
+    return RegionReadout(id=name, name_zh=zh, status=status, status_zh=STATUS_ZH.get(status, status), note=note)
 
 
 def track_ordered_layers(
@@ -334,7 +429,7 @@ def track_ordered_layers(
     search_px: int = SEARCH_PX,
     fit_side: str = "right",
 ) -> CurveTrack:
-    """Track up to three ordered wall curves outside a dilated lesion."""
+    """Track two ordered interfaces from the clear right flank toward the lesion."""
     wall = densify_polyline(as_xy(wall), 3.0)
     lesion = as_xy(lesion_poly) if lesion_poly is not None else np.zeros((0, 2), dtype=np.float32)
     lesion_center = polygon_centroid(lesion)
@@ -352,67 +447,108 @@ def track_ordered_layers(
     if int(valid.sum()) < MIN_VALID_STATIONS:
         return CurveTrack(status="insufficient_normal_wall", dilate_px=dilate_px, cavity_side_source=cavity, skip_reason="no_flank")
 
+    use = np.where(valid)[0]
+    # Rightmost station first, then walk left toward the lesion.
+    use = use[np.argsort(-pts[use, 0])]
+    near = np.zeros((len(use),), dtype=bool)
+    near[int(0.70 * len(use)):] = True
     half = int(search_px)
-    picks: list[dict[str, int | None]] = []
-    for i in range(len(pts)):
-        if not valid[i]:
-            picks.append({"shallow": None, "muscularis": None, "serosa": None})
-            continue
-        profile = _sample_normal_profile(gray, pts[i], normals[i], half, blocked)
-        picks.append(pick_ordered_candidates(profile))
+    profiles = [
+        _sample_normal_profile(gray, pts[idx], normals[idx], half, blocked)
+        for idx in use.tolist()
+    ]
+    off1, off2, conf1, conf2 = _viterbi_two_edges(profiles, half, near)
 
-    n0 = _smooth_offset(_series_from_picks(picks, "shallow", half))
-    n1 = _smooth_offset(_series_from_picks(picks, "muscularis", half))
-    n2 = _smooth_offset(_series_from_picks(picks, "serosa", half))
-    n0, n1, n2 = _enforce_order(n0, n1, n2)
-    offsets = {"shallow": n0, "muscularis": n1, "serosa": n2}
-    kinds = {"shallow": "bright", "muscularis": "dark", "serosa": "bright"}
-    lesion_gray = float(gray[lesion_mask > 0].mean()) if int((lesion_mask > 0).sum()) >= 20 else None
+    # Map the right-to-left series back onto heading stations.
+    n1 = np.full((len(pts),), np.nan, dtype=np.float32)
+    n2 = np.full((len(pts),), np.nan, dtype=np.float32)
+    c1 = np.zeros((len(pts),), dtype=np.float32)
+    c2 = np.zeros((len(pts),), dtype=np.float32)
+    for t, idx in enumerate(use.tolist()):
+        n1[idx] = off1[t]
+        n2[idx] = off2[t]
+        c1[idx] = conf1[t]
+        c2[idx] = conf2[t]
+        if near[t]:
+            c1[idx] *= 0.72
+            c2[idx] *= 0.72
+    n1 = _light_smooth(n1)
+    n2 = _light_smooth(n2)
+    both = np.isfinite(n1) & np.isfinite(n2)
+    n2[both] = np.maximum(n2[both], n1[both] + float(D_MIN))
 
-    layers: list[LayerCurve] = []
-    for name in LAYER_IDS:
-        xy = _xy_from_offset(pts, normals, offsets[name])
-        # Keep detections only on valid (non-lesion) stations.
-        xy[~valid] = np.nan
-        solid = _polyline_finite(xy)
-        dashed = _extrapolate_dashed(solid, blocked, lesion_center)
-        wrap_xy = np.zeros((0, 2), dtype=np.float32)
-        wrapped = False
-        gmean = _gray_at(gray, solid)
-        n_mean = float(np.nanmean(offsets[name])) if np.isfinite(offsets[name]).any() else None
-        status = "missing"
-        note = ""
-        if len(solid) >= 4:
-            status = "detected"
-            if name == "muscularis" and lesion_gray is not None and gmean is not None:
-                if abs(gmean - lesion_gray) <= FUSE_GRAY_TOL:
-                    status = "fused"
-                    note = "dark band meets lesion gray"
-            if name == "serosa" and len(solid) >= 2:
-                start, _tan = _facing_tangent(solid, lesion_center)
-                outer = normals[int(np.argmin(((pts - start.reshape(1, 2)) ** 2).sum(axis=1)))]
-                wrap_xy, wrapped = _wrap_along_lesion(start, blocked, outer, gray, gmean)
-                if wrapped:
-                    status = "wrap"
-                    note = "bright rim continues outside lesion"
-        elif len(solid) > 0:
-            status = "uncertain"
-            note = "too short to trust"
-        layers.append(LayerCurve(
-            id=name,
-            name_zh=LAYER_ZH[name],
-            kind=kinds[name],
-            status=status,
-            status_zh=STATUS_ZH[status],
-            solid=solid.tolist(),
-            dashed=dashed.tolist(),
-            wrap=wrap_xy.tolist(),
-            n_mean=None if n_mean is None else round(float(n_mean), 2),
-            gray_mean=None if gmean is None else round(float(gmean), 1),
-            n_detected=int(len(solid)),
-            note=note,
-        ))
-    return CurveTrack(status="ok", dilate_px=dilate_px, cavity_side_source=cavity, layers=layers)
+    xy1 = _xy(pts, normals, n1)
+    xy2 = _xy(pts, normals, n2)
+    hi1, lo1 = _split_conf(xy1, c1)
+    hi2, lo2 = _split_conf(xy2, c2)
+    dash1, band1, stop1 = _predict_band(pts, normals, n1, blocked, lesion_center)
+    dash2, band2, stop2 = _predict_band(pts, normals, n2, blocked, lesion_center)
+
+    solid2 = _finite(xy2)
+    wrap_xy = np.zeros((0, 2), dtype=np.float32)
+    wrapped = False
+    seed_g = _gray_at(gray, solid2)
+    if len(solid2) >= 2:
+        start = solid2[-1] if float(solid2[-1, 0]) <= float(solid2[0, 0]) else solid2[0]
+        nid = int(np.argmin(((pts - start.reshape(1, 2)) ** 2).sum(axis=1)))
+        wrap_xy, wrapped = _wrap_outer(start, blocked, normals[nid], gray, seed_g)
+
+    mid_g = _gray_between(gray, _finite(xy1), _finite(xy2))
+    lesion_g = float(gray[lesion_mask > 0].mean()) if int((lesion_mask > 0).sum()) >= 20 else None
+    fused = bool(mid_g is not None and lesion_g is not None and abs(mid_g - lesion_g) <= FUSE_GRAY_TOL)
+
+    def _bound_status(solid_n: int, wrapped_flag: bool) -> tuple[str, str]:
+        if wrapped_flag:
+            return "displaced", "outer echo follows the lesion rim"
+        if solid_n >= 6:
+            return "visible", ""
+        if solid_n > 0:
+            return "obscured", "short or weak edge"
+        return "missing", ""
+
+    s1, note1 = _bound_status(len(hi1) + len(lo1), False)
+    s2, note2 = _bound_status(len(hi2) + len(lo2), wrapped)
+    inner = Boundary(
+        id="inner", name_zh="上层-肌层界面",
+        solid_hi=hi1.tolist(), solid_lo=lo1.tolist(),
+        dashed=dash1.tolist(), band=band1.tolist(),
+        stop=stop1, n_mean=None if not np.isfinite(n1).any() else round(float(np.nanmean(n1)), 2),
+        n_detected=int(np.isfinite(n1).sum()), status=s1, note=note1,
+    )
+    outer = Boundary(
+        id="outer", name_zh="肌层-外层界面",
+        solid_hi=hi2.tolist(), solid_lo=lo2.tolist(),
+        dashed=dash2.tolist(), band=band2.tolist(), wrap=wrap_xy.tolist(),
+        stop=stop2, n_mean=None if not np.isfinite(n2).any() else round(float(np.nanmean(n2)), 2),
+        n_detected=int(np.isfinite(n2).sum()), status=s2, note=note2,
+    )
+
+    if fused:
+        musc = _region("muscularis", "固有肌层", "fused", "mid-band gray meets the lesion")
+    elif inner.n_detected >= 6 and outer.n_detected >= 6:
+        musc = _region("muscularis", "固有肌层", "visible")
+    elif inner.n_detected + outer.n_detected > 0:
+        musc = _region("muscularis", "固有肌层", "obscured")
+    else:
+        musc = _region("muscularis", "固有肌层", "missing")
+    muc = _region("mucosa", "黏膜复合层", "visible" if inner.n_detected >= 6 else ("obscured" if inner.n_detected else "missing"))
+    if wrapped:
+        ser = _region("serosa", "浆膜侧", "displaced", "outer line continues around the lesion")
+    elif outer.n_detected >= 6:
+        ser = _region("serosa", "浆膜侧", "visible")
+    elif outer.n_detected:
+        ser = _region("serosa", "浆膜侧", "obscured")
+    else:
+        ser = _region("serosa", "浆膜侧", "missing")
+    # A missing image line is not serosal invasion and is not a cT.
+
+    return CurveTrack(
+        status="ok",
+        dilate_px=dilate_px,
+        cavity_side_source=cavity,
+        boundaries=[inner, outer],
+        regions=[muc, musc, ser],
+    )
 
 
 def summary(track: CurveTrack) -> dict[str, Any]:
@@ -421,15 +557,18 @@ def summary(track: CurveTrack) -> dict[str, Any]:
         "skip_reason": track.skip_reason,
         "dilate_px": track.dilate_px,
         "cavity_side_source": track.cavity_side_source,
-        "layers": [
+        "boundaries": [
             {
-                "id": layer.id,
-                "status": layer.status,
-                "n_detected": layer.n_detected,
-                "n_mean": layer.n_mean,
-                "gray_mean": layer.gray_mean,
-                "note": layer.note,
+                "id": item.id,
+                "status": item.status,
+                "n_detected": item.n_detected,
+                "n_mean": item.n_mean,
+                "note": item.note,
             }
-            for layer in track.layers
+            for item in track.boundaries
+        ],
+        "regions": [
+            {"id": item.id, "status": item.status, "note": item.note}
+            for item in track.regions
         ],
     }

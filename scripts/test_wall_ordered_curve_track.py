@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic checks for ordered wall-curve tracking.
+"""Synthetic checks for two ordered wall interfaces.
 
   python3 scripts/test_wall_ordered_curve_track.py
 """
@@ -15,10 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from wall_lesion_aware_cluster import rasterize_polygon
-from wall_ordered_curve_track import (  # noqa: E402
-    pick_ordered_candidates,
-    track_ordered_layers,
-)
+from wall_ordered_curve_track import pick_interfaces, track_ordered_layers
 
 
 def make_bdb() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -37,17 +34,17 @@ def make_bdb() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Synthetic test for ordered wall curves.")
+    parser = argparse.ArgumentParser(description="Synthetic test for ordered wall interfaces.")
     parser.parse_args()
 
     profile = np.array([40.0] * 8 + [200.0] * 4 + [50.0] * 5 + [190.0] * 4 + [40.0] * 8, dtype=np.float32)
-    pick = pick_ordered_candidates(profile)
-    assert pick["shallow"] is not None and pick["muscularis"] is not None and pick["serosa"] is not None
-    assert pick["shallow"] < pick["muscularis"] < pick["serosa"]
+    b1, b2 = pick_interfaces(profile)
+    assert b1 is not None and b2 is not None
+    assert b1 < b2
 
     only_bright = np.array([30.0] * 12 + [200.0] * 5 + [30.0] * 12, dtype=np.float32)
-    one = pick_ordered_candidates(only_bright)
-    present = [key for key, idx in one.items() if idx is not None]
+    one = pick_interfaces(only_bright)
+    present = [item for item in one if item is not None]
     assert len(present) <= 2, one
 
     gray, wall, lesion, lumen = make_bdb()
@@ -60,25 +57,23 @@ def main() -> int:
         fit_side="right",
     )
     assert track.status == "ok", track.skip_reason
-    by_id = {layer.id: layer for layer in track.layers}
-    assert by_id["muscularis"].n_detected >= 8
-    assert by_id["serosa"].n_detected >= 8
-    if by_id["shallow"].n_mean is not None and by_id["serosa"].n_mean is not None:
-        assert by_id["shallow"].n_mean < by_id["serosa"].n_mean
-    # Solid curves stay out of the dilated lesion.
-    blocked = lesion_mask
-    for layer in track.layers:
-        for x, y in layer.solid:
+    by_b = {item.id: item for item in track.boundaries}
+    assert by_b["inner"].n_detected >= 8
+    assert by_b["outer"].n_detected >= 8
+    if by_b["inner"].n_mean is not None and by_b["outer"].n_mean is not None:
+        assert by_b["inner"].n_mean < by_b["outer"].n_mean
+    assert "lost" not in {item.status for item in track.regions}
+    for item in track.boundaries:
+        for x, y in item.solid_hi + item.solid_lo:
             xi, yi = int(round(x)), int(round(y))
-            if 0 <= xi < blocked.shape[1] and 0 <= yi < blocked.shape[0]:
-                assert blocked[yi, xi] == 0, (layer.id, x, y)
-        # A dashed path may enter the lesion, but must not jump to the far flank.
-        xs = [p[0] for p in layer.dashed]
+            if 0 <= xi < lesion_mask.shape[1] and 0 <= yi < lesion_mask.shape[0]:
+                assert lesion_mask[yi, xi] == 0, (item.id, x, y)
+        xs = [p[0] for p in item.dashed]
         if xs:
-            assert max(xs) < 200.0, (layer.id, xs[-1])
+            assert max(xs) < 200.0, (item.id, xs[-1])
     print("wall_ordered_curve_track ok", {
-        key: {"status": layer.status, "n": layer.n_detected, "gray": layer.gray_mean}
-        for key, layer in by_id.items()
+        "boundaries": {key: {"status": item.status, "n": item.n_detected} for key, item in by_b.items()},
+        "regions": {item.id: item.status for item in track.regions},
     })
     return 0
 

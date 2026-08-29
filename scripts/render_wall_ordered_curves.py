@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw ordered wall curves: solid outside the lesion, dashed if predicted.
+"""Draw two ordered wall interfaces. No pixel-class wash.
 
   python3 scripts/render_wall_ordered_curves.py --index
   python3 scripts/render_wall_ordered_curves.py --case P040
@@ -25,9 +25,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from render_wall_layer_thin_bands import (  # noqa: E402
     DEFAULT_FIXTURES,
     FATE_HEX,
-    LAYER_HEX,
-    LAYER_LEGEND,
-    LAYER_RGB,
     RoiSegmenter,
     VIS_DIR,
     load_meta,
@@ -58,34 +55,46 @@ plt.rcParams.update({
 })
 
 STATUS_EN = {
-    "detected": "detected",
-    "missing": "missing",
+    "visible": "visible",
+    "obscured": "obscured",
+    "displaced": "displaced",
+    "interrupted": "interrupted",
     "fused": "fused",
-    "uncertain": "unclear",
-    "wrap": "wrap",
+    "missing": "missing",
 }
 STATUS_COLOR = {
-    "detected": FATE_HEX["intact"],
-    "missing": FATE_HEX["lost"],
+    "visible": FATE_HEX["intact"],
+    "obscured": FATE_HEX["unclear"],
+    "displaced": "#93c5fd",
+    "interrupted": FATE_HEX["lost"],
     "fused": FATE_HEX["fused"],
-    "uncertain": FATE_HEX["unclear"],
-    "wrap": "#93c5fd",
+    "missing": "#9ca3af",
 }
+INNER_RGB = (255, 214, 32)
+OUTER_RGB = (244, 114, 182)
+WRAP_RGB = (74, 222, 128)
 
 
-def _draw_curve(panel: np.ndarray, points, sx1: float, sy1: float, scale: float, color, dashed: bool) -> None:
+def _shift(points, sx1: float, sy1: float, scale: float) -> np.ndarray:
     pts = np.asarray(points or [], dtype=np.float32)
+    if len(pts) == 0:
+        return pts
+    out = pts.copy()
+    out[:, 0] = (out[:, 0] - sx1) * scale
+    out[:, 1] = (out[:, 1] - sy1) * scale
+    return out
+
+
+def _draw_curve(panel: np.ndarray, points, sx1: float, sy1: float, scale: float, color, dashed: bool, thick: int) -> None:
+    pts = _shift(points, sx1, sy1, scale)
     if len(pts) < 2:
         return
-    pts = pts.copy()
-    pts[:, 0] = (pts[:, 0] - sx1) * scale
-    pts[:, 1] = (pts[:, 1] - sy1) * scale
     xy = np.round(pts).astype(np.int32)
     if dashed:
         for i in range(0, len(xy) - 1, 2):
             cv2.line(panel, tuple(xy[i]), tuple(xy[min(i + 1, len(xy) - 1)]), color, 1, cv2.LINE_AA)
     else:
-        cv2.polylines(panel, [xy], False, color, 2, cv2.LINE_AA)
+        cv2.polylines(panel, [xy], False, color, thick, cv2.LINE_AA)
 
 
 def paint_curves(rgb, track, sx1, sy1, sx2, sy2, scale: int) -> np.ndarray:
@@ -95,11 +104,27 @@ def paint_curves(rgb, track, sx1, sy1, sx2, sy2, scale: int) -> np.ndarray:
     )
     if getattr(track, "status", "") != "ok":
         return panel
-    for i, layer in enumerate(track.layers):
-        color = LAYER_RGB.get(i, (200, 200, 200))
-        _draw_curve(panel, layer.solid, sx1, sy1, scale, color, False)
-        _draw_curve(panel, layer.wrap, sx1, sy1, scale, color, False)
-        _draw_curve(panel, layer.dashed, sx1, sy1, scale, color, True)
+    colors = {"inner": INNER_RGB, "outer": OUTER_RGB}
+    for item in track.boundaries:
+        color = colors.get(item.id, (220, 220, 220))
+        band = _shift(item.band, sx1, sy1, scale)
+        if len(band) >= 3:
+            overlay = panel.astype(np.float32)
+            wash = np.array(color, dtype=np.float32)
+            mask = np.zeros(panel.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(mask, [np.round(band).astype(np.int32)], 255)
+            sel = mask > 0
+            overlay[sel] = 0.78 * overlay[sel] + 0.22 * wash
+            panel = np.clip(overlay, 0, 255).astype(np.uint8)
+        _draw_curve(panel, item.dashed, sx1, sy1, scale, color, True, 1)
+        _draw_curve(panel, item.solid_lo, sx1, sy1, scale, color, False, 1)
+        _draw_curve(panel, item.solid_hi, sx1, sy1, scale, color, False, 2)
+        if item.id == "outer":
+            _draw_curve(panel, item.wrap, sx1, sy1, scale, WRAP_RGB, False, 2)
+        if item.stop is not None:
+            stop = _shift([item.stop], sx1, sy1, scale)
+            x, y = int(round(float(stop[0, 0]))), int(round(float(stop[0, 1])))
+            cv2.circle(panel, (x, y), 5, color, 1, cv2.LINE_AA)
     return panel
 
 
@@ -132,7 +157,7 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
     fig, axes = plt.subplots(1, 2, figsize=(16.8, 6.4), gridspec_kw={"width_ratios": [1.0, 1.75]})
     for ax, panel, title in zip(
         axes, (panel_a, panel_b),
-        ("A  Source  (heading is a guide)", "B  Ordered curves  (solid detected, dashed predicted)"),
+        ("A  Source  (heading is a guide)", "B  Two interfaces  (thick=high conf, dashed=predicted)"),
     ):
         ax.imshow(panel)
         ax.set_title(title, fontsize=12)
@@ -142,21 +167,22 @@ def render_case(pack: dict, out_dir: Path, brush: float) -> dict:
         fontsize=13, fontname="Times New Roman", y=0.98,
     )
     handles = [
-        Line2D([0], [0], color=LAYER_HEX[lab], lw=2.0, label=en)
-        for lab, _key, en in LAYER_LEGEND
+        Line2D([0], [0], color="#facc15", lw=2.2, label="Upper / muscularis edge"),
+        Line2D([0], [0], color="#f472b6", lw=2.2, label="Muscularis / outer edge"),
+        Line2D([0], [0], color="#4ade80", lw=2.0, label="Outer wrap"),
+        Line2D([0], [0], color="#e5e7eb", lw=1.2, linestyle="--", label="Predicted, with band"),
     ]
-    handles.append(Line2D([0], [0], color="#e5e7eb", lw=1.2, linestyle="--", label="Predicted into lesion"))
     fig.legend(
         handles=handles, loc="lower center", ncol=4, frameon=False,
         labelcolor="white", fontsize=10, bbox_to_anchor=(0.5, 0.02),
         prop={"family": "Times New Roman", "size": 10},
     )
     x = 0.12
-    fig.text(0.06, 0.086, "Curve", color="#f8fafc", fontsize=11, fontname="Times New Roman", fontweight="bold")
-    for layer in track.layers:
+    fig.text(0.06, 0.086, "Region", color="#f8fafc", fontsize=11, fontname="Times New Roman", fontweight="bold")
+    for item in track.regions:
         fig.text(
-            x, 0.086, f"{layer.id} {STATUS_EN.get(layer.status, layer.status)}",
-            color=STATUS_COLOR.get(layer.status, "#e5e7eb"),
+            x, 0.086, f"{item.id} {STATUS_EN.get(item.status, item.status)}",
+            color=STATUS_COLOR.get(item.status, "#e5e7eb"),
             fontsize=10, fontname="Times New Roman",
         )
         x += 0.18
@@ -217,7 +243,7 @@ def main() -> int:
         rows.append(row)
         if row.get("panel"):
             panels.append(Path(row["panel"]))
-        print(f"{row.get('display_id')} {row.get('status')} {row.get('track', {}).get('layers')}", flush=True)
+        print(f"{row.get('display_id')} {row.get('status')} {row.get('track', {}).get('regions')}", flush=True)
     vis = VIS_DIR
     vis.mkdir(parents=True, exist_ok=True)
     for panel in panels:
@@ -230,7 +256,7 @@ def main() -> int:
         json.dumps(
             {
                 "created_at": "2026-08-29",
-                "note": "Ordered curves, not pixel classes. Dashed is predicted only. Not a cT.",
+                "note": "Two ordered interfaces. Visibility is not a cT. Not serosal invasion.",
                 "cases": rows,
                 "index": index_path,
             },
