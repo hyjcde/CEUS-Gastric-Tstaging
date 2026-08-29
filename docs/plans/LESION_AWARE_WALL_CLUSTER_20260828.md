@@ -108,7 +108,7 @@ python3 scripts/render_wall_layer_thin_bands.py
 python3 scripts/render_wall_pixel_vs_dino_cluster.py --index
 ```
 
-灰度像素簇对照官方 LVD token 簇：`results/visualizations/error_cases/wall_pixel_vs_dino_20260829.png`。画的是笔刷里真实被分到的像素，不是沿线平行色带。不定 cT。
+灰度像素簇对照官方 LVD token 簇：`results/visualizations/error_cases/wall_pixel_vs_dino_20260829.png`。现在优先按走行细条切成三层，特征只微调两条分界，不再让单个像素自己改层。不定 cT。
 
 不要在整张扇扫上跑大框检测。先按黄线裁紧 ROI（P008 去掉上部空扇区），在这张小图上分割整块病灶，蓝色叠在图上。再把灶周胃壁放大，分浅层 / 固有肌 / 浆膜三层细块。图：`results/visualizations/error_cases/wall_layer_thin_bands_20260829.png`。
 

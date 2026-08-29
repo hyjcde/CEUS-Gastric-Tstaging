@@ -18,6 +18,10 @@ DEPTH_WEIGHT = 0.60
 # Gray stays primary. A small across term only keeps the two bright
 # echoes on opposite sides of the dark band, so they stay parallel.
 SENSITIVE_ACROSS = 0.15
+# Prefer thin exclusive bands along the heading. Feature distance only
+# nudges the two cuts; it cannot jump a pixel over a neighboring strip.
+STRIP_MIN_COL = 8
+STRIP_SMOOTH = 9
 DEFAULT_BRUSH = 8.0
 FATE_ZH = {
     "present": "还在",
@@ -917,6 +921,146 @@ def walk_layer_fate(
     return fates
 
 
+def merge_along_columns(along: np.ndarray, keep: np.ndarray, min_pix: int = STRIP_MIN_COL) -> list[np.ndarray]:
+    stations = np.unique(along[keep]) if keep.any() else np.unique(along)
+    groups: list[list[int]] = []
+    current: list[int] = []
+    count = 0
+    for st in stations.tolist():
+        n = int(((along == st) & keep).sum())
+        current.append(int(st))
+        count += n
+        if count >= min_pix:
+            groups.append(current)
+            current = []
+            count = 0
+    if current:
+        if groups:
+            groups[-1].extend(current)
+        else:
+            groups.append(current)
+    return [np.asarray(g, dtype=np.int32) for g in groups]
+
+
+def _finite_median_filter(values: np.ndarray, win: int) -> np.ndarray:
+    out = values.copy()
+    ok = np.isfinite(out)
+    if int(ok.sum()) == 0:
+        return out
+    idx = np.arange(len(out))
+    filled = np.interp(idx, idx[ok], out[ok])
+    radius = max(1, win // 2)
+    smooth = filled.copy()
+    for i in range(len(filled)):
+        lo = max(0, i - radius)
+        hi = min(len(filled), i + radius + 1)
+        smooth[i] = float(np.median(filled[lo:hi]))
+    return smooth.astype(np.float32)
+
+
+def _feature_axis(feat: np.ndarray, across: np.ndarray) -> np.ndarray:
+    feat = np.asarray(feat, dtype=np.float32)
+    if feat.ndim == 1 or feat.shape[1] == 1:
+        return feat.reshape(-1)
+    inner = across <= np.quantile(across, 0.35)
+    outer = across >= np.quantile(across, 0.65)
+    if int(inner.sum()) < 8 or int(outer.sum()) < 8:
+        return feat[:, 0]
+    axis = feat[outer].mean(axis=0) - feat[inner].mean(axis=0)
+    norm = float(np.linalg.norm(axis)) or 1.0
+    return (feat @ (axis / norm)).astype(np.float32)
+
+
+def refine_across_cut(across: np.ndarray, values: np.ndarray, seed: float, max_shift: float = 0.16) -> float:
+    best = float(seed)
+    best_score = -1.0
+    for trial in np.linspace(seed - max_shift, seed + max_shift, 13):
+        left = values[across < trial]
+        right = values[across >= trial]
+        if len(left) < 4 or len(right) < 4:
+            continue
+        score = abs(float(left.mean()) - float(right.mean()))
+        if score > best_score:
+            best_score = score
+            best = float(trial)
+    return best
+
+
+def assign_strip_layers(
+    samples: dict[str, np.ndarray],
+    keep: np.ndarray,
+    fit: np.ndarray,
+    features: np.ndarray,
+    k: int,
+    assign_lesion: bool,
+) -> np.ndarray:
+    """Three stacked strips along the heading. Features only slide the two cuts."""
+    feat = np.asarray(features, dtype=np.float32)
+    if feat.ndim == 1:
+        feat = feat.reshape(-1, 1)
+    across = samples["across"].astype(np.float32)
+    along = samples["along_idx"]
+    gray = samples["gray"].astype(np.float32)
+    labels = np.full((len(across),), -1, dtype=np.int32)
+    if int(fit.sum()) < MIN_VALID_PIXELS or k < 2:
+        return labels
+    values = _feature_axis(feat, across)
+    if k == 2:
+        cut = refine_across_cut(across[fit], values[fit], float(np.median(across[fit])))
+        labels[keep] = np.where(across[keep] < cut, 0, 1).astype(np.int32)
+        if assign_lesion:
+            labels[~keep] = np.where(across[~keep] < cut, 0, 1).astype(np.int32)
+        return labels
+    profile = assign_from_across_profile(samples, keep, fit, assign_lesion=False)
+    if profile is not None and int((profile[fit] == 0).sum()) >= 8 and int((profile[fit] == 2).sum()) >= 8:
+        ac0 = across[fit & (profile == 0)]
+        ac1 = across[fit & (profile == 1)]
+        ac2 = across[fit & (profile == 2)]
+        seed_l = 0.5 * (float(np.median(ac0)) + float(np.median(ac1))) if len(ac1) else float(np.quantile(across[fit], 0.33))
+        seed_r = 0.5 * (float(np.median(ac1)) + float(np.median(ac2))) if len(ac1) else float(np.quantile(across[fit], 0.67))
+        shift = 0.05
+    else:
+        seed_l = float(np.quantile(across[fit], 0.28))
+        seed_r = float(np.quantile(across[fit], 0.72))
+        shift = 0.10
+    if seed_r <= seed_l + 0.10:
+        seed_l, seed_r = float(np.quantile(across[fit], 0.28)), float(np.quantile(across[fit], 0.72))
+        shift = 0.08
+    cut_l = refine_across_cut(across[fit], values[fit], seed_l, max_shift=shift)
+    cut_r = refine_across_cut(across[fit], values[fit], seed_r, max_shift=shift)
+    if cut_r <= cut_l + 0.08:
+        cut_l, cut_r = seed_l, seed_r
+    groups = merge_along_columns(along, keep)
+    local_l = []
+    local_r = []
+    for group in groups:
+        pix = keep & np.isin(along, group)
+        if int(pix.sum()) < 6:
+            local_l.append(cut_l)
+            local_r.append(cut_r)
+            continue
+        local_l.append(refine_across_cut(across[pix], values[pix], cut_l, max_shift=0.05))
+        local_r.append(refine_across_cut(across[pix], values[pix], cut_r, max_shift=0.05))
+    if groups:
+        sm_l = _finite_median_filter(np.asarray(local_l, dtype=np.float32), STRIP_SMOOTH)
+        sm_r = _finite_median_filter(np.asarray(local_r, dtype=np.float32), STRIP_SMOOTH)
+        for group, lo, hi in zip(groups, sm_l.tolist(), sm_r.tolist()):
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+                lo, hi = cut_l, cut_r
+            pix = keep & np.isin(along, group)
+            ac = across[pix]
+            labels[pix] = np.where(ac < lo, 0, np.where(ac > hi, 2, 1)).astype(np.int32)
+    else:
+        labels[keep] = np.where(across[keep] < cut_l, 0, np.where(across[keep] > cut_r, 2, 1)).astype(np.int32)
+    labeled = labels >= 0
+    if labeled.any():
+        mid_g = float(np.median(gray[labeled]))
+        labels[labeled & (np.abs(across) >= 0.90) & (gray < mid_g)] = -1
+    if assign_lesion:
+        labels[~keep] = np.where(across[~keep] < cut_l, 0, np.where(across[~keep] > cut_r, 2, 1)).astype(np.int32)
+    return labels
+
+
 def cluster_brush_band(
     gray: np.ndarray,
     wall: np.ndarray,
@@ -934,6 +1078,7 @@ def cluster_brush_band(
     assign_lesion: bool = True,
     sensitive: bool = False,
     extra_features: np.ndarray | None = None,
+    prefer_strips: bool = False,
 ) -> ClusterArm:
     method = str(method or "kmeans").strip().lower()
     fit_side = str(fit_side or "all").strip().lower()
@@ -941,9 +1086,13 @@ def cluster_brush_band(
         sensitive = False
         if method in {"kmeans", "kmeans1d_gray", "kmeans1d_across"}:
             method = "dino_pca"
+    if prefer_strips:
+        sensitive = False
     name = f"{'exclude' if exclude_lesion else 'full'}_{method}_k{k}_d{dilate_px}_{fit_side}"
     if sensitive:
         name += "_sensitive"
+    if prefer_strips:
+        name += "_strips"
     wall = densify_polyline(as_xy(wall), 3.0)
     lesion_pts = as_xy(lesion_poly) if lesion_poly is not None else np.zeros((0, 2), dtype=np.float32)
     lesion_center = polygon_centroid(lesion_pts)
@@ -1001,7 +1150,10 @@ def cluster_brush_band(
             fit = keep & (samples["xs"] <= cut)
         if int(fit.sum()) < MIN_VALID_PIXELS:
             fit = keep
-    if sensitive:
+    if prefer_strips and k >= 2:
+        labels_all = assign_strip_layers(samples, keep, fit, feat_all, k, assign_lesion)
+        labels_fit = labels_all[keep]
+    elif sensitive:
         labels_all, labels_fit = assign_sensitive_layers(
             samples, keep, fit, k, assign_lesion, gray.shape,
         )

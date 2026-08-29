@@ -195,7 +195,7 @@ def choose_arm(gray, wall, lesion_mask, lumen_center, lesion_poly, cavity, brush
         method=method,
         lumen_center=lumen_center, lesion_poly=lesion_poly, cavity_side_source=cavity,
         fit_side="right", assign_lesion=False, sensitive=False,
-        extra_features=extra,
+        extra_features=extra, prefer_strips=True,
     )
 
 
@@ -325,8 +325,8 @@ def render_case(pack: dict, dino: CorridorDino, out_dir: Path, brush: float) -> 
     fig, axes = plt.subplots(1, 3, figsize=(16.4, 5.6))
     titles = (
         "A  Source",
-        "B  Pixel cluster  (gray k-means)",
-        "C  DINO cluster  (token PCA k-means)",
+        "B  Pixel strips  (gray + across)",
+        "C  DINO strips  (token PCA + across)",
     )
     for ax, panel, title in zip(axes, (panel_a, panel_b, panel_c), titles):
         ax.imshow(panel)
@@ -454,7 +454,7 @@ def main() -> int:
                 "created_at": "2026-08-29",
                 "backbone": "lvd1689m",
                 "layers": list(DINO_LAYERS),
-                "note": "Same brush pixels. Gray k-means vs DINO token PCA k-means. Not a cT.",
+                "note": "Same brush pixels. Gray vs DINO, both assigned as thin heading strips. Not a cT.",
                 "cases": rows,
                 "index": index_path,
             },

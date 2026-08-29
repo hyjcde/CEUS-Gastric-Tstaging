@@ -5,7 +5,7 @@
     5,
     8
   ],
-  "note": "Same brush pixels. Gray k-means vs DINO token PCA k-means. Not a cT.",
+  "note": "Same brush pixels. Gray vs DINO, both assigned as thin heading strips. Not a cT.",
   "cases": [
     {
       "case_id": "CASE-008",
@@ -16,9 +16,9 @@
       "pixel_status": "ok",
       "pixel_pattern": "shallow-muscularis-serosa",
       "dino_status": "ok",
-      "dino_pattern": "bright-dark-bright",
+      "dino_pattern": "shallow-muscularis-serosa",
       "token_px": 6.31,
-      "pca_explained": 0.932,
+      "pca_explained": 0.933,
       "backbone": "lvd1689m",
       "layers": [
         5,
@@ -31,35 +31,35 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 145.7,
-          "peri_gray": 146.7,
-          "seed_count": 928,
-          "peri_count": 650,
-          "inside_count": 52
+          "seed_gray": 118.6,
+          "peri_gray": 115.6,
+          "seed_count": 2247,
+          "peri_count": 1667,
+          "inside_count": 134
         },
         {
           "id": "muscularis",
           "name_zh": "\u56fa\u6709\u808c\u5c42",
-          "status": "present",
-          "status_zh": "\u8fd8\u5728",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 114.1,
-          "peri_gray": 114.9,
-          "seed_count": 2172,
-          "peri_count": 1213,
-          "inside_count": 319
+          "seed_gray": 109.0,
+          "peri_gray": 124.8,
+          "seed_count": 1240,
+          "peri_count": 445,
+          "inside_count": 162
         },
         {
           "id": "serosa",
           "name_zh": "\u6d46\u819c\u5c42",
-          "status": "present",
-          "status_zh": "\u8fd8\u5728",
-          "fuse_with": "",
-          "seed_gray": 67.7,
-          "peri_gray": 73.0,
-          "seed_count": 1017,
-          "peri_count": 346,
-          "inside_count": 654
+          "status": "fused",
+          "status_zh": "\u878d\u5408",
+          "fuse_with": "dark-mass",
+          "seed_gray": 85.8,
+          "peri_gray": 123.6,
+          "seed_count": 334,
+          "peri_count": 59,
+          "inside_count": 729
         }
       ],
       "dino_fates": [
@@ -69,35 +69,35 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 122.4,
-          "peri_gray": 124.7,
-          "seed_count": 1030,
-          "peri_count": 956,
-          "inside_count": 121
+          "seed_gray": 119.1,
+          "peri_gray": 115.3,
+          "seed_count": 2008,
+          "peri_count": 1537,
+          "inside_count": 130
         },
         {
           "id": "muscularis",
           "name_zh": "\u56fa\u6709\u808c\u5c42",
-          "status": "fused",
-          "status_zh": "\u878d\u5408",
-          "fuse_with": "dark-mass",
-          "seed_gray": 100.2,
-          "peri_gray": 100.7,
-          "seed_count": 1497,
-          "peri_count": 793,
-          "inside_count": 821
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
+          "fuse_with": "",
+          "seed_gray": 110.7,
+          "peri_gray": 123.7,
+          "seed_count": 1369,
+          "peri_count": 559,
+          "inside_count": 153
         },
         {
           "id": "serosa",
           "name_zh": "\u6d46\u819c\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
-          "fuse_with": "",
-          "seed_gray": 110.6,
-          "peri_gray": 132.3,
-          "seed_count": 1590,
-          "peri_count": 460,
-          "inside_count": 83
+          "status": "fused",
+          "status_zh": "\u878d\u5408",
+          "fuse_with": "dark-mass",
+          "seed_gray": 89.3,
+          "peri_gray": 123.2,
+          "seed_count": 444,
+          "peri_count": 75,
+          "inside_count": 742
         }
       ]
     },
@@ -110,102 +110,8 @@
       "pixel_status": "ok",
       "pixel_pattern": "shallow-muscularis-serosa",
       "dino_status": "ok",
-      "dino_pattern": "bright-dark-bright",
-      "token_px": 8.47,
-      "pca_explained": 0.963,
-      "backbone": "lvd1689m",
-      "layers": [
-        5,
-        8
-      ],
-      "pixel_fates": [
-        {
-          "id": "shallow",
-          "name_zh": "\u6d45\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
-          "fuse_with": "",
-          "seed_gray": 162.8,
-          "peri_gray": 163.7,
-          "seed_count": 1645,
-          "peri_count": 689,
-          "inside_count": 198
-        },
-        {
-          "id": "muscularis",
-          "name_zh": "\u56fa\u6709\u808c\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
-          "fuse_with": "",
-          "seed_gray": 238.0,
-          "peri_gray": 238.0,
-          "seed_count": 823,
-          "peri_count": 1050,
-          "inside_count": 1
-        },
-        {
-          "id": "serosa",
-          "name_zh": "\u6d46\u819c\u5c42",
-          "status": "fused",
-          "status_zh": "\u878d\u5408",
-          "fuse_with": "dark-mass",
-          "seed_gray": 82.9,
-          "peri_gray": 92.5,
-          "seed_count": 1532,
-          "peri_count": 575,
-          "inside_count": 1819
-        }
-      ],
-      "dino_fates": [
-        {
-          "id": "shallow",
-          "name_zh": "\u6d45\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
-          "fuse_with": "",
-          "seed_gray": 221.4,
-          "peri_gray": 227.1,
-          "seed_count": 663,
-          "peri_count": 714,
-          "inside_count": 3
-        },
-        {
-          "id": "muscularis",
-          "name_zh": "\u56fa\u6709\u808c\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
-          "fuse_with": "",
-          "seed_gray": 135.3,
-          "peri_gray": 148.2,
-          "seed_count": 2183,
-          "peri_count": 719,
-          "inside_count": 103
-        },
-        {
-          "id": "serosa",
-          "name_zh": "\u6d46\u819c\u5c42",
-          "status": "fused",
-          "status_zh": "\u878d\u5408",
-          "fuse_with": "dark-mass",
-          "seed_gray": 128.7,
-          "peri_gray": 167.1,
-          "seed_count": 1154,
-          "peri_count": 881,
-          "inside_count": 1912
-        }
-      ]
-    },
-    {
-      "case_id": "CASE-040",
-      "display_id": "P040",
-      "status": "ok",
-      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/pixel_vs_dino/CASE-040_pixel_vs_dino.png",
-      "mask_source": "doctor_polygon",
-      "pixel_status": "ok",
-      "pixel_pattern": "bright-dark-bright",
-      "dino_status": "ok",
       "dino_pattern": "shallow-muscularis-serosa",
-      "token_px": 9.22,
+      "token_px": 8.47,
       "pca_explained": 0.967,
       "backbone": "lvd1689m",
       "layers": [
@@ -219,11 +125,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 102.0,
-          "peri_gray": 105.6,
-          "seed_count": 1081,
-          "peri_count": 515,
-          "inside_count": 605
+          "seed_gray": 184.2,
+          "peri_gray": 204.9,
+          "seed_count": 1029,
+          "peri_count": 577,
+          "inside_count": 6
         },
         {
           "id": "muscularis",
@@ -231,11 +137,11 @@
           "status": "fused",
           "status_zh": "\u878d\u5408",
           "fuse_with": "dark-mass",
-          "seed_gray": 69.9,
-          "peri_gray": 66.9,
-          "seed_count": 851,
-          "peri_count": 335,
-          "inside_count": 2479
+          "seed_gray": 142.4,
+          "peri_gray": 203.5,
+          "seed_count": 876,
+          "peri_count": 634,
+          "inside_count": 1971
         },
         {
           "id": "serosa",
@@ -243,25 +149,25 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 141.7,
-          "peri_gray": 143.3,
-          "seed_count": 598,
-          "peri_count": 260,
-          "inside_count": 249
+          "seed_gray": 143.8,
+          "peri_gray": 180.4,
+          "seed_count": 1436,
+          "peri_count": 713,
+          "inside_count": 41
         }
       ],
       "dino_fates": [
         {
           "id": "shallow",
           "name_zh": "\u6d45\u5c42",
-          "status": "fused",
-          "status_zh": "\u878d\u5408",
-          "fuse_with": "dark-mass",
-          "seed_gray": 88.3,
-          "peri_gray": 102.6,
-          "seed_count": 346,
-          "peri_count": 428,
-          "inside_count": 2595
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
+          "fuse_with": "",
+          "seed_gray": 184.5,
+          "peri_gray": 203.8,
+          "seed_count": 888,
+          "peri_count": 456,
+          "inside_count": 6
         },
         {
           "id": "muscularis",
@@ -269,38 +175,38 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 100.8,
-          "peri_gray": 94.7,
-          "seed_count": 1071,
-          "peri_count": 227,
-          "inside_count": 108
+          "seed_gray": 146.8,
+          "peri_gray": 204.7,
+          "seed_count": 1080,
+          "peri_count": 777,
+          "inside_count": 38
         },
         {
           "id": "serosa",
           "name_zh": "\u6d46\u819c\u5c42",
-          "status": "vanished",
-          "status_zh": "\u6d88\u5931",
-          "fuse_with": "",
-          "seed_gray": 104.2,
-          "peri_gray": 106.9,
-          "seed_count": 1113,
-          "peri_count": 455,
-          "inside_count": 630
+          "status": "fused",
+          "status_zh": "\u878d\u5408",
+          "fuse_with": "dark-mass",
+          "seed_gray": 144.4,
+          "peri_gray": 179.3,
+          "seed_count": 1373,
+          "peri_count": 691,
+          "inside_count": 1974
         }
       ]
     },
     {
-      "case_id": "CASE-076",
-      "display_id": "P076",
+      "case_id": "CASE-040",
+      "display_id": "P040",
       "status": "ok",
-      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/pixel_vs_dino/CASE-076_pixel_vs_dino.png",
-      "mask_source": "redrawn_on_frame",
+      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/pixel_vs_dino/CASE-040_pixel_vs_dino.png",
+      "mask_source": "doctor_polygon",
       "pixel_status": "ok",
       "pixel_pattern": "bright-dark-bright",
       "dino_status": "ok",
-      "dino_pattern": "shallow-muscularis-serosa",
-      "token_px": 15.09,
-      "pca_explained": 0.979,
+      "dino_pattern": "bright-dark-bright",
+      "token_px": 9.22,
+      "pca_explained": 0.969,
       "backbone": "lvd1689m",
       "layers": [
         5,
@@ -313,11 +219,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 186.8,
-          "peri_gray": 184.1,
-          "seed_count": 1598,
-          "peri_count": 967,
-          "inside_count": 523
+          "seed_gray": 102.3,
+          "peri_gray": 113.5,
+          "seed_count": 790,
+          "peri_count": 246,
+          "inside_count": 87
         },
         {
           "id": "muscularis",
@@ -325,11 +231,11 @@
           "status": "fused",
           "status_zh": "\u878d\u5408",
           "fuse_with": "dark-mass",
-          "seed_gray": 109.8,
-          "peri_gray": 108.8,
-          "seed_count": 1365,
-          "peri_count": 858,
-          "inside_count": 6010
+          "seed_gray": 96.1,
+          "peri_gray": 90.3,
+          "seed_count": 565,
+          "peri_count": 167,
+          "inside_count": 2652
         },
         {
           "id": "serosa",
@@ -337,11 +243,105 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 144.9,
-          "peri_gray": 144.3,
-          "seed_count": 2502,
-          "peri_count": 1442,
-          "inside_count": 901
+          "seed_gray": 107.0,
+          "peri_gray": 108.5,
+          "seed_count": 958,
+          "peri_count": 573,
+          "inside_count": 594
+        }
+      ],
+      "dino_fates": [
+        {
+          "id": "shallow",
+          "name_zh": "\u6d45\u5c42",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
+          "fuse_with": "",
+          "seed_gray": 102.4,
+          "peri_gray": 113.0,
+          "seed_count": 759,
+          "peri_count": 240,
+          "inside_count": 68
+        },
+        {
+          "id": "muscularis",
+          "name_zh": "\u56fa\u6709\u808c\u5c42",
+          "status": "fused",
+          "status_zh": "\u878d\u5408",
+          "fuse_with": "dark-mass",
+          "seed_gray": 97.7,
+          "peri_gray": 90.5,
+          "seed_count": 703,
+          "peri_count": 210,
+          "inside_count": 2671
+        },
+        {
+          "id": "serosa",
+          "name_zh": "\u6d46\u819c\u5c42",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
+          "fuse_with": "",
+          "seed_gray": 107.2,
+          "peri_gray": 110.1,
+          "seed_count": 851,
+          "peri_count": 536,
+          "inside_count": 594
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-076",
+      "display_id": "P076",
+      "status": "ok",
+      "panel": "/data/research/gastric/GastricTstaging/pipeline/experiments/reports/lesion_aware_wall_cluster_v1/pixel_vs_dino/CASE-076_pixel_vs_dino.png",
+      "mask_source": "redrawn_on_frame",
+      "pixel_status": "ok",
+      "pixel_pattern": "shallow-muscularis-serosa",
+      "dino_status": "ok",
+      "dino_pattern": "shallow-muscularis-serosa",
+      "token_px": 15.09,
+      "pca_explained": 0.981,
+      "backbone": "lvd1689m",
+      "layers": [
+        5,
+        8
+      ],
+      "pixel_fates": [
+        {
+          "id": "shallow",
+          "name_zh": "\u6d45\u5c42",
+          "status": "fused",
+          "status_zh": "\u878d\u5408",
+          "fuse_with": "dark-mass",
+          "seed_gray": 147.6,
+          "peri_gray": 162.9,
+          "seed_count": 495,
+          "peri_count": 652,
+          "inside_count": 6681
+        },
+        {
+          "id": "muscularis",
+          "name_zh": "\u56fa\u6709\u808c\u5c42",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
+          "fuse_with": "",
+          "seed_gray": 154.0,
+          "peri_gray": 143.6,
+          "seed_count": 1371,
+          "peri_count": 780,
+          "inside_count": 703
+        },
+        {
+          "id": "serosa",
+          "name_zh": "\u6d46\u819c\u5c42",
+          "status": "vanished",
+          "status_zh": "\u6d88\u5931",
+          "fuse_with": "",
+          "seed_gray": 152.5,
+          "peri_gray": 147.8,
+          "seed_count": 2969,
+          "peri_count": 1479,
+          "inside_count": 50
         }
       ],
       "dino_fates": [
@@ -351,11 +351,11 @@
           "status": "fused",
           "status_zh": "\u878d\u5408",
           "fuse_with": "dark-mass",
-          "seed_gray": 145.4,
-          "peri_gray": 153.9,
-          "seed_count": 978,
-          "peri_count": 469,
-          "inside_count": 6581
+          "seed_gray": 147.7,
+          "peri_gray": 161.3,
+          "seed_count": 652,
+          "peri_count": 751,
+          "inside_count": 6681
         },
         {
           "id": "muscularis",
@@ -363,11 +363,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 146.0,
-          "peri_gray": 145.0,
-          "seed_count": 1862,
-          "peri_count": 1045,
-          "inside_count": 55
+          "seed_gray": 154.2,
+          "peri_gray": 141.6,
+          "seed_count": 1007,
+          "peri_count": 567,
+          "inside_count": 703
         },
         {
           "id": "serosa",
@@ -375,11 +375,11 @@
           "status": "vanished",
           "status_zh": "\u6d88\u5931",
           "fuse_with": "",
-          "seed_gray": 151.2,
-          "peri_gray": 145.9,
-          "seed_count": 2625,
-          "peri_count": 1753,
-          "inside_count": 798
+          "seed_gray": 152.8,
+          "peri_gray": 147.8,
+          "seed_count": 3176,
+          "peri_count": 1593,
+          "inside_count": 50
         }
       ]
     }

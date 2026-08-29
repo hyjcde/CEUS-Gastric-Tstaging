@@ -109,6 +109,22 @@ def main() -> int:
     shallow = next(item for item in sensitive.fates if item["id"] == "shallow")
     assert mid["status"] in {"vanished", "fused"}
     assert shallow["status"] == "vanished"
+    strips = cluster_brush_band(
+        gray, wall, lesion_mask,
+        brush_radius=6, k=3, dilate_px=3, exclude_lesion=True, method="kmeans1d_gray",
+        lumen_center=lumen_center, lesion_poly=lesion, cavity_side_source="lumen",
+        fit_side="right", assign_lesion=False, prefer_strips=True,
+    )
+    assert strips.status == "ok", strips.skip_reason
+    assert strips.bright_dark_bright, strips.classes
+    strip_lab = np.asarray(strips.labels, dtype=np.int32)
+    strip_x = np.asarray(strips.xs, dtype=np.int32)
+    strip_y = np.asarray(strips.ys, dtype=np.int32)
+    col = (strip_x == 40) & (strip_lab >= 0)
+    if int(col.sum()) >= 6:
+        order = np.argsort(strip_y[col])
+        labs = strip_lab[col][order]
+        assert int(np.any(np.diff(labs) < 0)) == 0, labs
     # Spatial-only 1D may slice equally and still miss the gray pattern.
     assert method_hits["kmeans"] and method_hits["gmm"] and method_hits["fcm"], method_hits
     print("wall_lesion_aware_cluster ok", {

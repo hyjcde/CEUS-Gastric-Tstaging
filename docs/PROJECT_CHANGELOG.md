@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Prefer thin exclusive strips when clustering wall pixels
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`prefer_strips`), `scripts/render_wall_pixel_vs_dino_cluster.py`.
+- Reason: Independent pixel or DINO k-means mixed distant patches into one class. Layers should be three stacked strips along the heading.
+- Key changes: Each heading column is assigned 0/1/2 by a one-way Viterbi. Features only place the two cuts. Neighboring columns share smoothed cuts. Same rule for gray and DINO. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Compare gray pixel clusters with DINO token clusters
 
 - Scope: `scripts/render_wall_pixel_vs_dino_cluster.py`, `scripts/wall_lesion_aware_cluster.py` (`extra_features`). Four fixtures.
