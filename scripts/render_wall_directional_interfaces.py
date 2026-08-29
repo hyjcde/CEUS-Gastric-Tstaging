@@ -41,6 +41,16 @@ BAND_COLORS = (
     np.asarray((56, 189, 248), dtype=np.float32),
     np.asarray((244, 114, 182), dtype=np.float32),
 )
+LAYER_LABELS = {
+    "mucosa": "Mucosa",
+    "muscularis": "Muscularis",
+    "serosa": "Serosa",
+}
+VERDICT_LABELS = {
+    "continuous": "continuous",
+    "suspected_interrupt": "suspected interruption",
+    "cannot_judge": "cannot judge",
+}
 
 plt.rcParams.update({
     "font.family": "Times New Roman",
@@ -144,6 +154,86 @@ def _expand_p008_lesion(pack: dict) -> dict:
         "center_shift_px": float(np.linalg.norm(before_center - after_center)),
     }
     return adjusted
+
+
+def _record_assisted_invasion(case_id: str, relation: str) -> dict:
+    curation = json.loads(CURATION.read_text(encoding="utf-8"))
+    layers = curation["cases"][case_id]["layers"]
+    verdicts: dict[str, str] = {}
+    for layer_id in ("mucosa", "muscularis", "serosa"):
+        raw = str(layers[layer_id]["verdict"])
+        verdicts[layer_id] = "suspected_interrupt" if raw == "interrupted" else raw
+    record_verdicts = dict(verdicts)
+    if relation == "not_established" or case_id == "CASE-008":
+        verdicts = {
+            "mucosa": "cannot_judge",
+            "muscularis": "cannot_judge",
+            "serosa": "cannot_judge",
+        }
+    suspected = [
+        layer_id for layer_id, verdict in verdicts.items()
+        if verdict == "suspected_interrupt"
+    ]
+    breakthrough_layer = suspected[-1] if suspected else None
+    return {
+        "verdicts": verdicts,
+        "record_verdicts": record_verdicts,
+        "breakthrough_layer": breakthrough_layer,
+        "single_frame": True,
+        "source": "stored layer ticks plus current contact geometry",
+    }
+
+
+def _trim_to_lesion_contact(pack: dict, track: dict, max_clear_stations: int = 30) -> dict:
+    mask = (pack["crop_mask"] > 0).astype(np.uint8)
+    distance = cv2.distanceTransform((mask == 0).astype(np.uint8), cv2.DIST_L2, 3)
+    paths = track["paths"]
+    xy = np.rint(paths).astype(np.int32)
+    xy[:, :, 0] = np.clip(xy[:, :, 0], 0, mask.shape[1] - 1)
+    xy[:, :, 1] = np.clip(xy[:, :, 1], 0, mask.shape[0] - 1)
+    boundary_distance = distance[xy[:, :, 1], xy[:, :, 0]]
+    station_distance = boundary_distance.min(axis=1)
+    contact = int(np.argmin(station_distance))
+    clear_is_start = bool(station_distance[0] >= station_distance[-1])
+    if clear_is_start:
+        start = max(0, contact - max_clear_stations)
+        stop = min(len(paths), contact + 3)
+    else:
+        start = max(0, contact - 2)
+        stop = min(len(paths), contact + max_clear_stations + 1)
+    if stop - start < 8:
+        start = max(0, contact - 4)
+        stop = min(len(paths), contact + 5)
+    local_contact = contact - start
+    boundary = int(np.argmin(boundary_distance[contact]))
+    contact_xy = paths[contact, boundary].astype(np.float32)
+    minimum_distance = float(station_distance[contact])
+    relation = (
+        "contact"
+        if minimum_distance <= 1.0
+        else "near_contact"
+        if minimum_distance <= 6.0
+        else "not_established"
+    )
+    trimmed = dict(track)
+    for key in (
+        "stations",
+        "strip",
+        "offsets",
+        "smooth_offsets",
+        "paths",
+        "confidence",
+    ):
+        trimmed[key] = track[key][start:stop]
+    trimmed.update({
+        "contact_index": local_contact,
+        "contact_xy": contact_xy,
+        "contact_distance_px": minimum_distance,
+        "relation": relation,
+        "clear_side": "start" if clear_is_start else "end",
+        "full_station_count": len(paths),
+    })
+    return trimmed
 
 
 def _interface_states() -> np.ndarray:
@@ -280,7 +370,7 @@ def track_case(pack: dict) -> dict:
     offsets = track["offsets"][selection]
     smooth_offsets = _smooth_offsets(offsets)
     paths = stations[:, None, :] + normals[:, None, :] * smooth_offsets[:, :, None]
-    return {
+    result = {
         "stations": stations,
         "strip": strip[selection],
         "offsets": offsets,
@@ -291,6 +381,7 @@ def track_case(pack: dict) -> dict:
         "phase": track["phase"],
         "heading_source": heading_source,
     }
+    return _trim_to_lesion_contact(pack, result)
 
 
 def _paint_three_bands(rgb: np.ndarray, paths: np.ndarray) -> np.ndarray:
@@ -329,9 +420,42 @@ def render_case(pack: dict, track: dict, out_dir: Path) -> Path:
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(panel, contours, -1, (191, 219, 254), 1, cv2.LINE_AA)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.6), gridspec_kw={"width_ratios": [1.08, 1.0]})
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 6.2), gridspec_kw={"width_ratios": [1.08, 1.0]})
     axes[0].imshow(panel, interpolation="nearest")
     _draw_interfaces(axes[0], track["paths"], 1.0)
+    contact_xy = np.asarray(track["contact_xy"], dtype=np.float32)
+    breakthrough_layer = track["invasion"]["breakthrough_layer"]
+    if breakthrough_layer:
+        annotation = f"Suspected interruption at {LAYER_LABELS[breakthrough_layer].lower()} layer"
+        annotation_color = "#f87171"
+    elif all(
+        verdict == "cannot_judge"
+        for verdict in track["invasion"]["verdicts"].values()
+    ):
+        annotation = "Wall-layer invasion: cannot judge"
+        annotation_color = "#d1d5db"
+    else:
+        annotation = "No single-frame interruption assigned"
+        annotation_color = "#86efac"
+    axes[0].scatter(
+        [contact_xy[0]],
+        [contact_xy[1]],
+        s=28,
+        facecolors="none",
+        edgecolors=annotation_color,
+        linewidths=1.2,
+        zorder=8,
+    )
+    axes[0].annotate(
+        annotation,
+        xy=(float(contact_xy[0]), float(contact_xy[1])),
+        xytext=(10, -25),
+        textcoords="offset points",
+        color=annotation_color,
+        fontsize=8.5,
+        arrowprops={"arrowstyle": "->", "color": annotation_color, "lw": 1.0},
+        zorder=9,
+    )
     axes[0].set_title("A  Four pixel-aligned interfaces", fontsize=12)
     axes[0].axis("off")
 
@@ -372,6 +496,10 @@ def render_case(pack: dict, track: dict, out_dir: Path) -> Path:
         bbox_to_anchor=(0.5, 0.025),
     )
     pattern = "bright-dark-bright" if track["phase"] > 0 else "dark-bright-dark"
+    verdict_text = "    ".join(
+        f"{LAYER_LABELS[layer_id]}: {VERDICT_LABELS.get(verdict, verdict)}"
+        for layer_id, verdict in track["invasion"]["verdicts"].items()
+    )
     fig.suptitle(
         f"{meta['display_id']}  Joint interface tracking",
         fontsize=14,
@@ -379,14 +507,22 @@ def render_case(pack: dict, track: dict, out_dir: Path) -> Path:
     )
     fig.text(
         0.5,
-        0.09,
-        f"{track['heading_source']}; {pattern}; retained stations={len(track['stations'])}; "
-        f"median edge confidence={np.median(track['confidence']):.1f}",
+        0.145,
+        f"{track['heading_source']}; {pattern}; local stations={len(track['stations'])}/"
+        f"{track['full_station_count']}; contact distance={track['contact_distance_px']:.1f} px",
         ha="center",
         color="#d1d5db",
         fontsize=9,
     )
-    fig.tight_layout(rect=[0.01, 0.14, 0.99, 0.94])
+    fig.text(
+        0.5,
+        0.105,
+        verdict_text,
+        ha="center",
+        color="#e5e7eb",
+        fontsize=8.5,
+    )
+    fig.tight_layout(rect=[0.01, 0.20, 0.99, 0.94])
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{meta['case_id']}_directional_interfaces.png"
     fig.savefig(dest, dpi=220, bbox_inches="tight")
@@ -418,6 +554,20 @@ def render_html_summary(summaries: list[dict], index: Path, out_dir: Path) -> Pa
                 f"{adjustment['area_after']} pixels, center shift "
                 f"{adjustment['center_shift_px']:.2f} px</li>"
             )
+        invasion = item["invasion"]
+        breakthrough_layer = invasion.get("breakthrough_layer")
+        breakthrough = (
+            f"Suspected {LAYER_LABELS[breakthrough_layer].lower()} interruption"
+            if breakthrough_layer
+            else "Cannot judge"
+            if item["relation"] == "not_established" or item["case_id"] == "CASE-008"
+            else "No single-frame interruption assigned"
+        )
+        layer_rows = "".join(
+            f"<li><strong>{LAYER_LABELS[layer_id]}:</strong> "
+            f"{VERDICT_LABELS.get(verdict, verdict)}</li>"
+            for layer_id, verdict in invasion["verdicts"].items()
+        )
         case_sections.append(
             f"""
             <article class="case">
@@ -428,6 +578,10 @@ def render_html_summary(summaries: list[dict], index: Path, out_dir: Path) -> Pa
                   <li><strong>Heading:</strong> {html.escape(item['heading_source'])}</li>
                   <li><strong>Retained stations:</strong> {item['retained_stations']}</li>
                   <li><strong>Median edge confidence:</strong> {item['median_edge_confidence']:.2f}</li>
+                  <li><strong>Wall-lesion relation:</strong> {html.escape(item['relation'])},
+                  distance {item['contact_distance_px']:.2f} px</li>
+                  <li><strong>Single-frame label:</strong> {html.escape(breakthrough)}</li>
+                  {layer_rows}
                   {lesion_note}
                 </ul>
               </div>
@@ -488,6 +642,9 @@ def render_html_summary(summaries: list[dict], index: Path, out_dir: Path) -> Pa
     <div class="step"><strong>4. Directional filtering</strong>沿胃壁方向平滑散斑，尽量保留法向上的亮暗跃迁。</div>
     <div class="step"><strong>5. Joint interface search</strong>联合优化四条有序边界，约束间距、连续性、最大位移和亮暗交替模式。</div>
     <div class="step"><strong>6. Confidence stopping</strong>边缘置信度不足或路径贴住搜索窗边缘时停止，不强行补全。</div>
+    <div class="step"><strong>7. Contact-local trimming</strong>仅保留清晰胃壁到病灶最近接触点附近的短段，避免远端长线干扰判读。</div>
+    <div class="step"><strong>8. Restricted invasion readout</strong>结合存储层记录和当前接触几何。单帧只允许疑似中断，不确认突破。</div>
+    <div class="step"><strong>9. On-image annotation</strong>在最近接触点标注疑似受累层或无法判断，并列出三层状态。</div>
   </section>
 
   <h2>P008病灶修正</h2>
@@ -503,7 +660,8 @@ def render_html_summary(summaries: list[dict], index: Path, out_dir: Path) -> Pa
 
   <h2>当前结论与限制</h2>
   <ul>
-    <li>P008和P040能显示较连续的四界面结构；P008的位置保持不变，但病灶轮廓和界面覆盖范围已扩大。</li>
+    <li>图中只保留病灶接触附近短段，红色接触标记表示记录辅助的疑似中断层，不代表病理确认。</li>
+    <li>P008和P040能显示较连续的四界面结构；P008的位置保持不变，但病灶轮廓已扩大。</li>
     <li>P019和P076的四界面证据较短，三条中心带方法目前更稳定。</li>
     <li>边缘置信度只说明灰度跃迁强度，不能自动证明对应黏膜、固有肌层或浆膜。</li>
     <li>后续如引入AI，优先训练原分辨率边界网络或视频时序模型，不直接使用低分辨率通用特征替代像素边界。</li>
@@ -536,6 +694,7 @@ def main() -> None:
         if case_id == "CASE-008":
             pack = _expand_p008_lesion(pack)
         track = track_case(pack)
+        track["invasion"] = _record_assisted_invasion(case_id, track["relation"])
         panel = render_case(pack, track, args.out_dir)
         panels.append(panel)
         summary = {
@@ -545,6 +704,9 @@ def main() -> None:
             "pattern": "bright-dark-bright" if track["phase"] > 0 else "dark-bright-dark",
             "retained_stations": len(track["stations"]),
             "median_edge_confidence": round(float(np.median(track["confidence"])), 2),
+            "relation": track["relation"],
+            "contact_distance_px": round(float(track["contact_distance_px"]), 2),
+            "invasion": track["invasion"],
             "panel": str(panel),
         }
         if pack.get("lesion_adjustment"):

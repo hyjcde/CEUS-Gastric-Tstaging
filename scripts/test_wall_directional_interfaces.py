@@ -5,7 +5,11 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from render_wall_directional_interfaces import _expand_p008_lesion, _track_interfaces
+from render_wall_directional_interfaces import (
+    _expand_p008_lesion,
+    _record_assisted_invasion,
+    _track_interfaces,
+)
 
 
 def main() -> None:
@@ -37,6 +41,12 @@ def main() -> None:
     after_xy = np.asarray(np.where(expanded["crop_mask"] > 0))[::-1].mean(axis=1)
     assert expanded["lesion_adjustment"]["area_after"] > expanded["lesion_adjustment"]["area_before"]
     assert float(np.linalg.norm(before_xy - after_xy)) < 0.5
+    p019 = _record_assisted_invasion("CASE-019", "not_established")
+    assert set(p019["verdicts"].values()) == {"cannot_judge"}
+    assert p019["breakthrough_layer"] is None
+    p040 = _record_assisted_invasion("CASE-040", "contact")
+    assert p040["verdicts"]["serosa"] == "suspected_interrupt"
+    assert p040["breakthrough_layer"] == "serosa"
     print({
         "phase": "bright-dark-bright",
         "median_boundary_error_px": float(np.median(error)),
