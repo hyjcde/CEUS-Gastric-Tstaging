@@ -249,7 +249,7 @@ def right_layer_box(shape, wall, lesion_poly, brush: float, pad: int = 16) -> tu
     right = wall[wall[:, 0] >= cut]
     if len(right) < 4:
         right = wall
-    rad = float(brush) + pad
+    rad = float(brush) + pad + 16
     x1 = max(0, int(np.floor(right[:, 0].min() - rad)))
     x2 = min(w, int(np.ceil(right[:, 0].max() + rad)))
     y1 = max(0, int(np.floor(right[:, 1].min() - rad)))
@@ -290,7 +290,7 @@ def draw_interface_lines(rgb: np.ndarray, interfaces, sx1: float, sy1: float, sc
 def choose_arm(gray, wall, lesion_mask, lumen_center, lesion_poly, cavity, brush, extra=None, method="kmeans1d_gray"):
     return cluster_brush_band(
         gray, wall, lesion_mask,
-        brush_radius=brush, k=3, dilate_px=0, exclude_lesion=True,
+        brush_radius=brush, label_pad_px=16, k=3, dilate_px=0, exclude_lesion=True,
         method=method,
         lumen_center=lumen_center, lesion_poly=lesion_poly, cavity_side_source=cavity,
         fit_side="right", assign_lesion=False, sensitive=False,

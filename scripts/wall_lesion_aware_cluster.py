@@ -25,10 +25,11 @@ STRIP_SMOOTH = 9
 GRAY_SEARCH_PAD = 12
 GRAY_CUT_PAD = 12
 GRAY_CUT_MIN_SCORE = 4.0
-ACROSS_SEARCH_PX = 24
+ACROSS_SEARCH_PX = 36
 ALONG_AVG = 9
 MIN_GRAD = 5.0
 MIN_CUT_SEP = 5
+LABEL_PAD_PX = 16
 JOIN_RAY_PX = 28.0
 JOIN_END_PX = 16.0
 JOIN_MAX_GAP = 42.0
@@ -1774,82 +1775,33 @@ def assign_across_gray_bands(
     for i in range(len(sm2)):
         if sm2[i] <= sm1[i] + 1.0:
             sm2[i] = sm1[i] + 1.5
-    paint = keep if int((keep & (np.abs(samples["across"]) <= 0.95)).sum()) < MIN_VALID_PIXELS else (
-        keep & (np.abs(samples["across"]) <= 0.95)
-    )
+    paint = keep
+    core_sel = keep & (np.abs(samples["across"]) <= 0.50)
+    if int(core_sel.sum()) >= 12:
+        floor = float(np.percentile(samples["gray"][core_sel], 12)) - 14.0
+        paint = keep & (samples["gray"] >= floor)
     pix = np.stack([xs.astype(np.float32), ys.astype(np.float32)], axis=1)
     d2 = ((pix[:, None, :] - pts[None, :, :]) ** 2).sum(axis=2)
     nearest = np.argmin(d2, axis=1)
     signed = np.sum((pix - pts[nearest]) * normals[nearest], axis=1)
-    across_lab = np.full((len(xs),), -1, dtype=np.int32)
     for i in np.where(paint)[0].tolist():
         a1 = float(sm1[int(nearest[i])])
         a2 = float(sm2[int(nearest[i])])
         si = float(signed[i])
         if k == 2:
-            across_lab[i] = 0 if si < a1 else 1
+            labels[i] = 0 if si < a1 else 1
         elif si < a1:
-            across_lab[i] = 0
-        elif si > a2:
-            across_lab[i] = 2
-        else:
-            across_lab[i] = 1
-    have3 = all(int((across_lab == lab).sum()) >= 8 for lab in (0, 1, 2))
-    if not have3:
-        labels[paint] = across_lab[paint]
-        if assign_lesion:
-            rest = (~keep) & (across_lab >= 0)
-            labels[rest] = across_lab[rest]
-        return labels
-    # Exclusive top-to-bottom: y cuts sit on the gray classes found along the normal.
-    by_x: dict[int, tuple[float, float]] = {}
-    for x in np.unique(xs[paint]).tolist():
-        sel = paint & (xs == x) & (across_lab >= 0)
-        if int(sel.sum()) < 4:
-            continue
-        meds = []
-        for lab in (0, 1, 2):
-            hit = sel & (across_lab == lab)
-            meds.append(float(np.median(ys[hit])) if int(hit.sum()) else np.nan)
-        if np.isfinite(meds[0]) and np.isfinite(meds[1]):
-            y1 = 0.5 * (meds[0] + meds[1])
-        elif np.isfinite(meds[1]):
-            y1 = float(meds[1]) - 2.0
-        else:
-            y1 = float(np.median(ys[sel]))
-        if np.isfinite(meds[1]) and np.isfinite(meds[2]):
-            y2 = 0.5 * (meds[1] + meds[2])
-        elif np.isfinite(meds[1]):
-            y2 = float(meds[1]) + 2.0
-        else:
-            y2 = y1 + 2.0
-        if y2 < y1:
-            y1, y2 = y2, y1
-        if y2 <= y1 + 0.8:
-            y2 = y1 + 1.0
-        by_x[int(x)] = (y1, y2)
-    for i in np.where(paint)[0].tolist():
-        cuts = by_x.get(int(xs[i]))
-        if cuts is None:
-            continue
-        y1, y2 = cuts
-        yi = float(ys[i])
-        if k == 2:
-            labels[i] = 0 if yi < y1 else 1
-        elif yi < y1:
             labels[i] = 0
-        elif yi > y2:
+        elif si > a2:
             labels[i] = 2
         else:
             labels[i] = 1
     if assign_lesion:
         for i in np.where(~keep)[0].tolist():
-            cuts = by_x.get(int(xs[i]))
-            if cuts is None:
-                continue
-            y1, y2 = cuts
-            yi = float(ys[i])
-            labels[i] = 0 if yi < y1 else (2 if yi > y2 else 1)
+            a1 = float(sm1[int(nearest[i])])
+            a2 = float(sm2[int(nearest[i])])
+            si = float(signed[i])
+            labels[i] = 0 if si < a1 else (2 if si > a2 else 1)
     return labels
 
 
@@ -2033,6 +1985,7 @@ def cluster_brush_band(
     sensitive: bool = False,
     extra_features: np.ndarray | None = None,
     prefer_strips: bool = False,
+    label_pad_px: float | None = None,
 ) -> ClusterArm:
     method = str(method or "kmeans").strip().lower()
     fit_side = str(fit_side or "all").strip().lower()
@@ -2055,13 +2008,16 @@ def cluster_brush_band(
         deepest = lesion_pts[int(np.argmax(np.linalg.norm(lesion_pts - lesion_center, axis=1)))]
     if lumen_center is not None:
         cavity_side_source = "lumen"
-    brush = rasterize_brush(gray.shape, wall, brush_radius)
+    if label_pad_px is None:
+        label_pad_px = 0.0
+    sample_radius = float(brush_radius) + float(label_pad_px)
+    brush = rasterize_brush(gray.shape, wall, sample_radius)
     lesion_d = dilate_mask(lesion_mask, dilate_px) if exclude_lesion else np.zeros_like(lesion_mask)
     valid_mask = brush.copy()
     if exclude_lesion:
         valid_mask[lesion_d > 0] = 0
     flanks = split_flank_segments(wall, lesion_d if exclude_lesion else np.zeros_like(lesion_mask))
-    samples = sample_band_pixels(gray, brush, wall, brush_radius, lumen_center, lesion_center, deepest)
+    samples = sample_band_pixels(gray, brush, wall, sample_radius, lumen_center, lesion_center, deepest)
     if exclude_lesion:
         keep = lesion_d[samples["ys"], samples["xs"]] == 0
     else:
@@ -2108,7 +2064,7 @@ def cluster_brush_band(
         labels_all = assign_strip_layers(
             samples, keep, fit, feat_all, k, assign_lesion,
             image=gray, blocked=lesion_d if exclude_lesion else None,
-            wall=wall, brush_radius=brush_radius, lumen_center=lumen_center,
+            wall=wall, brush_radius=sample_radius, lumen_center=lumen_center,
             lesion_center=lesion_center, deepest=deepest,
         )
         labels_fit = labels_all[keep]

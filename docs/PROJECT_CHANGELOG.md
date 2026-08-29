@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, Paint wall layers wider than the heading brush
+
+- Scope: `scripts/wall_lesion_aware_cluster.py` (`label_pad_px=16`), four-case render, algorithm note.
+- Reason: Color bands were clipped to the thin heading brush, so obvious gray stripes outside the stroke looked cut off and geometric.
+- Key changes: Sample and paint a corridor 16 px wider on each side than the brush shown on panel A. Keep cuts on heading-normal gray jumps. Does not unlock cT.
+- Validation: Cluster unit tests plus offline four-case render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, Cut layers on heading-normal gray jumps
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (`assign_across_gray_bands`), four-case render.
