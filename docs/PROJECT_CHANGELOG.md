@@ -2,6 +2,14 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-29, P040 figure text in Times New Roman English
+
+- Scope: `scripts/render_wall_layer_thin_bands.py --case P040`.
+- Reason: The panel had too much Chinese copy. Keep short English labels in Times New Roman.
+- Key changes: Title is case and time only. On-image tags are Mucosa / Muscularis / Serosa / Lost. Legend drops long notes. Clustering unchanged. Does not unlock cT.
+- Validation: Offline P040 re-render.
+- Deployment: none (offline figure).
+
 ## 2026-08-29, P040 keep muscularis inside the serosa strip
 
 - Scope: `scripts/wall_lesion_aware_cluster.py` (strip order), `scripts/render_wall_layer_thin_bands.py --case P040`.

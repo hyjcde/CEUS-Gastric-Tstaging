@@ -25,14 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "pipeline"))
 
-from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 from wall_lesion_aware_cluster import (  # noqa: E402
     DEFAULT_BRUSH,
-    FATE_ZH,
-    LAYER_NAMES_ZH,
     as_xy,
     cluster_brush_band,
     densify_polyline,
@@ -60,12 +57,10 @@ WALL = (254, 240, 180)
 LAYER_BLEND = 0.26
 LESION_BLEND = 0.12
 GAP_PX = 1
-CJK_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-CJK = FontProperties(fname=CJK_PATH, size=10)
 LAYER_LEGEND = (
-    (0, "shallow", "浅层", "黏膜侧亮带"),
-    (1, "muscularis", "固有肌层", "中间暗带"),
-    (2, "serosa", "浆膜层", "外侧亮带"),
+    (0, "shallow", "Mucosa"),
+    (1, "muscularis", "Muscularis"),
+    (2, "serosa", "Serosa"),
 )
 
 # Tight pads. P008 lesion sits on the lower wall; drop the empty upper sector.
@@ -440,15 +435,13 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     )
 
     time_sec = meta.get("time_sec")
-    kf = str(meta.get("zml_keyframe_id") or "")
     fates = list(getattr(arm, "fates", None) or [])
-    fate_by_id = {str(item.get("id")): item for item in fates}
-    fig, axes = plt.subplots(1, 2, figsize=(13.4, 6.2), gridspec_kw={"width_ratios": [1.0, 1.35]})
+    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.4), gridspec_kw={"width_ratios": [1.0, 1.35]})
     axes[0].imshow(panel_a)
-    axes[0].set_title(f"A. {time_sec}s  黄线只是走行，不是层边界", fontproperties=CJK, fontsize=11)
+    axes[0].set_title("A", fontsize=12)
     axes[0].axis("off")
     axes[1].imshow(panel_b)
-    axes[1].set_title("B. 按像素聚类，走到病灶边才停；中间断开 = 消失", fontproperties=CJK, fontsize=11)
+    axes[1].set_title("B", fontsize=12)
     axes[1].axis("off")
 
     def to_b(x: float, y: float) -> tuple[float, float]:
@@ -459,7 +452,7 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
     labs = np.asarray(getattr(arm, "labels", []) or [], dtype=np.int32)
     if len(xs_lab) and len(labs) == len(xs_lab):
         right_cut = float(np.quantile(xs_lab, 0.78)) if len(xs_lab) else 0.0
-        for lab, _key, zh, _hint in LAYER_LEGEND:
+        for lab, _key, en in LAYER_LEGEND:
             sel = (labs == lab) & (xs_lab >= right_cut)
             if gap is not None and sel.any():
                 inside = (
@@ -471,59 +464,51 @@ def render_case(meta: dict, seg: RoiSegmenter, out_dir: Path, brush: float) -> d
                 continue
             axes[1].text(
                 *to_b(float(xs_lab[sel].mean()), float(ys_lab[sel].mean())),
-                zh,
+                en,
                 color=LAYER_HEX[lab],
-                fontproperties=CJK,
                 fontsize=10,
+                fontname="Times New Roman",
                 ha="left",
                 va="center",
-                bbox={"facecolor": "#111111", "edgecolor": LAYER_HEX[lab], "alpha": 0.55, "pad": 1.6},
             )
     mid = vanish_xy(wall_crop, crop_mask)
     if mid is not None:
         axes[1].annotate(
-            "条带消失",
+            "Lost",
             xy=to_b(mid[0], mid[1]),
-            xytext=(0, -36),
+            xytext=(0, -28),
             textcoords="offset points",
             color="#e5e7eb",
-            fontproperties=CJK,
-            fontsize=11,
+            fontsize=10,
+            fontname="Times New Roman",
             ha="center",
-            arrowprops={"arrowstyle": "->", "color": "#d1d5db", "lw": 1.0},
+            arrowprops={"arrowstyle": "->", "color": "#d1d5db", "lw": 0.9},
         )
 
-    handles = []
-    for lab, key, zh, hint in LAYER_LEGEND:
-        fate = fate_by_id.get(key) or {}
-        status = FATE_ZH.get(str(fate.get("status") or ""), str(fate.get("status") or ""))
-        handles.append(Patch(
-            facecolor=LAYER_HEX[lab], edgecolor="#6b7280", alpha=0.85,
-            label=f"{zh}  {hint}  {status}",
-        ))
-    handles.append(Line2D([0], [0], color="#fde68a", lw=1.6, label="预期走行线（不是层边界）"))
-    handles.append(Line2D([0], [0], color="#9ca3af", lw=1.2, linestyle="--", label="走行穿过病灶（虚线）"))
-    handles.append(Patch(facecolor="#93c5fd", edgecolor="#93c5fd", alpha=0.45, label="病灶"))
+    handles = [
+        Patch(facecolor=LAYER_HEX[lab], edgecolor="#6b7280", label=en)
+        for lab, _key, en in LAYER_LEGEND
+    ]
+    handles.append(Line2D([0], [0], color="#fde68a", lw=1.4, label="Heading"))
+    handles.append(Patch(facecolor="#93c5fd", edgecolor="#93c5fd", alpha=0.45, label="Lesion"))
     fig.legend(
         handles=handles,
         loc="lower center",
-        ncol=3,
-        frameon=True,
-        facecolor="#111111",
-        edgecolor="#444444",
+        ncol=5,
+        frameon=False,
         labelcolor="white",
-        prop=CJK,
+        fontsize=10,
         bbox_to_anchor=(0.5, 0.01),
+        prop={"family": "Times New Roman", "size": 10},
     )
     area = int((crop_mask > 0).sum())
     fig.suptitle(
-        f"{meta.get('display_id')}  {time_sec}s  {kf}  pT {meta.get('pT_ref') or '?'}  "
-        f"{getattr(arm, 'pattern', '') or ''}  不定 cT",
-        fontproperties=CJK,
-        fontsize=12,
+        f"{meta.get('display_id')}  {time_sec}s  pT {meta.get('pT_ref') or '?'}",
+        fontsize=13,
+        fontname="Times New Roman",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0.14, 1, 0.94])
+    fig.tight_layout(rect=[0, 0.08, 1, 0.95])
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{meta.get('case_id')}_thin_bands.png"
     fig.savefig(dest, dpi=170, bbox_inches="tight")
