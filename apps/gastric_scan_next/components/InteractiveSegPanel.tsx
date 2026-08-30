@@ -4769,9 +4769,8 @@ export function InteractiveSegPanel({
       });
     };
 
-    const showWallStroke = liveWall.length >= 3 && (
+    const showWallStroke = liveWall.length >= 3 && !wallPaintMode && (
       !wallLayerBands.length
-      || wallPaintMode
       || (simpleEditMode && simpleEditLayer === 'wall')
     );
 
@@ -5190,6 +5189,37 @@ export function InteractiveSegPanel({
       ctx.fillRect(lens.cx - labelW / 2, lens.cy + lensR + 6, labelW, 16);
       ctx.fillStyle = '#e0f2fe';
       ctx.fillText(lensLabel, lens.cx - labelW / 2 + 5, lens.cy + lensR + 17);
+    }
+
+    if (wallPaintModeRef.current) {
+      const paintPts = wallPaintStrokeRef.current?.length
+        ? wallPaintStrokeRef.current
+        : (wallPaintStroke.length ? wallPaintStroke : null);
+      const wallBrushPt = paintCursorRef.current;
+      const r = Math.max(3, wallBrushRadiusRef.current * scale);
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.82)';
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.16)';
+      ctx.lineWidth = r * 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (paintPts && paintPts.length >= 2) {
+        ctx.beginPath();
+        paintPts.forEach((pt, i) => {
+          const p = map(pt[0], pt[1]);
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+      }
+      const tip = paintPts?.[paintPts.length - 1] || wallBrushPt;
+      if (tip) {
+        const p = map(tip[0], tip[1]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
     }
 
     const sculpt = lumenSculptModeRef.current;
@@ -6265,6 +6295,7 @@ export function InteractiveSegPanel({
     wallPaintModeRef.current = false;
     setWallPaintStroke([]);
     wallPaintStrokeRef.current = null;
+    paintCursorRef.current = null;
     setActiveLayer('wall');
     setSimpleEditLayer('wall');
     setSimpleEditMode(false);
@@ -6296,7 +6327,9 @@ export function InteractiveSegPanel({
       setWallPaintMode(false);
       setWallPaintStroke([]);
       wallPaintStrokeRef.current = null;
+      paintCursorRef.current = null;
       setMessage(zh ? '已取消预期走行线' : 'Expected-trajectory paint cancelled');
+      redrawRef.current?.();
       return;
     }
     pauseVideoOnCurrentFrame();
@@ -6333,6 +6366,7 @@ export function InteractiveSegPanel({
     wallPickModeRef.current = false;
     setWallPaintMode(false);
     wallPaintModeRef.current = false;
+    paintCursorRef.current = null;
     setSimpleEditMode(false);
     analysisFocusModeRef.current = true;
     setAnalysisFocusMode(true);
@@ -8894,6 +8928,7 @@ export function InteractiveSegPanel({
       e.preventDefault();
       freezeCurrentFrame();
       capturePointerSafely(e.currentTarget, e.pointerId);
+      paintCursorRef.current = imgPt;
       wallPaintStrokeRef.current = [imgPt];
       setWallPaintStroke([imgPt]);
       redrawRef.current?.();
@@ -9514,11 +9549,24 @@ export function InteractiveSegPanel({
         }
       }
     }
+    if (wallPaintModeRef.current && !wallPaintStrokeRef.current) {
+      const hoverPt = canvasToImage(e, { clamp: true });
+      if (hoverPt) {
+        paintCursorRef.current = hoverPt;
+        if (paintRafRef.current == null) {
+          paintRafRef.current = window.requestAnimationFrame(() => {
+            paintRafRef.current = null;
+            redrawRef.current();
+          });
+        }
+      }
+    }
     const wallStroke = wallPaintStrokeRef.current;
     if (wallStroke) {
       const imgPt = canvasToImage(e, { clamp: true });
       if (!imgPt) return;
       e.preventDefault();
+      paintCursorRef.current = imgPt;
       const last = wallStroke[wallStroke.length - 1];
       if (!last || Math.hypot(imgPt[0] - last[0], imgPt[1] - last[1]) >= 2.2) {
         wallStroke.push(imgPt);
@@ -12494,9 +12542,9 @@ export function InteractiveSegPanel({
                   ref={canvasRef}
                   className="relative z-10 h-full w-full touch-none"
                   style={{
-                    cursor: magnifierOn
+                    cursor: magnifierOn || wallPaintMode
                       ? 'none'
-                      : (wallPickMode || wallPaintMode)
+                      : wallPickMode
                         ? 'crosshair'
                         : lumenSculptMode
                         ? 'crosshair'
@@ -12514,6 +12562,12 @@ export function InteractiveSegPanel({
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerCancel}
+                  onPointerLeave={() => {
+                    if (wallPaintModeRef.current && !wallPaintStrokeRef.current) {
+                      paintCursorRef.current = null;
+                      redrawRef.current?.();
+                    }
+                  }}
                   onWheel={(e) => {
                     if (wallPaintMode) {
                       e.preventDefault();

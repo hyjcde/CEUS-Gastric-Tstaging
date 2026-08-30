@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-30, Restore expected-line brush preview on cine
+
+- Scope: public cine wall-paint cursor and live stroke.
+- Reason: After the heading became an open analysis path, doctors no longer saw the brush radius while painting the expected line. First-time paint drew nothing until pointer-up.
+- Key changes: In wall-paint mode, hide the CSS cursor and draw an amber circle plus a thick open stroke at `wallBrushRadius`. Hover, drag, wheel, and cancel all refresh that preview. Committed four-interface overlays are unchanged.
+- Validation: Targeted IDE lint on `InteractiveSegPanel.tsx` reported no errors.
+- Deployment: Public BUILD `3hKXRF_8i47r6A9xLCUin` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. Enter expected-line paint; the cine should show a brush disc that thickens with the slider or wheel, and a matching stroke while dragging.
+
 ## 2026-08-30, Use local four-interface tracking for public expected lines
 
 - Scope: public cine expected-line overlay, wall paint commit, and the right-hand corridor preview.
