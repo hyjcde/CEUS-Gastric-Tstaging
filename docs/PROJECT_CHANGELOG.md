@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-30, Use local four-interface tracking for public expected lines
+
+- Scope: public cine expected-line overlay, wall paint commit, and the right-hand corridor preview.
+- Reason: Public drawing still used two-edge midlines or a closed lesion-face loop, so the cine looked like a ring around the mass instead of the local heading-based four interfaces.
+- Key changes: Port `track_case` into `wall-directional-interfaces.ts`. Paint commit now unwraps the doctor heading, jointly tracks four ordered gray jumps, dashes only inside the lesion, and never walks a closed lesion arc. Cine and dock draw those four paths directly. The heading stroke stays open.
+- Validation: `npx tsx scripts/test_wall_directional_interfaces.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_interrupt.mjs`, and `npx tsx scripts/test_wall_corridor_preview.mjs` passed.
+- Deployment: Public BUILD `KyYETG9cGfi0T9FJd7kfX` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. Paint a visible heading on normal wall; cine should show four yellow / cyan / pink / green interfaces along that heading, dashed through the mass, not a loop around it.
+
 ## 2026-08-30, Tighten local four-interface wall tracking
 
 - Scope: offline `directional_interfaces` probe only. Public Next and Assist weights were not changed.
@@ -6061,3 +6070,12 @@ This file records material project changes, their validation, and deployment sta
 - Validation: Pending TypeScript/lint checks, production build, and public smoke verification.
 - Deployment: Required before handoff because the changed files are served by the public Next product. Record the new BUILD and retain the prior public bundle for rollback.
 - Follow-up: Use the account/case/run records to add or validate a local replay/export command.
+
+## 2026-08-30, Simplify public expected-line overlay
+
+- Scope: Public gastric-wall expected-line canvas rendering and wall-interface analysis cues.
+- Reason: Remove visually confusing dashed and yellow helper graphics while preserving the doctor-drawn expected line and a restrained nearby analysis-line cue.
+- Key changes: Render wall analysis interfaces as subdued solid cool-color lines; hide band ribbons, flank guides, breakthrough marks, paint stroke previews, and flank/focus markers from the ultrasound canvas; keep the detailed interpretation in the side analysis card and retain the expected-line drawing itself.
+- Validation: Pending TypeScript/lint checks, production build, and public smoke verification.
+- Deployment: Public Next deployed successfully with BUILD `mQZyw9FR6uwvlK8rTibQK`; smoke checks returned `public_root=200` and `public_clinical=200`. The prior public bundle remains available for rollback.
+- Follow-up: Hard-refresh the public reader and confirm expected-line drawing plus nearby analysis lines on representative cases.

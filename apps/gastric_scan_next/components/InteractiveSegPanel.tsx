@@ -26,15 +26,16 @@ import type { ExplainableAnalysisResult } from '@/lib/concept-agent-merge';
 import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import { computeLesionLumenGeometry, lumenBoxToPolygon, type LesionLumenGeometry } from '@/lib/lesion-lumen-geometry';
 import { canAutoJoinWall, extendWallThroughLesion } from '@/lib/wall-extension';
-import { extendWallByPixels } from '@/lib/wall-pixel-extend';
 import {
-  clusterLayersAlongWall,
   judgeWallLayerBreach,
   type WallLayerReadout,
 } from '@/lib/wall-layer-breach';
 import { readoutFromTrace, traceWallLayersFromPaint } from '@/lib/wall-layer-trace';
 import { clarifyDeepestEcho, grayCropToDataUrl, type WallEchoClarify } from '@/lib/wall-echo-clarify';
 import { applyWallPromptMeta, attachLayerInterrupts, doctorClinicalIds, recheckWallInterruptDraft, ticksFromInterrupts, toggleDoctorInterrupt } from '@/lib/wall-layer-interrupt';
+import {
+  drawFourWallInterfaces,
+} from '@/lib/wall-thin-bands';
 import {
   DEFAULT_CINE_FPS,
   cineFrameIndex,
@@ -110,6 +111,7 @@ import {
   appendPromptPoint,
   prepareSubmitPromptStroke,
   strokeClosedPolyline,
+  strokeOpenPolyline,
 } from '@/lib/human-assist/prompt-stroke';
 import { DoctorKeyframeStrip } from '@/components/reader/DoctorKeyframeStrip';
 import { CineScrubBar } from '@/components/reader/CineScrubBar';
@@ -357,6 +359,25 @@ export type UnifiedAgentCapture = {
     wall_target_layers?: 1 | 2 | 3 | null;
     wall_interrupts?: Array<{ layer: number; nameZh: string; interrupted: boolean }>;
     wall_ticks?: Array<{ layer: number; nameZh: string; nameEn?: string; status?: string }>;
+    wall_fates?: Array<{
+      id: string;
+      nameZh: string;
+      nameEn?: string;
+      verdict: string;
+      labelZh: string;
+      labelEn?: string;
+    }>;
+    remain_px?: number | null;
+    overshoot_px?: number | null;
+    thickness_px?: number | null;
+    extraserosal?: boolean;
+    wall_method?: string | null;
+    echo_cluster?: {
+      pattern?: string;
+      brightDarkBright?: boolean;
+      offsets?: number[];
+      means?: number[];
+    } | null;
     wall_note?: string | null;
     echo_pattern?: string | null;
     echo_note?: string | null;
@@ -2002,6 +2023,14 @@ export function InteractiveSegPanel({
         focusCount: analysisFocusPoints.length,
         ticks: wallLayerReadout?.ticks,
         interrupts: wallLayerReadout?.interrupts,
+        fates: wallLayerReadout?.fates,
+        remainPx: wallLayerReadout?.remainPx,
+        overshootPx: wallLayerReadout?.overshootPx,
+        thicknessPx: wallLayerReadout?.thicknessPx,
+        extraserosal: wallLayerReadout?.extraserosal,
+        method: wallLayerReadout?.method,
+        cluster: wallLayerReadout?.cluster,
+        adjacentPair,
         noteZh: wallLayerReadout?.noteZh,
         noteEn: wallLayerReadout?.noteEn,
         echoPatternZh: wallEchoClarify?.patternZh,
@@ -2016,7 +2045,7 @@ export function InteractiveSegPanel({
         })),
       },
     }));
-  }, [analysisFocusPoints.length, doctorKeyframes, serosaAnchorMode, simpleVideoMode, wallEchoClarify, wallLayerReadout, wallLayerTarget, wallVisibility]);
+  }, [adjacentPair, analysisFocusPoints.length, doctorKeyframes, serosaAnchorMode, simpleVideoMode, wallEchoClarify, wallLayerReadout, wallLayerTarget, wallVisibility]);
 
   const recordDoctorOp = useCallback((
     eventType: string,
@@ -2936,6 +2965,29 @@ export function InteractiveSegPanel({
     const focus = analysisFocusPointsRef.current.filter((point) => point.length >= 2).map((point) => point.slice());
     const bands = wallLayerBandsRef.current.filter((band) => band.length >= 2).map((band) => clonePoly(band));
     const imaginary = wallLayerImaginaryRef.current.map((mask) => mask.slice());
+    // Keep a semantic checkpoint in the account-scoped operation stream. The
+    // case draft stores only the latest state, while this snapshot lets the
+    // workstation replay each public expected-line edit in order.
+    if (!opts?.refOnly && (wall || focus.length || bands.length || opts?.clearWall)) {
+      recordDoctorOpRef.current('wall_snapshot', {
+        operation: opts?.clearWall ? 'wall_snapshot_clear' : 'wall_snapshot_save',
+        layer: 'wall',
+        tool: 'expected_line',
+        status: 'ok',
+        keyframe_id: open.id,
+        video_time_sec: Number(currentTime.toFixed(3)),
+        wall_polygon: opts?.clearWall ? null : wall,
+        analysis_focus_points: opts?.clearWall ? [] : focus,
+        wall_layer_bands: opts?.clearWall ? [] : bands,
+        wall_layer_imaginary: opts?.clearWall ? [] : imaginary,
+        wall_visibility: wallVisibilityRef.current,
+        serosa_anchor_mode: serosaAnchorModeRef.current,
+        wall_layer_readout: opts?.clearWall ? null : wallLayerReadoutRef.current,
+        wall_target_layers: wallLayerTargetRef.current,
+        adjacent_lock: adjacentPairRef.current,
+        refined: opts?.refined ?? false,
+      });
+    }
     const apply = (prev: typeof doctorKeyframesRef.current) => prev.map((kf) => (
       kf.id === open.id
         ? {
@@ -3329,9 +3381,24 @@ export function InteractiveSegPanel({
             in_contact: layerResult?.inContact ?? null,
             prepared_actions: contourPrepActionsRef.current,
             doctor_t_excluded: true,
+            adjacent_lock: adjacentPairRef.current,
             wall_target_layers: wallLayerTargetRef.current,
             wall_interrupts: wallLayerReadoutRef.current?.interrupts,
             wall_ticks: wallLayerReadoutRef.current?.ticks,
+            wall_fates: wallLayerReadoutRef.current?.fates,
+            remain_px: wallLayerReadoutRef.current?.remainPx ?? null,
+            overshoot_px: wallLayerReadoutRef.current?.overshootPx ?? null,
+            thickness_px: wallLayerReadoutRef.current?.thicknessPx ?? null,
+            extraserosal: wallLayerReadoutRef.current?.extraserosal,
+            wall_method: wallLayerReadoutRef.current?.method || null,
+            echo_cluster: wallLayerReadoutRef.current?.cluster?.available
+              ? {
+                pattern: wallLayerReadoutRef.current.cluster.pattern,
+                brightDarkBright: wallLayerReadoutRef.current.cluster.brightDarkBright,
+                offsets: wallLayerReadoutRef.current.cluster.offsets,
+                means: wallLayerReadoutRef.current.cluster.means,
+              }
+              : null,
             wall_note: wallLayerReadoutRef.current?.noteZh || null,
             echo_pattern: wallEchoClarifyRef.current?.patternZh || null,
             echo_note: wallEchoClarifyRef.current?.noteZh || null,
@@ -4649,10 +4716,11 @@ export function InteractiveSegPanel({
       : historyPreview?.lumen_override?.lumen_polygon || [];
     const historyPreviewLumenBox = historyPreviewFrame?.lumen_bbox || historyPreview?.lumen_override?.lumen_bbox;
 
-    const drawPoly = (poly: number[][], fill: string, stroke: string, dashed = false) => {
+    const drawPoly = (poly: number[][], fill: string, stroke: string, dashed = false, closed = true) => {
       if (poly.length < 2) return;
-      strokeClosedPolyline(ctx, poly, map);
-      if (fill && fill !== 'transparent') {
+      if (closed) strokeClosedPolyline(ctx, poly, map);
+      else strokeOpenPolyline(ctx, poly, map);
+      if (closed && fill && fill !== 'transparent') {
         ctx.fillStyle = fill;
         ctx.fill();
       }
@@ -4701,9 +4769,15 @@ export function InteractiveSegPanel({
       });
     };
 
+    const showWallStroke = liveWall.length >= 3 && (
+      !wallLayerBands.length
+      || wallPaintMode
+      || (simpleEditMode && simpleEditLayer === 'wall')
+    );
+
     if (simpleVideoMode) {
-      if (liveWall.length >= 3) {
-        drawPoly(liveWall, COLOR_WALL_FILL, COLOR_WALL_STROKE);
+      if (showWallStroke) {
+        drawPoly(liveWall, 'transparent', COLOR_WALL_STROKE, false, false);
       }
       drawPoly(displayPoints, COLOR_LESION_FILL, COLOR_LESION_STROKE);
       liveExtraLesions.forEach((poly) => {
@@ -4728,8 +4802,8 @@ export function InteractiveSegPanel({
         ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
       }
     } else {
-      if (liveWall.length >= 3) {
-        drawPoly(liveWall, COLOR_WALL_FILL, COLOR_WALL_STROKE);
+      if (showWallStroke) {
+        drawPoly(liveWall, 'transparent', COLOR_WALL_STROKE, false, false);
       }
       drawPoly(displayPoints, COLOR_LESION_FILL, COLOR_LESION_STROKE);
       liveExtraLesions.forEach((poly) => {
@@ -4881,16 +4955,14 @@ export function InteractiveSegPanel({
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       });
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.95)';
+      ctx.strokeStyle = COLOR_WALL_STROKE;
       ctx.lineWidth = 1.5;
-      ctx.setLineDash([5, 3]);
       ctx.stroke();
-      ctx.setLineDash([]);
       polygonDraft.forEach((pt) => {
         const p = map(pt[0], pt[1]);
         ctx.beginPath();
         ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
+        ctx.fillStyle = COLOR_WALL_STROKE;
         ctx.fill();
       });
     }
@@ -5152,132 +5224,23 @@ export function InteractiveSegPanel({
       }
     }
 
-    const bandCols = ['#7dd3fc', '#c4b5fd', '#86efac', '#fcd34d', '#fb7185'];
+    // After the doctor draws the expected line, show only the nearby ordered
+    // analysis interfaces. Avoid ribbons, flank guides and breakthrough marks
+    // on the ultrasound image; their detail remains available in the side card.
     if (!hideKeyframeSeg && wallLayerBands.length) {
-      wallLayerBands.forEach((band, index) => {
-        if (band.length < 2) return;
-        const mask = wallLayerImaginary[index] || [];
-        let drawing = false;
-        let dashed: boolean | null = null;
-        ctx.strokeStyle = bandCols[index % bandCols.length];
-        ctx.globalAlpha = 0.86;
-        ctx.lineWidth = 0.8;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        const flush = () => {
-          if (drawing) ctx.stroke();
-          drawing = false;
-        };
-        band.forEach((point, pointIndex) => {
-          const mapped = map(point[0], point[1]);
-          const nextDash = Boolean(mask[pointIndex]);
-          if (dashed !== nextDash) {
-            flush();
-            ctx.beginPath();
-            ctx.setLineDash(nextDash ? [3.2, 2.4] : []);
-            ctx.moveTo(mapped.x, mapped.y);
-            dashed = nextDash;
-            drawing = true;
-            return;
-          }
-          ctx.lineTo(mapped.x, mapped.y);
-          drawing = true;
-        });
-        flush();
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-        if (!isPlaying) {
-          const step = Math.max(1, Math.round(band.length / 8));
-          for (let pointIndex = 0; pointIndex < band.length; pointIndex += step) {
-            const handle = map(band[pointIndex][0], band[pointIndex][1]);
-            ctx.beginPath();
-            ctx.arc(handle.x, handle.y, 2.6, 0, Math.PI * 2);
-            ctx.fillStyle = bandCols[index % bandCols.length];
-            ctx.fill();
-          }
-        }
+      drawFourWallInterfaces(ctx, wallLayerBands, map, {
+        lesion: displayPoints,
+        imaginary: wallLayerImaginary,
+        asInterfaces: wallLayerBands.length === 4,
+        toward: displayPoints.length >= 3
+          ? [
+            displayPoints.reduce((sum, point) => sum + point[0], 0) / displayPoints.length,
+            displayPoints.reduce((sum, point) => sum + point[1], 0) / displayPoints.length,
+          ]
+          : null,
       });
     }
-
-    if (!hideKeyframeSeg && wallEchoClarify?.available && wallEchoClarify.quad.length >= 4) {
-      ctx.beginPath();
-      wallEchoClarify.quad.forEach((point, index) => {
-        const mapped = map(point[0], point[1]);
-        if (index === 0) ctx.moveTo(mapped.x, mapped.y);
-        else ctx.lineTo(mapped.x, mapped.y);
-      });
-      ctx.closePath();
-      ctx.strokeStyle = 'rgba(244, 114, 182, 0.95)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(244, 114, 182, 0.12)';
-      ctx.fill();
-      const origin = map(wallEchoClarify.origin[0], wallEchoClarify.origin[1]);
-      ctx.beginPath();
-      ctx.arc(origin.x, origin.y, 4.2, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(251, 113, 133, 0.95)';
-      ctx.fill();
-    }
-    const livePaint = hideKeyframeSeg ? [] : (wallPaintStrokeRef.current || wallPaintStroke);
-    if (livePaint && livePaint.length) {
-      ctx.beginPath();
-      livePaint.forEach((point, index) => {
-        const mapped = map(point[0], point[1]);
-        if (index === 0) ctx.moveTo(mapped.x, mapped.y);
-        else ctx.lineTo(mapped.x, mapped.y);
-      });
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.42)';
-      ctx.lineWidth = Math.max(4, wallBrushRadiusRef.current * 2 * scale);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-    }
-
-    const pickMarks = hideKeyframeSeg ? [] : wallPickFlanksRef.current;
-    if (pickMarks.length) {
-      pickMarks.forEach((point, index) => {
-        const mapped = map(point[0], point[1]);
-        ctx.beginPath();
-        ctx.arc(mapped.x, mapped.y, 7, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(index + 1), mapped.x, mapped.y + 0.5);
-      });
-    }
-
-    const focusMarks = hideKeyframeSeg ? [] : analysisFocusPointsRef.current;
-    if (focusMarks.length) {
-      focusMarks.forEach((point, index) => {
-        const mapped = map(point[0], point[1]);
-        ctx.beginPath();
-        ctx.moveTo(mapped.x, mapped.y - 7);
-        ctx.lineTo(mapped.x + 6, mapped.y);
-        ctx.lineTo(mapped.x, mapped.y + 7);
-        ctx.lineTo(mapped.x - 6, mapped.y);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(251, 113, 133, 0.95)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(254, 226, 226, 0.95)';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(zh ? `分析${index + 1}` : `F${index + 1}`, mapped.x + 8, mapped.y - 4);
-      });
-    }
-
-  }, [captureCineHoldFrame, points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallEchoClarify, viewZoom, viewCenter, analysisFocusPoints]);
+  }, [captureCineHoldFrame, points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallLayerTarget, wallLayerReadout, viewZoom, viewCenter, analysisFocusPoints]);
 
   useEffect(() => {
     redrawRef.current = redraw;
@@ -6069,25 +6032,11 @@ export function InteractiveSegPanel({
       setWallLayerImaginary(traced.map((layer) => layer.imaginaryMask));
       wallLayerImaginaryRef.current = traced.map((layer) => layer.imaginaryMask);
     } else {
-      const lumen = lumenPolygonRef.current;
-      const center: [number, number] | null = lumen.length >= 3
-        ? [
-          lumen.reduce((sum, point) => sum + point[0], 0) / lumen.length,
-          lumen.reduce((sum, point) => sum + point[1], 0) / lumen.length,
-        ]
-        : null;
-      bands = clusterLayersAlongWall({
-        wall,
-        center,
-        lesion: pointsRef.current,
-        gray: frame?.gray || null,
-        width: frame?.width,
-        height: frame?.height,
-        thicknessPx: readout.thicknessPx || 12,
-        layerCount: target,
-      });
-      setWallLayerBands(bands);
-      wallLayerBandsRef.current = bands;
+      // Do not walk the lesion contour. Expected lines come from the heading
+      // four-interface track, not a closed loop around the mass.
+      bands = [];
+      setWallLayerBands([]);
+      wallLayerBandsRef.current = [];
       setWallLayerImaginary([]);
       wallLayerImaginaryRef.current = [];
     }
@@ -6122,7 +6071,24 @@ export function InteractiveSegPanel({
     const readout = wallLayerReadoutRef.current;
     if (wall.length < 3 || !readout) return;
     const frame = captureFrameGray();
-    applyWallLayerVisuals(wall, readout, frame);
+    const traced = frame
+      ? traceWallLayersFromPaint({
+        gray: frame.gray,
+        width: frame.width,
+        height: frame.height,
+        stroke: wall,
+        brushRadius: wallBrushRadiusRef.current,
+        lesion: pointsRef.current,
+        lumen: lumenPolygonRef.current,
+        targetLayers: count,
+      })
+      : null;
+    applyWallLayerVisuals(
+      traced?.available ? traced.wall : wall,
+      traced?.available ? readoutFromTrace(traced) : readout,
+      frame,
+      traced?.available ? traced.layers : null,
+    );
     persistOpenKeyframeContours({ refined: true });
     setMessage(zh
       ? `已改按${anatomyTargetMeta(count).lineZh}重算草稿（不定 cT）`
@@ -6268,14 +6234,15 @@ export function InteractiveSegPanel({
         noteZh: traced.noteZh,
         noteEn: traced.noteEn,
       }
-      : extendWallByPixels({
-        gray: frame.gray,
-        width: frame.width,
-        height: frame.height,
-        stroke,
-        lesion: pointsRef.current,
-        lumen: lumenPolygonRef.current,
-      });
+      : {
+        available: false,
+        wall: [] as number[][],
+        remainPx: null,
+        overshootPx: null,
+        thicknessPx: 0,
+        noteZh: traced.noteZh,
+        noteEn: traced.noteEn,
+      };
     if (!result.available) {
       setMessage(zh ? result.noteZh : result.noteEn);
       return false;
@@ -10572,6 +10539,10 @@ export function InteractiveSegPanel({
           op: 'mask_save',
           status: 'ok',
           history_entry_id: data.history_entry?.id || null,
+          replay_snapshot: {
+            override: saved,
+            lumen_override: data.lumen_override || lumenSnapshot || null,
+          },
         });
         if (accountReaderId && patient?.id) {
           void fetch('/api/reader/case-state', {
@@ -10635,7 +10606,7 @@ export function InteractiveSegPanel({
     const queued = persistChainRef.current.catch(() => false).then(save);
     persistChainRef.current = queued.catch(() => false);
     return queued;
-  }, [accountReaderId, authHeaders, buildLumenOverride, buildOverride, lumenOverride, onOverrideChange, simpleVideoMode, zh]);
+  }, [accountReaderId, authHeaders, buildLumenOverride, buildOverride, lumenOverride, onOverrideChange, recordDoctorOp, simpleVideoMode, zh]);
 
   useEffect(() => {
     persistOverrideRef.current = persistOverride;
@@ -12703,12 +12674,21 @@ export function InteractiveSegPanel({
                 <WallFeatureAnalysisCard
                   zh={zh}
                   lesionPolygon={points}
-                  wallPolygon={wallPoints}
+                  wallPolygon={wallPaintStroke.length >= 3 ? wallPaintStroke : wallPoints}
                   frameSize={frameSize}
                   frameDataUrl={frameDataUrl}
                   pick={layerPick}
                   lumenPrefer={lumenPrefer}
                   paused={dragIndex !== null || samBusy || propagateBusy || lumenBusy || lumenSamBusy}
+                  wallLayerReadout={wallLayerReadout}
+                  wallLayerBands={wallLayerBands}
+                  wallLayerImaginary={wallLayerImaginary}
+                  wallBrushRadius={wallBrushRadius}
+                  wallPaintPointCount={wallPaintStroke.length || wallPoints.length}
+                  wallLayerTarget={wallLayerTarget}
+                  wallVisibility={wallVisibility}
+                  serosaAnchorMode={serosaAnchorMode}
+                  analysisFocusCount={analysisFocusPoints.length}
                   onResult={setLayerResult}
                 />,
                 wallDockEl,

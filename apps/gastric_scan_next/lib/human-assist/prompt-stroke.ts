@@ -177,6 +177,22 @@ export function prepareSubmitPromptStroke(
   };
 }
 
+/** Draw an open heading / expected-line stroke. Do not close it into a loop. */
+export function strokeOpenPolyline(
+  ctx: CanvasRenderingContext2D,
+  pts: number[][],
+  map: (x: number, y: number) => { x: number; y: number },
+): void {
+  if (pts.length < 2) return;
+  const first = map(pts[0][0], pts[0][1]);
+  ctx.beginPath();
+  ctx.moveTo(first.x, first.y);
+  for (let index = 1; index < pts.length; index += 1) {
+    const mapped = map(pts[index][0], pts[index][1]);
+    ctx.lineTo(mapped.x, mapped.y);
+  }
+}
+
 /** Draw a closed polyline without Catmull-Rom overshoot. */
 export function strokeClosedPolyline(
   ctx: CanvasRenderingContext2D,
