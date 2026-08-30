@@ -2,6 +2,197 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-30, Tighten local four-interface wall tracking
+
+- Scope: offline `directional_interfaces` probe only. Public Next and Assist weights were not changed.
+- Reason: The four local fixtures still mixed curated ticks into live breaks, forced image-down normals, and let lesion-interior guesses look like observed wall.
+- Key changes: Snap joint Viterbi edges to nearby same-sign gradient peaks while keeping order and 2-10 px spacing. Learn the four interfaces outside the lesion, draw constrained dashed continuation inside, and probe continuity at the last learned depth. Use a usable lumen center for outward normals; reject image-window lumen boxes. Curated gaps stay review-only. Single-frame labels remain continuous, suspected interruption, or cannot judge.
+- Validation: `python3 scripts/test_wall_directional_interfaces.py` and `python3 scripts/test_wall_ordered_curve_track.py` passed. Re-rendered the four fixtures to `results/visualizations/error_cases/directional_interfaces/`.
+- Deployment: none. Local analysis only.
+- Follow-up: Review the four PNGs and HTML summary. P008 no longer inherits a mucosa break from the record. P019 / P040 / P076 stay cannot judge when the contact zone is unseen; pixel drops are marked as evidence only.
+
+## 2026-08-30, Match public wall display to four-interface local probe
+
+- Scope: public cine wall overlay and wall-layer corridor preview.
+- Reason: The local review version was clearer with four pixel-aligned interface boundaries, subdued intervening bands, and dashed continuation through the lesion.
+- Key changes: Derive four ordered interface paths from the three clustered live ridges, render yellow / blue / pink / green boundary lines, use dashed segments near lesion or uncertain stations, and reduce fill opacity so the image echoes remain visible. Existing single-frame safety wording and cT lock are unchanged.
+- Validation: `npx tsc --noEmit` passed; targeted IDE lint reported no errors. Wall runtime tests were unavailable through direct Node invocation because the repository test files use extensionless TypeScript imports.
+- Deployment: Public BUILD `I4xbg9xLw1jbb0WFvmZOQ` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. After painting a wall span, confirm the cine and side dock show four subdued boundary lines and dashed lesion continuation.
+
+## 2026-08-30, Make live layer figures follow pixels and zoom larger
+
+- Scope: public cine wall overlay, right-hand band zoom, unwrap strip, and painted-layer curves.
+- Reason: The analysis figures were small and faint, and the three lines still sat on parallel heading offsets, so doctors could not see mucosa / MP / serosa as separate pixel paths.
+- Key changes: Snap each layer curve to clustered ridge pixels (offset only through gaps). Crop the analysis figure to a peri-lesion window like the local panel, render a taller and wider strip, fill exclusive yellow / rose / green bands, and add manual zoom / pan on the dock figures.
+- Validation: `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_pixel_cluster.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, `npx tsx scripts/test_wall_layer_interrupt.mjs`, and `npx tsx scripts/test_adjacent_stage_lock.mjs` passed.
+- Deployment: Public BUILD `J5cW0xu3Zdk1qhpyb-fxM` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. After painting a heading, the dock figure should show three distinct pixel-following bands and accept + / - / wheel zoom.
+
+## 2026-08-30, Fuse wall-layer clustering into staging reasoning
+
+- Scope: public workbench assist judgment, evidence signs, classify-only report draft, and wall-draft card.
+- Reason: Corridor pixel clustering and layer fates stayed on the cine overlay. Staging prose only saw flattened ticks, so the lock-pair reasoning did not use the mucosa / MP / serosa draft.
+- Key changes: Pack fates, remain px, and bright-dark-bright cluster into `contour_context` and the wall-draft event. Compare that draft with the adjacent lock and write an in-lock lean into judgment, doctor signs, and the report layer sentence. Frozen four-class weights are unchanged. The draft still cannot unlock a definite cT.
+- Validation: `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_wall_pixel_cluster.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, `npx tsx scripts/test_wall_layer_interrupt.mjs`, and `python3 -m pytest pipeline/agent/product/test_research_stage_gate.py -q` passed.
+- Deployment: Public BUILD `PuuHorW4iRjpBSxNeaKOy` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Analyze sidecar picks up `pipeline/agent/product/**` without a Next rebuild.
+- Follow-up: Hard-refresh the public workbench. After painting a heading and running assist, the right-hand draft and ultrasound impression should cite wall clustering against the locked pair.
+
+## 2026-08-30, Cluster live wall bands from corridor pixels
+
+- Scope: public wall paint path and the three mucosa / MP / serosa ribbons.
+- Reason: The live bands were still geometric midlines between two tracked edges. Local thin-band panels cluster corridor pixels by gray, then split the wrapping tone by signed depth so the three layers sit on actual wall echoes.
+- Key changes: After paint, cluster heading-corridor pixels (lesion excluded), recover bright-dark-bright, and place the three ribbons at the clustered depth offsets. Fall back to ordered interfaces only if clustering is too weak. Single-frame draft only; does not determine cT.
+- Validation: `npx tsx scripts/test_wall_pixel_cluster.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, and `npx tsx scripts/test_wall_layer_interrupt.mjs` passed.
+- Deployment: Public BUILD `n4ZDjNdV3RVIxYCWuP1Zj` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. Painted bands should sit on the yellow / rose / green pixel layers, not as equal offsets of the heading.
+
+## 2026-08-30, Continue wall heading through the mass with dashes and a break mark
+
+- Scope: live cine wall overlay, peri-lesion crop, and ordered-track continuation.
+- Reason: The heading stopped at the lesion flanks, so doctors could not see the expected path, the lost-echo dashes, or the breakthrough site inside the mass.
+- Key changes: After learning interfaces on the clear flank, continue the heading and layer midlines through the lesion. Draw that span dashed. Keep flanks solid. Mark the first lost-echo or suspected-break site with the local white/red cross on both the cine and the side-dock crop. Single-frame draft only; does not determine cT.
+- Validation: `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, and `npx tsx scripts/test_wall_layer_interrupt.mjs` passed.
+- Deployment: Public BUILD `qwcT_89sembgX58xMmHkJ` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. After painting a heading, the cine should show dashed bands through the mass and a cross at the suspected break.
+
+## 2026-08-30, Port local ordered wall-interface tracking to the public workbench
+
+- Scope: live wall paint path, cine overlay, and the right-hand wall-layer dock.
+- Reason: The public workbench still offset the painted stroke in parallel. The local algorithm tracks two ordered bright-dark interfaces on the clear flank and excludes lesion pixels.
+- Key changes: After paint, jointly track mucosa-to-MP and MP-to-serosa edges with a Viterbi path, then fill three ribbons from those edges. Learn on the flanks, fade over the mass, and draw the yellow heading only outside the lesion. The side dock shows English layer names, local-style fates (intact / fused / displaced / lost / unclear), and a filled unwrap strip without polylines. Single-frame output still does not determine cT.
+- Validation: `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, and `npx tsx scripts/test_wall_layer_interrupt.mjs` passed.
+- Deployment: Public BUILD `9idB_EGuj_u65uv2VY6yi` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. Paint a visible heading on normal wall; cine bands should sit on pixel interfaces rather than parallel offsets, with yellow heading only on the flanks.
+
+## 2026-08-30, Show local-style thin bands and move zooms to the side dock
+
+- Scope: public cine wall overlay and the right-hand wall-layer dock.
+- Reason: The live canvas stacked many colored polylines, handles, and an echo box, unlike the local thin-band panels. Zoom tiles also competed with a line-heavy unwrapped strip.
+- Key changes: Draw filled mucosa / MP / serosa ribbons on the cine, matching the local yellow, rose, and green fills. Hide the wall polyline and echo-clarify box once bands exist. Put the peri-lesion band crop and focus tiles in the right dock only, with a single cross on lost-echo or suspected break.
+- Validation: `npx tsx scripts/test_wall_corridor_preview.mjs` and `npx tsx scripts/test_wall_layer_interrupt.mjs` passed. Targeted ESLint reported no new errors.
+- Deployment: Public BUILD `TlT8EcQ3M2iY_GMSMEcTp` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. After painting a wall, the cine should show only filled bands; zoom tiles should appear in the right Layer detail panel.
+
+## 2026-08-30, Match corridor zooms to live infiltration breaks
+
+- Scope: public wall-layer dock corridor unwrap, breakthrough zoom, and continuity chips.
+- Reason: Corridor still centered on mid-band crops and ignored vanish / bright-dark-bright interrupt sites from the live paint analysis. Zooms were too small to read the interface.
+- Key changes: Unwrap along the outer pixel band (paint then walk along the lesion). Mark lost-echo and interrupt dips with a rose window on the strip. Center large 420-480 px zooms on that same focus, with a tighter hero breakthrough crop. Contact chips now follow pixel-layer verdicts rather than LayerBridge serosa status.
+- Validation: `npx tsx scripts/test_wall_corridor_preview.mjs` and `npx tsx scripts/test_wall_layer_interrupt.mjs` passed. Targeted ESLint reported only existing data-URL `<img>` warnings.
+- Deployment: Public BUILD `IRkXImqy2HVndKPiaB-_L` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. After painting a wall, the rose window and breakthrough zoom should sit on the same lost-echo or interrupt site as the cine bands. Single-frame draft only; does not determine cT.
+
+## 2026-08-30, Align wall-layer corridor with painted pixel bands
+
+- Scope: public workbench wall-layer dock, `WallFeatureAnalysisCard`, `WallLayerEvidenceSummary`, and painted-corridor unwrap.
+- Reason: Corridor zoom still cropped a single lesion-to-serosa ray and forced five educational layers. The live algorithm traces doctor-painted bands. The card also used a cyan/rose educational layout that did not match the rest of the workbench.
+- Key changes: Unwrap the corridor along the painted stroke and across the brush, then overlay the current pixel bands (dashed where imaginary). Per-band zooms center on those curves, not 20% geometric splits. Restyle the dock cards to the same dark panels and chips as the judgment rail. Hide the old LayerBridge channel, echo-profile, and five-layer textbook copy from the corridor view.
+- Validation: `npx tsx scripts/test_wall_corridor_preview.mjs` and `npx tsx scripts/test_wall_prompt.mjs` passed. Targeted IDE lint on the wall card, evidence summary, and corridor helper reported no errors. Next 16 production build completed successfully.
+- Deployment: Public BUILD `p6NkFFHlt862TXxA_Vz-0` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. Paint a visible wall span and confirm the corridor colors match the cine overlay. The strip remains a single-frame draft and does not determine cT.
+
+## 2026-08-30, Harden public login paste and recover failed assist
+
+- Scope: public login, doctor account switch, reader password check, and workbench assist error recovery.
+- Reason: WeChat or email paste still failed when the clipboard added a newline or space. After a session expired or the analyze tunnel dropped, doctors only saw a raw HTTP line and had to box the lesion again.
+- Key changes: Strip clipboard noise on paste, typing, and server password check. Add a show/hide control on the password field. Map analyze failures to short doctor-facing copy. Keep the current case under the re-login overlay. After sign-in, automatically continue the last assist. Show a retry control on the judgment panel when analyze fails.
+- Validation: `npx tsx scripts/test_public_login_analyze_ux.mjs` passed. Targeted ESLint on the new password helper, password field, login-error helper, and account context passed. Next 16 production build completed successfully.
+- Deployment: Public BUILD `4Ls_maZkza1Eat-Slrg7K` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public site. Paste a password copied from chat, confirm the field can be shown, and after a failed or expired assist check that retry continues without re-boxing.
+
+## 2026-08-30, Start leakage-guarded MedSigLIP 5.1 x 6.2 fine-tuning
+
+- Scope: MedSigLIP GastricUS long-run training entry, data-contract checks, model-selection policy, and experiment registry.
+- Reason: The previous long-run entry did not continue the strongest 5.1 x 6.2 configuration: it substituted gated pooling, a TIME-192 feature, and a larger head, then automatically evaluated previously inspected prospective and external cohorts.
+- Key changes: Restore patient-level full/ROI mean pooling and the clinical-only TabPFN OOF probability input; warm-start the matching 5.1 x 6.2 head; fine-tune the last 12 MedSigLIP vision blocks; add clinical-modality dropout and a T2 severe-error penalty; require validation T2 recall of at least 0.20 before exact-accuracy tie-breaking; verify that the clinical sidecar has exactly the frozen WADI 1,062/128 patient membership and matching labels; keep audit evaluation disabled unless explicitly requested after lock.
+- Validation: Python compilation, CLI help, IDE lint, Git whitespace checks, and the WADI membership/label guard passed. The guard reports 1,062 train and 128 dev patients with zero overlap. Repository-wide path checks remain non-passing because of 18 pre-existing unexpected root entries; they reported no failed canonical path checks.
+- Training result: Completed normally and stopped at epoch 20 after 16 non-improving epochs. The guarded best checkpoint is epoch 4 with dev exact ACC 0.5859, QWK 0.6781, balanced/macro recall 0.5300, T2 recall 0.2727, T3 recall 0.5581, and severe off-by-two error 0.0938. Later training loss fell to 0.2672 while dev ACC fell to 0.4766, confirming strong overfitting.
+- Deployment: Training-only change; no public Next or inference deployment required. The new checkpoint remains research-only until the locked evaluation gates pass.
+- Rollback: Stop the run and retain the previous frozen MedSigLIP features and 5.1 x 6.2 checkpoint; no production asset is replaced.
+- Follow-up: Keep epoch 4 as a reference candidate. Do not evaluate the previously inspected prospective/external cohorts for model selection; next evidence should come from patient-level OOF or a predeclared additional seed.
+
+## 2026-08-30, Enable password paste on the public login screens
+
+- Scope: public login gate and doctor account switch modal.
+- Reason: Doctors could not reliably paste the supplied public password into the controlled password field.
+- Key changes: Explicitly handle the browser paste event, transfer clipboard text into React state, preserve the normal password input behavior, and show a visible Ctrl/Cmd+V hint. The same behavior is available on both the initial login screen and account-switch modal.
+- Validation: Next production build passed. Targeted lint still reports two pre-existing `set-state-in-effect` errors in these files and only existing image warnings; no new diagnostics were introduced. Public smoke verification follows deployment.
+- Deployment: Public BUILD `gPOQ5b0bLTLre5mKc4iRp` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public site and verify paste on desktop and mobile browsers.
+
+## 2026-08-29, Make suspected wall breakthrough prominent in the public workbench
+
+- Scope: public gastric workbench `WallLayerEvidenceSummary` and wall-layer review interaction.
+- Reason: Suspected interruption was only visible as a small status chip inside the five-layer rail, so doctors could miss the breakthrough signal and its affected layer.
+- Key changes: Add a high-contrast clinical warning region whenever pixel analysis or doctor review marks a layer as suspected or interrupted. Show the affected layer numbers and names, strongest gray-level difference, an animated break glyph, and direct layer-review buttons. Add a red break symbol and inset highlight to affected cells in the five-layer rail. Keep the warning explicitly limited to current-frame evidence and retain the statement that it does not determine cT.
+- Validation: Targeted ESLint passed with no errors, Next 16 production build completed successfully, and the existing workbench loaded with the updated component without runtime or accessibility-tree errors.
+- Deployment: Public BUILD `G01xlaPFRJQ2udvezNV2A` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Roll back to the timestamped Aliyun `.next-public-deploy-dist.bak_*` bundle if needed.
+- Follow-up: Review the warning with a frame that produces a suspected or doctor-marked interruption and confirm the emphasis is strong enough without obscuring the layer evidence. Hard-refresh the public workbench before review.
+
+## 2026-08-29, Extend P040 interface extraction around the suspected break
+
+- Scope: four-interface reliability analysis, P040 offline panel, four-case summary, HTML method report, and synthetic checks.
+- Reason: P040 used one strict confidence value equal to the weakest of all four interfaces. A locally weak interface therefore shortened every displayed line, leaving only a small solid segment around the suspected serosal break.
+- Key changes: Keep the strict four-interface reliability mask for clinical contact and safety gates, but compute a separate rolling gradient threshold and edge-safety mask for each interface. Draw each boundary as a solid line wherever that boundary has pixel support, independently of the other three; strengthen a band where both adjacent boundaries are supported. Compute lesion-contact intervals separately for each anatomical interface instead of assigning every layer to the globally nearest contact point. Highlight the relevant layer-contact span in orange and the suspected-break boundary over a 5 to 8 station red segment. Add local layer-width change as a second mechanism check, distinguishing gradient disappearance from possible interface replacement or width distortion. Add per-interface coverage and formulas to the HTML report.
+- Validation: P040 retains 37/121 stations under the strict joint gate, while the four independently supported boundary lengths increase to 75, 83, 97, and 109 stations. Its global nearest contact remains station 28, but the serosal interface-specific contact span is stations 49 to 95, so the suspected serosal marker now starts at station 49 instead of borrowing the unrelated global contact. The serosal gradient remains locally continuous and width remains 4.0 px at that entry, so the HTML explicitly labels this part as record-assisted rather than claiming pixel disappearance. Synthetic tracking still has 0 px median boundary error, and all tests pass.
+- Deployment: none. This changes offline analysis figures and HTML only; the public Next workbench is unchanged.
+- Follow-up: Clinically review whether the longer P040 serosal boundary follows the intended outer wall rather than a neighboring echogenic interface. The red segment remains a suspected single-frame break zone, not a confirmed breakthrough or cT.
+
+## 2026-08-29, Specify leakage-safe test-time breakthrough fusion
+
+- Scope: detailed offline wall-interface HTML method report.
+- Reason: The current suspected-break visualization is useful for review, but its stored layer-gap records and physician impressions cannot be fed into test-time staging without target leakage. A deployable fusion design must distinguish current-image evidence from retrospective labels.
+- Key changes: Add a test-time data boundary and leakage firewall; prohibit curated gaps, stored verdicts, physician stage impressions, and pathology labels from inference features. Define automatic full-trajectory break scanning, per-layer normal references, contact-weighted persistence scores, a multiplicative evidence-quality score, and an auditable feature vector. Propose quality-gated ordinal calibration of frozen base-model logits rather than hard-coded layer-to-stage rules. Include no-leakage pseudocode and a staged validation plan covering shadow mode, patient-level out-of-fold feature generation, ablation, frozen thresholds, calibration, abstention coverage, and future temporal consistency.
+- Validation: Regenerated HTML passes standard-library parsing and contains the test-time leakage, automatic candidate, quality-gated fusion, pseudocode, and validation sections. Existing lesion re-segmentation and four-interface synthetic tests remain passing.
+- Deployment: none. This is an offline method-design report and does not change the public Next workbench or current inference behavior.
+- Follow-up: Implement the automatic candidate scan without `curated_lines_v1.json`, generate patient-level out-of-fold breakthrough features, and compare ordinal calibration against the frozen base model before any production integration.
+
+## 2026-08-29, Re-segment P008 inside a lesion-centered expanded box
+
+- Scope: P008 offline lesion correction, wall-interface figures, detailed HTML algorithm report, and synthetic checks.
+- Reason: The previous P008 correction directly dilated the old mask. The required procedure is to treat the current lesion as the location prior, expand a box around its center, and run segmentation again on the original pixels inside that larger box.
+- Key changes: Replace morphological mask expansion with a centered expanded-ROI re-segmentation. Build the tight lesion box from the current mask, preserve its pixel centroid, expand the ROI to at least 72 x 48 px or 2.4 x 3.0 times the lesion box, and run the available segmenter. Accept model output only when area and overlap gates pass; otherwise run seeded GraphCut in the same expanded ROI, using the original lesion as hard foreground and the ROI border as hard background. Keep the connected component with maximal overlap with the original lesion. Show original and expanded boxes on P008 and add a detailed input, processing, output, failure-policy table, formulas, code excerpts, and parameters to the HTML report.
+- Validation: Synthetic centered-box re-segmentation increased the lesion area while moving the centroid only 0.06 px. On P008, the box changed from `[97, 26, 122, 36]` to `[73, 6, 145, 54]`; the seeded expanded-ROI fallback changed the mask from 164 to 269 pixels with a 0.60 px centroid shift. Four-interface synthetic median error remained 0 px, and all wall-analysis tests passed.
+- Deployment: none. This changes offline analysis and generated HTML only; the public Next workbench is unchanged.
+- Follow-up: Repair the optional DINO import path in the standalone renderer so expanded-ROI re-segmentation can use the trained DINO backend instead of the current seeded GraphCut fallback when available. The corrected mask remains an offline review result and does not overwrite the source annotation.
+
+## 2026-08-29, Show full-path wall clusters and prominent break sites
+
+- Scope: four offline wall-interface panels, the four-case contact sheet, HTML algorithm report, and synthetic visualization checks.
+- Reason: The breakthrough location was difficult to distinguish from ordinary contact annotations, and low-confidence gastric-wall clusters were too faint to read as a complete continuation of the physician-drawn trajectory.
+- Key changes: Paint all three wall clusters over every station of the physician-guided trajectory with a visible low-opacity fill, then strengthen pixel-supported runs while retaining dashed interfaces over uncertain runs. At each suspected layer break, add a red halo, white cross, arrowed callout, fixed layer badge, and a matching red station window on the unwrapped pixel strip. Keep lesion contact as a separate blue marker. Update the HTML workflow and code excerpt to explain full-path clustering and the suspected-break display.
+- Validation: A synthetic rendering check confirms that both reliable and uncertain trajectory stations receive cluster color, with stronger color on reliable runs. Interface tracking tests still recover the synthetic four boundaries with 0 px median error. Four panels and the HTML report were regenerated and visually reviewed; P008, P040, and P076 now show prominent suspected-break markers, while P019 remains `cannot judge`.
+- Deployment: none. This changes offline figures and HTML only; the public Next workbench is unchanged.
+- Follow-up: Retain the word `suspected` until adjacent-frame review confirms persistence of the apparent layer break. No output determines cT.
+
+## 2026-08-29, Add layer-specific pixel continuity for P076
+
+- Scope: four-interface offline tracker, P076 panel, four-case contact sheet, HTML algorithm report, and synthetic checks.
+- Reason: Brush continuity alone misplaced the P076 interpretation. The left wall pixels retain the mucosal boundary, while the same boundary loses gradient support at the right-side protrusion.
+- Key changes: Preserve each selected boundary's signed pixel-gradient response. For a recorded layer-gap candidate, compare the normal-side 20% reference with the lesion-side continuation and detect a break only after three consecutive stations fall below 40% of a strong reference. A layer-specific pixel break can retain `suspected interruption` for that layer even when the stricter four-interface joint gate is limited; other layers remain `cannot judge`. Move the P076 loss marker from the left reference to the detected right protrusion and separate it visually from the nearest lesion-contact marker. Add the formula, implementation excerpt, and per-case gradient measurements to the HTML report.
+- Validation: Synthetic four-boundary error remained 0 px and a dedicated continuity test detects a sustained boundary-response drop. P076 mucosal reference strength was 19.17, falling to 2.05 at station 130, or 11% of reference, so the panel marks a pixel-supported suspected mucosal interruption at the right protrusion. P019 remains `cannot judge` because its layer-specific normal reference was only 7.02. Four panels and the HTML report were regenerated.
+- Deployment: none. This changes offline figures, fixtures, and HTML only; the public Next workbench is unchanged.
+- Follow-up: Confirm the P076 right-protrusion discontinuity on adjacent frames. This single-frame result remains suspected interruption and does not determine cT.
+
+## 2026-08-29, Analyze the complete wall trajectory and layer disappearance
+
+- Scope: four-interface offline tracker, four case panels, contact sheet, HTML summary, synthetic checks, and script documentation.
+- Reason: The previous report discarded most of the physician-drawn trajectory and only showed a short contact-local segment. It therefore could not distinguish visible normal wall, uncertain continuation, local layer disappearance, and lesion contact along the full path.
+- Key changes: Preserve every station on the smoothed wall axis. Render pixel-supported interfaces as solid lines and low-confidence or edge-clipped continuation as dashed lines. Mark the normal-wall reference, nearest lesion contact, confirmed suspected layer-loss sites, and stored gap candidates that fail current-frame visibility. Apply a cautious sequence of normal reference, tracing toward the lesion, contact visibility, layer-loss screening, and a single-frame safety cap. Incorporate the physician correction that P008 is largely complete except for first-layer abnormality, with a separately recorded T1 impression, and move the P076 layer-analysis focus to the far-left wall. Expand the HTML method report with the exact strip-sampling, alternating-gradient, Viterbi energy, reliability, smoothing, contact, and clinical-gate formulas plus executable code excerpts and current parameter values.
+- Validation: Synthetic four-boundary error remained 0 px; the full-trajectory test retained all 40 stations while correctly labeling a six-station low-confidence interval. Regenerated panels now cover 84, 140, 121, and 276 stations for P008, P019, P040, and P076. Pixel-supported coverage was 79%, 5%, 31%, and 9%, respectively. P008 shows suspected mucosal interruption with the physician-provided T1 impression; P040 retains a suspected serosal interruption. P019 and P076 remain `cannot judge` because a stable normal reference or analyzable contact zone is absent, while P076's unverified mucosal gap marker is now at the far-left wall. The generated 22.6 KB HTML passes Python standard-library parsing.
+- Deployment: none. This changes offline figures and HTML only; the public Next workbench is unchanged.
+- Follow-up: Obtain adjacent-frame wall trajectories for low-coverage cases before promoting stored gap candidates to suspected interruption. No output determines cT.
+
+## 2026-08-29, Integrate interactive wall-layer evidence into the workbench
+
+- Scope: public gastric workbench wall-layer dock, `WallFeatureAnalysisCard`, and the new `WallLayerEvidenceSummary`.
+- Reason: The wall-layer panel showed pixel profiles separately from the physician-painted trajectory. Doctors need one contact-local view that combines the lesion contour, brush prior, pixel bands, analysis focus, and layer continuity draft.
+- Key changes: Add a compact lesion-wall relationship header, brush and pixel evidence counters, lesion-to-edge distance, and a five-layer continuity rail. Layers with computed continuity evidence are interactive: clicking cycles the physician review verdict through the existing audited override flow. Empty, unclear, and non-contact states remain explicit.
+- Validation: ESLint completed with no errors, the Next 16 production build passed, and browser review on a segmented T-staging keyframe confirmed the panel opens with the new evidence synthesis and accessible five-layer controls.
+- Deployment: Public BUILD `-Ys33-K_g5tJwHTU3gQ8W` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Roll back to the timestamped Aliyun `.next-public-deploy-dist.bak_*` bundle if needed.
+- Follow-up: Review the interactive verdict flow on several wall-painted keyframes and keep single-frame output limited to continuous, suspected interruption, or cannot judge; it does not determine cT.
+
 ## 2026-08-29, Add contact-local wall invasion annotations
 
 - Scope: four-interface panels and HTML generated by `render_wall_directional_interfaces.py`.
@@ -5861,3 +6052,12 @@ This file records material project changes, their validation, and deployment sta
 - Validation: Prompt smoke evaluation completed without errors on the internal validation protocol; dataset prompt augmentation smoke passed; service and evaluator syntax checks passed. The smoke result is not a promotion gate.
 - Deployment: No active service replacement. Prompt-robust adaptation training is running in an isolated output directory and must pass the full patient-level prompt matrix plus external and prospective frozen gates before deployment.
 - Follow-up: Complete the adaptation training, evaluate all prompt variants at image and patient level, and retain the current checkpoint if oracle Dice or external stability regresses.
+
+## 2026-08-30, Account-scoped replay records for public gastric-wall guidance
+
+- Scope: Public reader operation events, gastric-wall expected-line snapshots, and Assist result persistence.
+- Reason: Make every public account's expected-line drawing, contour save, and Assist outcome reproducible locally from an account and case timeline.
+- Key changes: Added semantic `wall_snapshot` events containing the saved wall geometry, layer bands, focus points, readout, target-layer and adjacent-lock metadata; mask-save events now carry the persisted contour snapshot; successful Assist runs now save the full result plus frame geometry metadata under an account/case/run key and link that run_id into the operation stream.
+- Validation: Pending TypeScript/lint checks, production build, and public smoke verification.
+- Deployment: Required before handoff because the changed files are served by the public Next product. Record the new BUILD and retain the prior public bundle for rollback.
+- Follow-up: Use the account/case/run records to add or validate a local replay/export command.

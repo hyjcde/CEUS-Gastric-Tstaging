@@ -353,7 +353,9 @@ def _smooth_wall_stations(
         votes = np.sum(normals * hint, axis=1) < 0
         if int(votes.sum()) > 0.5 * len(votes):
             normals = -normals
-    if len(normals) and float(normals[:, 1].mean()) < 0:
+    # With a usable lumen, keep the outward (away-from-lumen) normal.
+    # Only the no-lumen heuristic forces image-down (+Y).
+    if lumen_center is None and len(normals) and float(normals[:, 1].mean()) < 0:
         normals = -normals
     return pts.astype(np.float32), normals.astype(np.float32)
 

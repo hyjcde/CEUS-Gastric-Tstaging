@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from wall_lesion_aware_cluster import rasterize_polygon
 from wall_invasion_readout import analyze_invasion
-from wall_ordered_curve_track import pick_interfaces, track_ordered_layers
+from wall_ordered_curve_track import _smooth_wall_stations, pick_interfaces, track_ordered_layers
 
 
 def make_bdb() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -47,6 +47,19 @@ def main() -> int:
     one = pick_interfaces(only_bright)
     present = [item for item in one if item is not None]
     assert len(present) <= 2, one
+
+    heading = np.stack(
+        [np.linspace(20.0, 240.0, 40), np.full(40, 80.0)],
+        axis=1,
+    ).astype(np.float32)
+    _, normals_above = _smooth_wall_stations(
+        heading, np.asarray([130.0, 30.0], dtype=np.float32), None, None,
+    )
+    _, normals_below = _smooth_wall_stations(
+        heading, np.asarray([130.0, 140.0], dtype=np.float32), None, None,
+    )
+    assert float(normals_above[:, 1].mean()) > 0.0
+    assert float(normals_below[:, 1].mean()) < 0.0
 
     gray, wall, lesion, lumen = make_bdb()
     lesion_mask = rasterize_polygon(gray.shape, lesion)
