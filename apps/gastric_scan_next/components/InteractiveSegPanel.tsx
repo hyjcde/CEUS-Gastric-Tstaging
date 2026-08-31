@@ -43,8 +43,10 @@ import {
   type WallLayerReadout,
 } from '@/lib/wall-layer-breach';
 import { readoutFromTrace, traceWallLayersFromPaint } from '@/lib/wall-layer-trace';
+import { trackOrderedLayers } from '@/lib/wall-ordered-track';
 import { type WallEchoClarify } from '@/lib/wall-echo-clarify';
 import { analyzeDeepestChannels, pickFlankStroke, traceVisibleFlanks, type DualDeepestAnalysis } from '@/lib/wall-deepest-analysis';
+import { searchFlankAxesFromLesion } from '@/lib/wall-flank-axis-from-lesion';
 import {
   deepestRegionRadius,
   deepestRegionsDisagree,
@@ -125,6 +127,7 @@ import {
   clampWallBrushRadius,
   completeWallThicknessMeasure,
   hydrateWallThicknessMeasure,
+  recenterWallStroke,
   thicknessCaliperHint,
   type WallThicknessMeasure,
 } from '@/lib/wall-thickness-caliper';
@@ -6813,17 +6816,45 @@ export function InteractiveSegPanel({
     }
     const pixels = frame || captureFrameGray();
     const segments = wallPaintSegmentsRef.current;
-    if (pixels && segments.some((segment) => (segment.points || []).length >= 4)) {
-      const traced = traceVisibleFlanks({
+    if (pixels) {
+      const layerAxes = searchFlankAxesFromLesion({
         gray: pixels.gray,
         width: pixels.width,
         height: pixels.height,
-        segments,
         lesion: pointsRef.current,
         lumen: lumenPolygonRef.current,
-        brushRadius: wallBrushRadiusRef.current,
-        targetLayers: wallLayerTargetRef.current,
       });
+      const ordered = layerAxes
+        .filter((axis) => axis.source === 'layer_search')
+        .map((axis) => trackOrderedLayers({
+          gray: pixels.gray,
+          width: pixels.width,
+          height: pixels.height,
+          stroke: axis.heading,
+          lesion: pointsRef.current,
+          lumen: lumenPolygonRef.current,
+          targetLayers: wallLayerTargetRef.current,
+          brushRadius: wallBrushRadiusRef.current,
+        }))
+        .filter((trace) => trace.available);
+      const traceSegments = segments.map((segment) => (
+        segment.source === 'doctor'
+          ? { ...segment, points: recenterWallStroke(segment.points, wallThicknessMeasureRef.current).points }
+          : segment
+      ));
+      const fallback = traceSegments.some((segment) => (segment.points || []).length >= 4)
+        ? traceVisibleFlanks({
+          gray: pixels.gray,
+          width: pixels.width,
+          height: pixels.height,
+          segments: traceSegments,
+          lesion: pointsRef.current,
+          lumen: lumenPolygonRef.current,
+          brushRadius: wallBrushRadiusRef.current,
+          targetLayers: wallLayerTargetRef.current,
+        })
+        : null;
+      const traced = ordered.sort((left, right) => right.wall.length - left.wall.length)[0] || fallback;
       if (traced?.available) {
         wallPointsRef.current = traced.wall;
         wallExtensionMaskRef.current = traced.wall.map(() => false);
@@ -7098,11 +7129,12 @@ export function InteractiveSegPanel({
       setMessage(zh ? '当前帧像素还没准备好，请稍后再画' : 'Frame pixels are not ready yet');
       return false;
     }
+    const recentered = recenterWallStroke(stroke, wallThicknessMeasureRef.current);
     const traced = traceWallLayersFromPaint({
       gray: frame.gray,
       width: frame.width,
       height: frame.height,
-      stroke,
+      stroke: recentered.points,
       brushRadius: wallBrushRadiusRef.current,
       lesion: pointsRef.current,
       lumen: lumenPolygonRef.current,
@@ -7192,6 +7224,9 @@ export function InteractiveSegPanel({
       point_count: result.wall.length,
       stroke_point_count: stroke.length,
       stroke_points: compactPolyForOps(stroke, 64),
+      brush_recentered: recentered.applied,
+      brush_recenter_offset_px: recentered.offsetPx,
+      brush_recenter_reason: recentered.reason,
       segment_index: nextSegments.length - 1,
       remain_px: result.remainPx,
       overshoot_px: result.overshootPx,
@@ -7211,7 +7246,7 @@ export function InteractiveSegPanel({
         ? (join
           ? `${result.noteZh} ${join.noteZh}`
           : `${result.noteZh} 已留 ${nextSegments.length} 段。可再画对侧，不必穿过病灶。`)
-        : `已留 ${nextSegments.length} 段短线。请先选一处最深浸润区，选完才开始分析。`)
+        : `已留 ${nextSegments.length} 段短线${recentered.applied ? '，已按测厚轻微居中' : ''}。请先选一处最深浸润区，选完才开始分析。`)
       : (hasDeepest
         ? (join
           ? `${result.noteEn} ${join.noteEn}`

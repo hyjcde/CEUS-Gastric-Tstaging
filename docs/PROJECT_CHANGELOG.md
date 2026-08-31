@@ -2,6 +2,24 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-31, Lesion-driven flank-axis search
+
+- Scope: public cine wall analysis after one deepest-region confirmation.
+- Reason: The previous automatic flanks were lesion-PCA geometry only, so the ordered layer tracker still lacked a gray-scored, lesion-excluded local coordinate axis.
+- Key changes: After the doctor confirms one deepest region, the workbench scans short axes around the lesion's deep-face geometry. It excludes the lesion plus a safety gap, scores paired echo interfaces independently on both flanks, and sends reliable axes into the existing ordered layer tracker. If no reliable axis is found, the existing doctor-painted or geometric short-line path remains a draft fallback. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_deepest_analysis.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `4pRp_IiZmyT9HjDR7S-dP`; smoke passed (`public_root=200`, `public_clinical=200`). The large desktop package download checks timed out after their HTTP status had already returned 200; deployment script completed successfully.
+- Follow-up: Hard-refresh. Confirm one deepest region, then inspect whether the wall trace comes from lesion-excluded normal flanks. Cross-frame longest-path and robust region-level boundary crossing remain later.
+
+## 2026-08-31, Measured wall-brush recentering
+
+- Scope: public cine wall-paint trace and thickness-caliper workflow.
+- Reason: A narrow or slightly offset painted heading can sample outside the visible gastric-wall center and create a false interruption.
+- Key changes: The original doctor stroke remains the saved audit stroke. When a current-frame thickness caliper is close to that stroke, its analysis-only heading is shifted along the measured normal to the wall midline. Far-away calipers and large offsets are rejected instead of inferred. Layer and echo analysis still require the doctor to select one deepest region, and no definite cT is unlocked.
+- Validation: `npx tsx scripts/test_wall_thickness_caliper.mjs`, `npx tsx scripts/test_wall_deepest_analysis.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `pmQN6G5-xPRUiaYcMO0Ss` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. Measure a normal wall, draw a lightly offset short span nearby, then select one deepest region and confirm the trace is centered without replacing the stored stroke.
+
 ## 2026-08-31, One deepest region, analyze after confirm
 
 - Scope: public cine deepest-region flow, wall analysis, Assist draft copy.
