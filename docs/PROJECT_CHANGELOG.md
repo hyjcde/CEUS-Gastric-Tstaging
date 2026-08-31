@@ -2,6 +2,195 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-08-31, One deepest region, analyze after confirm
+
+- Scope: public cine deepest-region flow, wall analysis, Assist draft copy.
+- Reason: The workbench proposed up to 3 deepest marks and started layer/echo analysis before the doctor chose a window. The analysis window must be a single doctor-selected region.
+- Key changes: AI keeps one deepest suggestion. The doctor accepts it or marks their own; only one mark is kept. Flank suggestions may appear after boxing, but layer traces, join readout, and echo clustering wait until that mark exists. Clearing the mark stops analysis. Dual-window echo is no longer run. Draft only; does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_deepest_analysis.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_wall_propose_from_lesion.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_wall_echo_clarify.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `qbPHWLrPq-xIllt1jFQkE` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. Box a lesion, confirm one deepest region, then check that layer/echo appear only after that tap. LayerNet-from-mask and definite cT remain later.
+
+## 2026-08-31, Dual-channel deepest-region analysis
+
+- Scope: public cine wall analysis, Assist contour context, wall-draft prose.
+- Reason: Auto flanks and deepest-region confirm were on the workbench, but analysis still used one heading and one echo window. Assist did not receive separate doctor and AI deepest-band echoes.
+- Key changes: After auto flanks, both short lines are traced and the longer usable wall is kept. Echo clustering is pinned to the doctor mark and, when the AI candidate disagrees or no doctor mark exists, to the AI candidate as well. Assist and the wall-draft event carry `echo_doctor_pattern`, `echo_ai_pattern`, and a review note. Draft keys stay stripped from definite-cT evidence. Still does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_deepest_analysis.mjs`, `npx tsx scripts/test_wall_echo_clarify.mjs`, `npx tsx scripts/test_wall_propose_from_lesion.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_wall_ops_schema.mjs`, `npx tsc --noEmit`, and `python3 -m pytest pipeline/agent/product/test_research_stage_gate.py`.
+- Deployment: Public BUILD `h0d1lx2oLUZslxBev53oV` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. Box a lesion, confirm or move the deepest mark, and check Assist quotes both windows when they disagree. LayerNet-from-mask and definite cT remain later.
+
+## 2026-08-31, Close auto-flank logic gaps
+
+- Scope: public cine wall propose, keyframe restore, Assist contour context, protocol banner.
+- Reason: The first public slice left lumen out of keyframe auto-propose, dropped AI candidates on reopen, toggled off a confirmed candidate, kept leftover auto spans after a failed re-propose, and claimed dual-channel analysis that Assist did not receive.
+- Key changes: Set lumen before proposing. Recompute candidates whenever a lesion is present, including keyframe restore. Confirming a candidate no longer clears it. Failed auto-anchors clear leftover AI spans and do not overwrite doctor paint. Assist and the wall-draft event now carry the AI deepest region and a disagree flag. Banner asks to review both when they differ. Still does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_propose_from_lesion.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_wall_ops_schema.mjs`, `npx tsx scripts/test_workbench_episode.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_doctor_keyframes.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `jwEOQJ3Zqf0Us5d7AEcmB` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. LayerNet-from-mask, true dual-channel scoring, and definite cT remain later.
+
+## 2026-08-31, Auto flanks and confirm deepest region
+
+- Scope: public cine wall tools, help/tutorial/queue copy, wall-protocol banner.
+- Reason: Doctors should box the lesion and confirm the deepest-invasion region. Painting B0–B3 or bilateral short lines is fallback, not the default.
+- Key changes: After a lesion mask, the workbench proposes two flanks outside the mass from the lesion heading and up to 3 deepest-region candidates. The doctor confirms a candidate or marks their own region. If the doctor mark and the AI candidate are far apart, the banner flags both for review. Auto spans are tagged `ai_propose` and are not bilateral gold. Painted short flanks remain when auto-anchors fail. Draft only; does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_propose_from_lesion.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_wall_ops_schema.mjs`, `npx tsx scripts/test_workbench_episode.mjs`, `npx tsx scripts/test_doctor_keyframes.mjs`, `npx tsx scripts/test_wall_bilateral_join.mjs`, `npx tsx scripts/test_wall_echo_clarify.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `U4vXZ6yNU6OO6uMibF-L1` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh, box a lesion, confirm a deepest candidate, and paint flanks only if auto-anchors fail. LayerNet-from-mask and definite cT remain later.
+
+## 2026-08-31, Doctor priors only: box lesion and deepest region
+
+- Scope: algorithm specification (`docs/methods/2026-08-31_EUS_cT_flank_anchor_reconstruction.md`). Public Next was not changed.
+- Reason: Asking doctors to paint B0–B3 on both flanks is not how the product should land. The valuable priors are the lesion box and the deepest-invasion region; wall layering should stay the existing algorithm.
+- Key changes: Default path is coarse box → AI mask → confirm deepest region (prefer 1–3 AI candidates). LayerNet searches intact wall outside the mask, reconstructs through the lesion, and scores robust crossing. Dual-channel deepest regions: if doctor and AI disagree, analyse both and flag review. Painted short flanks remain a fallback when auto-anchors fail. Still does not unlock definite cT.
+- Validation: documentation only; cross-check against ordered-curve tracking and the 08-30 protocol. No product deploy.
+- Deployment: none.
+- Follow-up: Engineering next is auto-flank search from the lesion mask (todo A9). Expert sign-off before any live cT mapping.
+
+## 2026-08-31, EUS-cT flank-anchor reconstruction spec
+
+- Scope: algorithm specification only (`docs/methods/`). Public Next and Assist weights were not changed.
+- Reason: The 08-30 bilateral short-line protocol needed a complete staging scheme: EUS five-layer anatomy, B0–B3, robust crossing, T1a–T4b tendency, QC, report, and train/val, without unlocking definite cT on the live workbench.
+- Key changes: New SSOT maps intact left/right wall anchors to reconstructed B0 (T1a/T1b), B1 (T1/T2), B2 (T2/T3), and B3 (T3/T4a); T3 is mandatory; crossing uses region, width, connectivity, and multi-frame support rather than a single pixel. Output remains EUS-cT tendency. Current transabdominal 3-layer tools are listed as a subset, not as EUS gold standard.
+- Validation: documentation cross-check against the 08-30 protocol, AJCC 8th T categories (NCI PDQ), and Yan et al. 2019 EUS five-layer definitions. No product deploy.
+- Deployment: none.
+- Follow-up: Expert sign-off before any live cT mapping. Engineering next remains brush auto-center and cross-frame longest-path tracking.
+
+## 2026-08-31, Keyframe contours wait for the cine frame
+
+- Scope: public workbench keyframe open, cine overlay.
+- Reason: Opening a saved keyframe painted its lesion/wall on the current or hold frame, then sought. A one-frame miss also drew those contours as a ghost, so old segmentations looked drifted.
+- Key changes: Seek and decode first, then restore contours. Overlay only when the cine clock is on that keyframe's frame. Hold frames from another time are not used as the background. Case restore does not autoplay over the seek. A play event during seek pauses again and does not wipe the restored mask. Does not unlock cT.
+- Validation: `npx tsx scripts/test_cine_time.mjs`, `npx tsx scripts/test_doctor_keyframes.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `LJnarAsCXx6dEQhU9txJV` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size.
+- Follow-up: Hard-refresh, open a previously segmented case, click each keyframe, confirm the mask sits on the same anatomy.
+
+## 2026-08-31, Faster public cine open
+
+- Scope: public workbench video open, `/api/reader/media`, Aliyun auth edge, reader MP4 layout.
+- Reason: Opening a case waited on a full-screen veil and locked scrub until `canplay`. The MP4 also hopped auth edge to Next Node before disk, and most clips kept `moov` after `mdat`.
+- Key changes: Authenticated `/api/reader/media` and posters are served from the same Next media root on the edge. Browser cache is 7 days, with `v=fs1` so a remuxed file is not reused from an old Range cache. Metadata unlocks scrub; the loading veil no longer covers the pane. The next two cases prefetch poster plus the first 256 KB. Reader MP4s with a trailing index are remuxed `+faststart` without re-encoding. Does not unlock cT.
+- Validation: `npx tsx scripts/test_reader_media_url.mjs` and `npx tsc --noEmit`. Signed-session Range 206 and poster 200 from the auth edge in 19 ms; unsigned cookie stays 401.
+- Deployment: Public BUILD `S3eUEqL6Sa6EZfcgxIK9J` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Auth edge `auth_server.mjs.bak_20260831_100124` plus `reader-media-root.conf`. Desktop Electron zip smoke timed out on download size.
+- Follow-up: Hard-refresh, open a case, confirm the still appears immediately and scrub is usable.
+
+## 2026-08-31, Stop expected-line paint when switching tools
+
+- Scope: public cine pointer tools and cursors.
+- Reason: After boxing a lesion stopped expected-line paint, contour edit, lesion/lumen paint, +/– points, polygon, and flank-pick still left the expected line armed, so the next drag kept painting wall. Lesion +/– also showed the OS crosshair on top of the brush disc. In simple video mode, +/– points never reached the image if a lesion mask existed.
+- Key changes: Switching those tools clears expected-line paint and the thickness caliper. Lesion/lumen paint hides the OS cursor like the wall brush. Armed +/– points skip the drag-the-lesion intercept. Draft only; does not unlock cT.
+- Validation: `npx tsc --noEmit`.
+- Deployment: Public BUILD `jOkk9KCIkhH66_FNg0_E-` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. Arm Box lesion or Edit contour while an expected line is active and confirm the next drag is not a wall stroke.
+
+## 2026-08-31, Caliper crosshair and quieter main rail
+
+- Scope: public cine tool rail, thickness caliper cursor, box-lesion vs expected-line interaction.
+- Reason: Thickness used the default arrow; boxing a lesion could keep painting the expected line; Add lesion, Box lumen, and ROI DINO sat on the main bar.
+- Key changes: Thickness hides the OS arrow and draws a live plus at the pointer; caliper endpoints are plus marks. Arming Box lesion or Box lumen stops expected-line paint, and a drag on an armed lesion box wins over paint. Add lesion / Drop last extra and Box lumen move under More tools. The ROI DINO layer button is removed. Draft only; does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_thickness_caliper.mjs` and `npx tsc --noEmit`.
+- Deployment: Public BUILD `YAITX7tswUUg7fF44A4hU` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. Thickness shows a plus. Box lesion stops the expected line. Add lesion and Box lumen are under More tools.
+
+## 2026-08-31, Thickness caliper, span undo, and join accept/reject
+
+- Scope: public cine wall tools, keyframe persistence, operation stream, help/tutorial copy.
+- Reason: The 08-30 expanded checklist still lacked two-point wall thickness, per-span undo/metadata, a doctor decision on the join draft, and a loading lock on cine scrub. Deepest-echo sat on the main bar.
+- Key changes: Two clicks on inner/outer normal wall set the brush radius (half thickness, clamped 3-22) and store the caliper. New strokes keep side, brush, frame index, and time. Undo span drops only the last stroke. Tap a span to edit its layer chip. Join drafts show Accept / Modify / Reject; rejected or modified joins hide the AI path and stay recorded. Deepest echo moves under More tools. Cine scrub and ±1/±5 disable while the video is loading. Draft only; does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_wall_thickness_caliper.mjs`, `npx tsx scripts/test_wall_bilateral_join.mjs`, `npx tsx scripts/test_wall_ops_schema.mjs`, `npx tsx scripts/test_workbench_episode.mjs`, `npx tsx scripts/test_doctor_keyframes.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `RVlZ4j7mDTFo9Zmk6iRIW` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh. Measure thickness on normal wall, paint two flanks, then Accept or Reject the join. Brush auto-center remains next.
+
+## 2026-08-31, Complete band-zoom crop
+
+- Scope: public wall-layer dock, peri-lesion band figure.
+- Reason: Band zoom was a 220 px square on the lesion centroid, then shown at 1.5x, so both painted flanks and the outer ribbons were cut off.
+- Key changes: The crop is the union of lesion, painted bands, both short spans, and the join path, with padding. A frame-long through-stroke still caps. The figure opens at 1x so the whole crop is visible. Draft only; does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_corridor_preview.mjs` and `npx tsc --noEmit`.
+- Deployment: Public BUILD `IdbV9ezEqKspye7dRzSlF` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh, paint both flanks, and confirm the side-card band zoom shows both spans and the full ribbons.
+
+## 2026-08-31, Record every doctor action that can be stored
+
+- Scope: public workbench operation recorder, operations ingest, history limits, viewing-trace buffer.
+- Reason: Doctors' clicks, accept/modify, and failed batches were dropped by sampling, a 200-event reject-the-whole-batch rule, a 2000-event memory cap, and missing `recordOp` on save. Later self-evolution needs the full account-scoped trail.
+- Key changes: Local queue keeps up to 20k events and retries after disconnect; one bad row no longer drops the batch. Capture-phase `ui_click` / `ui_change` / `ui_keydown` / tab hide-show; password fields excluded. Accept/modify now writes the operation stream. History and ops GET limits raised. Does not unlock cT and does not auto-write memory.
+- Validation: `npx tsx scripts/test_ops_ui_target.mjs`, `npx tsx scripts/test_workbench_episode.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `mtfSsmgSmqIdBOuofvoUO` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size. Rollback remains Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Hard-refresh, click around one case, then open 历史 and confirm click labels plus accept/modify appear.
+
+## 2026-08-31, Richer wall-protocol ops for later self-evolution
+
+- Scope: public cine persist, doctor operation stream, workbench episode compact fields.
+- Reason: The 08-30 public session stored one through-stroke `wall_polygon`, not the bilateral short-line protocol. Local replay had to split a ridge at the lesion. Later self-evolution needs account-scoped, patient-isolated records of real spans, per-span layers, deepest marks, and refused joins.
+- Key changes: `wall_snapshot` now fires when only short spans exist and writes `wall_paint_segments`, same-frame lesion/lumen, the full deepest-point array, and join drafts including `need_more_spans` / stop. New `wall_span_layers` and `wall_join_update` events. `wall_edit` keeps the doctor's stroke, not only the 1100-point ridge. Frame steps note which keyframe the ghost came from. Compact payload adds `protocol_kind` (`legacy_ridge` / `one_span` / `bilateral` / `bilateral_ready`). Book id `wall_protocol_ops_v1`, `memory_ready: false`. Does not unlock cT and does not merge into the v150 training list.
+- Validation: `npx tsx scripts/test_wall_ops_schema.mjs`, `npx tsx scripts/test_workbench_episode.mjs`, `npx tsx scripts/test_wall_bilateral_join.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, and `npx tsc --noEmit` passed.
+- Deployment: Public BUILD `zAqmH9aufoxi_jKspjrhI` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh, paint two real flanks on a new session, then confirm the public ops snapshot has `wall_paint_segments` and a join verdict. Do not treat the 08-30 through-stroke jsonl as bilateral gold.
+
+## 2026-08-30, Richer workbench episodes for later memory mapping
+
+- Scope: Public reader history, case-state drafts, operation events, and a local episode export.
+- Reason: Geometry was already in `wall_snapshot` and keyframes, but the doctor history and later memory mapping only saw thin labels (initial/final T, keyframe count). Adjacent lock, flank count, join verdict, deepest mark, cannot-judge, and Assist T/run_id need a compact trajectory that does not auto-promote memory.
+- Key changes: Case drafts now store `wall_draft` and `assist_last`. `wall_snapshot` events add span count, layer chips, join verdict, deepest-point and cannot-judge flags. History list/detail show those fields plus an episode card; noisy scrub/heartbeat events are hidden unless expanded. `python3 scripts/export_workbench_episode.py` writes `workbench_episode_v1` with `memory_ready: false`. Does not write `episodes.jsonl` and does not unlock cT.
+- Validation: `npx tsx scripts/test_workbench_episode.mjs`, `npx tsc --noEmit`, `python3 scripts/export_workbench_episode.py --limit 2`, and public deploy smoke.
+- Deployment: Public BUILD `gudF0NjGfbXLcvMPQ2rTh` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200. Rollback remains Aliyun `.next-public-deploy-dist.bak_*`.
+- Follow-up: Hard-refresh the public workbench, open 历史 on a case with two flanks, and confirm the wall/join/Assist badges. Memory ingest remains a later offline step.
+
+## 2026-08-30, Cine layer badges and labeled breach crosses
+
+- Scope: public cine wall overlay, join cue copy, and help text.
+- Reason: Doctors could mark 1 / 2 / 3 layers per span and see a join verdict in the banner, but the ultrasound itself did not show which flank kept how many layers, or which layer the stop / overshoot referred to. Neighbor frames also hid the outer interface.
+- Key changes: Each painted span gets a 一层 / 两层 / 三层 badge. Stop, overshoot, and angle-sign draws the existing white-red cross at the gap with a short label (suspected break / overshoot / angle sign / possible gastric angle). Unseen planes draw no cross. Neighbor-frame ghosts keep the outer interface, badges, and the labeled cross. Draft only; does not unlock cT.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_wall_bilateral_join.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `AUOxYmpzhnmHoW1lXIESB` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh the public workbench. Paint two flanks with different layer chips and confirm both badges. Force a stop or overshoot and confirm one labeled cross. Full corridor fill stays in the side card.
+
+## 2026-08-30, Public cine protocol feedback and neighbor-frame ghosts
+
+- Scope: public cine wall tools, call-panel checklist, help / tutorial copy.
+- Reason: After the 08-30 protocol, ±1 / ±5 hid the lesion, flanks, join, and deepest mark, so doctors could not check serosa on neighbor frames. One-span and join verdicts lived only in toasts.
+- Key changes: Off-keyframe cine keeps a ghost of the lesion, short flanks, join or stop mark, and deepest points. A cine banner states the next protocol step or the join note and repeats that this is not a definite cT. The floating bar adds 看不清 (not interruption) and writes layer chips onto the latest span. The call panel splits the checklist into lesion / both flanks / deepest mark. Help and tutorial mention ghosts.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_wall_bilateral_join.mjs`, and `npx tsc --noEmit`.
+- Deployment: Public BUILD `qiGENBylCqWrXjWLhHXRy` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh the public workbench. Box a lesion, paint one flank, step ±5, and confirm the ghost plus the on-cine "paint the other flank" banner. Cross-frame longest-path join remains next.
+
+## 2026-08-30, Drop mismatched P076 and stop fake flank punches
+
+- Scope: local fixture bag and join replay only. Public Next was not changed.
+- Reason: The P076 overlay used a lesion from 0.55 s later than the wall stroke, so the yellow mask and the split flanks were not a real two-span protocol. Punching a hole at the deepest point on strokes that already ran outside the lesion created the same class of false left/right spans.
+- Key changes: Borrow a lesion only when dt <= 0.15 s. Keep two flanks only when the stroke actually crosses the same-frame lesion (`lesion_gap`). CASE-076 is out of the bag. Tonight's extra ZML keyframes (P008 later, P010, P019 near, P030, P040 far, P041, P078 later, P079, P083, P088) are exported as one-span or outside-lesion reviews, not as gold joins.
+- Validation: 18 fixtures. Only P008 meeting, P019 serosa, and P040 demo still split into two flanks. Session join and fixture tests passed. Synthetic join test still passed.
+- Deployment: none.
+- Follow-up: Judge join quality after doctors keep two real flanks. Do not reconstruct T4 / gastric-angle gold from old through-strokes.
+
+## 2026-08-30, Local replay bag from the evening wall-protocol cases
+
+- Scope: offline fixture export and join tests. Public Next was not changed.
+- Reason: The 08-30 review asked to save that night's lesion, expected-line, deepest-point, and keyframe work so local versions can replay it. Public ops still stored one through-stroke, not two kept flanks.
+- Key changes: `export_wall_bilateral_session_20260830.py` pulls the public ZML keyframes for P008 / P019 / P040 / P076 / P078 / P099, splits a through-stroke at the lesion into two visible flanks, and writes `pipeline/data/wall_bilateral_fixtures/20260830/` plus peri-lesion overlays. `apps/gastric_scan_next/scripts/test_wall_bilateral_session_20260830.mjs` replays the live join and writes `join_results.json`. `test_wall_bilateral_session_20260830.py` checks the bag and draws join / stop overlays. Easy cases may join; one-span cases stay `need_more_spans`; T4 / gastric-angle cases must not draw a straight chord.
+- Validation: `python3 scripts/test_wall_bilateral_session_20260830.py` and `npx tsx scripts/test_wall_bilateral_session_20260830.mjs` passed on the exported bag. Synthetic `npx tsx scripts/test_wall_bilateral_join.mjs` still passed.
+- Deployment: none. Local analysis only.
+- Follow-up: Re-export after doctors keep two real flanks on the public workbench. Cross-frame longest-path join and a dedicated gastric-angle rule remain next.
+
+## 2026-08-30, Single-frame tangent-aware bilateral join
+
+- Scope: public cine expected-line join, keyframe persistence, and wall-draft notes.
+- Reason: After the 08-30 protocol, two short flanks still sat as disconnected strokes. A straight chord through the mass was forbidden; the old lesion-arc extender is not the new path.
+- Key changes: After two spans, `joinBilateralExpectedSpans` builds a Hermite curve from inner endpoints and tangents. Turns above the cap, angle-sign cones, and gastric-angle headings stop the join and draw a gap mark instead of a chord. Unequal visible layers continue only the shared count. Smooth joins stay a dashed cine draft; they do not invent four interfaces across the gap and do not unlock cT. Stop / overshoot / angle-sign can mark serosa as suspected or cannot judge.
+- Validation: `npx tsx scripts/test_wall_bilateral_join.mjs`, `npx tsx scripts/test_doctor_keyframes.mjs`, and `npx tsx scripts/test_wall_prompt.mjs` passed. `npx tsc --noEmit` passed.
+- Deployment: Public BUILD `QHRF2uhOkyhxMXQgRiQKu` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`. Desktop Electron zip smoke timed out on download size; Next and clinical pages were 200.
+- Follow-up: Hard-refresh the public workbench. Paint left and right short lines; a smooth dashed join should appear when headings agree, and a cross with no chord when the turn is illegal. Cross-frame longest-path join remains next.
+
+## 2026-08-30, Bilateral short expected lines and deepest-invasion mark
+
+- Scope: public cine wall tools, keyframe persistence, doctor tutorial / call-panel copy, and meeting records.
+- Reason: The 08-30 review dropped "draw one line through the mass." Doctors should box the lesion, mark deepest invasion, and paint short visible wall spans on both flanks. A second stroke was overwriting the first; the analysis-focus mark was stored but not drawn.
+- Key changes: Expected-line mode now keeps multiple spans and stays armed after each stroke. Box lesion exits paint mode. The old flank-join control moved under More tools. Analysis focus is labeled 浸润最深点 and drawn on the cine. Visible-layer chips (1 / 2 / 3) are stored per span. Cine stepping adds -5 / +5. Bottom draft captions were removed so the ultrasound view is larger. Protocol: `docs/meetings/2026-08-30_双侧短线与浸润最深点协议.md`.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_doctor_keyframes.mjs`, and `npx tsx scripts/test_adjacent_stage_lock.mjs` passed. `npx tsc --noEmit` passed.
+- Deployment: Public BUILD `M-w5qd50kVXfVrhYBA1nz` via `bash scripts/deploy_public_next.sh`; `public_root=200` and `public_clinical=200`.
+- Follow-up: Hard-refresh the public workbench. Paint left and right short lines without crossing the mass; both should remain. Mark deepest invasion and step ±1 / ±5 frames. Smooth joining, curvature caps, and angle-sign detection stay next.
+
 ## 2026-08-30, Restore expected-line brush preview on cine
 
 - Scope: public cine wall-paint cursor and live stroke.

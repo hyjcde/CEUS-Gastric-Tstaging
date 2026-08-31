@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  BrainCircuit, Brain, Check, CircleMinus, CirclePlus, Crosshair, Droplets, Eraser, FileText, Flag, History, Layers, Loader2, MoreHorizontal, MousePointer2, PanelTop, Pause, Pencil, Pentagon, Play, Plus, RotateCcw, Save, ScanLine, ScanSearch, Share2, SkipBack, SkipForward, Sparkles, Spline, Trash2, Undo2, Video, Workflow, X, ZoomIn, Brush,
+  BrainCircuit, Brain, Check, ChevronsLeft, ChevronsRight, CircleMinus, CirclePlus, Crosshair, Droplets, Eraser, FileText, Flag, History, Layers, Loader2, MoreHorizontal, MousePointer2, PanelTop, Pause, Pencil, Pentagon, Play, Plus, RotateCcw, Ruler, Save, ScanLine, ScanSearch, Share2, SkipBack, SkipForward, Sparkles, Spline, Trash2, Undo2, Video, Workflow, X, ZoomIn, Brush,
 } from 'lucide-react';
 import type { LumenOverride, MaskBoundaryOverride, MaskHistoryEntry, Patient, VideoInfo, VideoMaskFrameOverride } from '@/types';
 import type { SamReport } from '@/lib/reader/types';
@@ -27,18 +27,50 @@ import type { LayerAnalyzeResult } from '@/lib/human-assist/load-contact-geom';
 import { computeLesionLumenGeometry, lumenBoxToPolygon, type LesionLumenGeometry } from '@/lib/lesion-lumen-geometry';
 import { canAutoJoinWall, extendWallThroughLesion } from '@/lib/wall-extension';
 import {
+  applyJoinDraftToReadout,
+  applyJoinDoctorDecision,
+  cineBreachCue,
+  cloneBilateralJoinDraft,
+  hydrateBilateralJoinDraft,
+  joinBilateralExpectedSpans,
+  joinDraftShowsPath,
+  serializeBilateralJoinDraft,
+  type BilateralJoinDraft,
+  type JoinDoctorDecision,
+} from '@/lib/wall-bilateral-join';
+import {
   judgeWallLayerBreach,
   type WallLayerReadout,
 } from '@/lib/wall-layer-breach';
 import { readoutFromTrace, traceWallLayersFromPaint } from '@/lib/wall-layer-trace';
-import { clarifyDeepestEcho, grayCropToDataUrl, type WallEchoClarify } from '@/lib/wall-echo-clarify';
+import { type WallEchoClarify } from '@/lib/wall-echo-clarify';
+import { analyzeDeepestChannels, pickFlankStroke, traceVisibleFlanks, type DualDeepestAnalysis } from '@/lib/wall-deepest-analysis';
+import {
+  deepestRegionRadius,
+  deepestRegionsDisagree,
+  hasDoctorPaintedSpans,
+  hitProposedDeepestRegion,
+  mergeAutoProposedSpans,
+  proposeWallFromLesion,
+  type ProposedDeepestRegion,
+} from '@/lib/wall-propose-from-lesion';
 import { applyWallPromptMeta, attachLayerInterrupts, doctorClinicalIds, recheckWallInterruptDraft, ticksFromInterrupts, toggleDoctorInterrupt } from '@/lib/wall-layer-interrupt';
 import {
+  drawBreakthroughMarks,
   drawFourWallInterfaces,
 } from '@/lib/wall-thin-bands';
+import { compactWallSnapshotPayload } from '@/lib/reader/workbench-episode';
+import {
+  WALL_OPS_BOOK,
+  compactPolyForOps,
+  compactWallPaintSegmentsForOps,
+  joinDraftOpsFields,
+  wallJoinRecordSig,
+} from '@/lib/ops/wall-ops-schema';
 import {
   DEFAULT_CINE_FPS,
   cineFrameIndex,
+  cineTimesOnSameFrame,
   estimateCineFpsFromMediaTimes,
   formatCineClockShort,
   formatCineLabel,
@@ -63,19 +95,39 @@ import {
   type WallPromptMetaDetail,
 } from '@/lib/reader/adjacent-stage-lock';
 import {
-  SEROSA_ANCHOR_OPTIONS,
   WALL_ANATOMY_TARGETS,
-  WALL_VISIBILITY_OPTIONS,
+  WALL_VISIBLE_LAYER_OPTIONS,
   addAnalysisFocusPoint,
+  confirmAnalysisFocusPoint,
   analysisFocusHint,
   anatomyTargetMeta,
+  appendWallPaintSegment,
+  assignSpanSides,
+  cloneWallPaintSegment,
+  hitTestWallPaintSegment,
+  normalizeWallPaintSegments,
   paintLineHint,
   paintToolLabel,
+  popLastWallPaintSegment,
+  setSpanVisibleLayers,
+  spanLayerBadge,
+  spanLayerSummary,
   suggestedAnatomyFromScreen,
+  wallProtocolBanner,
   verdictLabel,
+  wallPaintSegmentsFromLegacy,
   type SerosaAnchorMode,
+  type WallPaintSegment,
+  type WallVisibleLayerCount,
   type WallVisibility,
 } from '@/lib/reader/wall-prompt';
+import {
+  clampWallBrushRadius,
+  completeWallThicknessMeasure,
+  hydrateWallThicknessMeasure,
+  thicknessCaliperHint,
+  type WallThicknessMeasure,
+} from '@/lib/wall-thickness-caliper';
 import { buildReportEvidenceImages } from '@/lib/report-evidence-images';
 import type { GcUsReportImage } from '@/lib/gc-us-report-template';
 import {
@@ -115,7 +167,7 @@ import {
 } from '@/lib/human-assist/prompt-stroke';
 import { DoctorKeyframeStrip } from '@/components/reader/DoctorKeyframeStrip';
 import { CineScrubBar } from '@/components/reader/CineScrubBar';
-import { readerPosterUrl } from '@/lib/reader/media-url';
+import { prefetchReaderCine, readerPosterUrl } from '@/lib/reader/media-url';
 import {
   canAddDoctorKeyframe,
   findDoctorKeyframe,
@@ -318,6 +370,8 @@ interface InteractiveSegPanelProps {
   /** Emit report images generated from the current segmentation and keyframes. */
   onReportEvidenceImages?: (images: GcUsReportImage[], caseId?: string | null) => void;
   inline?: boolean;
+  /** Next cases in the queue; warm poster and the first MP4 range. */
+  neighborVideoUrls?: string[];
 }
 
 export type UnifiedAgentFrame = {
@@ -381,7 +435,19 @@ export type UnifiedAgentCapture = {
     wall_note?: string | null;
     echo_pattern?: string | null;
     echo_note?: string | null;
+    echo_doctor_pattern?: string | null;
+    echo_ai_pattern?: string | null;
     extra_lesion_count?: number;
+    wall_join_verdict?: string | null;
+    wall_span_count?: number;
+    wall_span_layers?: Array<1 | 2 | 3>;
+    analysis_focus_count?: number;
+    analysis_focus_points?: number[][];
+    ai_deepest_region?: { center: number[]; radius: number } | null;
+    deepest_disagree?: boolean;
+    auto_anchors?: 'ok' | 'failed' | null;
+    wall_visibility?: string | null;
+    serosa_anchor_mode?: string | null;
     keyframe_interrupts?: Array<{
       timeSec: number;
       interrupts?: Array<{ layer: number; nameZh?: string; interrupted?: boolean }>;
@@ -1087,15 +1153,38 @@ function sleep(ms: number) {
 function seekVideoForAgent(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve) => {
     let settled = false;
-    const done = () => {
+    const target = Number.isFinite(time) && time >= 0 ? time : 0;
+    const readyOnTarget = () => (
+      video.readyState >= 2
+      && video.videoWidth > 0
+      && Math.abs((video.currentTime || 0) - target) <= 0.05
+    );
+    const finish = () => {
       if (settled) return;
       settled = true;
-      video.removeEventListener('seeked', done);
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('loadeddata', onReady);
       resolve();
     };
-    video.addEventListener('seeked', done, { once: true });
-    video.currentTime = time;
-    window.setTimeout(done, 1200);
+    const onReady = () => {
+      if (readyOnTarget()) finish();
+    };
+    const onSeeked = () => {
+      if (video.readyState >= 2) finish();
+      else video.addEventListener('loadeddata', onReady, { once: true });
+    };
+    if (readyOnTarget()) {
+      finish();
+      return;
+    }
+    video.addEventListener('seeked', onSeeked, { once: true });
+    try {
+      video.currentTime = target;
+    } catch {
+      finish();
+      return;
+    }
+    window.setTimeout(finish, 2000);
   });
 }
 
@@ -1558,6 +1647,7 @@ export function InteractiveSegPanel({
   onExplainableComplete,
   onReportEvidenceImages,
   inline = false,
+  neighborVideoUrls = [],
 }: InteractiveSegPanelProps) {
   const { language } = useSettings();
   const zh = language !== 'en';
@@ -1619,6 +1709,9 @@ export function InteractiveSegPanel({
   const [wallPickFlanks, setWallPickFlanks] = useState<number[][]>([]);
   const [wallPaintMode, setWallPaintMode] = useState(false);
   const [wallPaintStroke, setWallPaintStroke] = useState<number[][]>([]);
+  const [wallPaintSegments, setWallPaintSegments] = useState<WallPaintSegment[]>([]);
+  const [wallJoinDraft, setWallJoinDraft] = useState<BilateralJoinDraft | null>(null);
+  const [visibleLayerCount, setVisibleLayerCount] = useState<WallVisibleLayerCount>(3);
   const [wallLayerReadout, setWallLayerReadout] = useState<WallLayerReadout | null>(null);
   const [wallLayerBands, setWallLayerBands] = useState<number[][][]>([]);
   const [wallLayerImaginary, setWallLayerImaginary] = useState<boolean[][]>([]);
@@ -1626,10 +1719,21 @@ export function InteractiveSegPanel({
   const [wallLayerTarget, setWallLayerTarget] = useState<WallLayerTarget>(1);
   const [analysisFocusMode, setAnalysisFocusMode] = useState(false);
   const [analysisFocusPoints, setAnalysisFocusPoints] = useState<number[][]>([]);
+  const [aiDeepestCandidates, setAiDeepestCandidates] = useState<ProposedDeepestRegion[]>([]);
+  const [autoAnchorsStatus, setAutoAnchorsStatus] = useState<'ok' | 'failed' | null>(null);
+  const [deepestDisagree, setDeepestDisagree] = useState(false);
+  const [selectedSpanIndex, setSelectedSpanIndex] = useState<number | null>(null);
+  const [wallCaliperMode, setWallCaliperMode] = useState(false);
+  const [wallCaliperPending, setWallCaliperPending] = useState<number[] | null>(null);
+  const [wallThicknessMeasure, setWallThicknessMeasure] = useState<WallThicknessMeasure | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoWaiting, setVideoWaiting] = useState(false);
   const [wallVisibility, setWallVisibility] = useState<WallVisibility>('clear');
   const [serosaAnchorMode, setSerosaAnchorMode] = useState<SerosaAnchorMode>('bilateral');
   const [adjacentPair, setAdjacentPair] = useState<AdjacentPair | null>(null);
   const [wallEchoClarify, setWallEchoClarify] = useState<WallEchoClarify | null>(null);
+  const [aiEchoClarify, setAiEchoClarify] = useState<WallEchoClarify | null>(null);
+  const deepestAnalysisRef = useRef<DualDeepestAnalysis | null>(null);
   const [extraLesionPolygons, setExtraLesionPolygons] = useState<number[][][]>([]);
   const [keepExtraLesion, setKeepExtraLesion] = useState(false);
   const [videoFps, setVideoFps] = useState(DEFAULT_CINE_FPS);
@@ -1792,6 +1896,8 @@ export function InteractiveSegPanel({
     setViewCenter(null);
     setAdjacentPair(null);
     setWallEchoClarify(null);
+    setAiEchoClarify(null);
+    deepestAnalysisRef.current = null;
   }, [inline, patient?.id, patient?.phase]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1814,6 +1920,10 @@ export function InteractiveSegPanel({
   const wallPickFlanksRef = useRef<number[][]>([]);
   const wallPaintModeRef = useRef(false);
   const wallPaintStrokeRef = useRef<number[][] | null>(null);
+  const wallPaintSegmentsRef = useRef<WallPaintSegment[]>([]);
+  const wallJoinDraftRef = useRef<BilateralJoinDraft | null>(null);
+  const lastWallJoinSigRef = useRef('');
+  const visibleLayerCountRef = useRef<WallVisibleLayerCount>(3);
   const wallLayerReadoutRef = useRef<WallLayerReadout | null>(null);
   const wallLayerBandsRef = useRef<number[][][]>([]);
   const wallLayerImaginaryRef = useRef<boolean[][]>([]);
@@ -1830,6 +1940,9 @@ export function InteractiveSegPanel({
     lumen: number[][];
     lumenBox: LumenBBox | null;
     extras: number[][][];
+    wallSegments: WallPaintSegment[];
+    wallJoin: BilateralJoinDraft | null;
+    focus: number[][];
   }>>([]);
   const originalRef = useRef<{ lesion: number[][]; wall: number[][]; lumen: number[][] } | null>(null);
   const sculptLayerRef = useRef<'lesion' | 'lumen'>('lumen');
@@ -1847,6 +1960,9 @@ export function InteractiveSegPanel({
   const scrubSeekRafRef = useRef<number | null>(null);
   const lastScrubSeekAtRef = useRef(0);
   const lastCineFrameRef = useRef<HTMLCanvasElement | null>(null);
+  const lastCineFrameTimeRef = useRef<number | null>(null);
+  const skipCineAutoplayRef = useRef(false);
+  const seekingToKeyframeRef = useRef(false);
   const scrubSeekTimerRef = useRef<number | null>(null);
   const videoTimeLabelRefs = useRef<Array<HTMLSpanElement | null>>([]);
   const taskProgressStartedAtRef = useRef<number | null>(null);
@@ -1917,6 +2033,22 @@ export function InteractiveSegPanel({
   analysisFocusModeRef.current = analysisFocusMode;
   const analysisFocusPointsRef = useRef<number[][]>([]);
   analysisFocusPointsRef.current = analysisFocusPoints;
+  const aiDeepestCandidatesRef = useRef<ProposedDeepestRegion[]>([]);
+  aiDeepestCandidatesRef.current = aiDeepestCandidates;
+  const autoAnchorsStatusRef = useRef<'ok' | 'failed' | null>(null);
+  autoAnchorsStatusRef.current = autoAnchorsStatus;
+  const applyProposedWallFromLesionRef = useRef<(opts?: { silent?: boolean }) => boolean>(() => false);
+  const refreshWallEchoClarifyRef = useRef<(
+    frame?: { gray: Float32Array; width: number; height: number } | null,
+  ) => WallEchoClarify | null>(() => null);
+  const wallCaliperModeRef = useRef(false);
+  wallCaliperModeRef.current = wallCaliperMode;
+  const wallCaliperPendingRef = useRef<number[] | null>(null);
+  wallCaliperPendingRef.current = wallCaliperPending;
+  const wallThicknessMeasureRef = useRef<WallThicknessMeasure | null>(null);
+  wallThicknessMeasureRef.current = wallThicknessMeasure;
+  const selectedSpanIndexRef = useRef<number | null>(null);
+  selectedSpanIndexRef.current = selectedSpanIndex;
   const wallVisibilityRef = useRef<WallVisibility>('clear');
   wallVisibilityRef.current = wallVisibility;
   const serosaAnchorModeRef = useRef<SerosaAnchorMode>('bilateral');
@@ -1945,6 +2077,8 @@ export function InteractiveSegPanel({
   adjacentPairRef.current = adjacentPair;
   const wallEchoClarifyRef = useRef<WallEchoClarify | null>(null);
   wallEchoClarifyRef.current = wallEchoClarify;
+  const aiEchoClarifyRef = useRef<WallEchoClarify | null>(null);
+  aiEchoClarifyRef.current = aiEchoClarify;
   const videoFpsRef = useRef(DEFAULT_CINE_FPS);
   videoFpsRef.current = videoFps;
   const lumenSculptModeRef = useRef<LumenSculptMode | null>(null);
@@ -2021,6 +2155,10 @@ export function InteractiveSegPanel({
         visibility: wallVisibility,
         anchorMode: serosaAnchorMode,
         focusCount: analysisFocusPoints.length,
+        spanCount: wallPaintSegments.length,
+        proposedDeepestCount: aiDeepestCandidates.length,
+        deepestDisagree,
+        autoAnchors: autoAnchorsStatus,
         ticks: wallLayerReadout?.ticks,
         interrupts: wallLayerReadout?.interrupts,
         fates: wallLayerReadout?.fates,
@@ -2035,8 +2173,12 @@ export function InteractiveSegPanel({
         noteEn: wallLayerReadout?.noteEn,
         echoPatternZh: wallEchoClarify?.patternZh,
         echoPatternEn: wallEchoClarify?.patternEn,
-        echoNoteZh: wallEchoClarify?.noteZh,
-        echoNoteEn: wallEchoClarify?.noteEn,
+        echoNoteZh: deepestAnalysisRef.current?.noteZh || wallEchoClarify?.noteZh,
+        echoNoteEn: deepestAnalysisRef.current?.noteEn || wallEchoClarify?.noteEn,
+        echoDoctorPatternZh: deepestAnalysisRef.current?.doctor?.echo?.patternZh,
+        echoDoctorPatternEn: deepestAnalysisRef.current?.doctor?.echo?.patternEn,
+        echoAiPatternZh: aiEchoClarify?.patternZh || deepestAnalysisRef.current?.ai?.echo?.patternZh,
+        echoAiPatternEn: aiEchoClarify?.patternEn || deepestAnalysisRef.current?.ai?.echo?.patternEn,
         keyframeCount: doctorKeyframes.length,
         keyframes: doctorKeyframes.map((kf) => ({
           timeSec: kf.timeSec,
@@ -2045,7 +2187,7 @@ export function InteractiveSegPanel({
         })),
       },
     }));
-  }, [adjacentPair, analysisFocusPoints.length, doctorKeyframes, serosaAnchorMode, simpleVideoMode, wallEchoClarify, wallLayerReadout, wallLayerTarget, wallVisibility]);
+  }, [adjacentPair, aiEchoClarify, analysisFocusPoints.length, aiDeepestCandidates.length, autoAnchorsStatus, deepestDisagree, doctorKeyframes, serosaAnchorMode, simpleVideoMode, wallEchoClarify, wallLayerReadout, wallLayerTarget, wallPaintSegments.length, wallVisibility]);
 
   const recordDoctorOp = useCallback((
     eventType: string,
@@ -2133,6 +2275,15 @@ export function InteractiveSegPanel({
   useEffect(() => {
     wallPaintModeRef.current = wallPaintMode;
   }, [wallPaintMode]);
+  useEffect(() => {
+    wallPaintSegmentsRef.current = wallPaintSegments;
+  }, [wallPaintSegments]);
+  useEffect(() => {
+    wallJoinDraftRef.current = wallJoinDraft;
+  }, [wallJoinDraft]);
+  useEffect(() => {
+    visibleLayerCountRef.current = visibleLayerCount;
+  }, [visibleLayerCount]);
   useEffect(() => {
     lumenBoxRef.current = lumenBox;
   }, [lumenBox]);
@@ -2266,6 +2417,9 @@ export function InteractiveSegPanel({
       lumen: clonePoly(lumenPolygonRef.current),
       lumenBox: lumenBoxRef.current ? { ...lumenBoxRef.current } : null,
       extras: extraLesionPolygonsRef.current.map((poly) => clonePoly(poly)),
+      wallSegments: wallPaintSegmentsRef.current.map(cloneWallPaintSegment),
+      wallJoin: cloneBilateralJoinDraft(wallJoinDraftRef.current),
+      focus: analysisFocusPointsRef.current.map((point) => point.slice()),
     });
     if (undoStackRef.current.length > 40) undoStackRef.current.shift();
     setUndoLen(undoStackRef.current.length);
@@ -2279,11 +2433,26 @@ export function InteractiveSegPanel({
     lumenPolygonRef.current = prev.lumen;
     lumenBoxRef.current = prev.lumenBox;
     extraLesionPolygonsRef.current = prev.extras || [];
+    wallPaintSegmentsRef.current = (prev.wallSegments || []).map(cloneWallPaintSegment);
+    analysisFocusPointsRef.current = (prev.focus || []).map((point) => point.slice());
+    wallJoinDraftRef.current = prev.wallJoin !== undefined
+      ? cloneBilateralJoinDraft(prev.wallJoin)
+      : (wallPaintSegmentsRef.current.length >= 2
+        ? joinBilateralExpectedSpans({
+          segments: wallPaintSegmentsRef.current,
+          lesion: prev.lesion,
+          lumen: prev.lumen,
+          deepest: analysisFocusPointsRef.current[0] || null,
+        })
+        : null);
     setPoints(prev.lesion);
     setWallPoints(prev.wall);
     setLumenPolygon(prev.lumen);
     setLumenBox(prev.lumenBox);
     setExtraLesionPolygons(prev.extras || []);
+    setWallPaintSegments(wallPaintSegmentsRef.current);
+    setAnalysisFocusPoints(analysisFocusPointsRef.current);
+    setWallJoinDraft(wallJoinDraftRef.current);
     setUndoLen(undoStackRef.current.length);
     recordDoctorOp('contour_drag', {
       layer: prev.lumen.length ? 'lumen' : 'lesion',
@@ -2786,24 +2955,6 @@ export function InteractiveSegPanel({
     }
   }, [dinoBusy, dinoCacheKey, mediaMode, onDinoFeatures, patient, videoTime, zh]);
 
-  const toggleRoiDinoLayers = useCallback(() => {
-    if (pointsRef.current.length < 3) {
-      setMessage(zh ? '请先框选当前帧病灶，再看 ROI 附近的 DINO 层特征' : 'Box the lesion first, then inspect ROI DINO layers');
-      return;
-    }
-    if (dinoDockOpen) {
-      setDinoDockOpen(false);
-      return;
-    }
-    setDinoDockOpen(true);
-    const cached = dinoCacheRef.current.get(dinoCacheKey());
-    if (cached?.available) {
-      setDinoResult(cached);
-      return;
-    }
-    void extractDinoFeatures({ compact: true });
-  }, [dinoCacheKey, dinoDockOpen, extractDinoFeatures, zh]);
-
   const captureFrameDataUrl = useCallback(() => {
     const video = videoRef.current;
     if (mediaMode === 'video' && video && video.videoWidth) {
@@ -2949,6 +3100,81 @@ export function InteractiveSegPanel({
     wallPoints,
   ]);
 
+  const wallOpsCompact = useCallback((opts?: {
+    segments?: WallPaintSegment[];
+    focus?: number[][];
+    join?: BilateralJoinDraft | null;
+    clear?: boolean;
+    hasWallPolygon?: boolean;
+  }) => {
+    const segments = opts?.clear
+      ? []
+      : (opts?.segments || wallPaintSegmentsRef.current).filter((segment) => segment.points.length >= 2);
+    const focus = opts?.clear
+      ? []
+      : (opts?.focus || analysisFocusPointsRef.current).filter((point) => point.length >= 2);
+    const join = opts?.clear
+      ? null
+      : (opts?.join !== undefined ? opts.join : wallJoinDraftRef.current);
+    return {
+      book: WALL_OPS_BOOK,
+      memory_ready: false as const,
+      ...compactWallSnapshotPayload({
+        segments,
+        focus,
+        joinVerdict: join?.verdict || null,
+        sharedVisibleLayers: join?.sharedVisibleLayers,
+        interrupts: opts?.clear ? [] : (wallLayerReadoutRef.current?.interrupts || []),
+        wallVisibility: wallVisibilityRef.current,
+        serosaAnchorMode: serosaAnchorModeRef.current,
+        targetLayers: wallLayerTargetRef.current,
+        hasWallPolygon: opts?.hasWallPolygon ?? wallPointsRef.current.length >= 3,
+        hasLesion: pointsRef.current.length >= 3,
+        hasLumen: lumenPolygonRef.current.length >= 3,
+        joinAvailable: Boolean(join?.available),
+        gapPx: join?.gapPx ?? null,
+        overshootPx: join?.overshootPx ?? null,
+      }),
+      ...joinDraftOpsFields(join),
+    };
+  }, []);
+
+  const refreshWallJoinDraft = useCallback((
+    segments?: WallPaintSegment[],
+    opts?: { record?: boolean },
+  ) => {
+    const nextSegments = segments || wallPaintSegmentsRef.current;
+    const join = joinBilateralExpectedSpans({
+      segments: nextSegments,
+      lesion: pointsRef.current,
+      lumen: lumenPolygonRef.current,
+      deepest: analysisFocusPointsRef.current[0] || null,
+    });
+    wallJoinDraftRef.current = join;
+    setWallJoinDraft(join);
+    const focusCount = analysisFocusPointsRef.current.filter((point) => point.length >= 2).length;
+    const sig = wallJoinRecordSig(join, nextSegments.length, focusCount);
+    if (opts?.record !== false && sig !== lastWallJoinSigRef.current) {
+      lastWallJoinSigRef.current = sig;
+      recordDoctorOpRef.current('wall_join_update', {
+        operation: 'wall_join_update',
+        layer: 'wall',
+        tool: 'expected_line',
+        keyframe_id: activeDoctorKeyframeIdRef.current,
+        video_time_sec: Number((videoRef.current?.currentTime ?? 0).toFixed(3)),
+        wall_join_draft: serializeBilateralJoinDraft(join),
+        wall_paint_segments: compactWallPaintSegmentsForOps(nextSegments),
+        analysis_focus_points: analysisFocusPointsRef.current
+          .filter((point) => point.length >= 2)
+          .map((point) => point.slice()),
+        ...wallOpsCompact({ segments: nextSegments, join }),
+      });
+    } else if (opts?.record === false) {
+      lastWallJoinSigRef.current = sig;
+    }
+    return join;
+  }, [wallOpsCompact]);
+
   const persistOpenKeyframeContours = useCallback((opts?: { refined?: boolean; clearWall?: boolean; refOnly?: boolean }) => {
     const currentTime = videoRef.current?.currentTime ?? videoTime;
     const open = isDoctorKeyframeOpen(
@@ -2956,19 +3182,24 @@ export function InteractiveSegPanel({
       activeDoctorKeyframeIdRef.current,
       currentTime,
       false,
+      videoFpsRef.current,
     );
     if (!open) return;
     const lesion = pointsRef.current.length >= 3 ? clonePoly(pointsRef.current) : null;
     const extras = extraLesionPolygonsRef.current.filter((poly) => poly.length >= 3).map((poly) => clonePoly(poly));
     const lumen = lumenPolygonRef.current.length >= 3 ? clonePoly(lumenPolygonRef.current) : null;
     const wall = wallPointsRef.current.length >= 3 ? clonePoly(wallPointsRef.current) : null;
+    const segments = wallPaintSegmentsRef.current
+      .filter((segment) => segment.points.length >= 2)
+      .map(cloneWallPaintSegment);
     const focus = analysisFocusPointsRef.current.filter((point) => point.length >= 2).map((point) => point.slice());
     const bands = wallLayerBandsRef.current.filter((band) => band.length >= 2).map((band) => clonePoly(band));
     const imaginary = wallLayerImaginaryRef.current.map((mask) => mask.slice());
     // Keep a semantic checkpoint in the account-scoped operation stream. The
     // case draft stores only the latest state, while this snapshot lets the
     // workstation replay each public expected-line edit in order.
-    if (!opts?.refOnly && (wall || focus.length || bands.length || opts?.clearWall)) {
+    if (!opts?.refOnly && (segments.length || wall || focus.length || bands.length || opts?.clearWall)) {
+      const joinStored = opts?.clearWall ? null : serializeBilateralJoinDraft(wallJoinDraftRef.current);
       recordDoctorOpRef.current('wall_snapshot', {
         operation: opts?.clearWall ? 'wall_snapshot_clear' : 'wall_snapshot_save',
         layer: 'wall',
@@ -2977,15 +3208,27 @@ export function InteractiveSegPanel({
         keyframe_id: open.id,
         video_time_sec: Number(currentTime.toFixed(3)),
         wall_polygon: opts?.clearWall ? null : wall,
+        wall_paint_segments: opts?.clearWall ? [] : compactWallPaintSegmentsForOps(segments),
+        lesion_polygon: opts?.clearWall ? null : compactPolyForOps(lesion, 64),
+        lumen_polygon: opts?.clearWall ? null : compactPolyForOps(lumen, 48),
         analysis_focus_points: opts?.clearWall ? [] : focus,
         wall_layer_bands: opts?.clearWall ? [] : bands,
         wall_layer_imaginary: opts?.clearWall ? [] : imaginary,
         wall_visibility: wallVisibilityRef.current,
         serosa_anchor_mode: serosaAnchorModeRef.current,
         wall_layer_readout: opts?.clearWall ? null : wallLayerReadoutRef.current,
+        wall_join_draft: joinStored,
+        wall_thickness_measure: opts?.clearWall ? null : wallThicknessMeasureRef.current,
         wall_target_layers: wallLayerTargetRef.current,
         adjacent_lock: adjacentPairRef.current,
         refined: opts?.refined ?? false,
+        ...wallOpsCompact({
+          segments,
+          focus,
+          join: opts?.clearWall ? null : wallJoinDraftRef.current,
+          clear: opts?.clearWall,
+          hasWallPolygon: Boolean(wall),
+        }),
       });
     }
     const apply = (prev: typeof doctorKeyframesRef.current) => prev.map((kf) => (
@@ -2997,12 +3240,17 @@ export function InteractiveSegPanel({
             lumenPolygon: lumen || kf.lumenPolygon,
             lumenBox: lumenBoxRef.current || kf.lumenBox,
             wallPolygon: opts?.clearWall ? null : (wall || kf.wallPolygon),
+            wallPaintSegments: opts?.clearWall ? [] : (segments.length ? segments : kf.wallPaintSegments),
+            wallJoinDraft: opts?.clearWall
+              ? null
+              : (serializeBilateralJoinDraft(wallJoinDraftRef.current) || kf.wallJoinDraft),
             analysisFocusPoints: opts?.clearWall ? [] : (focus.length ? focus : kf.analysisFocusPoints),
             wallVisibility: wallVisibilityRef.current,
             serosaAnchorMode: serosaAnchorModeRef.current,
             wallLayerReadout: opts?.clearWall ? null : (wallLayerReadoutRef.current || kf.wallLayerReadout),
             wallLayerBands: opts?.clearWall ? [] : (bands.length ? bands : kf.wallLayerBands),
             wallLayerImaginary: opts?.clearWall ? [] : (imaginary.length ? imaginary : kf.wallLayerImaginary),
+            wallThicknessMeasure: opts?.clearWall ? null : (wallThicknessMeasureRef.current || kf.wallThicknessMeasure),
             segStatus: lesion || (kf.lesionPolygon && kf.lesionPolygon.length >= 3) ? 'ready' : kf.segStatus,
             refined: opts?.refined ?? kf.refined,
           }
@@ -3017,22 +3265,41 @@ export function InteractiveSegPanel({
       doctorKeyframesRef.current = next;
       return next;
     });
-  }, [videoTime]);
+  }, [videoTime, wallOpsCompact]);
   persistOpenKeyframeContoursRef.current = persistOpenKeyframeContours;
 
   const clearWallDraftOnFrame = useCallback(() => {
     wallPointsRef.current = [];
     wallExtensionMaskRef.current = [];
     setWallPoints([]);
+    wallPaintSegmentsRef.current = [];
+    setWallPaintSegments([]);
+    wallJoinDraftRef.current = null;
+    setWallJoinDraft(null);
+    lastWallJoinSigRef.current = '';
     setWallLayerReadout(null);
     wallLayerReadoutRef.current = null;
     setWallEchoClarify(null);
+    setAiEchoClarify(null);
+    deepestAnalysisRef.current = null;
     setWallLayerBands([]);
     wallLayerBandsRef.current = [];
     setWallLayerImaginary([]);
     wallLayerImaginaryRef.current = [];
     analysisFocusPointsRef.current = [];
     setAnalysisFocusPoints([]);
+    aiDeepestCandidatesRef.current = [];
+    setAiDeepestCandidates([]);
+    setAutoAnchorsStatus(null);
+    setDeepestDisagree(false);
+    setSelectedSpanIndex(null);
+    selectedSpanIndexRef.current = null;
+    setWallThicknessMeasure(null);
+    wallThicknessMeasureRef.current = null;
+    setWallCaliperMode(false);
+    wallCaliperModeRef.current = false;
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
     wallPaintStrokeRef.current = null;
     setWallPaintStroke([]);
     wallPickFlanksRef.current = [];
@@ -3049,12 +3316,18 @@ export function InteractiveSegPanel({
       activeDoctorKeyframeIdRef.current,
       currentTime,
       false,
+      videoFpsRef.current,
     );
     if (!open) {
       setMessage(zh ? '请先停在关键帧上，再保存本帧胃壁线' : 'Pause on a keyframe first, then save the wall line');
       return;
     }
-    if (wallPointsRef.current.length < 3 && !wallLayerBandsRef.current.length && !analysisFocusPointsRef.current.length) {
+    if (
+      wallPointsRef.current.length < 3
+      && !wallPaintSegmentsRef.current.length
+      && !wallLayerBandsRef.current.length
+      && !analysisFocusPointsRef.current.length
+    ) {
       setMessage(zh ? '本帧还没有可保存的胃壁线' : 'No wall line on this frame to save');
       return;
     }
@@ -3131,11 +3404,12 @@ export function InteractiveSegPanel({
         op: 'wall_prompt_meta',
         visibility,
         anchor_mode: anchorMode,
+        ...wallOpsCompact(),
       });
     };
     window.addEventListener(WALL_PROMPT_META_EVENT, onMeta);
     return () => window.removeEventListener(WALL_PROMPT_META_EVENT, onMeta);
-  }, [applyPromptMetaLive, recordDoctorOp]);
+  }, [applyPromptMetaLive, recordDoctorOp, wallOpsCompact]);
 
   const clearKeyframeOverlay = useCallback(() => {
     pointsRef.current = [];
@@ -3150,15 +3424,26 @@ export function InteractiveSegPanel({
     wallPointsRef.current = [];
     wallExtensionMaskRef.current = [];
     setWallPoints([]);
+    wallPaintSegmentsRef.current = [];
+    setWallPaintSegments([]);
+    wallJoinDraftRef.current = null;
+    setWallJoinDraft(null);
+    lastWallJoinSigRef.current = '';
     setWallLayerReadout(null);
     wallLayerReadoutRef.current = null;
     setWallEchoClarify(null);
+    setAiEchoClarify(null);
+    deepestAnalysisRef.current = null;
     setWallLayerBands([]);
     wallLayerBandsRef.current = [];
     setWallLayerImaginary([]);
     wallLayerImaginaryRef.current = [];
     analysisFocusPointsRef.current = [];
     setAnalysisFocusPoints([]);
+    aiDeepestCandidatesRef.current = [];
+    setAiDeepestCandidates([]);
+    setAutoAnchorsStatus(null);
+    setDeepestDisagree(false);
     setAnalysisFocusMode(false);
     analysisFocusModeRef.current = false;
     setSimpleEditMode(false);
@@ -3285,6 +3570,8 @@ export function InteractiveSegPanel({
         lumenPolygon: lumenPolygonRef.current,
         lumenBox: lumenBoxRef.current,
         wallPolygon: wallPointsRef.current,
+        wallPaintSegments: wallPaintSegmentsRef.current,
+        wallJoinDraft: serializeBilateralJoinDraft(wallJoinDraftRef.current),
         wallLayerReadout: wallLayerReadoutRef.current,
       },
     );
@@ -3401,8 +3688,34 @@ export function InteractiveSegPanel({
               : null,
             wall_note: wallLayerReadoutRef.current?.noteZh || null,
             echo_pattern: wallEchoClarifyRef.current?.patternZh || null,
-            echo_note: wallEchoClarifyRef.current?.noteZh || null,
+            echo_note: deepestAnalysisRef.current?.noteZh || wallEchoClarifyRef.current?.noteZh || null,
+            echo_doctor_pattern: deepestAnalysisRef.current?.doctor?.echo?.patternZh || null,
+            echo_ai_pattern: aiEchoClarifyRef.current?.patternZh
+              || deepestAnalysisRef.current?.ai?.echo?.patternZh
+              || null,
             extra_lesion_count: extraLesionPolygonsRef.current.filter((poly) => poly.length >= 3).length,
+            wall_join_verdict: wallJoinDraftRef.current?.verdict || null,
+            wall_span_count: wallPaintSegmentsRef.current.filter((segment) => segment.points.length >= 2).length,
+            wall_span_layers: wallPaintSegmentsRef.current
+              .filter((segment) => segment.points.length >= 2)
+              .map((segment) => segment.visibleLayers || 3),
+            analysis_focus_count: analysisFocusPointsRef.current.length,
+            analysis_focus_points: analysisFocusPointsRef.current
+              .filter((point) => point.length >= 2)
+              .map((point) => point.slice()),
+            ai_deepest_region: aiDeepestCandidatesRef.current[0]
+              ? {
+                center: aiDeepestCandidatesRef.current[0].center.slice(),
+                radius: aiDeepestCandidatesRef.current[0].radius,
+              }
+              : null,
+            deepest_disagree: deepestRegionsDisagree(
+              analysisFocusPointsRef.current[0],
+              aiDeepestCandidatesRef.current[0] || null,
+            ),
+            auto_anchors: autoAnchorsStatusRef.current,
+            wall_visibility: wallVisibilityRef.current,
+            serosa_anchor_mode: serosaAnchorModeRef.current,
             keyframe_interrupts: doctorKeyframesRef.current.map((kf) => ({
               timeSec: kf.timeSec,
               interrupts: kf.wallLayerReadout?.interrupts || [],
@@ -3697,6 +4010,7 @@ export function InteractiveSegPanel({
     const holdCtx = hold.getContext('2d');
     if (!holdCtx) return;
     holdCtx.drawImage(video, 0, 0);
+    lastCineFrameTimeRef.current = video.currentTime || 0;
   }, []);
 
   const paintLesionBoxDrag = useCallback(() => {
@@ -3712,7 +4026,15 @@ export function InteractiveSegPanel({
       && !!video
       && video.videoWidth > 0
       && video.readyState >= 2;
-    const useHold = !useVideo && mediaMode === 'video' && !!hold && hold.width > 0 && hold.height > 0;
+    const displayTime = useVideo ? video!.currentTime : videoTime;
+    const holdMatches = lastCineFrameTimeRef.current != null
+      && cineTimesOnSameFrame(lastCineFrameTimeRef.current, displayTime, videoFpsRef.current);
+    const useHold = !useVideo
+      && mediaMode === 'video'
+      && !!hold
+      && hold.width > 0
+      && hold.height > 0
+      && holdMatches;
     const iw = useVideo ? video!.videoWidth : useHold ? hold!.width : (img?.naturalWidth || 0);
     const ih = useVideo ? video!.videoHeight : useHold ? hold!.height : (img?.naturalHeight || 0);
     if (!iw || !ih) return;
@@ -3783,7 +4105,7 @@ export function InteractiveSegPanel({
 
   const beginVideoScrub = useCallback(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || video.readyState < 2) return;
     scrubbingRef.current = true;
     persistOpenKeyframeContoursRef.current({ refOnly: true });
     video.pause();
@@ -3857,36 +4179,55 @@ export function InteractiveSegPanel({
 
   const stepCineFrames = useCallback((deltaFrames: number) => {
     const video = videoRef.current;
-    if (!video || !videoUrl) return;
+    if (!video || !videoUrl || video.readyState < 2) return;
     persistOpenKeyframeContoursRef.current();
     video.pause();
     setIsPlaying(false);
     setTrackOnPlay(false);
     setFrameFrozen(false);
     frameFrozenRef.current = false;
+    const fromTime = video.currentTime || 0;
+    const fromKf = findDoctorKeyframeById(doctorKeyframesRef.current, activeDoctorKeyframeIdRef.current);
     const nextTime = stepCineTime(
-      video.currentTime || 0,
+      fromTime,
       deltaFrames,
       videoFpsRef.current,
       video.duration || videoDuration,
     );
-    if (Math.abs((video.currentTime || 0) - nextTime) > 0.0005) {
+    if (Math.abs(fromTime - nextTime) > 0.0005) {
       video.currentTime = nextTime;
     }
     setVideoTime(nextTime);
     paintProgressUi(nextTime, { forceSlider: true });
     syncFrameFromVideo({ force: true });
-    const activeKf = findDoctorKeyframeById(doctorKeyframesRef.current, activeDoctorKeyframeIdRef.current);
-    if (!activeKf || cineFrameIndex(nextTime, videoFpsRef.current) !== cineFrameIndex(activeKf.timeSec, videoFpsRef.current)) {
+    const leftKeyframe = Boolean(
+      fromKf
+      && cineFrameIndex(nextTime, videoFpsRef.current) !== cineFrameIndex(fromKf.timeSec, videoFpsRef.current),
+    );
+    if (!fromKf || leftKeyframe) {
       setActiveDoctorKeyframeId(null);
       activeDoctorKeyframeIdRef.current = null;
       clearKeyframeOverlayRef.current();
     }
     redrawRef.current();
     recordDoctorOpRef.current('cine_frame_step', {
-      video_time_sec: nextTime,
+      video_time_sec: Number(nextTime.toFixed(3)),
+      from_time_sec: Number(fromTime.toFixed(3)),
       step: deltaFrames,
       playing: false,
+      left_keyframe: leftKeyframe,
+      ghost_keyframe_id: fromKf?.id || null,
+      ghost_shown: Boolean(
+        leftKeyframe
+        && fromKf
+        && (
+          (fromKf.wallPaintSegments || []).some((segment) => (segment.points || []).length >= 2)
+          || (fromKf.lesionPolygon || []).length >= 3
+          || (fromKf.analysisFocusPoints || []).length > 0
+        ),
+      ),
+      span_count: (fromKf?.wallPaintSegments || wallPaintSegmentsRef.current)
+        .filter((segment) => (segment.points || []).length >= 2).length,
     });
   }, [paintProgressUi, syncFrameFromVideo, videoDuration, videoUrl]);
 
@@ -4182,6 +4523,7 @@ export function InteractiveSegPanel({
         && poly.length >= 3
       ) {
         scheduleCompleteMaskAutosaveRef.current('auto_save');
+        applyProposedWallFromLesionRef.current({ silent: Boolean(opts?.silent) });
       }
       return poly;
     } catch (err) {
@@ -4610,7 +4952,15 @@ export function InteractiveSegPanel({
       && !!video
       && video.videoWidth > 0
       && video.readyState >= 2;
-    const useHold = !useVideo && mediaMode === 'video' && !!hold && hold.width > 0 && hold.height > 0;
+    const displayTime = useVideo ? video!.currentTime : videoTime;
+    const holdMatches = lastCineFrameTimeRef.current != null
+      && cineTimesOnSameFrame(lastCineFrameTimeRef.current, displayTime, videoFpsRef.current);
+    const useHold = !useVideo
+      && mediaMode === 'video'
+      && !!hold
+      && hold.width > 0
+      && hold.height > 0
+      && holdMatches;
 
     const iw = useVideo ? video!.videoWidth : useHold ? hold!.width : (img?.naturalWidth || 0);
     const ih = useVideo ? video!.videoHeight : useHold ? hold!.height : (img?.naturalHeight || 0);
@@ -4650,12 +5000,9 @@ export function InteractiveSegPanel({
       activeDoctorKeyframeId,
       useVideo ? video!.currentTime : videoTime,
       isPlaying,
+      videoFpsRef.current,
     );
-    const openedSameCineFrame = Boolean(
-      openedKeyframe
-      && cineFrameIndex(useVideo ? video!.currentTime : videoTime, videoFpsRef.current)
-        === cineFrameIndex(openedKeyframe.timeSec, videoFpsRef.current),
-    );
+    const openedSameCineFrame = Boolean(openedKeyframe);
     const hideKeyframeSeg = doctorKeyframes.length > 0 && !openedSameCineFrame;
     const trackingPlayback = Boolean(
       !hideKeyframeSeg
@@ -4769,12 +5116,160 @@ export function InteractiveSegPanel({
       });
     };
 
-    const showWallStroke = liveWall.length >= 3 && !wallPaintMode && (
+    const committedWallStrokes = hideKeyframeSeg
+      ? []
+      : wallPaintSegments.filter((segment) => segment.points.length >= 2);
+    const showWallStroke = liveWall.length >= 3 && !wallPaintMode && !committedWallStrokes.length && (
       !wallLayerBands.length
       || (simpleEditMode && simpleEditLayer === 'wall')
     );
+    const drawJoinDraft = (draft: BilateralJoinDraft | null, allowGhost = false) => {
+      if ((!allowGhost && hideKeyframeSeg) || !draft?.available) return;
+      const markInner = (point: number[] | null, color: string) => {
+        if (!point || point.length < 2) return;
+        const p = map(point[0], point[1]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      };
+      if (joinDraftShowsPath(draft)) {
+        drawPoly(
+          draft.path,
+          'transparent',
+          draft.verdict === 'joined_overshoot' ? '#f59e0b' : '#fbbf24',
+          true,
+          false,
+        );
+        markInner(draft.leftInner, '#fde68a');
+        markInner(draft.rightInner, '#fde68a');
+        return;
+      }
+      markInner(draft.leftInner, '#fda4af');
+      markInner(draft.rightInner, '#fda4af');
+    };
+
+    const drawKeyframeGhost = () => {
+      if (!hideKeyframeSeg) return;
+      if (seekingToKeyframeRef.current || activeDoctorKeyframeId) return;
+      const ghostLesion = pointsRef.current.length >= 3 ? pointsRef.current : [];
+      const ghostWalls = wallPaintSegments
+        .map((segment) => segment.points)
+        .filter((poly) => poly.length >= 2);
+      const ghostWall = wallPointsRef.current.length >= 3 ? wallPointsRef.current : wallPoints;
+      if (
+        ghostLesion.length < 3
+        && ghostWalls.length < 1
+        && analysisFocusPoints.length < 1
+        && !wallJoinDraft
+        && wallLayerBands.length < 1
+      ) {
+        return;
+      }
+      ctx.save();
+      ctx.globalAlpha = 0.42;
+      ghostWalls.forEach((poly) => {
+        drawPoly(poly, 'transparent', COLOR_WALL_STROKE, true, false);
+      });
+      if (!ghostWalls.length && ghostWall.length >= 3) {
+        drawPoly(ghostWall, 'transparent', COLOR_WALL_STROKE, true, false);
+      }
+      drawJoinDraft(wallJoinDraft, true);
+      if (ghostLesion.length >= 3) {
+        drawPoly(ghostLesion, 'rgba(94, 184, 196, 0.08)', COLOR_LESION_STROKE, true);
+      }
+      analysisFocusPoints.forEach((point, index) => {
+        if (!point || point.length < 2) return;
+        const p = map(point[0], point[1]);
+        const r = Math.max(8, deepestRegionRadius(pointsRef.current) * scale);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(p.x - 7, p.y);
+        ctx.lineTo(p.x + 7, p.y);
+        ctx.moveTo(p.x, p.y - 7);
+        ctx.lineTo(p.x, p.y + 7);
+        ctx.stroke();
+        ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillStyle = '#fde68a';
+        ctx.fillText(zh ? (index === 0 ? '最深' : `最深${index + 1}`) : (index === 0 ? 'Deepest' : `D${index + 1}`), p.x + 9, p.y - 7);
+      });
+      const outer = wallLayerBands[wallLayerBands.length - 1];
+      if (outer && outer.length >= 2) {
+        drawPoly(outer, 'transparent', '#4ade80', true, false);
+      }
+      drawSpanBadges(wallPaintSegments);
+      drawCineBreach();
+      ctx.restore();
+    };
+
+    const drawSpanBadges = (segments: typeof wallPaintSegments) => {
+      segments.forEach((segment) => {
+        const pts = segment.points || [];
+        if (pts.length < 2) return;
+        const mid = pts[Math.floor(pts.length / 2)];
+        if (!mid || mid.length < 2) return;
+        const p = map(mid[0], mid[1]);
+        const text = spanLayerBadge(segment.visibleLayers, zh);
+        ctx.save();
+        ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+        const width = ctx.measureText(text).width + 8;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.62)';
+        ctx.fillRect(p.x - width / 2, p.y - 18, width, 14);
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fillText(text, p.x - width / 2 + 4, p.y - 7);
+        ctx.restore();
+      });
+    };
+
+    const drawCineBreach = () => {
+      const cue = cineBreachCue({
+        verdict: wallJoinDraft?.verdict,
+        gapPoint: wallJoinDraft?.gapPoint,
+        visibility: wallVisibility,
+        interrupts: wallLayerReadout?.interrupts,
+      });
+      if (!cue?.show) return;
+      drawBreakthroughMarks(ctx, wallLayerBands, map, {
+        wall: wallPointsRef.current.length >= 3 ? wallPointsRef.current : wallPoints,
+        lesion: pointsRef.current.length >= 3 ? pointsRef.current : displayPoints,
+        imaginary: wallLayerImaginary,
+        interrupts: wallLayerReadout?.interrupts,
+        targetLayers: wallLayerTarget,
+        at: cue.at,
+        label: zh ? cue.labelZh : cue.labelEn,
+        tone: cue.tone,
+      });
+    };
+
+    const drawCommittedSpans = () => {
+      committedWallStrokes.forEach((segment, index) => {
+        const poly = segment.points;
+        if (poly.length < 2) return;
+        const r = Math.max(3, (segment.brushRadius || wallBrushRadiusRef.current) * scale);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.14)';
+        ctx.lineWidth = r * 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        poly.forEach((pt, i) => {
+          const p = map(pt[0], pt[1]);
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+        ctx.restore();
+        drawPoly(poly, 'transparent', selectedSpanIndex === index ? '#fde68a' : COLOR_WALL_STROKE, false, false);
+      });
+    };
 
     if (simpleVideoMode) {
+      drawCommittedSpans();
+      drawJoinDraft(wallJoinDraft);
       if (showWallStroke) {
         drawPoly(liveWall, 'transparent', COLOR_WALL_STROKE, false, false);
       }
@@ -4801,6 +5296,8 @@ export function InteractiveSegPanel({
         ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
       }
     } else {
+      drawCommittedSpans();
+      drawJoinDraft(wallJoinDraft);
       if (showWallStroke) {
         drawPoly(liveWall, 'transparent', COLOR_WALL_STROKE, false, false);
       }
@@ -5222,6 +5719,115 @@ export function InteractiveSegPanel({
       }
     }
 
+    if (!hideKeyframeSeg && analysisFocusPoints.length < 1) {
+      aiDeepestCandidates.slice(0, 1).forEach((item) => {
+        const p = map(item.center[0], item.center[1]);
+        const r = Math.max(8, item.radius * scale);
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(125, 211, 252, 0.12)';
+        ctx.fill();
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillStyle = '#bae6fd';
+        ctx.fillText(zh ? 'AI建议' : 'AI', p.x + 10, p.y - 8);
+        ctx.restore();
+      });
+    }
+    if (!hideKeyframeSeg) analysisFocusPoints.slice(0, 1).forEach((point) => {
+      if (!point || point.length < 2) return;
+      const p = map(point[0], point[1]);
+      ctx.save();
+      ctx.beginPath();
+      const focusR = Math.max(8, deepestRegionRadius(pointsRef.current) * scale);
+      ctx.arc(p.x, p.y, focusR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.20)';
+      ctx.fill();
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(p.x - 8, p.y);
+      ctx.lineTo(p.x + 8, p.y);
+      ctx.moveTo(p.x, p.y - 8);
+      ctx.lineTo(p.x, p.y + 8);
+      ctx.stroke();
+      ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillStyle = '#fde68a';
+      ctx.fillText(zh ? '最深' : 'Deepest', p.x + 10, p.y - 8);
+      ctx.restore();
+    });
+    const caliperPts = [
+      wallThicknessMeasure?.inner,
+      wallThicknessMeasure?.outer,
+      wallCaliperPending,
+    ].filter((point): point is number[] => Array.isArray(point) && point.length >= 2);
+    if (!hideKeyframeSeg && caliperPts.length) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(125, 211, 252, 0.95)';
+      ctx.fillStyle = 'rgba(125, 211, 252, 0.95)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 3]);
+      if (caliperPts.length >= 2) {
+        const a = map(caliperPts[0][0], caliperPts[0][1]);
+        const b = map(caliperPts[1][0], caliperPts[1][1]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      const caliperArm = 8;
+      caliperPts.forEach((point) => {
+        const p = map(point[0], point[1]);
+        ctx.beginPath();
+        ctx.moveTo(p.x - caliperArm, p.y);
+        ctx.lineTo(p.x + caliperArm, p.y);
+        ctx.moveTo(p.x, p.y - caliperArm);
+        ctx.lineTo(p.x, p.y + caliperArm);
+        ctx.stroke();
+      });
+      if (wallThicknessMeasure) {
+        const mid = map(
+          (wallThicknessMeasure.inner[0] + wallThicknessMeasure.outer[0]) / 2,
+          (wallThicknessMeasure.inner[1] + wallThicknessMeasure.outer[1]) / 2,
+        );
+        ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fillText(
+          zh
+            ? `${wallThicknessMeasure.thicknessPx.toFixed(1)} px / 笔刷 ${wallThicknessMeasure.brushUsed ?? wallThicknessMeasure.recommendedBrush}`
+            : `${wallThicknessMeasure.thicknessPx.toFixed(1)} px / brush ${wallThicknessMeasure.brushUsed ?? wallThicknessMeasure.recommendedBrush}`,
+          mid.x + 8,
+          mid.y - 8,
+        );
+      }
+      ctx.restore();
+    }
+    if (wallCaliperModeRef.current) {
+      const hover = paintCursorRef.current;
+      if (hover) {
+        const p = map(hover[0], hover[1]);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.95)';
+        ctx.lineWidth = 1.4;
+        const arm = 10;
+        ctx.beginPath();
+        ctx.moveTo(p.x - arm, p.y);
+        ctx.lineTo(p.x + arm, p.y);
+        ctx.moveTo(p.x, p.y - arm);
+        ctx.lineTo(p.x, p.y + arm);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    drawKeyframeGhost();
+
     const sculpt = lumenSculptModeRef.current;
     const paintStrokePreview = lumenPaintStrokeRef.current;
     const brushPt = paintCursorRef.current;
@@ -5254,9 +5860,8 @@ export function InteractiveSegPanel({
       }
     }
 
-    // After the doctor draws the expected line, show only the nearby ordered
-    // analysis interfaces. Avoid ribbons, flank guides and breakthrough marks
-    // on the ultrasound image; their detail remains available in the side card.
+    // Nearby ordered interfaces stay on cine. One white-red cross names the
+    // suspected layer; filled ribbons stay in the side card.
     if (!hideKeyframeSeg && wallLayerBands.length) {
       drawFourWallInterfaces(ctx, wallLayerBands, map, {
         lesion: displayPoints,
@@ -5270,7 +5875,11 @@ export function InteractiveSegPanel({
           : null,
       });
     }
-  }, [captureCineHoldFrame, points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallLayerTarget, wallLayerReadout, viewZoom, viewCenter, analysisFocusPoints]);
+    if (!hideKeyframeSeg) {
+      drawSpanBadges(wallPaintSegments);
+      drawCineBreach();
+    }
+  }, [captureCineHoldFrame, points, extraLesionPolygons, wallPoints, imgLoaded, dragIndex, dragLayer, mediaMode, frameFrozen, trackingPrepared, wallAnalysisOpen, samClicks, promptStrokes, activePromptStroke, nnInteractiveClicks, samBoxPreview, simpleVideoMode, simpleEditMode, simpleEditLayer, refineTarget, mode, videoFrameOverrides, lumenBox, lumenPolygon, lumenEditMode, viewFocusBox, viewFocusMode, overlapFocus, layerResult, historyPreview, magnifierOn, polygonDraft, zh, doctorKeyframes, activeDoctorKeyframeId, isPlaying, videoTime, lumenSculptMode, paintRadius, wallPickMode, wallPickFlanks, wallPaintMode, wallPaintStroke, wallPaintSegments, wallJoinDraft, wallLayerBands, wallLayerImaginary, wallBrushRadius, wallLayerTarget, wallLayerReadout, wallVisibility, viewZoom, viewCenter, analysisFocusPoints, aiDeepestCandidates, deepestDisagree, selectedSpanIndex, wallCaliperMode, wallCaliperPending, wallThicknessMeasure]);
 
   useEffect(() => {
     redrawRef.current = redraw;
@@ -5322,6 +5931,8 @@ export function InteractiveSegPanel({
     if (!video) return;
     setFrameFrozen(false);
     frameFrozenRef.current = false;
+    setVideoReady(video.readyState >= 2);
+    setVideoWaiting(video.readyState < 2);
     const stopPlaybackLoop = () => {
       if (playbackRafRef.current !== null) {
         cancelAnimationFrame(playbackRafRef.current);
@@ -5372,6 +5983,9 @@ export function InteractiveSegPanel({
     };
     const onMeta = () => {
       setVideoDuration(video.duration || 0);
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        setVideoReady(true);
+      }
       video.defaultPlaybackRate = videoPlaybackRateRef.current;
       video.playbackRate = videoPlaybackRateRef.current;
       syncFrameFromVideo({ force: true });
@@ -5379,8 +5993,17 @@ export function InteractiveSegPanel({
     };
     const onReady = () => {
       setImgLoaded(true);
+      setVideoReady(true);
+      setVideoWaiting(false);
       syncFrameFromVideo({ force: true });
       redraw();
+    };
+    const onWaiting = () => {
+      setVideoWaiting(true);
+    };
+    const onPlaying = () => {
+      setVideoWaiting(false);
+      setVideoReady(true);
     };
     const onSeeked = () => {
       captureCineHoldFrame(video);
@@ -5410,8 +6033,9 @@ export function InteractiveSegPanel({
     };
     const onPlay = () => {
       persistOpenKeyframeContoursRef.current();
-      if (doctorKeyframesRef.current.length > 0) {
-        clearKeyframeOverlayRef.current();
+      if (seekingToKeyframeRef.current) {
+        if (!video.paused) video.pause();
+        return;
       }
       setIsPlaying(true);
       setFrameFrozen(false);
@@ -5450,6 +6074,8 @@ export function InteractiveSegPanel({
     video.addEventListener('loadedmetadata', onMeta);
     video.addEventListener('loadeddata', onReady);
     video.addEventListener('canplay', onReady);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('playing', onPlaying);
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('play', onPlay);
@@ -5471,6 +6097,11 @@ export function InteractiveSegPanel({
       })());
     if (!alreadySame) {
       lastCineFrameRef.current = null;
+      lastCineFrameTimeRef.current = null;
+      skipCineAutoplayRef.current = false;
+      seekingToKeyframeRef.current = false;
+      setVideoReady(false);
+      setVideoWaiting(true);
       video.src = videoUrl;
       video.load();
     } else if (video.readyState >= 2) {
@@ -5481,6 +6112,8 @@ export function InteractiveSegPanel({
       video.removeEventListener('loadedmetadata', onMeta);
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('canplay', onReady);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('playing', onPlaying);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('play', onPlay);
@@ -5533,11 +6166,14 @@ export function InteractiveSegPanel({
     if (!video) return;
     const key = `${patient?.id || ''}::${videoUrl}`;
     const tryPlay = () => {
+      if (skipCineAutoplayRef.current) return;
       if (autoplayAttemptRef.current === key) return;
       autoplayAttemptRef.current = key;
       video.muted = true;
       video.playsInline = true;
-      void video.play().catch(() => {
+      void video.play().then(() => {
+        if (skipCineAutoplayRef.current && !video.paused) video.pause();
+      }).catch(() => {
         setMessage(
           zh
             ? '请点「播放」看视频。空格先暂停，再按一次才标关键帧，只看这一帧'
@@ -5552,6 +6188,15 @@ export function InteractiveSegPanel({
     video.addEventListener('canplay', tryPlay, { once: true });
     return () => video.removeEventListener('canplay', tryPlay);
   }, [open, mediaMode, patient?.id, videoUrl, zh]);
+
+  useEffect(() => {
+    if (!open || mediaMode !== 'video') return;
+    const next = [
+      ...neighborVideoUrls,
+      ...videos.map((item) => item.url),
+    ].filter((url): url is string => Boolean(url) && url !== videoUrl);
+    prefetchReaderCine(next.slice(0, 2));
+  }, [neighborVideoUrls, open, mediaMode, videoUrl, videos]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -5860,6 +6505,19 @@ export function InteractiveSegPanel({
     setSam31RefineTarget(null);
     setTrackOnPlay(false);
     setBoxAutoSegBusy(false);
+    wallPaintModeRef.current = false;
+    setWallPaintMode(false);
+    wallPaintStrokeRef.current = null;
+    setWallPaintStroke([]);
+    paintCursorRef.current = null;
+    wallPickModeRef.current = false;
+    setWallPickMode(false);
+    analysisFocusModeRef.current = false;
+    setAnalysisFocusMode(false);
+    wallCaliperModeRef.current = false;
+    setWallCaliperMode(false);
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
     let keyframeOk = true;
     try {
       keyframeOk = requireOpenKeyframeForBox();
@@ -5872,10 +6530,22 @@ export function InteractiveSegPanel({
       pointsRef.current.length >= 3
         ? (keepExtraLesionRef.current
           ? (zh ? '再拖一个框会留下上一处病灶' : 'A new box keeps the previous lesion')
-          : (zh ? '再拖一个框会替换当前病灶。多个灶请先点「再框一灶」' : 'A new box replaces this lesion. Tap Add lesion first for a second mass'))
+          : (zh ? '再拖一个框会替换当前病灶。多个灶请先在「更多工具」点「再框一灶」' : 'A new box replaces this lesion. Open More tools and tap Add lesion for a second mass'))
         : (zh ? '请拖出矩形框选病灶' : 'Drag a box around the lesion'),
     );
   }, [armLesionBox, recordDoctorOp, requireOpenKeyframeForBox, stopInteractivePrompt, zh]);
+
+  const stopExpectedLinePaint = useCallback(() => {
+    wallPaintModeRef.current = false;
+    setWallPaintMode(false);
+    wallPaintStrokeRef.current = null;
+    setWallPaintStroke([]);
+    paintCursorRef.current = null;
+    wallCaliperModeRef.current = false;
+    setWallCaliperMode(false);
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
+  }, []);
 
   const enterSimpleContourEdit = useCallback((layer: ContourLayer) => {
     stopInteractivePrompt();
@@ -5903,8 +6573,9 @@ export function InteractiveSegPanel({
     setSimpleEditMode(true);
     setLumenEditMode(false);
     setTrackOnPlay(false);
+    stopExpectedLinePaint();
     setMessage('');
-  }, [mediaMode, simpleVideoMode, stopInteractivePrompt, videoTime]);
+  }, [mediaMode, simpleVideoMode, stopExpectedLinePaint, stopInteractivePrompt, videoTime]);
 
   const toggleSimpleContourEdit = useCallback(() => {
     if (simpleEditMode) {
@@ -5984,7 +6655,7 @@ export function InteractiveSegPanel({
     });
     const frame = captureFrameGray();
     applyWallLayerVisuals(result.wall, readout, frame);
-    refreshWallEchoClarify(frame);
+    refreshWallEchoClarifyRef.current(frame);
     persistOpenKeyframeContours({ refined: true });
     if (!opts?.silent) {
       const live = wallLayerReadoutRef.current || readout;
@@ -6011,6 +6682,7 @@ export function InteractiveSegPanel({
     setLumenEditMode(false);
     setLumenSculptMode(null);
     setSimpleEditMode(false);
+    stopExpectedLinePaint();
     wallPickFlanksRef.current = [];
     setWallPickFlanks([]);
     wallPickModeRef.current = true;
@@ -6022,7 +6694,7 @@ export function InteractiveSegPanel({
       ? `请点两侧看得见的正常${anatomyTargetMeta(wallLayerTargetRef.current).shortZh}。系统按${anatomyTargetMeta(wallLayerTargetRef.current).lineZh}接过去。再点一次则自动接。`
       : `Click the two visible flanks. Join uses your ${wallLayerTargetRef.current}-layer setting. Click again to auto-join.`);
     redrawRef.current?.();
-  }, [applyWallExtension, armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
+  }, [applyWallExtension, armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, stopExpectedLinePaint, zh]);
 
   const captureFrameGray = useCallback((): { gray: Float32Array; width: number; height: number } | null => {
     const video = videoRef.current;
@@ -6093,6 +6765,190 @@ export function InteractiveSegPanel({
     wallLayerReadoutRef.current = next;
   }, []);
 
+  const refreshWallEchoClarify = useCallback((frame?: { gray: Float32Array; width: number; height: number } | null) => {
+    const doctor = analysisFocusPointsRef.current.find((point) => point.length >= 2) || null;
+    if (!doctor) {
+      setWallEchoClarify(null);
+      setAiEchoClarify(null);
+      deepestAnalysisRef.current = null;
+      return null;
+    }
+    const pixels = frame || captureFrameGray();
+    const wall = wallPointsRef.current.length >= 3
+      ? wallPointsRef.current
+      : pickFlankStroke(wallPaintSegmentsRef.current);
+    if (!pixels || wall.length < 3) {
+      setWallEchoClarify(null);
+      setAiEchoClarify(null);
+      deepestAnalysisRef.current = null;
+      return null;
+    }
+    const dual = analyzeDeepestChannels({
+      gray: pixels.gray,
+      width: pixels.width,
+      height: pixels.height,
+      lesion: pointsRef.current,
+      lumen: lumenPolygonRef.current,
+      wall,
+      segments: wallPaintSegmentsRef.current,
+      brushRadius: wallBrushRadiusRef.current,
+      doctorDeepest: doctor,
+    });
+    deepestAnalysisRef.current = dual;
+    setWallEchoClarify(dual.primary);
+    setAiEchoClarify(null);
+    return dual.primary;
+  }, [captureFrameGray]);
+  refreshWallEchoClarifyRef.current = refreshWallEchoClarify;
+
+  const runWallAnalysisAfterDeepestConfirm = useCallback((
+    frame?: { gray: Float32Array; width: number; height: number } | null,
+  ) => {
+    const doctor = analysisFocusPointsRef.current.find((point) => point.length >= 2) || null;
+    if (!doctor) {
+      setWallEchoClarify(null);
+      setAiEchoClarify(null);
+      deepestAnalysisRef.current = null;
+      return null;
+    }
+    const pixels = frame || captureFrameGray();
+    const segments = wallPaintSegmentsRef.current;
+    if (pixels && segments.some((segment) => (segment.points || []).length >= 4)) {
+      const traced = traceVisibleFlanks({
+        gray: pixels.gray,
+        width: pixels.width,
+        height: pixels.height,
+        segments,
+        lesion: pointsRef.current,
+        lumen: lumenPolygonRef.current,
+        brushRadius: wallBrushRadiusRef.current,
+        targetLayers: wallLayerTargetRef.current,
+      });
+      if (traced?.available) {
+        wallPointsRef.current = traced.wall;
+        wallExtensionMaskRef.current = traced.wall.map(() => false);
+        setWallPoints(traced.wall);
+        applyWallLayerVisuals(traced.wall, readoutFromTrace(traced), pixels, traced.layers);
+      }
+      const join = refreshWallJoinDraft(segments);
+      if (join && wallLayerReadoutRef.current) {
+        const nextReadout = applyJoinDraftToReadout(wallLayerReadoutRef.current, join);
+        setWallLayerReadout(nextReadout);
+        wallLayerReadoutRef.current = nextReadout;
+      }
+    }
+    return refreshWallEchoClarify(pixels);
+  }, [applyWallLayerVisuals, captureFrameGray, refreshWallEchoClarify, refreshWallJoinDraft]);
+
+  const applyProposedWallFromLesion = useCallback((opts?: { silent?: boolean }) => {
+    const lesion = pointsRef.current;
+    if (lesion.length < 3) return false;
+    const video = videoRef.current;
+    const img = imgRef.current;
+    const width = mediaMode === 'video' && video?.videoWidth
+      ? video.videoWidth
+      : (img?.naturalWidth || 0);
+    const height = mediaMode === 'video' && video?.videoHeight
+      ? video.videoHeight
+      : (img?.naturalHeight || 0);
+    const proposal = proposeWallFromLesion({
+      lesion,
+      lumen: lumenPolygonRef.current,
+      frameSize: width >= 8 && height >= 8 ? { width, height } : null,
+      visibleLayers: visibleLayerCountRef.current,
+      brushRadius: wallBrushRadiusRef.current,
+      frameIndex: cineFrameIndex(videoRef.current?.currentTime ?? videoTime, videoFpsRef.current),
+      paintedAtMs: Date.now(),
+    });
+    aiDeepestCandidatesRef.current = proposal.deepestCandidates;
+    setAiDeepestCandidates(proposal.deepestCandidates);
+    const anchors = proposal.available ? 'ok' as const : 'failed' as const;
+    autoAnchorsStatusRef.current = anchors;
+    setAutoAnchorsStatus(anchors);
+    const doctorFocus = analysisFocusPointsRef.current.filter((point) => point.length >= 2);
+    setDeepestDisagree(false);
+
+    const nextSegments = mergeAutoProposedSpans(wallPaintSegmentsRef.current, proposal.segments);
+    const replacedAuto = !hasDoctorPaintedSpans(wallPaintSegmentsRef.current)
+      && (
+        nextSegments.length !== wallPaintSegmentsRef.current.length
+        || nextSegments !== wallPaintSegmentsRef.current
+      );
+    if (replacedAuto) {
+      if (nextSegments.length >= 2 || wallPaintSegmentsRef.current.length) pushEditUndo();
+      wallPaintSegmentsRef.current = nextSegments;
+      setWallPaintSegments(nextSegments);
+      setSelectedSpanIndex(nextSegments.length ? nextSegments.length - 1 : null);
+      selectedSpanIndexRef.current = nextSegments.length ? nextSegments.length - 1 : null;
+    }
+    if (doctorFocus.length) {
+      runWallAnalysisAfterDeepestConfirm();
+    } else {
+      analysisFocusModeRef.current = true;
+      setAnalysisFocusMode(true);
+    }
+    if (!opts?.silent || replacedAuto) {
+      persistOpenKeyframeContours({ refined: false });
+      recordDoctorOp('wall_auto_propose', {
+        operation: 'wall_auto_propose',
+        layer: 'wall',
+        tool: 'auto_flanks',
+        status: proposal.available ? 'ok' : 'need_more_spans',
+        segment_count: nextSegments.length,
+        candidate_count: proposal.deepestCandidates.length,
+        wall_paint_segments: compactWallPaintSegmentsForOps(nextSegments),
+        analysis_focus_points: doctorFocus.map((point) => point.slice()),
+        ai_deepest_region: proposal.aiDeepest
+          ? { center: proposal.aiDeepest.center.slice(), radius: proposal.aiDeepest.radius }
+          : null,
+        deepest_disagree: doctorFocus.length > 0 && deepestRegionsDisagree(doctorFocus[0], proposal.aiDeepest),
+        memory_ready: false,
+      });
+    }
+    if (!opts?.silent) {
+      setMessage(zh ? proposal.noteZh : proposal.noteEn);
+    }
+    redrawRef.current?.();
+    return proposal.available;
+  }, [
+    mediaMode,
+    persistOpenKeyframeContours,
+    pushEditUndo,
+    recordDoctorOp,
+    runWallAnalysisAfterDeepestConfirm,
+    videoTime,
+    zh,
+  ]);
+  applyProposedWallFromLesionRef.current = applyProposedWallFromLesion;
+
+  const confirmAiDeepestCandidate = useCallback((index = 0) => {
+    const candidate = aiDeepestCandidatesRef.current[index] || aiDeepestCandidatesRef.current[0];
+    if (!candidate) {
+      analysisFocusModeRef.current = true;
+      setAnalysisFocusMode(true);
+      setMessage(analysisFocusHint(zh));
+      return;
+    }
+    const next = confirmAnalysisFocusPoint(analysisFocusPointsRef.current, [candidate.center[0], candidate.center[1]]);
+    analysisFocusPointsRef.current = next;
+    setAnalysisFocusPoints(next);
+    setDeepestDisagree(false);
+    if (next.length) runWallAnalysisAfterDeepestConfirm();
+    persistOpenKeyframeContours({ refined: true });
+    recordDoctorOp('analysis_focus', {
+      operation: 'analysis_focus_confirm_ai',
+      layer: 'wall',
+      tool: 'analysis_focus',
+      point_count: next.length,
+      analysis_focus_points: next.map((point) => point.slice()),
+      memory_ready: false,
+    });
+    setMessage(zh
+      ? (next.length ? '已确认最深浸润区，开始分析。这不是突破点。不定 cT。' : '已去掉浸润最深点。')
+      : (next.length ? 'Deepest-invasion region confirmed; analysis started. Not a breach. Not a definite cT.' : 'Cleared the deepest-invasion mark.'));
+    redrawRef.current?.();
+  }, [persistOpenKeyframeContours, recordDoctorOp, runWallAnalysisAfterDeepestConfirm, zh]);
+
   const applyWallLayerTarget = useCallback((count: WallLayerTarget) => {
     setWallLayerTarget(count);
     wallLayerTargetRef.current = count;
@@ -6119,12 +6975,13 @@ export function InteractiveSegPanel({
       frame,
       traced?.available ? traced.layers : null,
     );
+    refreshWallEchoClarify(frame);
     persistOpenKeyframeContours({ refined: true });
     setMessage(zh
       ? `已改按${anatomyTargetMeta(count).lineZh}重算草稿（不定 cT）`
       : `Recomputed the draft on the ${anatomyTargetMeta(count).lineEn} (not a definite cT)`);
     redrawRef.current?.();
-  }, [applyWallLayerVisuals, captureFrameGray, persistOpenKeyframeContours, zh]);
+  }, [applyWallLayerVisuals, captureFrameGray, persistOpenKeyframeContours, refreshWallEchoClarify, zh]);
 
   const recheckKeyframesWallPixels = useCallback(async (ids: string[]) => {
     const video = videoRef.current;
@@ -6196,42 +7053,39 @@ export function InteractiveSegPanel({
     redrawRef.current?.();
   }, [persistOpenKeyframeContours, pushEditUndo, zh]);
 
-  const refreshWallEchoClarify = useCallback((frame?: { gray: Float32Array; width: number; height: number } | null) => {
-    const pixels = frame || captureFrameGray();
-    if (!pixels || wallPointsRef.current.length < 3) {
-      setWallEchoClarify(null);
-      return null;
-    }
-    const next = clarifyDeepestEcho({
-      gray: pixels.gray,
-      width: pixels.width,
-      height: pixels.height,
-      lesion: pointsRef.current,
-      lumen: lumenPolygonRef.current,
-      wall: wallPointsRef.current,
-      brushRadius: wallBrushRadiusRef.current,
-    });
-    setWallEchoClarify(next.available ? next : null);
-    return next.available ? next : null;
-  }, [captureFrameGray]);
-
-  const echoPreview = useMemo(() => {
-    if (!wallEchoClarify?.available) return { raw: null as string | null, clustered: null as string | null };
-    return {
-      raw: grayCropToDataUrl(wallEchoClarify.original, wallEchoClarify.cropW, wallEchoClarify.cropH),
-      clustered: grayCropToDataUrl(wallEchoClarify.clarified, wallEchoClarify.cropW, wallEchoClarify.cropH),
-    };
-  }, [wallEchoClarify]);
-
   const openedWallKeyframe = isDoctorKeyframeOpen(
     doctorKeyframes,
     activeDoctorKeyframeId,
-    videoTime,
+    videoRef.current?.currentTime ?? videoTime,
     isPlaying,
+    videoFpsRef.current,
   );
-  const hideWallOnOtherFrames = doctorKeyframes.length > 0 && (
-    !openedWallKeyframe
-    || cineFrameIndex(videoTime, videoFpsRef.current) !== cineFrameIndex(openedWallKeyframe.timeSec, videoFpsRef.current)
+  const hideWallOnOtherFrames = doctorKeyframes.length > 0 && !openedWallKeyframe;
+  const protocolBanner = wallProtocolBanner({
+    hasLesion: points.length >= 3,
+    spanCount: wallPaintSegments.length,
+    focusCount: analysisFocusPoints.length,
+    joinVerdict: wallJoinDraft?.verdict || null,
+    joinNoteZh: wallJoinDraft?.noteZh,
+    joinNoteEn: wallJoinDraft?.noteEn,
+    spanLayers: spanLayerSummary(wallPaintSegments, zh),
+    visibility: wallVisibility,
+    ghost: hideWallOnOtherFrames,
+    keyframeTimeSec: openedWallKeyframe?.timeSec,
+    autoAnchors: autoAnchorsStatus,
+    proposedDeepestCount: aiDeepestCandidates.length,
+    deepestDisagree,
+    zh,
+  });
+  const cineCanScrub = Boolean(videoUrl && (videoReady || videoDuration > 0));
+  const showProtocolBanner = simpleVideoMode && (
+    wallPaintMode
+    || analysisFocusMode
+    || wallPaintSegments.length > 0
+    || analysisFocusPoints.length > 0
+    || hideWallOnOtherFrames
+    || wallVisibility === 'unseen'
+    || points.length >= 3
   );
 
   const commitWallPaintStroke = useCallback((stroke: number[][]) => {
@@ -6278,9 +7132,27 @@ export function InteractiveSegPanel({
       return false;
     }
     pushEditUndo();
-    wallPointsRef.current = result.wall;
-    wallExtensionMaskRef.current = result.wall.map(() => false);
-    setWallPoints(result.wall);
+    const attract = analysisFocusPointsRef.current[0]
+      || (pointsRef.current.length >= 3
+        ? [
+          pointsRef.current.reduce((sum, point) => sum + point[0], 0) / pointsRef.current.length,
+          pointsRef.current.reduce((sum, point) => sum + point[1], 0) / pointsRef.current.length,
+        ]
+        : null);
+    const nextSegments = assignSpanSides(appendWallPaintSegment(wallPaintSegmentsRef.current, {
+      points: stroke,
+      visibleLayers: visibleLayerCountRef.current,
+      brushRadius: wallBrushRadiusRef.current,
+      frameIndex: cineFrameIndex(videoRef.current?.currentTime ?? videoTime, videoFpsRef.current),
+      paintedAtMs: Date.now(),
+      source: 'doctor',
+    }), attract);
+    wallPaintSegmentsRef.current = nextSegments;
+    setWallPaintSegments(nextSegments);
+    setSelectedSpanIndex(nextSegments.length - 1);
+    selectedSpanIndexRef.current = nextSegments.length - 1;
+    let join = null;
+    const hasDeepest = analysisFocusPointsRef.current.some((point) => point.length >= 2);
     const readout = traced.available
       ? readoutFromTrace(traced)
       : judgeWallLayerBreach({
@@ -6289,13 +7161,23 @@ export function InteractiveSegPanel({
         thicknessPx: result.thicknessPx,
         source: 'pixel',
       });
-    applyWallLayerVisuals(result.wall, readout, frame, traced.available ? traced.layers : null);
-    refreshWallEchoClarify(frame);
-    setWallPaintMode(false);
-    wallPaintModeRef.current = false;
+    if (hasDeepest) {
+      if (wallPointsRef.current.length < 3) {
+        wallPointsRef.current = result.wall;
+        wallExtensionMaskRef.current = result.wall.map(() => false);
+        setWallPoints(result.wall);
+      }
+      applyWallLayerVisuals(result.wall, readout, frame, traced.available ? traced.layers : null);
+      join = refreshWallJoinDraft(nextSegments);
+      if (join && wallLayerReadoutRef.current) {
+        const nextReadout = applyJoinDraftToReadout(wallLayerReadoutRef.current, join);
+        setWallLayerReadout(nextReadout);
+        wallLayerReadoutRef.current = nextReadout;
+      }
+      refreshWallEchoClarify(frame);
+    }
     setWallPaintStroke([]);
     wallPaintStrokeRef.current = null;
-    paintCursorRef.current = null;
     setActiveLayer('wall');
     setSimpleEditLayer('wall');
     setSimpleEditMode(false);
@@ -6308,18 +7190,38 @@ export function InteractiveSegPanel({
       operation: 'wall_paint_extend',
       tool: 'pixel_ridge',
       point_count: result.wall.length,
+      stroke_point_count: stroke.length,
+      stroke_points: compactPolyForOps(stroke, 64),
+      segment_index: nextSegments.length - 1,
       remain_px: result.remainPx,
       overshoot_px: result.overshootPx,
       layers_breached: readout.layersBreached,
       painted_layers: readout.paintedLayers,
       mucosa_breached: readout.mucosaBreached,
+      segment_count: nextSegments.length,
+      visible_layers: visibleLayerCountRef.current,
+      wall_paint_segments: compactWallPaintSegmentsForOps(nextSegments),
+      analysis_focus_points: analysisFocusPointsRef.current
+        .filter((point) => point.length >= 2)
+        .map((point) => point.slice()),
+      ...wallOpsCompact({ segments: nextSegments, join }),
     });
-    setMessage(zh ? `${result.noteZh} ${readout.noteZh}` : `${result.noteEn} ${readout.noteEn}`);
+    setMessage(zh
+      ? (hasDeepest
+        ? (join
+          ? `${result.noteZh} ${join.noteZh}`
+          : `${result.noteZh} 已留 ${nextSegments.length} 段。可再画对侧，不必穿过病灶。`)
+        : `已留 ${nextSegments.length} 段短线。请先选一处最深浸润区，选完才开始分析。`)
+      : (hasDeepest
+        ? (join
+          ? `${result.noteEn} ${join.noteEn}`
+          : `${result.noteEn} Kept ${nextSegments.length} span(s). Paint the other flank; do not cross the mass.`)
+        : `Kept ${nextSegments.length} span(s). Select one deepest-invasion region first; analysis starts after that.`));
     redrawRef.current?.();
     const openId = activeDoctorKeyframeIdRef.current;
     if (openId) maybeAutoPropagateRef.current?.(openId);
     return true;
-  }, [applyWallLayerVisuals, captureFrameGray, markActiveDoctorKeyframeRefined, persistOpenKeyframeContours, pushEditUndo, recordDoctorOp, zh]);
+  }, [applyWallLayerVisuals, captureFrameGray, markActiveDoctorKeyframeRefined, persistOpenKeyframeContours, pushEditUndo, recordDoctorOp, refreshWallEchoClarify, refreshWallJoinDraft, wallOpsCompact, zh]);
 
   const startWallPaintTool = useCallback(() => {
     if (wallPaintModeRef.current) {
@@ -6341,6 +7243,10 @@ export function InteractiveSegPanel({
     wallPickModeRef.current = false;
     setAnalysisFocusMode(false);
     analysisFocusModeRef.current = false;
+    setWallCaliperMode(false);
+    wallCaliperModeRef.current = false;
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
     setSimpleEditMode(false);
     wallPaintModeRef.current = true;
     setWallPaintMode(true);
@@ -6351,11 +7257,46 @@ export function InteractiveSegPanel({
     setMessage(paintLineHint(wallLayerTargetRef.current, zh));
   }, [armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
 
+  const applyVisibleLayerCount = useCallback((count: WallVisibleLayerCount) => {
+    setVisibleLayerCount(count);
+    visibleLayerCountRef.current = count;
+    const current = wallPaintSegmentsRef.current;
+    if (!current.length) return;
+    const target = selectedSpanIndexRef.current != null && selectedSpanIndexRef.current >= 0
+      ? selectedSpanIndexRef.current
+      : current.length - 1;
+    const next = setSpanVisibleLayers(current, target, count);
+    wallPaintSegmentsRef.current = next;
+    setWallPaintSegments(next);
+    const join = refreshWallJoinDraft(next);
+    if (join && wallLayerReadoutRef.current) {
+      const nextReadout = applyJoinDraftToReadout(wallLayerReadoutRef.current, join);
+      setWallLayerReadout(nextReadout);
+      wallLayerReadoutRef.current = nextReadout;
+    }
+    persistOpenKeyframeContours({ refined: true });
+    recordDoctorOp('wall_span_layers', {
+      operation: 'wall_span_layers',
+      layer: 'wall',
+      keyframe_id: activeDoctorKeyframeIdRef.current,
+      video_time_sec: Number((videoRef.current?.currentTime ?? 0).toFixed(3)),
+      segment_index: target,
+      visible_layers: count,
+      span_layers: next.map((segment) => segment.visibleLayers || 3),
+      wall_paint_segments: compactWallPaintSegmentsForOps(next),
+      ...wallOpsCompact({ segments: next, join }),
+    });
+    setMessage(zh
+      ? `第 ${target + 1} 段改为${count === 1 ? '一层' : count === 2 ? '两层' : '三层'}。两侧可以不同。`
+      : `Span ${target + 1} is now ${count} layer(s). The two flanks may differ.`);
+    redrawRef.current?.();
+  }, [persistOpenKeyframeContours, recordDoctorOp, refreshWallJoinDraft, wallOpsCompact, zh]);
+
   const startAnalysisFocusTool = useCallback(() => {
     if (analysisFocusModeRef.current) {
       analysisFocusModeRef.current = false;
       setAnalysisFocusMode(false);
-      setMessage(zh ? '已取消分析焦点' : 'Analysis focus cancelled');
+      setMessage(zh ? '已取消浸润最深点标记' : 'Deepest-invasion mark cancelled');
       return;
     }
     pauseVideoOnCurrentFrame();
@@ -6367,12 +7308,109 @@ export function InteractiveSegPanel({
     setWallPaintMode(false);
     wallPaintModeRef.current = false;
     paintCursorRef.current = null;
+    setWallCaliperMode(false);
+    wallCaliperModeRef.current = false;
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
     setSimpleEditMode(false);
     analysisFocusModeRef.current = true;
     setAnalysisFocusMode(true);
     recordDoctorOp('tool_switch', { layer: 'wall', operation: 'tool_switch', tool: 'analysis_focus' });
     setMessage(analysisFocusHint(zh));
   }, [armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
+
+  const undoLastWallSpan = useCallback(() => {
+    const current = wallPaintSegmentsRef.current;
+    if (!current.length) {
+      setMessage(zh ? '没有可撤销的预期线' : 'No expected-line span to undo');
+      return;
+    }
+    pushEditUndo();
+    const next = popLastWallPaintSegment(current);
+    wallPaintSegmentsRef.current = next;
+    setWallPaintSegments(next);
+    setSelectedSpanIndex(next.length ? next.length - 1 : null);
+    selectedSpanIndexRef.current = next.length ? next.length - 1 : null;
+    const join = refreshWallJoinDraft(next);
+    persistOpenKeyframeContours({ refined: true });
+    recordDoctorOp('wall_span_undo', {
+      operation: 'wall_span_undo',
+      layer: 'wall',
+      segment_count: next.length,
+      wall_paint_segments: compactWallPaintSegmentsForOps(next),
+      ...wallOpsCompact({ segments: next, join }),
+    });
+    setMessage(zh
+      ? (next.length ? `已撤销最近一段，还剩 ${next.length} 段。` : '已撤销全部预期线。')
+      : (next.length ? `Undid the last span; ${next.length} remain.` : 'Cleared all expected-line spans.'));
+    redrawRef.current?.();
+  }, [persistOpenKeyframeContours, pushEditUndo, recordDoctorOp, refreshWallJoinDraft, wallOpsCompact, zh]);
+
+  const startWallCaliperTool = useCallback(() => {
+    if (wallCaliperModeRef.current) {
+      wallCaliperModeRef.current = false;
+      setWallCaliperMode(false);
+      setWallCaliperPending(null);
+      wallCaliperPendingRef.current = null;
+      setMessage(zh ? '已取消测厚' : 'Thickness caliper cancelled');
+      redrawRef.current?.();
+      return;
+    }
+    pauseVideoOnCurrentFrame();
+    if (!requireOpenKeyframeForBox()) return;
+    armLesionBox(false);
+    setLumenEditMode(false);
+    setWallPickMode(false);
+    wallPickModeRef.current = false;
+    setWallPaintMode(false);
+    wallPaintModeRef.current = false;
+    setAnalysisFocusMode(false);
+    analysisFocusModeRef.current = false;
+    setSimpleEditMode(false);
+    wallCaliperModeRef.current = true;
+    setWallCaliperMode(true);
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
+    recordDoctorOp('tool_switch', { layer: 'wall', operation: 'tool_switch', tool: 'wall_caliper' });
+    setMessage(thicknessCaliperHint(0, zh));
+    redrawRef.current?.();
+  }, [armLesionBox, pauseVideoOnCurrentFrame, recordDoctorOp, requireOpenKeyframeForBox, zh]);
+
+  const applyJoinDecision = useCallback((decision: JoinDoctorDecision) => {
+    const current = wallJoinDraftRef.current;
+    if (!current?.available || current.verdict === 'need_more_spans') {
+      setMessage(zh ? '请先画左右两段预期线' : 'Paint both flanks first');
+      return;
+    }
+    const next = applyJoinDoctorDecision(current, decision);
+    if (!next) return;
+    wallJoinDraftRef.current = next;
+    setWallJoinDraft(next);
+    if (wallLayerReadoutRef.current) {
+      const nextReadout = applyJoinDraftToReadout(wallLayerReadoutRef.current, next);
+      setWallLayerReadout(nextReadout);
+      wallLayerReadoutRef.current = nextReadout;
+    }
+    persistOpenKeyframeContours({ refined: true });
+    recordDoctorOp('wall_join_decision', {
+      operation: 'wall_join_decision',
+      layer: 'wall',
+      decision,
+      join_verdict: next.verdict,
+      wall_join_draft: serializeBilateralJoinDraft(next),
+      ...wallOpsCompact({ join: next }),
+    });
+    if (decision === 'modified') {
+      wallPaintModeRef.current = true;
+      setWallPaintMode(true);
+      setMessage(zh ? '已记下需修改。请再画一段或改层数。不定 cT。' : 'Marked as modify. Paint another span or change layers. Not a definite cT.');
+    } else if (decision === 'rejected') {
+      setMessage(zh ? '已拒绝本次连接。两侧短线仍保留。不定 cT。' : 'Rejected this join. Both flanks stay. Not a definite cT.');
+    } else {
+      setMessage(zh ? '已接受连接草稿。不定 cT。' : 'Accepted the join draft. Not a definite cT.');
+    }
+    redrawRef.current?.();
+  }, [persistOpenKeyframeContours, recordDoctorOp, wallOpsCompact, zh]);
 
   const enterLumenBoxEdit = useCallback((reason?: string) => {
     pauseVideoOnCurrentFrame();
@@ -6385,6 +7423,17 @@ export function InteractiveSegPanel({
     setLumenEditMode(true);
     setLumenSculptMode(null);
     setTrackOnPlay(false);
+    wallPaintModeRef.current = false;
+    setWallPaintMode(false);
+    wallPaintStrokeRef.current = null;
+    setWallPaintStroke([]);
+    paintCursorRef.current = null;
+    wallCaliperModeRef.current = false;
+    setWallCaliperMode(false);
+    setWallCaliperPending(null);
+    wallCaliperPendingRef.current = null;
+    analysisFocusModeRef.current = false;
+    setAnalysisFocusMode(false);
     // Next drag always starts a new box so a leftover/YOLO box covering the
     // frame cannot steal the gesture as a move.
     lumenBoxFreshDrawRef.current = true;
@@ -6493,6 +7542,7 @@ export function InteractiveSegPanel({
     sculptLayerRef.current = layer;
     setSculptLayer(layer);
     setLumenSculptMode(next);
+    stopExpectedLinePaint();
     if (layer === 'lumen') ensureLumenPolygonForRefine();
     const adding = next.endsWith('add');
     const name = layer === 'lumen' ? (zh ? '胃腔' : 'lumen') : (zh ? '病灶' : 'lesion');
@@ -6512,7 +7562,7 @@ export function InteractiveSegPanel({
           ? `Paint + ${name}: drag to include. Wheel or slider sets size (now ${paintRadiusRef.current}).`
           : `Paint - ${name}: drag to cut. Wheel or slider sets size (now ${paintRadiusRef.current}).`),
     );
-  }, [ensureLumenPolygonForRefine, recordDoctorOp, stopInteractivePrompt, zh]);
+  }, [ensureLumenPolygonForRefine, recordDoctorOp, stopExpectedLinePaint, stopInteractivePrompt, zh]);
 
   const activateLumenSculpt = useCallback((next: LumenSculptMode) => {
     activateSculpt(next, 'lumen');
@@ -6694,11 +7744,15 @@ export function InteractiveSegPanel({
         lumenBBox: lumenBoxRef.current,
         lumenPolygon: lumenPolygonRef.current.length >= 3 ? lumenPolygonRef.current : undefined,
       });
-      setMessage(
-        zh
-          ? `${segmentationModelName(activeSegmentationModel, true)} 已生成病灶 ROI（${poly.length} 点），正点 ${clicks.filter((click) => click.label !== 'negative').length || (imgPt && !clicks.length ? 1 : 0)}，负点 ${clicks.filter((click) => click.label === 'negative').length}`
-          : `${segmentationModelName(activeSegmentationModel, false)} lesion ROI ready (${poly.length} points), positive ${clicks.filter((click) => click.label !== 'negative').length || (imgPt && !clicks.length ? 1 : 0)}, negative ${clicks.filter((click) => click.label === 'negative').length}`,
-      );
+      if (simpleVideoMode && poly.length >= 3) {
+        applyProposedWallFromLesionRef.current();
+      } else {
+        setMessage(
+          zh
+            ? `${segmentationModelName(activeSegmentationModel, true)} 已生成病灶 ROI（${poly.length} 点），正点 ${clicks.filter((click) => click.label !== 'negative').length || (imgPt && !clicks.length ? 1 : 0)}，负点 ${clicks.filter((click) => click.label === 'negative').length}`
+            : `${segmentationModelName(activeSegmentationModel, false)} lesion ROI ready (${poly.length} points), positive ${clicks.filter((click) => click.label !== 'negative').length || (imgPt && !clicks.length ? 1 : 0)}, negative ${clicks.filter((click) => click.label === 'negative').length}`,
+        );
+      }
       return poly;
     } catch (error) {
       const messageText = error instanceof Error ? error.message : 'Lesion model failed';
@@ -6852,11 +7906,6 @@ export function InteractiveSegPanel({
             keyframe_id: keyframeId,
           });
           persistOpenKeyframeContoursRef.current?.({ refined: false });
-          setMessage(
-            zh
-              ? '关键帧病灶已自动分割。请从邻近看得见的胃壁起笔，或点两侧再接。不要从肿块正中空想分层。'
-              : 'Keyframe lesion auto-segmented. Paint from adjacent visible wall, or mark both flanks. Do not invent layers in the mass center.',
-          );
         } else {
           recordDoctorOp('detect_lesion', {
             layer: 'lesion',
@@ -6889,6 +7938,9 @@ export function InteractiveSegPanel({
           const seeded = boxToClosedPolygon(result.lumenBox, 32);
           lumenPolygonRef.current = seeded;
           setLumenPolygon(seeded);
+        }
+        if (pointsRef.current.length >= 3) {
+          applyProposedWallFromLesionRef.current();
         }
         redrawRef.current();
       }
@@ -7018,6 +8070,7 @@ export function InteractiveSegPanel({
         activeDoctorKeyframeIdRef.current,
         video.currentTime || videoTime,
         Boolean(isPlaying),
+        videoFpsRef.current,
       );
       const destIds = result.hits.map((hit) => hit.id);
       const rechecked = liveWall ? await recheckKeyframesWallPixels(destIds) : 0;
@@ -7190,6 +8243,31 @@ export function InteractiveSegPanel({
     const restoredFocus = (kf.analysisFocusPoints || []).filter((point) => point.length >= 2);
     analysisFocusPointsRef.current = restoredFocus;
     setAnalysisFocusPoints(restoredFocus);
+    const restoredSegments = normalizeWallPaintSegments(kf.wallPaintSegments).length
+      ? normalizeWallPaintSegments(kf.wallPaintSegments)
+      : wallPaintSegmentsFromLegacy(kf.wallPolygon);
+    wallPaintSegmentsRef.current = restoredSegments;
+    setWallPaintSegments(restoredSegments);
+    setSelectedSpanIndex(restoredSegments.length ? restoredSegments.length - 1 : null);
+    selectedSpanIndexRef.current = restoredSegments.length ? restoredSegments.length - 1 : null;
+    const restoredMeasure = hydrateWallThicknessMeasure(kf.wallThicknessMeasure);
+    setWallThicknessMeasure(restoredMeasure);
+    wallThicknessMeasureRef.current = restoredMeasure;
+    if (restoredMeasure?.brushUsed) {
+      setWallBrushRadius(clampWallBrushRadius(restoredMeasure.brushUsed));
+    }
+    const restoredJoin = hydrateBilateralJoinDraft(kf.wallJoinDraft);
+    if (restoredJoin) {
+      wallJoinDraftRef.current = restoredJoin;
+      setWallJoinDraft(restoredJoin);
+      lastWallJoinSigRef.current = wallJoinRecordSig(
+        restoredJoin,
+        restoredSegments.length,
+        restoredFocus.length,
+      );
+    } else {
+      refreshWallJoinDraft(restoredSegments, { record: false });
+    }
     if (kf.wallVisibility) {
       setWallVisibility(kf.wallVisibility);
       wallVisibilityRef.current = kf.wallVisibility;
@@ -7237,7 +8315,7 @@ export function InteractiveSegPanel({
               }))
               : null,
           );
-          refreshWallEchoClarify(destFrame);
+          runWallAnalysisAfterDeepestConfirm(destFrame);
         }
       }
     } else {
@@ -7251,8 +8329,13 @@ export function InteractiveSegPanel({
       setWallLayerImaginary([]);
       wallLayerImaginaryRef.current = [];
       setWallEchoClarify(null);
+      setAiEchoClarify(null);
+      deepestAnalysisRef.current = null;
     }
-  }, [applyWallLayerVisuals, captureFrameGray, refreshWallEchoClarify]);
+    if (pointsRef.current.length >= 3) {
+      applyProposedWallFromLesionRef.current({ silent: true });
+    }
+  }, [applyWallLayerVisuals, captureFrameGray, refreshWallEchoClarify, refreshWallJoinDraft, runWallAnalysisAfterDeepestConfirm]);
   applyDoctorKeyframeOverlayRef.current = applyDoctorKeyframeOverlay;
 
   const selectDoctorKeyframe = useCallback(async (kf: DoctorKeyframe) => {
@@ -7261,15 +8344,27 @@ export function InteractiveSegPanel({
     persistOpenKeyframeContours();
     setActiveDoctorKeyframeId(kf.id);
     activeDoctorKeyframeIdRef.current = kf.id;
-    applyDoctorKeyframeOverlay(kf, { refreshEcho: false });
+    skipCineAutoplayRef.current = true;
+    seekingToKeyframeRef.current = true;
+    if (!video.paused) video.pause();
+    setIsPlaying(false);
+    setTrackOnPlay(false);
+    if (canvasRef.current) canvasRef.current.style.visibility = 'visible';
     redrawRef.current();
-    pauseVideoOnCurrentFrame({ timeSec: kf.timeSec });
-    if (Math.abs((video.currentTime || 0) - kf.timeSec) > 0.04) {
+    const alreadyOnFrame = cineTimesOnSameFrame(
+      video.currentTime || 0,
+      kf.timeSec,
+      videoFpsRef.current,
+    ) && video.readyState >= 2;
+    if (!alreadyOnFrame) {
       await seekVideoForAgent(video, kf.timeSec);
     }
-    setVideoTime(kf.timeSec);
+    captureCineHoldFrame(video);
+    const landed = video.currentTime || kf.timeSec;
+    setVideoTime(landed);
     syncFrameFromVideo({ force: true });
     applyDoctorKeyframeOverlay(kf, { refreshEcho: true });
+    seekingToKeyframeRef.current = false;
     if (kf.lesionPolygon && kf.lesionPolygon.length >= 3) {
       setSimpleEditMode(true);
       setSimpleEditLayer('lesion');
@@ -7301,9 +8396,9 @@ export function InteractiveSegPanel({
       operation: 'keyframe_select',
       op: 'keyframe_select',
       keyframe_id: kf.id,
-      video_time_sec: kf.timeSec,
+      video_time_sec: Number(landed.toFixed(3)),
     });
-  }, [applyDoctorKeyframeOverlay, pauseVideoOnCurrentFrame, persistOpenKeyframeContours, recordDoctorOp, zh]);
+  }, [applyDoctorKeyframeOverlay, captureCineHoldFrame, persistOpenKeyframeContours, recordDoctorOp, syncFrameFromVideo, zh]);
   selectDoctorKeyframeRef.current = selectDoctorKeyframe;
 
   const removeDoctorKeyframe = useCallback((id: string) => {
@@ -7369,10 +8464,14 @@ export function InteractiveSegPanel({
             active_keyframe_id?: string | null;
             adjacent_lock?: AdjacentPair | null;
             wall_target_layers?: 1 | 2 | 3 | null;
+            wall_visibility?: WallVisibility | null;
+            serosa_anchor_mode?: SerosaAnchorMode | null;
           } | null;
         };
         const restoredLock = parseAdjacentPair(data.state?.adjacent_lock);
         const restoredLayers = parseWallLayerTarget(data.state?.wall_target_layers);
+        const restoredVis = data.state?.wall_visibility;
+        const restoredAnchor = data.state?.serosa_anchor_mode;
         if (restoredLock) {
           setAdjacentPair(restoredLock);
           adjacentPairRef.current = restoredLock;
@@ -7380,6 +8479,14 @@ export function InteractiveSegPanel({
         if (restoredLayers) {
           setWallLayerTarget(restoredLayers);
           wallLayerTargetRef.current = restoredLayers;
+        }
+        if (restoredVis === 'clear' || restoredVis === 'blurry' || restoredVis === 'unseen') {
+          setWallVisibility(restoredVis);
+          wallVisibilityRef.current = restoredVis;
+        }
+        if (restoredAnchor === 'bilateral' || restoredAnchor === 'unilateral' || restoredAnchor === 'unanalyzable') {
+          setSerosaAnchorMode(restoredAnchor);
+          serosaAnchorModeRef.current = restoredAnchor;
         }
         if (restoredLock) {
           window.dispatchEvent(new CustomEvent(ADJACENT_LOCK_EVENT, {
@@ -7465,9 +8572,14 @@ export function InteractiveSegPanel({
     if (isPlaying || mediaMode !== 'video') return;
     if (lesionBoxArmedRef.current || scrubbingRef.current) return;
     const currentTime = videoRef.current?.currentTime ?? videoTime;
-    const kf = isDoctorKeyframeOpen(doctorKeyframes, activeDoctorKeyframeId, currentTime, false);
+    const kf = isDoctorKeyframeOpen(
+      doctorKeyframes,
+      activeDoctorKeyframeId,
+      currentTime,
+      false,
+      videoFpsRef.current,
+    );
     if (!kf) return;
-    if (cineFrameIndex(currentTime, videoFpsRef.current) !== cineFrameIndex(kf.timeSec, videoFpsRef.current)) return;
     const hasLive = pointsRef.current.length >= 3
       || lumenPolygonRef.current.length >= 3
       || Boolean(lumenBoxRef.current)
@@ -8712,6 +9824,7 @@ export function InteractiveSegPanel({
       setSimplePromptMode('point');
       setNnInteractiveMode(false);
       setSam31RefineTarget(target);
+      stopExpectedLinePaint();
       setMessage(
         zh
           ? '涂鸦和套索需要 nnInteractive；已改用 SAM 3.1 正/负点'
@@ -8725,8 +9838,10 @@ export function InteractiveSegPanel({
     armLesionBox(false);
     setSimpleEditMode(false);
     setLumenEditMode(false);
+    setLumenSculptMode(null);
     setNnInteractiveTarget(target);
     setTrackOnPlay(false);
+    stopExpectedLinePaint();
     if (nnInteractiveAvailable !== true) {
       setNnInteractiveMode(false);
       setSam31RefineTarget(target);
@@ -8753,7 +9868,7 @@ export function InteractiveSegPanel({
           ? `nnInteractive 胃腔${promptModeText(promptMode, true)}已开启，${promptMode === 'point' ? '点击添加提示' : '拖动提交提示'}`
           : `nnInteractive lumen ${promptModeText(promptMode, false)} is ready; ${promptMode === 'point' ? 'click to add prompts' : 'drag to submit a prompt'}`),
     );
-  }, [getCurrentTrackedPolygon, nnInteractiveAvailable, refreshNnInteractiveStatus, zh]);
+  }, [getCurrentTrackedPolygon, nnInteractiveAvailable, refreshNnInteractiveStatus, stopExpectedLinePaint, zh]);
 
   const applyActiveSamStroke = useCallback(async (stroke: ActiveSamStroke) => {
     const prepared = prepareSubmitPromptStroke(
@@ -8863,7 +9978,7 @@ export function InteractiveSegPanel({
     }
     const wantLesionBox = lesionBoxArmedRef.current || lesionBoxArmed;
     const imgPt = canvasToImage(e, {
-      clamp: wantLesionBox || lumenEditMode || wallPickModeRef.current || analysisFocusModeRef.current,
+      clamp: wantLesionBox || lumenEditMode || wallPickModeRef.current || analysisFocusModeRef.current || wallCaliperModeRef.current,
     });
     if (!imgPt) {
       if (wantLesionBox) {
@@ -8872,12 +9987,70 @@ export function InteractiveSegPanel({
       return;
     }
 
+    if (wallCaliperModeRef.current) {
+      e.preventDefault();
+      freezeCurrentFrame();
+      const pending = wallCaliperPendingRef.current;
+      if (!pending) {
+        wallCaliperPendingRef.current = imgPt;
+        setWallCaliperPending(imgPt);
+        setMessage(thicknessCaliperHint(1, zh));
+        redrawRef.current?.();
+        return;
+      }
+      const measure = completeWallThicknessMeasure({
+        inner: pending,
+        outer: imgPt,
+        frameIndex: cineFrameIndex(videoRef.current?.currentTime ?? videoTime, videoFpsRef.current),
+        videoTimeSec: Number((videoRef.current?.currentTime ?? videoTime).toFixed(3)),
+        paintedAtMs: Date.now(),
+      });
+      wallCaliperPendingRef.current = null;
+      setWallCaliperPending(null);
+      if (!measure) {
+        setMessage(zh ? '两点太近，请在正常胃壁的内缘和外缘再点一次' : 'Points too close. Tap inner and outer edges of normal wall.');
+        redrawRef.current?.();
+        return;
+      }
+      setWallThicknessMeasure(measure);
+      wallThicknessMeasureRef.current = measure;
+      setWallBrushRadius(measure.recommendedBrush);
+      wallBrushRadiusRef.current = measure.recommendedBrush;
+      wallCaliperModeRef.current = false;
+      setWallCaliperMode(false);
+      persistOpenKeyframeContoursRef.current({ refined: true });
+      recordDoctorOpRef.current('wall_thickness_measure', {
+        operation: 'wall_thickness_measure',
+        layer: 'wall',
+        thickness_px: measure.thicknessPx,
+        recommended_brush: measure.recommendedBrush,
+        frame_index: measure.frameIndex,
+        video_time_sec: measure.videoTimeSec,
+        inner: measure.inner,
+        outer: measure.outer,
+      });
+      setMessage(zh
+        ? `厚度 ${measure.thicknessPx.toFixed(1)} px，笔刷设为 ${measure.recommendedBrush}。可再拖滑条改。不定 cT。`
+        : `Thickness ${measure.thicknessPx.toFixed(1)} px; brush set to ${measure.recommendedBrush}. You can still edit the slider. Not a definite cT.`);
+      redrawRef.current?.();
+      return;
+    }
+
     if (analysisFocusModeRef.current) {
       e.preventDefault();
       freezeCurrentFrame();
-      const next = addAnalysisFocusPoint(analysisFocusPointsRef.current, imgPt);
+      const snapped = hitProposedDeepestRegion(aiDeepestCandidatesRef.current, imgPt);
+      const mark = snapped ? [snapped.center[0], snapped.center[1]] : imgPt;
+      const next = addAnalysisFocusPoint(analysisFocusPointsRef.current, mark);
       analysisFocusPointsRef.current = next;
       setAnalysisFocusPoints(next);
+      setDeepestDisagree(false);
+      if (next.length) runWallAnalysisAfterDeepestConfirm();
+      else {
+        setWallEchoClarify(null);
+        setAiEchoClarify(null);
+        deepestAnalysisRef.current = null;
+      }
       persistOpenKeyframeContoursRef.current({ refined: true });
       recordDoctorOpRef.current('analysis_focus', {
         video_time_sec: videoRef.current?.currentTime ?? null,
@@ -8886,14 +10059,19 @@ export function InteractiveSegPanel({
         layer: 'wall',
         operation: 'analysis_focus',
         point_count: next.length,
+        analysis_focus_points: next.map((point) => point.slice()),
+        ...wallOpsCompact({
+          focus: next,
+          join: wallJoinDraftRef.current,
+        }),
       });
       setMessage(zh
         ? (next.length
-          ? `已标 ${next.length} 个分析焦点。再点可改或再加，最多 3 个。这不是突破点。`
-          : '已去掉分析焦点。')
+          ? '已确认最深浸润区，开始分析。再点同一处可取消，点别处可改。这不是突破点。'
+          : '已去掉浸润最深点。分析已停下。')
         : (next.length
-          ? `${next.length} analysis focus point(s). Tap again to add or remove, max 3. Not a breach mark.`
-          : 'Cleared analysis focus.'));
+          ? 'Deepest-invasion region confirmed; analysis started. Tap the same spot to clear, or tap elsewhere to move it. Not a breach.'
+          : 'Cleared the deepest-invasion mark. Analysis stopped.'));
       redrawRef.current?.();
       return;
     }
@@ -8924,19 +10102,15 @@ export function InteractiveSegPanel({
       return;
     }
 
-    if (wallPaintModeRef.current) {
-      e.preventDefault();
-      freezeCurrentFrame();
-      capturePointerSafely(e.currentTarget, e.pointerId);
-      paintCursorRef.current = imgPt;
-      wallPaintStrokeRef.current = [imgPt];
-      setWallPaintStroke([imgPt]);
-      redrawRef.current?.();
-      return;
-    }
-
-    // Armed box-lesion wins over handles, whole-mask drag, nnInteractive, and in-flight SAM.
+    // Armed box-lesion wins over expected-line paint.
     if (wantLesionBox && !lumenEditMode && !lumenSculptMode) {
+      if (wallPaintModeRef.current) {
+        wallPaintModeRef.current = false;
+        setWallPaintMode(false);
+        wallPaintStrokeRef.current = null;
+        setWallPaintStroke([]);
+        paintCursorRef.current = null;
+      }
       e.preventDefault();
       lastPolyClickRef.current = null;
       contourInteractionRef.current = true;
@@ -8970,6 +10144,42 @@ export function InteractiveSegPanel({
       paintCursorRef.current = imgPt;
       redraw();
       return;
+    }
+
+    if (wallPaintModeRef.current) {
+      e.preventDefault();
+      freezeCurrentFrame();
+      capturePointerSafely(e.currentTarget, e.pointerId);
+      paintCursorRef.current = imgPt;
+      wallPaintStrokeRef.current = [imgPt];
+      setWallPaintStroke([imgPt]);
+      redrawRef.current?.();
+      return;
+    }
+
+    if (
+      !wantLesionBox
+      && !lumenEditMode
+      && !lumenSculptMode
+      && !simpleEditMode
+      && wallPaintSegmentsRef.current.length >= 1
+    ) {
+      const hit = hitTestWallPaintSegment(wallPaintSegmentsRef.current, imgPt, 16);
+      if (hit >= 0) {
+        e.preventDefault();
+        setSelectedSpanIndex(hit);
+        selectedSpanIndexRef.current = hit;
+        const layers = wallPaintSegmentsRef.current[hit]?.visibleLayers || 3;
+        setVisibleLayerCount(layers);
+        visibleLayerCountRef.current = layers;
+        const side = wallPaintSegmentsRef.current[hit]?.side;
+        const sideZh = side === 'left' ? '左' : side === 'right' ? '右' : side === 'supplement' ? '补充' : '';
+        setMessage(zh
+          ? `已选第 ${hit + 1} 段${sideZh ? `（${sideZh}）` : ''}。改层芯片只改这一段。`
+          : `Selected span ${hit + 1}${side ? ` (${side})` : ''}. Layer chips now edit this span.`);
+        redrawRef.current?.();
+        return;
+      }
     }
 
     if (lumenEditMode) {
@@ -9126,8 +10336,11 @@ export function InteractiveSegPanel({
         return;
       }
       e.preventDefault();
-      const canEditExisting = !lesionBoxArmed && !lumenEditMode;
-      if (simpleEditMode || (canEditExisting && getCurrentTrackedPolygon().length >= 3)) {
+      const wantPointPrompt = simplePromptMode === 'point'
+        && !lumenSculptMode
+        && (nnInteractiveMode || Boolean(sam31RefineTarget) || mode === 'sam');
+      const canEditExisting = !lesionBoxArmed && !lumenEditMode && !wantPointPrompt;
+      if (!wantPointPrompt && (simpleEditMode || (canEditExisting && getCurrentTrackedPolygon().length >= 3))) {
         const bands = wallLayerBandsRef.current;
         if (bands.length && !lumenEditMode && refineTarget !== 'lumen') {
           const bandThr = hitThreshold() * (viewZoom >= 1.35 ? 2.4 : 1.4);
@@ -9537,6 +10750,18 @@ export function InteractiveSegPanel({
         redraw();
       }
     }
+    if (wallCaliperModeRef.current) {
+      const hoverPt = canvasToImage(e, { clamp: true });
+      if (hoverPt) {
+        paintCursorRef.current = hoverPt;
+        if (paintRafRef.current == null) {
+          paintRafRef.current = window.requestAnimationFrame(() => {
+            paintRafRef.current = null;
+            redrawRef.current();
+          });
+        }
+      }
+    }
     if (lumenSculptMode && !lumenPaintStrokeRef.current) {
       const hoverPt = canvasToImage(e, { clamp: true });
       if (hoverPt) {
@@ -9863,7 +11088,7 @@ export function InteractiveSegPanel({
           void segmentLumenWithSam31().then((ok) => {
             if (ok) {
               setLumenEditMode(false);
-              setMessage(zh ? '胃腔已自动分割。要重画请再点「框选胃腔」' : 'Lumen auto-segmented. Arm Box lumen to redraw');
+              setMessage(zh ? '胃腔已自动分割。要重画请到「更多工具」再点「框选胃腔」' : 'Lumen auto-segmented. Arm Box lumen under More tools to redraw');
             } else {
               setLumenEditMode(true);
               lumenBoxFreshDrawRef.current = true;
@@ -11306,7 +12531,7 @@ export function InteractiveSegPanel({
                 title={paintLineHint(wallLayerTarget, zh)}
               >
                 <Pencil size={13} />
-                {paintToolLabel(wallPaintMode, zh)}
+                {paintToolLabel(wallPaintMode, zh, wallPaintSegments.length)}
               </button>
               <button
                 type="button"
@@ -11907,8 +13132,8 @@ export function InteractiveSegPanel({
                   className="min-w-[140px] flex-1"
                   duration={videoDuration}
                   progressPct={videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}
-                  disabled={!videoUrl}
-                  title={zh ? '拖进度条粗定位；滚轮逐帧' : 'Drag to seek; wheel steps one frame'}
+                  disabled={!cineCanScrub}
+                  title={zh ? '拖进度条粗定位；滚轮逐帧。加载中不可拖。' : 'Drag to seek; wheel steps one frame. Disabled while loading.'}
                   ariaLabel={zh ? '视频进度' : 'Video progress'}
                   barRef={(node) => { videoProgressRefs.current[0] = node; }}
                   onScrubStart={beginVideoScrub}
@@ -12024,13 +13249,20 @@ export function InteractiveSegPanel({
 
             <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
               <div ref={containerRef} tabIndex={-1} className="relative h-full w-full bg-black outline-none">
+                {simpleVideoMode && mediaMode === 'video' && videoUrl && videoWaiting && !cineCanScrub ? (
+                  <div className="pointer-events-none absolute left-3 bottom-14 z-[170]">
+                    <div className="rounded-md border border-white/15 bg-black/70 px-2.5 py-1.5 text-[11px] text-slate-100">
+                      {zh ? '视频缓冲中，封面可先看' : 'Buffering. The still is ready.'}
+                    </div>
+                  </div>
+                ) : null}
                 {simpleVideoMode && mediaMode === 'video' && (
                   <div className="pointer-events-none absolute inset-x-2 top-3 z-[180] overflow-x-auto">
                     <div className="pointer-events-none mx-auto flex min-w-full w-max flex-col items-center justify-center gap-1.5 pb-1">
                       <FloatingToolGroup accent="amber">
                         <FloatingToolButton
                           icon={<Pencil size={14} />}
-                          label={paintToolLabel(wallPaintMode, zh)}
+                          label={paintToolLabel(wallPaintMode, zh, wallPaintSegments.length)}
                           title={paintLineHint(wallLayerTarget, zh)}
                           active={wallPaintMode}
                           disabled={boxAutoSegBusy}
@@ -12039,7 +13271,7 @@ export function InteractiveSegPanel({
                         />
                         <FloatingToolButton
                           icon={<Crosshair size={14} />}
-                          label={zh ? (analysisFocusMode ? '正在标焦点' : '分析焦点') : (analysisFocusMode ? 'Marking focus' : 'Focus')}
+                          label={zh ? (analysisFocusMode ? '正在确认最深区' : '确认最深区') : (analysisFocusMode ? 'Confirming deepest' : 'Deepest')}
                           title={analysisFocusHint(zh)}
                           active={analysisFocusMode}
                           disabled={boxAutoSegBusy}
@@ -12053,10 +13285,27 @@ export function InteractiveSegPanel({
                             min={3}
                             max={22}
                             value={wallBrushRadius}
-                            onChange={(event) => setWallBrushRadius(Number(event.target.value))}
+                            onChange={(event) => {
+                              const next = clampWallBrushRadius(Number(event.target.value));
+                              setWallBrushRadius(next);
+                              if (wallThicknessMeasureRef.current) {
+                                const updated = { ...wallThicknessMeasureRef.current, brushUsed: next };
+                                wallThicknessMeasureRef.current = updated;
+                                setWallThicknessMeasure(updated);
+                              }
+                            }}
                             className="h-1 w-16 accent-amber-300"
                           />
                         </label>
+                        <FloatingToolButton
+                          icon={<Ruler size={14} />}
+                          label={zh ? (wallCaliperMode ? '正在测厚' : '测厚') : (wallCaliperMode ? 'Measuring' : 'Thickness')}
+                          title={thicknessCaliperHint(wallCaliperPending ? 1 : 0, zh)}
+                          active={wallCaliperMode}
+                          disabled={boxAutoSegBusy}
+                          onClick={() => startWallCaliperTool()}
+                          tone="amber"
+                        />
                         <span className="flex items-center gap-0.5 px-1" title={zh ? '选择要分析的界面。不是判断病灶已经到了哪一层。第一版主看浆膜。' : 'Pick the interface to analyze. This is not a claim about how deep the lesion has reached. First version is serosa.'}>
                           {WALL_ANATOMY_TARGETS.map((target) => (
                             <button
@@ -12074,62 +13323,38 @@ export function InteractiveSegPanel({
                             </button>
                           ))}
                         </span>
-                        <FloatingToolButton
-                          icon={<MousePointer2 size={14} />}
-                          label={wallPickMode ? (zh ? '点两侧' : 'Pick flanks') : (zh ? '点两侧接' : 'Mark flanks')}
-                          title={zh ? '点两侧看得见的胃壁，再自动接过去。再点一次则自动接。' : 'Click the two visible flanks, then join. Click again to auto-join.'}
-                          active={wallPickMode}
-                          disabled={boxAutoSegBusy || points.length < 3}
-                          onClick={() => startWallExtensionTool()}
-                          tone="amber"
-                        />
-                        <FloatingToolButton
-                          icon={<ScanSearch size={14} />}
-                          label={zh ? '最深窄带回声' : 'Deepest echo'}
-                          title={zh ? '只在浸润最深窄带做亮/中/暗区域聚类，用于分层，不是全图超分' : 'Cluster bright/mid/dark echo on the deepest narrow band for layering, not full-image super-resolution'}
-                          active={Boolean(wallEchoClarify?.available && viewFocusMode === 'roi')}
-                          disabled={boxAutoSegBusy || (points.length < 3 && wallPoints.length < 3)}
-                          onClick={() => {
-                            const next = wallEchoClarify?.available ? wallEchoClarify : refreshWallEchoClarify();
-                            if (!next?.available) {
-                              setMessage(zh ? '请先框选病灶并画邻近胃壁，再盯浸润最深窄带' : 'Box the lesion and paint the adjacent wall first');
-                              return;
-                            }
-                            if (viewFocusMode === 'roi' && viewFocusBox) {
-                              setViewFocusBox(null);
-                              setViewFocusMode(null);
-                              setMessage(zh ? '已回到整帧' : 'Back to the full frame');
-                              return;
-                            }
-                            setMagnifierOn(false);
-                            magnifierPosRef.current = null;
-                            viewZoomRef.current = 1;
-                            viewCenterRef.current = null;
-                            setViewZoom(1);
-                            setViewCenter(null);
-                            setViewFocusBox(next.box);
-                            setViewFocusMode('roi');
-                            setMessage(zh
-                              ? `已放大浸润最深窄带（${next.patternZh || '回声聚类'}）。不是全图超分。`
-                              : `Zoomed to the deepest narrow band (${next.patternEn || 'echo cluster'}). Not full-image super-resolution.`);
-                          }}
-                          tone="amber"
-                        />
-                        <FloatingToolButton
-                          icon={dinoBusy ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}
-                          label={dinoDockOpen
-                            ? (zh ? '收起DINO' : 'Hide DINO')
-                            : dinoBusy
-                              ? (zh ? 'DINO层…' : 'DINO…')
-                              : (zh ? 'ROI DINO层' : 'ROI DINO')}
-                          title={zh
-                            ? '打开对话框查看当前帧 ROI 的 DINOv3 L2 / L5 / L8 / L11。再点一次收起。'
-                            : 'Open a dialog for DINOv3 L2 / L5 / L8 / L11 on the current ROI. Click again to collapse.'}
-                          active={dinoDockOpen}
-                          disabled={boxAutoSegBusy || points.length < 3}
-                          onClick={() => toggleRoiDinoLayers()}
-                          tone="amber"
-                        />
+                        <span className="flex items-center gap-0.5 px-1" title={zh ? '本段还看得见几层。先点某一段再改芯片；未选中时改最近一段。两侧可以不同。' : 'How many layers remain visible on this span. Tap a span first; otherwise the chip updates the latest span. The two flanks may differ.'}>
+                          {WALL_VISIBLE_LAYER_OPTIONS.map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => applyVisibleLayerCount(option.id)}
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                visibleLayerCount === option.id
+                                  ? 'bg-sky-300 text-slate-900'
+                                  : 'bg-black/30 text-sky-100/80 hover:bg-black/50'
+                              }`}
+                              title={zh ? option.hintZh : option.hintEn}
+                            >
+                              {zh ? option.zh : option.en}
+                            </button>
+                          ))}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => applyPromptMetaLive(
+                            wallVisibility === 'unseen' ? 'clear' : 'unseen',
+                            wallVisibility === 'unseen' ? 'bilateral' : 'unanalyzable',
+                          )}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            wallVisibility === 'unseen'
+                              ? 'bg-slate-200 text-slate-900'
+                              : 'bg-black/30 text-slate-100/85 hover:bg-black/50'
+                          }`}
+                          title={zh ? '看不清不等于中断。再点一次恢复清楚。' : 'Not seen is not interruption. Tap again to restore clear.'}
+                        >
+                          {zh ? '看不清' : 'Not seen'}
+                        </button>
                         <FloatingToolButton
                           icon={<Layers size={14} />}
                           label={wallAnalysisOpen ? (zh ? '收起壁层' : 'Close layers') : (zh ? '壁层' : 'Layers')}
@@ -12144,10 +13369,18 @@ export function InteractiveSegPanel({
                           tone="amber"
                         />
                         <FloatingToolButton
+                          icon={<Undo2 size={14} />}
+                          label={zh ? '撤销一段' : 'Undo span'}
+                          title={zh ? '只删最近一段预期线，病灶和最深点不动' : 'Remove only the last expected-line span'}
+                          disabled={boxAutoSegBusy || !wallPaintSegments.length}
+                          onClick={() => undoLastWallSpan()}
+                          tone="amber"
+                        />
+                        <FloatingToolButton
                           icon={<Save size={14} />}
                           label={zh ? '保存胃壁' : 'Save wall'}
                           title={zh ? '把当前帧的胃壁辅助线存到本关键帧。不会传到其他帧。' : 'Save wall guides on this keyframe only. They are not copied to other frames.'}
-                          disabled={boxAutoSegBusy || (wallPoints.length < 3 && !wallLayerBands.length && !analysisFocusPoints.length)}
+                          disabled={boxAutoSegBusy || (wallPoints.length < 3 && !wallPaintSegments.length && !wallLayerBands.length && !analysisFocusPoints.length)}
                           onClick={() => saveWallDraftOnFrame()}
                           tone="amber"
                         />
@@ -12155,7 +13388,7 @@ export function InteractiveSegPanel({
                           icon={<Trash2 size={14} />}
                           label={zh ? '清除胃壁' : 'Clear wall'}
                           title={zh ? '只清除当前帧的胃壁辅助线，不影响其他关键帧' : 'Clear wall guides on this frame only'}
-                          disabled={boxAutoSegBusy || (wallPoints.length < 3 && !wallLayerBands.length && !analysisFocusPoints.length)}
+                          disabled={boxAutoSegBusy || (wallPoints.length < 3 && !wallPaintSegments.length && !wallLayerBands.length && !analysisFocusPoints.length)}
                           onClick={() => clearWallDraftOnFrame()}
                           tone="amber"
                         />
@@ -12176,6 +13409,79 @@ export function InteractiveSegPanel({
                             emphasize
                           />
                         </FloatingToolGroup>
+                      ) : null}
+                      {showProtocolBanner ? (
+                        <div
+                          className={`pointer-events-none max-w-[42rem] rounded-md border px-2.5 py-1 text-center text-[10px] font-medium leading-snug shadow-lg ${
+                            protocolBanner.kind === 'ghost'
+                              ? 'border-sky-300/40 bg-sky-950/80 text-sky-50'
+                              : protocolBanner.kind === 'unseen'
+                                ? 'border-slate-300/35 bg-slate-950/80 text-slate-100'
+                                : protocolBanner.kind === 'joined' || protocolBanner.kind === 'ready'
+                                  ? 'border-emerald-300/40 bg-emerald-950/80 text-emerald-50'
+                                  : protocolBanner.kind === 'review_both' || protocolBanner.kind === 'joined_overshoot' || protocolBanner.kind === 'stopped' || protocolBanner.kind === 'angle_sign'
+                                    ? 'border-rose-300/40 bg-rose-950/80 text-rose-50'
+                                    : 'border-amber-300/40 bg-amber-950/80 text-amber-50'
+                          }`}
+                        >
+                          {protocolBanner.text}
+                        </div>
+                      ) : null}
+                      {aiDeepestCandidates.length > 0 && analysisFocusPoints.length < 1 ? (
+                        <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-sky-300/30 bg-black/75 px-1.5 py-1">
+                          <span className="px-1 text-[10px] text-sky-100">
+                            {zh ? 'AI 最深区建议' : 'AI deepest suggestion'}
+                          </span>
+                          <button
+                            type="button"
+                            className="rounded bg-sky-300/90 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900"
+                            onClick={() => confirmAiDeepestCandidate(0)}
+                          >
+                            {zh ? '采用建议' : 'Use suggestion'}
+                          </button>
+                        </div>
+                      ) : null}
+                      {wallJoinDraft?.available && wallJoinDraft.verdict !== 'need_more_spans' ? (
+                        <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-white/15 bg-black/75 px-1.5 py-1">
+                          <span className="px-1 text-[10px] text-slate-200">
+                            {zh
+                              ? (wallJoinDraft.doctorDecision === 'accepted'
+                                ? '已接受连接'
+                                : wallJoinDraft.doctorDecision === 'rejected'
+                                  ? '已拒绝连接'
+                                  : wallJoinDraft.doctorDecision === 'modified'
+                                    ? '已标修改'
+                                    : '连接草稿')
+                              : (wallJoinDraft.doctorDecision === 'accepted'
+                                ? 'Join accepted'
+                                : wallJoinDraft.doctorDecision === 'rejected'
+                                  ? 'Join rejected'
+                                  : wallJoinDraft.doctorDecision === 'modified'
+                                    ? 'Join marked modify'
+                                    : 'Join draft')}
+                          </span>
+                          <button
+                            type="button"
+                            className="rounded bg-emerald-400/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900"
+                            onClick={() => applyJoinDecision('accepted')}
+                          >
+                            {zh ? '接受' : 'Accept'}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-amber-300/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900"
+                            onClick={() => applyJoinDecision('modified')}
+                          >
+                            {zh ? '修改' : 'Modify'}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-rose-400/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900"
+                            onClick={() => applyJoinDecision('rejected')}
+                          >
+                            {zh ? '拒绝' : 'Reject'}
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -12218,8 +13524,8 @@ export function InteractiveSegPanel({
                           label={zh ? '框选病灶' : 'Box lesion'}
                           hint={
                             zh
-                              ? `当前 ${publicLesionSegModel(segmentationModel) === 'dinov3' ? 'DINO' : 'SAM 3.1'}。点亮后拖框。已有病灶时再拖会替换。多个灶用「再框一灶」`
-                              : `Now ${publicLesionSegModel(segmentationModel) === 'dinov3' ? 'DINO' : 'SAM 3.1'}. Arm, then drag. A new box replaces the current lesion. Use Add lesion for a second mass`
+                              ? `当前 ${publicLesionSegModel(segmentationModel) === 'dinov3' ? 'DINO' : 'SAM 3.1'}。点亮后拖框，会停掉预期线。已有病灶时再拖会替换。多个灶在「更多工具」里点「再框一灶」`
+                              : `Now ${publicLesionSegModel(segmentationModel) === 'dinov3' ? 'DINO' : 'SAM 3.1'}. Arming stops the expected line. A new box replaces the current lesion. Add lesion is under More tools`
                           }
                           active={lesionBoxArmed && !keepExtraLesion}
                           onClick={() => {
@@ -12239,44 +13545,6 @@ export function InteractiveSegPanel({
                           prominent={lesionBoxArmed && !keepExtraLesion}
                         />
                       </div>
-                      {points.length >= 3 ? (
-                        <ToolRailButton
-                          icon={<ScanLine size={15} />}
-                          label={zh ? '再框一灶' : 'Add lesion'}
-                          hint={zh ? '再拖一个框，上一处病灶留下（青色）' : 'Draw another box; the previous lesion stays (teal)'}
-                          active={lesionBoxArmed && keepExtraLesion}
-                          onClick={() => {
-                            keepExtraLesionRef.current = true;
-                            setKeepExtraLesion(true);
-                            enterSimpleBoxPrompt();
-                          }}
-                          side="right"
-                          tone={lesionBoxArmed && keepExtraLesion ? 'cyan' : 'slate'}
-                          prominent={lesionBoxArmed && keepExtraLesion}
-                        />
-                      ) : null}
-                      {extraLesionPolygons.length ? (
-                        <ToolRailButton
-                          icon={<ScanLine size={15} />}
-                          label={zh ? '去掉上一灶' : 'Drop last extra'}
-                          hint={zh ? '去掉最近留下的额外病灶，不改当前主灶' : 'Remove the last extra lesion; keep the current primary'}
-                          onClick={() => dropLastExtraLesion()}
-                          side="right"
-                          tone="slate"
-                        />
-                      ) : null}
-                      <ToolRailDivider />
-                      <ToolRailButton
-                        icon={<ScanLine size={15} />}
-                        label={lumenEditMode ? (zh ? '正在框胃腔' : 'Boxing lumen') : (zh ? '框选胃腔' : 'Box lumen')}
-                        hint={zh ? '点亮后光标变为拖框标记；松手后自动分割胃腔。再点一次取消' : 'Arm to get the box cursor; release auto-segments the lumen. Click again to cancel'}
-                        active={lumenEditMode}
-                        disabled={boxAutoSegBusy}
-                        onClick={() => toggleLumenBoxEdit()}
-                        side="right"
-                        tone="fuchsia"
-                        prominent={lumenEditMode}
-                      />
                       <ToolRailButton
                         icon={<Spline size={15} />}
                         label={zh ? (wallPaintMode ? '正在画预期线' : '预期线') : (wallPaintMode ? 'Drawing trajectory' : 'Trajectory')}
@@ -12291,7 +13559,7 @@ export function InteractiveSegPanel({
                       <ToolRailButton
                         icon={<MoreHorizontal size={15} />}
                         label={zh ? '更多工具' : 'More tools'}
-                        hint={zh ? '拖点精修、正负点、涂改、检测胃腔、多边形与清空' : 'Contour edit, points, paint, find lumen, polygon, and clear'}
+                        hint={zh ? '再框一灶、框选胃腔、拖点精修、正负点、涂改、检测胃腔、多边形与清空' : 'Add lesion, box lumen, contour edit, points, paint, find lumen, polygon, and clear'}
                         active={railMoreOpen}
                         onClick={() => setRailMoreOpen((value) => !value)}
                         side="right"
@@ -12299,6 +13567,36 @@ export function InteractiveSegPanel({
                       />
                       {railMoreOpen ? (
                         <>
+                          {points.length >= 3 ? (
+                            <>
+                              <ToolRailDivider />
+                              <ToolRailSectionTitle>{zh ? '多灶' : 'More lesions'}</ToolRailSectionTitle>
+                              <ToolRailButton
+                                icon={<ScanLine size={15} />}
+                                label={zh ? '再框一灶' : 'Add lesion'}
+                                hint={zh ? '再拖一个框，上一处病灶留下（青色）。会停掉预期线' : 'Draw another box; the previous lesion stays (teal). Stops the expected line'}
+                                active={lesionBoxArmed && keepExtraLesion}
+                                onClick={() => {
+                                  keepExtraLesionRef.current = true;
+                                  setKeepExtraLesion(true);
+                                  enterSimpleBoxPrompt();
+                                }}
+                                side="right"
+                                tone={lesionBoxArmed && keepExtraLesion ? 'cyan' : 'slate'}
+                                prominent={lesionBoxArmed && keepExtraLesion}
+                              />
+                              {extraLesionPolygons.length ? (
+                                <ToolRailButton
+                                  icon={<ScanLine size={15} />}
+                                  label={zh ? '去掉上一灶' : 'Drop last extra'}
+                                  hint={zh ? '去掉最近留下的额外病灶，不改当前主灶' : 'Remove the last extra lesion; keep the current primary'}
+                                  onClick={() => dropLastExtraLesion()}
+                                  side="right"
+                                  tone="slate"
+                                />
+                              ) : null}
+                            </>
+                          ) : null}
                           {points.length >= 3 && !boxAutoSegBusy && !lumenEditMode ? (
                             <>
                               <ToolRailDivider />
@@ -12392,7 +13690,66 @@ export function InteractiveSegPanel({
                             </>
                           ) : null}
                           <ToolRailDivider />
+                          <ToolRailSectionTitle>{zh ? '胃壁（少用）' : 'Wall (rarely used)'}</ToolRailSectionTitle>
+                          <ToolRailButton
+                            icon={<MousePointer2 size={15} />}
+                            label={wallPickMode ? (zh ? '点两侧' : 'Pick flanks') : (zh ? '点两侧接' : 'Mark flanks')}
+                            hint={zh ? '旧功能。现在请框灶并确认最深区；自动锚点失败时再补画短线。' : 'Legacy. Box the lesion and confirm deepest invasion; paint flanks only if auto-anchors fail.'}
+                            active={wallPickMode}
+                            disabled={boxAutoSegBusy || points.length < 3}
+                            onClick={() => startWallExtensionTool()}
+                            side="right"
+                            tone="amber"
+                          />
+                          <ToolRailButton
+                            icon={<ScanSearch size={15} />}
+                            label={zh ? '最深窄带回声' : 'Deepest echo'}
+                            hint={zh ? '只在浸润最深窄带做亮/中/暗聚类。低频工具。' : 'Cluster echo on the deepest narrow band. Infrequent tool.'}
+                            active={Boolean(wallEchoClarify?.available && viewFocusMode === 'roi')}
+                            disabled={boxAutoSegBusy || (points.length < 3 && wallPoints.length < 3)}
+                            onClick={() => {
+                              const next = refreshWallEchoClarify() || (wallEchoClarify?.available ? wallEchoClarify : null);
+                              if (!next?.available) {
+                                setMessage(zh ? '请先选一处最深浸润区，选完才开始分析' : 'Select one deepest-invasion region first; analysis starts after that');
+                                return;
+                              }
+                              if (viewFocusMode === 'roi' && viewFocusBox) {
+                                setViewFocusBox(null);
+                                setViewFocusMode(null);
+                                setMessage(zh ? '已回到整帧' : 'Back to the full frame');
+                                return;
+                              }
+                              setMagnifierOn(false);
+                              magnifierPosRef.current = null;
+                              viewZoomRef.current = 1;
+                              viewCenterRef.current = null;
+                              setViewZoom(1);
+                              setViewCenter(null);
+                              setViewFocusBox(next.box);
+                              setViewFocusMode('roi');
+                              const dualNote = zh
+                                ? deepestAnalysisRef.current?.noteZh
+                                : deepestAnalysisRef.current?.noteEn;
+                              setMessage(dualNote || (zh
+                                ? `已放大浸润最深窄带（${next.patternZh || '回声聚类'}）。不是全图超分。`
+                                : `Zoomed to the deepest narrow band (${next.patternEn || 'echo cluster'}). Not full-image super-resolution.`));
+                            }}
+                            side="right"
+                            tone="amber"
+                          />
+                          <ToolRailDivider />
                           <ToolRailSectionTitle>{zh ? '胃腔（可选）' : 'Lumen (optional)'}</ToolRailSectionTitle>
+                          <ToolRailButton
+                            icon={<ScanLine size={15} />}
+                            label={lumenEditMode ? (zh ? '正在框胃腔' : 'Boxing lumen') : (zh ? '框选胃腔' : 'Box lumen')}
+                            hint={zh ? '点亮后光标变为拖框标记；松手后自动分割胃腔。再点一次取消。会停掉预期线' : 'Arm to get the box cursor; release auto-segments the lumen. Click again to cancel. Stops the expected line'}
+                            active={lumenEditMode}
+                            disabled={boxAutoSegBusy}
+                            onClick={() => toggleLumenBoxEdit()}
+                            side="right"
+                            tone="fuchsia"
+                            prominent={lumenEditMode}
+                          />
                           <ToolRailButton
                             icon={lumenBusy ? <Loader2 size={15} className="animate-spin" /> : <ScanSearch size={15} />}
                             label={zh ? '检测胃腔' : 'Find lumen'}
@@ -12449,6 +13806,7 @@ export function InteractiveSegPanel({
                               setSimpleEditMode(false);
                               setLumenEditMode(false);
                               setLumenSculptMode(null);
+                              stopExpectedLinePaint();
                               recordDoctorOp('tool_switch', { layer: 'lesion', operation: 'tool_switch', tool: 'polygon' });
                               setMessage(zh ? '多边形模式：点击加点，双击或按钮闭合' : 'Polygon mode: click to add vertices');
                             }}
@@ -12542,11 +13900,11 @@ export function InteractiveSegPanel({
                   ref={canvasRef}
                   className="relative z-10 h-full w-full touch-none"
                   style={{
-                    cursor: magnifierOn || wallPaintMode
+                    cursor: analysisFocusMode
+                      ? 'crosshair'
+                      : wallCaliperMode || magnifierOn || wallPaintMode || lumenSculptMode
                       ? 'none'
                       : wallPickMode
-                        ? 'crosshair'
-                        : lumenSculptMode
                         ? 'crosshair'
                         : lumenEditMode
                           ? BOX_DRAW_CURSOR_LUMEN
@@ -12563,7 +13921,11 @@ export function InteractiveSegPanel({
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerCancel}
                   onPointerLeave={() => {
-                    if (wallPaintModeRef.current && !wallPaintStrokeRef.current) {
+                    if (
+                      (wallPaintModeRef.current && !wallPaintStrokeRef.current)
+                      || wallCaliperModeRef.current
+                      || (lumenSculptMode && !lumenPaintStrokeRef.current)
+                    ) {
                       paintCursorRef.current = null;
                       redrawRef.current?.();
                     }
@@ -12736,6 +14098,8 @@ export function InteractiveSegPanel({
                   paused={dragIndex !== null || samBusy || propagateBusy || lumenBusy || lumenSamBusy}
                   wallLayerReadout={wallLayerReadout}
                   wallLayerBands={wallLayerBands}
+                  wallPaintSegments={wallPaintSegments}
+                  wallJoinPath={wallJoinDraft?.path || null}
                   wallLayerImaginary={wallLayerImaginary}
                   wallBrushRadius={wallBrushRadius}
                   wallPaintPointCount={wallPaintStroke.length || wallPoints.length}
@@ -12758,8 +14122,8 @@ export function InteractiveSegPanel({
                     className="min-w-0 flex-1"
                     duration={videoDuration}
                     progressPct={videoDuration > 0 ? (videoTime / videoDuration) * 100 : 0}
-                    disabled={!videoUrl}
-                    title={zh ? '拖进度条粗定位；滚轮逐帧' : 'Drag to seek; wheel steps one frame'}
+                    disabled={!cineCanScrub}
+                    title={zh ? '拖进度条粗定位；滚轮逐帧。' : 'Drag to seek; wheel steps one frame.'}
                     ariaLabel={zh ? '视频进度' : 'Video progress'}
                     barRef={(node) => { videoProgressRefs.current[1] = node; }}
                     onScrubStart={beginVideoScrub}
@@ -12818,16 +14182,25 @@ export function InteractiveSegPanel({
                     )}
                     <button
                       type="button"
-                      disabled={!videoUrl}
+                      disabled={!cineCanScrub}
+                      onClick={() => stepCineFrames(-5)}
+                      className="rounded-md px-1.5 py-1 text-[10px] text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30 max-md:min-h-11"
+                      title={zh ? '后退 5 帧。邻帧会留下残影，对照浆膜还在不在。' : 'Back 5 frames. Neighbor frames keep a ghost overlay to check serosa.'}
+                    >
+                      <span className="inline-flex items-center gap-0.5"><ChevronsLeft size={12} />-5</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!cineCanScrub}
                       onClick={() => stepCineFrames(-1)}
                       className="rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30 max-md:min-h-11 max-md:min-w-11"
-                      title={zh ? '后退一帧' : 'Previous frame'}
+                      title={zh ? '上一帧。邻帧会留下残影。' : 'Previous frame. Neighbor frames keep a ghost overlay.'}
                     >
                       <SkipBack size={13} />
                     </button>
                     <button
                       type="button"
-                      disabled={!videoUrl}
+                      disabled={!cineCanScrub}
                       onClick={() => toggleVideoPlayback()}
                       className="flex h-7 min-w-12 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/10 px-2 text-[10px] text-white hover:bg-white/15 disabled:opacity-30 max-md:h-11 max-md:min-w-16 max-md:text-xs"
                     >
@@ -12836,12 +14209,21 @@ export function InteractiveSegPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={!videoUrl}
+                      disabled={!cineCanScrub}
                       onClick={() => stepCineFrames(1)}
                       className="rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30 max-md:min-h-11 max-md:min-w-11"
-                      title={zh ? '前进一帧' : 'Next frame'}
+                      title={zh ? '下一帧。邻帧会留下残影。' : 'Next frame. Neighbor frames keep a ghost overlay.'}
                     >
                       <SkipForward size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!cineCanScrub}
+                      onClick={() => stepCineFrames(5)}
+                      className="rounded-md px-1.5 py-1 text-[10px] text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30 max-md:min-h-11"
+                      title={zh ? '前进 5 帧。邻帧会留下残影，对照浆膜还在不在。' : 'Forward 5 frames. Neighbor frames keep a ghost overlay to check serosa.'}
+                    >
+                      <span className="inline-flex items-center gap-0.5">+5<ChevronsRight size={12} /></span>
                     </button>
                     <button
                       type="button"
@@ -13120,38 +14502,13 @@ export function InteractiveSegPanel({
               </div>
             ) : null}
             {wallPaintMode ? (
-              <div className="border-t border-amber-400/20 bg-amber-500/10 px-4 py-2 text-[11px] leading-relaxed text-amber-50">
-                <span className="font-semibold">{zh ? anatomyTargetMeta(wallLayerTarget).lineZh : anatomyTargetMeta(wallLayerTarget).lineEn}</span>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  {WALL_VISIBILITY_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => applyPromptMetaLive(option.id, serosaAnchorMode)}
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                        wallVisibility === option.id
-                          ? 'bg-amber-200 text-slate-900'
-                          : 'border border-amber-200/30 bg-black/20 text-amber-50'
-                      }`}
-                    >
-                      {zh ? option.zh : option.en}
-                    </button>
-                  ))}
-                  {SEROSA_ANCHOR_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => applyPromptMetaLive(wallVisibility, option.id)}
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                        serosaAnchorMode === option.id
-                          ? 'bg-sky-200 text-slate-900'
-                          : 'border border-sky-200/30 bg-black/20 text-sky-50'
-                      }`}
-                    >
-                      {zh ? option.zh : option.en}
-                    </button>
-                  ))}
-                </div>
+              <div className="border-t border-amber-400/20 bg-amber-500/10 px-4 py-1.5 text-[11px] leading-relaxed text-amber-50">
+                <span className="font-semibold">{zh ? '预期线' : 'Expected line'}</span>
+                <span className="ml-1 text-amber-100/80">
+                  {zh
+                    ? `已留 ${wallPaintSegments.length} 段。自动失败时再左右补画看得见的短线，不必穿过病灶。`
+                    : `${wallPaintSegments.length} span(s) kept. Paint short visible flanks if auto-anchors fail; do not cross the mass.`}
+                </span>
               </div>
             ) : null}
             {wallPickMode ? (
@@ -13191,89 +14548,6 @@ export function InteractiveSegPanel({
                 >
                   {zh ? '取消' : 'Cancel'}
                 </button>
-              </div>
-            ) : null}
-            {wallLayerReadout && !hideWallOnOtherFrames && (wallLayerReadout.layersBreached > 0 || (wallLayerReadout.paintedLayers || 0) > 0) ? (
-              <div className="border-t border-sky-400/20 bg-sky-500/10 px-4 py-2 text-[11px] leading-relaxed text-sky-50">
-                <span className="font-semibold">{zh ? '预期线草稿' : 'Trajectory draft'}</span>
-                <span className="ml-1">
-                  {zh
-                    ? `${wallLayerReadout.targetLayers ? `${anatomyTargetMeta(wallLayerReadout.targetLayers).lineZh}。` : ''}${
-                      wallLayerReadout.interrupts?.length
-                        ? `${wallLayerReadout.interrupts.map((item) => `${item.nameZh}${verdictLabel(item.verdict, true)}`).join('，')}。`
-                        : ''
-                    }${wallLayerReadout.mucosaBreached ? '黏膜层已受累。' : ''}${wallLayerReadout.layersBreached > 0 && !wallLayerReadout.interrupts?.length ? `最深到${wallLayerReadout.deepestZh}${wallLayerReadout.extraserosal ? '，并越过外缘' : ''}。` : ''}`
-                    : `${wallLayerReadout.targetLayers ? `${anatomyTargetMeta(wallLayerReadout.targetLayers).lineEn}. ` : ''}${
-                      wallLayerReadout.interrupts?.length
-                        ? `${wallLayerReadout.interrupts.map((item) => `${item.nameEn} ${verdictLabel(item.verdict, false)}`).join(', ')}. `
-                        : ''
-                    }${wallLayerReadout.mucosaBreached ? 'Mucosa involved. ' : ''}${wallLayerReadout.layersBreached > 0 && !wallLayerReadout.interrupts?.length ? `Deepest ${wallLayerReadout.deepestEn}${wallLayerReadout.extraserosal ? ', past the outer edge' : ''}.` : ''}`}
-                </span>
-                {wallLayerReadout.ticks?.length ? (
-                  <span className="ml-1 inline-flex flex-wrap gap-1">
-                    {wallLayerReadout.ticks.map((tick) => (
-                      <span
-                        key={tick.layer}
-                        className={`rounded px-1.5 py-0.5 text-[10px] ${
-                          tick.status === 'absent' || tick.status === 'imaginary'
-                            ? 'bg-rose-400/20 text-rose-100'
-                            : tick.status === 'thinned'
-                              ? 'bg-amber-400/20 text-amber-100'
-                              : tick.status === 'unseen'
-                                ? 'bg-white/10 text-slate-300'
-                                : 'bg-emerald-400/15 text-emerald-100'
-                        }`}
-                      >
-                        {zh ? `${tick.nameZh} ${tick.labelZh}` : `${tick.nameEn} ${tick.labelEn}`}
-                      </span>
-                    ))}
-                  </span>
-                ) : null}
-                <span className="ml-1 text-sky-100/80">{zh ? wallLayerReadout.noteZh : wallLayerReadout.noteEn}</span>
-              </div>
-            ) : null}
-            {!hideWallOnOtherFrames && wallEchoClarify?.available ? (
-              <div className="border-t border-pink-400/25 bg-pink-500/10 px-4 py-2 text-[11px] leading-relaxed text-pink-50">
-                <span className="font-semibold">{zh ? '最深窄带回声（草稿）' : 'Deepest-band echo (draft)'}</span>
-                <span className="ml-1">{zh ? wallEchoClarify.noteZh : wallEchoClarify.noteEn}</span>
-                <span className="ml-2 inline-flex items-center gap-2 align-middle">
-                  {echoPreview.raw ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={echoPreview.raw}
-                      alt=""
-                      className="h-8 w-16 rounded border border-white/20 object-cover"
-                      title={zh ? '原图窄带' : 'Raw narrow band'}
-                    />
-                  ) : null}
-                  {echoPreview.clustered ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={echoPreview.clustered}
-                      alt=""
-                      className="h-8 w-16 rounded border border-pink-200/40 object-cover"
-                      title={zh ? '亮/中/暗区域聚类' : 'Bright / mid / dark regions'}
-                    />
-                  ) : null}
-                  <span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-pink-100">
-                    {zh ? wallEchoClarify.patternZh : wallEchoClarify.patternEn}
-                  </span>
-                </span>
-              </div>
-            ) : null}
-            {!hideWallOnOtherFrames && wallExtensionNote ? (
-              <div className="border-t border-amber-400/20 bg-amber-500/10 px-4 py-2 text-[11px] leading-relaxed text-amber-50">
-                <span className="font-semibold">{zh ? '胃壁延长（草稿）' : 'Wall extension (draft)'}</span>
-                {wallExtensionStats?.overshootPx != null && wallExtensionStats.overshootPx > 1
-                  ? (zh
-                    ? `  超出约 ${wallExtensionStats.overshootPx} px。`
-                    : `  Overshoot about ${wallExtensionStats.overshootPx} px.`)
-                  : wallExtensionStats?.remainPx != null
-                    ? (zh
-                      ? `  尚未明显超出，剩余约 ${wallExtensionStats.remainPx} px。`
-                      : `  Not clearly past the line; about ${wallExtensionStats.remainPx} px remains.`)
-                    : ''}
-                <span className="ml-1 text-amber-100/80">{wallExtensionNote}</span>
               </div>
             ) : null}
             {message ? (

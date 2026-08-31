@@ -73,12 +73,12 @@ const STEPS: TutorialStep[] = [
     doZh: [
       '先播放，找到病灶最清楚的一帧，暂停。',
       '点亮「框选病灶」，在画面上拖一个框。',
-      '松手后当前帧就是关键帧，系统会自动分割。要重画，再点「框选病灶」拖新框。多个灶点「再框一灶」。',
+      '松手后当前帧就是关键帧，系统会自动分割。要重画，再点「框选病灶」拖新框。多个灶在「更多工具」点「再框一灶」。',
     ],
     doEn: [
       'Play first, pause on the clearest lesion frame.',
       'Arm Box lesion, then drag a box on the image.',
-      'On release, this frame becomes a keyframe and auto-segments. Arm Box lesion again to replace. Tap Add lesion for a second mass.',
+      'On release, this frame becomes a keyframe and auto-segments. Arm Box lesion again to replace. Add lesion is under More tools.',
     ],
   },
   {
@@ -89,12 +89,12 @@ const STEPS: TutorialStep[] = [
     doZh: [
       'T 分期最好留 2–3 帧，盯浸润最深的那一帧为主；不必选满 10 枚。',
       '进度条先粗定位；滚轮或左右键逐帧，停在想看的毫秒和帧。',
-      '空格先暂停；已暂停时再按空格才标关键帧。多个灶用「再框一灶」，不要把「框选」当成再加一灶。',
+      '空格先暂停；已暂停时再按空格才标关键帧。多个灶在「更多工具」用「再框一灶」，不要把「框选」当成再加一灶。',
     ],
     doEn: [
       'For T-staging, keep about 2–3 frames and mark deepest invasion; do not fill all 10 slots.',
       'Drag the seek bar to get close; wheel or arrow keys step one frame.',
-      'Space pauses first; press again while paused to mark. Use Add lesion for a second mass; Box lesion replaces.',
+      'Space pauses first; press again while paused to mark. Use Add lesion under More tools for a second mass; Box lesion replaces.',
     ],
   },
   {
@@ -105,30 +105,30 @@ const STEPS: TutorialStep[] = [
     doZh: [
       '不要把 T1–T4 输入模型。T 分期只作独立记录，用于以后对照。',
       '粗筛只选：明确浅层征象 / 明确外层突破征象 / 深度边界不清。这不是分期。',
-      '第一版请画浆膜预期走行线。浆膜 / 固有肌 / 浅层是分析哪条界面，不是判断已经到了哪一层。',
+      '第一版请框灶并确认最深浸润区。浆膜 / 固有肌 / 浅层是分析哪条界面，不是判断已经到了哪一层。自动锚点失败时再补画短线。',
     ],
     doEn: [
       'Do not type T1–T4 into the model. The T call is an independent record for later comparison.',
       'The coarse screen is only: clear shallow signs / clear outer-breach signs / depth unclear. That is not a stage.',
-      'First version: draw the expected serosal trajectory. Serosa / MP / Shallow pick the interface to analyze, not the depth reached.',
+      'First version: box the lesion and confirm the deepest-invasion region. Serosa / MP / Shallow pick the interface to analyze, not the depth reached. Paint short flanks only if auto-anchors fail.',
     ],
     tipZh: '分层是草稿，不是病理五层，也不解锁确定 cT。',
     tipEn: 'Wall layers are a draft, not pathology five-layer truth, and do not unlock a definite cT.',
   },
   {
-    titleZh: '画一条浆膜预期走行线',
-    titleEn: 'Draw one expected serosal trajectory',
-    whereZh: '中间阅片：画预期线，可选分析焦点；再看右侧草稿',
-    whereEn: 'Center viewer: expected line and optional focus; then the draft on the right',
+    titleZh: '框灶后确认最深浸润区',
+    titleEn: 'Box the lesion, then confirm deepest invasion',
+    whereZh: '中间阅片：框选病灶、浸润最深区；自动两侧不够稳时再补画短线',
+    whereEn: 'Center viewer: box the lesion and confirm deepest invasion; paint flanks only if auto-anchors fail',
     doZh: [
-      '画浆膜预期线，一笔穿过可疑区到对侧。',
-      '看不清标看不清，不要当成中断。',
-      '可点最多 3 个分析焦点，表示重点分析位置，不是突破点。单帧中断要对照其他关键帧。',
+      '框选病灶后，AI 会在灶外两侧留下短线建议。请先选一处最深浸润区：可点 AI 建议，或自己点病灶最靠近或最突出于外侧胃壁的位置。选完才开始分析。这不是突破点。',
+      '自动双侧锚点失败时，再用「补画短线」左右各画一段看得见的胃壁，不必穿过病灶。要删最近一段用「撤销一段」。',
+      '本段只剩浆膜就标一层。看不清标看不清，不要当成中断。用 ±1 / ±5 时邻帧会留下残影，对照浆膜还在不在。',
     ],
     doEn: [
-      'Draw one expected serosal line through the suspicious zone to the opposite side.',
-      'Mark Not seen if unclear. Not seen is not interruption.',
-      'Optionally tap up to 3 analysis-focus points. These are where to look, not breach marks. Check other keyframes if one frame looks broken.',
+      'After you box the lesion, AI keeps short flank suggestions. Select one deepest-invasion region first: tap the AI suggestion, or mark where the lesion is closest to or most proud of the outer wall. Analysis starts after you choose. This is not a breach.',
+      'If auto-anchors fail, use Paint flanks to draw a short visible span on each side. Do not cross the mass. Undo span removes only the last stroke.',
+      'If only serosa remains on a span, mark one layer. Not seen is not interruption. ±1 / ±5 keep a ghost overlay so you can check whether serosa is still there.',
     ],
   },
   {
