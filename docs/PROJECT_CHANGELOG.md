@@ -2,6 +2,348 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-09-03, Sync live public Next source onto the workstation
+
+- Scope: workstation `apps/gastric_scan_next` source only. Public Aliyun already on this tag. Assist / Dual / UNet weights unchanged.
+- Reason: Doctors are on the new public workbench (`hyjcde/gastric-scan-next` tag `next-20260902-5`). The LAN tree still had later local wall-copy edits and was not the live public source.
+- Key changes: Fetch `next-20260902-5` (sha `51687a4`) into `/data/research/gastric/gastric-scan-next-live`. Overlay `app/`, `components/`, `lib/`, `scripts/`, `public/` onto `apps/gastric_scan_next`. Keep `.env.local`, `public/videos`, `public/desktop`, and the unused local `wall-flank-axis-from-lesion` files. Do not checkout `origin/main` `cb072fb` (old public snapshot). Write `VERSION.public-sync.json`. Restart LAN `gastric-next`.
+- Validation: Live `/workbench/api/version` is `next-20260902-5` / `51687a4`. Key public files match the tag (`InteractiveSegPanel`, `DeepestFlankHud`, `wall-flank-layers`, `wall-thin-bands`). LAN `:3000` smoke after restart.
+- Deployment: skipped. Public already serving this tag. This pull does not push back to Aliyun.
+- Follow-up: Hard-refresh LAN `:3000`. Do not treat this overlay as a git commit of the product tag. `:3300` standalone was not rebuilt.
+
+## 2026-09-01, Record four-interface tracking as the actual wall algorithm
+
+- Scope: methods and index docs only. Assist / Dual / UNet / public Next unchanged.
+- Reason: The local yellow / cyan / pink / green four-interface tracker is the algorithm doctors remember as the four pink and blue lines. Later 25% cluster ribbons and the older two-interface note were being treated as if they were that method.
+- Key changes: Write `docs/methods/2026-08-30_four_interface_joint_tracking.md` from `scripts/render_wall_directional_interfaces.py` (`track_case`, joint Viterbi, lesion dash, per-edge solid/dash). Point `DOCUMENT_MAP`, the two-interface note, the 08-31 EUS spec, pixel-cluster and DINO plans, and `scripts/README.md` at that file.
+- Validation: The markdown constants and formulas match `_interface_states`, `_track_interfaces`, `_track_interfaces_with_lesion`, `_snap_offsets_to_gradient`, and `_reliable_slice` in the Python script, plus the TypeScript port names.
+- Deployment: skipped. Docs only.
+- Follow-up: Public deepest-mark still draws 25% cluster ribbons. Restoring the four local colors on cine is a separate product change.
+
+## 2026-09-01, Desktop Ctrl+V paste on this computer
+
+- Scope: public and local login password field.
+- Reason: Custom window paste handlers called preventDefault and moved focus on Ctrl+V, so this Linux desktop's native paste never reached the field.
+- Key changes: If the password field is focused, leave paste to the browser. The input is uncontrolled. Sanitize after the browser inserts. Do not refocus on Ctrl+V keydown.
+- Validation: `npx tsx scripts/test_public_login_analyze_ux.mjs` and `npx tsc --noEmit`. On this workstation `:3000`, native insert into the field kept the password and stripped a `密码：` prefix.
+- Deployment: public Next BUILD `c7eiVlj9Je9g41kah41zR`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size. Local `:3000` next dev already has the source.
+- Follow-up: Hard-refresh. Click the password field, then Ctrl+V or right-click Paste on this computer.
+
+## 2026-09-01, Deep-face 25% cluster ribbons
+
+- Scope: public deepest-mark wall draft. Assist / Dual / UNet unchanged.
+- Reason: The first 25% walk followed the full contour and climbed toward the lumen. The corridor also sampled into the mass, so the color cloud looked noisy.
+- Key changes: Clip each arc when it turns off the deep face or moves more than 4 px toward the lumen. On a contour heading, sample only outward into the wall. Pin the thin dark belt, keep A/B/C strip order, and draw compact ribbons instead of a full scatter. Mid-join still waits for headings off the mass. Not a breach and not a definite cT.
+- Validation: `npx tsx scripts/test_wall_flank_layers.mjs`, `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_pixel_cluster.mjs`, `npx tsx scripts/test_wall_flank_mid_join.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsc --noEmit`.
+- Deployment: public Next BUILD `bDvc6yXxApJA98IH4Elkf`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Box the lesion, tap the deepest-invasion region, and check that the left/right ribbons stay on the deep wall. This is not a cT call.
+
+## 2026-09-01, 25% perimeter pixel cluster on both flanks
+
+- Scope: public deepest-mark wall draft. Assist / Dual / UNet unchanged.
+- Reason: The first flank view walked a fixed 44 px straight line outside the mass and often fell back to parallel offset bands. Doctors need the real corridor cluster along the lesion contour.
+- Key changes: From the doctor deepest mark, walk 25% of the closed lesion perimeter left and right. Cluster corridor pixels with gray plus a small across term (same walk rule as `scripts/wall_lesion_aware_cluster.py`). Drop empty far-dark background. Draw the cluster cloud (yellow A, blue B, green C) plus ridges. No parallel fake bands. Mid-join still waits for headings that are off the mass. Not a breach and not a definite cT.
+- Validation: `npx tsx scripts/test_wall_flank_layers.mjs`, `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_pixel_cluster.mjs`, `npx tsx scripts/test_wall_flank_mid_join.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsc --noEmit`.
+- Deployment: public Next BUILD `mi4DTnMuzniPPAWCv_UE0`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Box the lesion, tap the deepest-invasion region, and check the left/right 25% cluster cloud on cine. This is not a cT call.
+
+## 2026-09-01, Split last-layer T-stage code into lib and CLI
+
+- Scope: research DINO T-stage code layout only. No public Assist / Dual / UNet change.
+- Reason: The Stage Head, last-layer pooling, and deepest-wall geometry were mixed into the train script after two probe runs.
+- Key changes: Move them to `pipeline/lib/dinov3_lastlayer_tstage.py`. The CLI stays `scripts/train_dinov3_lora_lastlayer_tstage.py`. Add `--pool query_mask` (query + soft mask, no deepest wall) for the next ablation. Index the three finished runs in `pipeline/experiments/reports/dinov3_lora_lastlayer_tstage/README.md`.
+- Validation: `python3 scripts/train_dinov3_lora_lastlayer_tstage.py --self-test`.
+- Deployment: skipped. Research code only.
+- Follow-up: Run `--pool query_mask` before adding more streams. Do not replace Assist.
+
+## 2026-09-01, Query-mask-deepest linear head and error audit
+
+- Scope: research DINO T-stage head only. No public Assist / Dual / UNet change.
+- Reason: The three-stream MLP overfit at epoch 1 and lost T1. Check whether a linear head on the same last-layer features fixes that.
+- Key changes: `phase0_query_mask_deepest_linear` plus a patient-level audit of the MLP against `last_mask` and the 20260828 CLS+GAP run.
+- Validation: Linear best epoch 1. Prospective patient ACC 0.459 AUC 0.720; external ACC 0.384 AUC 0.654. Worse than the MLP (0.494 / 0.751 and 0.427 / 0.676). Prospective T1 recall 0.117 (14 T1 calls vs 94 true). The MLP uniquely recovers T3; `last_mask` and CLS+GAP uniquely recover T1.
+- Deployment: skipped. Research report only.
+- Follow-up: Do not add more head capacity. The next useful check is dropping the deepest-wall stream or training T1 vs later, not Prompt-DINO.
+
+## 2026-09-01, Local workstation can paste the login password
+
+- Scope: local `:3000` login/account switch, and the same screens when this workstation opens the public site.
+- Reason: The workstation only showed the identity list, so there was no password field to paste into. The public password field also intercepted paste and masked with CSS, which still failed on a desktop browser.
+- Key changes: Keep the identity list and add a paste-password field under it. The field is ordinary visible text. Paste replaces the value and strips WeChat labels. LAN HTTP paste-button fallback still asks for Ctrl+V.
+- Validation: `npx tsx scripts/test_public_login_analyze_ux.mjs` and `npx tsc --noEmit`. Local `:3000` account-switch modal shows the field; a labeled clipboard string became the password and enabled 切换并登录.
+- Deployment: public Next BUILD `KZocm8SmGTfIdAL-In_zv`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size. Local `:3000` is next dev and already has the source.
+- Follow-up: Hard-refresh. On this workstation, open 切换账号, then Ctrl+V or tap 粘贴密码. Identity tap still works.
+
+## 2026-09-01, Frozen last-layer query plus deepest-wall Stage Head
+
+- Scope: research DINO T-stage head only. No public Assist / Dual / UNet change.
+- Reason: Try the two-stage plan: freeze the lesion DINO, keep only layer-11 tokens, and classify from lesion query + mask pool + wall tokens around the deepest invasion point.
+- Key changes: `scripts/train_dinov3_lora_lastlayer_tstage.py` adds `query_mask_deepest`. This is frozen m025 DINOv3 ROI LoRA, not WeVisionOne Prompt-DINO. The lesion query is the hard-mask mean of last-layer tokens. The wall stream uses a dark-lumen or lesion-centroid deepest point, then a token-grid Gaussian. Head-only checkpoint.
+- Validation: `--self-test` and `--dry-run` passed. Full run `phase0_query_mask_deepest_mlp`. Train 7874 / val 904 / prosp 1659 / ext 2458. Best epoch 1, early stop epoch 6. Prospective patient ACC 0.494 AUC 0.751; external ACC 0.427 AUC 0.676. Beats `last_mask` on AUC (0.729 / 0.643). Below 2026-08-28 frozen CLS+GAP on ACC and external AUC (0.541 / 0.744 and 0.460 / 0.714).
+- Deployment: skipped. Research report only.
+- Follow-up: A linear head may cut the epoch-1 overfit. Do not replace Assist. Prompt-DINO remains an external prototype, not this checkpoint.
+
+## 2026-09-01, Public login paste without focusing first
+
+- Scope: public login gate and account-switch password field.
+- Reason: Ctrl+V still failed when focus stayed on the cine, the HTTP paste icon could not read the clipboard, and WeChat blocked paste on `type=password`.
+- Key changes: Capture paste on the whole login page and write it into the field. Keep the input as text and mask it with CSS, so hospital WebViews allow paste. Add a full-width paste button. Strip WeChat labels such as `密码：`. Stop cine shortcuts while the login overlay is open.
+- Validation: `npx tsx scripts/test_public_login_analyze_ux.mjs` and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `nJmVWd-HANXv88Wr1XR4I`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Copy the password, then Ctrl+V anywhere on the login page, or tap 粘贴密码.
+
+## 2026-09-01, Doctor taps deepest, then sees both-flank layers
+
+- Scope: public deepest-invasion mark and the first wall-layer visualization. Assist / Dual / UNet unchanged.
+- Reason: The workbench still drew a blue AI deepest circle after boxing. Doctors could treat that mark as the result. After a tap, the short left/right layer bands were easy to miss, especially if the middle join replaced them.
+- Key changes: No AI deepest circle, no snap, no Use suggestion. After a doctor tap, the cine keeps labeled left/right bands and shows a flank crop plus layer counts. The call panel also shows the same left/right counts. This is not a breach and not a definite cT.
+- Validation: `npx tsx scripts/test_wall_prompt.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_wall_flank_layers.mjs`, `npx tsx scripts/test_wall_propose_from_lesion.mjs`, `npx tsx scripts/test_wall_deepest_analysis.mjs`, `npx tsc --noEmit`.
+- Deployment: public Next BUILD `Hf95FPSZKRcon7PfJRXcJ`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Box the lesion, tap the deepest-invasion region yourself, then read the left/right layers on the cine. This is not a cT call.
+
+## 2026-09-01, Clearer public DINO box wait
+
+- Scope: public boxed DINO / SAM wait state and the right-hand feature rail. Assist / Dual / UNet unchanged.
+- Reason: After a box, the workbench immediately drew an 8-point rectangle as the lesion. Doctors could take that as the DINO result. The rail also cropped maps and led with research Dice.
+- Key changes: Keep the rectangle as a preview only until a real mask arrives. Show a full-frame wait overlay that names DINO or SAM 3.1. A failed DINO box clears the preview and re-arms boxing. Feature tiles use contain, open larger on tap, and hide the Dice lecture behind a short note.
+- Validation: `npx tsc --noEmit`.
+- Deployment: public Next BUILD `sX7he6grlJw50XLZY-YPm`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Choose DINO, box the lesion, wait for the overlay to finish; the contour should replace the preview. Tap a feature tile to enlarge. This is not a cT call.
+
+## 2026-09-01, Keep doctor case operations
+
+- Scope: public and workstation case-state writes, ops pending drain, and the 10-minute reconcile.
+- Reason: Case drafts lived only on the serving node. A corrupt or concurrent whole-file write could wipe rows. Reconcile skipped a non-empty local file, so the workstation copy stayed short. List badges also waited on a multi-megabyte payload.
+- Key changes: Case-state writes use a lock, a `.bak`, and temp+rename. A write that would cut the store in half is refused. The 8000-to-6000 drop is gone. Reconcile add-only merges public rows and unions keyframes/activity; conflicting finals stay on the public side and go to a sidecar. Pending ops are appended before the pending file is cleared. Progress lists request `summary=1`.
+- Validation: `python3 scripts/test_merge_doctor_case_state_preserve.py`, `npx tsx scripts/test_doctor_case_state_store.mjs`, `npx tsc --noEmit`. Reconcile added the missing public-only rows; workstation copy now matches the public 150-case zml pack. Overlap conflicts written beside the restore backup.
+- Deployment: public Next BUILD `Q2MW57xP5QvCywCAwCNiv`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Public remains the live doctor store. Do not copy the workstation file over Aliyun.
+
+## 2026-09-01, Keep ZML T-staging 100 cases visible
+
+- Scope: public reader-study case list and queue restore.
+- Reason: Refresh reset the 150-case pack to benign/malignant, and a leftover recent-wall queue hid most T-staging cases. Public sidecar still has all 100 ZML T-staging rows completed.
+- Key changes: Remember the last task. Do not force benign/malignant after refresh. Public refresh returns to the 150-case pack, not recent-wall. Task buttons show 50 / 100 counts. Recent-wall banner can jump back to the full T-staging list.
+- Validation: `npx tsx scripts/test_reader_study_mode.mjs`, `npx tsx scripts/test_recent_wall_queue.mjs`, `npx tsc --noEmit`.
+- Deployment: public Next BUILD `WAWdQ3C1j7Oj0ToGaMW5L`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Open 阅片任务, 第一轮150例, then T 分期. The 100 CASE rows and completed marks should be there. Do not use 最近胃壁操作 as the full T list.
+
+## 2026-09-01, Public login password paste
+
+- Scope: public login gate and account-switch password field.
+- Reason: Ctrl+V and right-click paste still failed when the custom paste handler emptied the field, or when focus stayed on the workbench behind the re-login overlay.
+- Key changes: Keep native paste if the clipboard event has no text. Read `text/plain` first. Insert at the caret. Add a paste button. Refocus the password field when the login form opens.
+- Validation: `npx tsx scripts/test_public_login_analyze_ux.mjs` and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `tVKPTboKRtpcYGRIkIHez`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Click the password field, then Ctrl+V, right-click paste, or the paste icon.
+
+## 2026-09-01, Public DINO box uses LoRA ROI mask and feature rail
+
+- Scope: public boxed DINO segmentation and the right-hand tool rail. Assist / Dual / UNet unchanged.
+- Reason: Selecting DINO on the public workbench still ran the 20260512 full-frame MLP, ignored the doctor box for inference, and often returned an empty polygon. The rail also had no LoRA feature maps or Dice note.
+- Key changes: `scripts/serve_dino_segmentation.py` now loads m025 ROI LoRA, crops the doctor box (0.25 / 16 px, letterbox 512), and returns the mask plus L11 PCA / affinity / decoder / pred JPEGs. The public rail shows those maps and states that Dice is a GT-box ROI upper bound (holdout 0.867, external 0.855, prospective 0.887, reader 16 mean 0.857, range 0.693-0.964). Empty DINO masks no longer say the box was kept as the contour.
+- Validation: `:8773` status `backend_id=lesion_segmentation_dinov3_vitb16_roi_lora_mlp_512_m025`. Boxed CASE-001 crop returned 1936-point polygon, area ratio 0.104, 142 ms, all five feature JPEGs. `npx tsc --noEmit`.
+- Deployment: public Next BUILD `bWaKwGofO5kmrYDQLeJxL`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size. Warm service `gastric-dino-segmentation.service` restarted on the workstation.
+- Follow-up: Hard-refresh. Choose DINO, box the lesion; the contour should appear and the rail should show LoRA maps. This is not a cT call.
+
+## 2026-09-01, Frozen LoRA last-layer T-stage probe
+
+- Scope: research DINO T-stage head only. No public Assist / Dual / UNet change.
+- Reason: After the m025 ROI LoRA feature panels, train a 4-class head on frozen layer-11 tokens.
+- Key changes: `scripts/train_dinov3_lora_lastlayer_tstage.py`. Default pool is decoder-weighted last-layer GAP. Phase-0 patient splits. Head-only checkpoint.
+- Validation: Full run `phase0_last_mask_mlp`. Train 7874 / val 904 / prosp 1659 / ext 2458. Early stop epoch 8, best epoch 3. Prospective patient ACC 0.529 AUC 0.729; external ACC 0.410 AUC 0.643. Below the 2026-08-28 frozen CLS+GAP MLP (0.541 / 0.744 and 0.460 / 0.714).
+- Deployment: skipped. Research report only.
+- Follow-up: Try `last_in_periph` or a linear head before any TabPFN or Assist swap.
+
+## 2026-09-01, Scrub onto local cine
+
+- Scope: public cine progress bar.
+- Reason: The first drag still used HTTP Range, and the `<video>` `autoPlay` attribute started playback again after a blob swap, so the bar did not stay on a local file.
+- Key changes: Native `autoPlay` is off; first play still goes through the existing play effect. If the current clip is already in memory when the doctor grabs the bar, the player switches to that blob before seeking. Metadata after that swap does not redraw overlays. No Assist weights or definite cT output changed.
+- Validation: `npx tsc --noEmit`.
+- Deployment: public Next BUILD `Pnrc0_ep82lw8v3rRkSm9`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. After the clip has loaded once, dragging should stay on the local file.
+
+## 2026-09-01, Local cine after pause
+
+- Scope: public cine progress bar.
+- Reason: After the short-GOP remux, a seek is about 20 ms once the file is local, but the first drag still went over HTTP Range and felt sticky.
+- Key changes: The current clip still opens on HTTP for the first frame. As soon as the full file is in memory and the video is paused, playback switches to a blob URL without autoplay and without wiping the last frame. Pause or finishing a drag can take that swap. No Assist weights or definite cT output changed.
+- Validation: `npx tsc --noEmit`.
+- Deployment: public Next BUILD `KXmUrI47IjMphGUh_XTmT`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Play or wait a moment, pause, then drag; the bar should follow like a normal local player.
+
+## 2026-09-01, Cine scrub like a normal player
+
+- Scope: public reader cine files and progress bar.
+- Reason: Most clips had one keyframe at the start and moov at the end, so dragging the bar made the decoder walk the whole file. That cannot feel like everyday video scrubbing.
+- Key changes: Re-encoded all 171 `clip_*.mp4` files with a keyframe about every 10 frames, no B-frames, and faststart. Media token is now `v=fs4`. The player still seeks the visible `<video>`, waits for `seeked` unless a seek is stuck past 500 ms, and downloads the current clip into memory cache without swapping `src` mid-play. Old originals are in `artifacts/reader_cine_backup_fs3_20260901/`. No Assist weights or definite cT output changed.
+- Validation: `python3 scripts/remux_reader_cine_scrub_gop.py` finished 171/171. `npx tsx scripts/test_cine_time.mjs`, `npx tsx scripts/test_reader_media_url.mjs`, `npx tsx scripts/test_cine_blob_cache.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `sEo2DYgiF2ujEQYqX9NEH`; smoke passed (`public_root=200`, `public_clinical=200`). Remuxed MP4s copied to Aliyun Next media root and gastric-reader media root. Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh so `v=fs4` loads. Drag the cine bar; the picture should follow the thumb the way a normal player does.
+
+## 2026-08-31, Cine scrub latest-wins seek
+
+- Scope: public cine progress bar and player.
+- Reason: Native seek on the visible video still stacked decoder resets while the thumb moved, and opening a case waited on Cache Storage cleanup. The bar felt stepped and the workbench felt heavy.
+- Key changes: While dragging, a new seek waits for the current `seeked`, then applies only the latest pointer time and skips same-frame seeks. Overlay stays hidden and does not take pointer events. Opening a clip starts HTTP or a memory blob immediately; idle full-file warm is skipped when the media buffer already covers the clip. The progress bar attaches window pointer listeners only during a drag. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_time.mjs` and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `cvYtraLbeX1eEweDOlDvE`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Drag the cine bar; the picture should follow the thumb without a mid-frame flash, and the rest of the workbench should stay responsive.
+
+## 2026-08-31, Drop CASE-028 paint-over bars and stale cine cache
+
+- Scope: CASE-028 / P028 cine file and public cine Cache Storage.
+- Reason: The published clip still showed two solid black rectangles on the sector (header strip and a lower-right block over the deep wall). A prior recode was already on disk, but the workbench kept the old MP4 from `gastric-cine-full-v1` / `v=fs2`.
+- Key changes: Re-encoded the same 5.076 s / 141-frame window from the unpainted source, cropped to the ultrasound fan only. Media token is now `v=fs3`. Opening a cine deletes the old Cache Storage bucket. No Assist weight change and no definite cT.
+- Validation: `npx tsx scripts/test_reader_media_url.mjs`, `npx tsx scripts/test_cine_blob_cache.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `JTL9gfJ9MFIcV8uWM2iIi`; smoke passed (`public_root=200`, `public_clinical=200`). CASE-028 MP4/poster copied to the public media root. Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. The top strip and lower-right block must be gone. Re-box P028 if the old contour no longer sits on the wall.
+
+## 2026-08-31, Native cine scrub, no preview flash
+
+- Scope: public cine progress bar and player.
+- Reason: The extra preview canvas, hidden decoder, and full-queue cache made the picture flash and the workbench feel slow. A normal player just seeks the visible video.
+- Key changes: Dragging seeks the same `<video>` on a rAF latest-wins path. Overlay stays hidden while dragging so the picture does not go black. Background frame-strip harvest and neighbor-clip downloads are off. The current clip may warm into Cache Storage after 10 s idle, without swapping `src` mid-play. The wider bar is unchanged. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_time.mjs`, `npx tsx scripts/test_cine_blob_cache.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `yUenlRS_2u9aNNMYwCdwC`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Drag the cine bar; the picture should stay on the video element with no mid-frame flash.
+
+## 2026-08-31, AI deepest mark on the outer contour
+
+- Scope: public cine AI deepest-region suggestion after a lesion box.
+- Reason: The AI circle sat on the through-mass heading, often the inner / mucosal face, so "confirm deepest" looked like a top-of-lesion mark.
+- Key changes: The suggestion stays on the lesion contour, farthest from the lumen or from the sector apex. It is no longer snapped onto the provisional heading. Echo clustering can still snap to a painted wall. No Assist weight change and no definite cT.
+- Validation: `npx tsx scripts/test_wall_propose_from_lesion.mjs`, `npx tsx scripts/test_wall_echo_clarify.mjs`, `npx tsx scripts/test_wall_deepest_analysis.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `3Qu9FcrJ0yxg7qCRm7jXK`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Box the lesion, then the blue AI circle should sit on the deep / outer face. Tap it or 采用.
+
+## 2026-08-31, P028 cine bars and deepest-region persist
+
+- Scope: public cine for CASE-028 / P028, deepest-region confirm, keyframe overlay restore.
+- Reason: Two solid black rectangles were burned into the published clip (header strip and a lower-right block over the deep wall). Confirming the deepest region also failed when the chip was selected but the clock was on another frame, or when the doctor tapped the AI mark without first arming the tool.
+- Key changes: Re-encoded the same 5.076 s / 141-frame window without those paint-over boxes, after dropping the machine header. Browser media cache token is now `v=fs2`. Pause-on-keyframe is enough to persist the deepest mark; the tool waits until that frame is actually open; tapping the AI circle can confirm it; flank/mid-join drafts no longer draw the old 疑似越线 cue. No Assist weight change and no definite cT.
+- Validation: `npx tsx scripts/test_doctor_keyframes.mjs`, `npx tsx scripts/test_reader_media_url.mjs`, `npx tsx scripts/test_wall_flank_mid_join.mjs`, `npx tsx scripts/test_wall_flank_layers.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `O8pP45kC9tl0vPQsIPH6S`; smoke passed (`public_root=200`, `public_clinical=200`). CASE-028 MP4/poster copied to the public media root. Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh so `v=fs2` loads. On P028, re-box the lesion if the old contour no longer sits on the wall (header crop shifts Y). Open the segmented keyframe, then tap the AI deepest mark or the wall.
+
+## 2026-08-31, Live cine scrub follow
+
+- Scope: public cine progress bar and preview canvas.
+- Reason: The thumb still felt thin, and the picture only jumped to sparse pre-decoded frames, so dragging did not follow the pointer closely.
+- Key changes: Pointer move now paints immediately and keeps tracking even after the pointer leaves the bar. The hidden decoder seeks to the latest pointer time and draws that frame; a coarse-to-fine strip still covers the first paint. The bar is taller, with a thicker track and a larger thumb. The visible video still seeks once on release. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_frame_strip.mjs`, `npx tsx scripts/test_cine_time.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `c4aRXWunoznxJJzkR6Vsy`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Drag along the cine bar; the picture should stay on the pointer, and the bar should remain easy to hold.
+
+## 2026-08-31, Step 2 mid-join after both flanks
+
+- Scope: public cine and wall-evidence card after deepest-region confirmation.
+- Reason: Step 1 already counts left/right layers. The next step should join the same named layers across the lesion only when both flanks are readable. A yellow heading chord through the mass is still not a stage boundary.
+- Key changes: After both flanks pass (available, visible layers, short heading off the lesion), matching A/B/C bands are joined with a slope-continuous Hermite span. Solid on the normal wall, dashed only inside the lesion. One weak flank, a heading that still touches the mass, or tips that do not face each other holds the middle open. No crossing percents and no definite cT. No Assist weight change.
+- Validation: `npx tsx scripts/test_wall_flank_mid_join.mjs`, `npx tsx scripts/test_wall_flank_layers.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `9Z_218S2poiCHIZsuaNC7`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Confirm one deepest region. If both flanks look good, cine should show dashed same-layer joins in the middle; if one side is weak, only the short flank bands remain.
+
+## 2026-08-31, Step 1 flank layer count
+
+- Scope: public cine and wall-evidence card after deepest-region confirmation.
+- Reason: Confirming the deepest mark jumped to through-mass reconstruction and a staging draft. The first step should only walk the left and right normal wall beside the lesion and count how many layers are visible.
+- Key changes: After the deepest mark, each flank is scored on its own. The cine draws short left/right bands only. The side card shows 第1步：病灶两侧分层 with left/right layer counts. No through-mass join, no crossing percents, and no cT lean on this step. No Assist weight change.
+- Validation: `npx tsx scripts/test_wall_flank_layers.mjs`, `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `CS4gTy72wdjr5Hjhp0MTw`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Confirm one deepest region and check that only the two flanks show layer counts, with no line through the mass.
+
+## 2026-08-31, CBR-T refuse and tendency copy
+
+- Scope: public wall-evidence crossing draft.
+- Reason: The first crossing card could still show a bare cT number, and it did not refuse when the frame was unseen, unanalyzable, a gastric-angle join, or only one flank by doctor mark. A 2 px spike could also look like a stable cross.
+- Key changes: Unseen, unanalyzable, missing spans, special anatomy, and one-flank now refuse with 无法可靠分期. Close scores become a range such as cT2–T3待鉴别. A narrow spike cannot count as crossed. Doctor/AI deepest disagreement asks for review of both regions and does not auto-stage. No Assist weight change.
+- Validation: `npx tsx scripts/test_wall_cbr_crossing.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `Pn-_DPCVnpF08mhWzm7K6`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Mark 看不清 or keep only one flank and confirm the card says 无法可靠分期.
+
+## 2026-08-31, CBR-T stable crossing draft
+
+- Scope: public wall-evidence card after deepest-region confirmation.
+- Reason: Three reconstructed boundaries were visible, but doctors still had no numeric draft of whether the lesion stably crossed A, B, or C, and the workbench would keep talking as if a one-flank frame could be staged.
+- Key changes: After the deepest mark, the lesion envelope is compared with reconstructed A/B/C in the local wall frame. The side card shows crossing chance, depth, width, and a cT1-cT4a lean. One reliable flank, a missing reconstruction, or too few samples near the deepest region refuses automatic staging. Copy stays draft-only. No definite cT unlock and no Assist weight change.
+- Validation: `npx tsx scripts/test_wall_cbr_crossing.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_layer_trace.mjs`, `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_adjacent_stage_lock.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `j99n4GZYCmAbLQsBtKxFu`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Confirm one deepest region and read the A/B/C percents in 胃壁证据. Video fusion, organ invasion / T4b, and training remain later.
+
+## 2026-08-31, CBR-T three reconstructed boundaries
+
+- Scope: public cine wall overlay after deepest-region confirmation; side-card corridor preview.
+- Reason: Confirming the deepest region drew one yellow heading chord through the mass. That is not a stage boundary. Doctors need the three counterfactual wall interfaces: A at SM/MP, B at MP/subserosa, C at the outer serosal surface. Solid on visible flanks, dashed only across the lesion. One reliable flank must not force a through-mass line.
+- Key changes: After deepest-region confirmation the tracker now asks for three interfaces. Visible-flank spans stay observed; a missing middle span is rebuilt with slope-continuous Hermite interpolation and is not attracted to lesion echo. A single flank keeps the observed run only. The yellow join chord is no longer drawn on cine or in the corridor extras. Overlay colors are A yellow, B blue, C green. Draft only; no definite cT and no Assist weight change.
+- Validation: `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_corridor_preview.mjs`, `npx tsx scripts/test_wall_bilateral_join.mjs`, `npx tsx scripts/test_wall_deepest_analysis.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `FsFGKTNm7J8hVNqx_0UMb`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Confirm one deepest region and look for three colored boundaries, dashed only inside the lesion. Crossing probabilities, video fusion, and refuse-to-stage remain later.
+
+## 2026-08-31, Smoother cine scrub bar
+
+- Scope: public cine progress bar, preview-frame harvest, current-case cache timing.
+- Reason: The thumb still hitchs because every drag sample updated `left`/`width` (layout) and because preview frames waited for a blob, then played the clip at 8x so most source frames were dropped.
+- Key changes: The bar now paints with compositor transforms only. Preview frames start from the HTTP clip immediately, stay across the later blob swap, and fill already-buffered times at 25 fps instead of racing an 8x player. Full-file cache of the open case waits about 2 s so harvest can use the first download; the rest of the queue still caches afterward. Dragging paints the strip and does not seek the visible video. Release still seeks once. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_frame_strip.mjs`, `npx tsx scripts/test_cine_time.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `RzfU0xGxTHgjX2KVhltEX`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. After a couple of seconds the picture should follow the thumb without the bar hitching. The first drag on a brand-new clip may still be coarse until the 25 fps strip fills.
+
+## 2026-08-31, Frame-strip cine scrub
+
+- Scope: public cine progress bar and preview canvas.
+- Reason: Even a local blob still hitchs the thumb because every drag sample seeks and decodes the MP4 on the main thread.
+- Key changes: The bar paints from the pointer immediately. After the clip is local, a preview strip of decoded frames is collected in the background. Dragging draws that strip and does not seek the video element. Release still seeks once. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_frame_strip.mjs`, `npx tsx scripts/test_cine_time.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `_RDDeu5PxsH8Rn6XoybLg`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Play a few seconds or wait for the local cache, then drag; the picture should follow without the bar hitching.
+
+## 2026-08-31, Open one cine, cache the rest
+
+- Scope: public cine player, reader media prefetch, workbench queue URLs.
+- Reason: Waiting for the whole MP4 before first frame, then prefetching two neighbor clips at the same time, made the open case feel stuck.
+- Key changes: The open case starts from HTTP immediately. Its full file still caches in the background and swaps to a local blob when ready. Remaining queue clips download one by one after that, into the browser cache. Neighbor prefetch is poster-only. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_blob_cache.mjs`, `npx tsx scripts/test_reader_media_url.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `obm5PFvwJffaeG5HYUPA7`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. Open a case and watch/scrub while the corner cache percent finishes; later cases should open from local cache.
+
+## 2026-08-31, Full-clip cine load for live scrub
+
+- Scope: public cine player, reader media prefetch.
+- Reason: Freeze-until-release made the bar smooth but doctors could not review frames while dragging. Range-window HTTP seeks were the hitch.
+- Key changes: The workbench downloads the whole MP4 once into a local blob, then seeks that blob while the doctor drags. Overlay redraw still waits until release. Neighbor cases prefetch the full clip, not the first 256 KB. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_cine_blob_cache.mjs`, `npx tsx scripts/test_reader_media_url.mjs`, `npx tsx scripts/test_cine_time.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `VfMS4qONHqY6pVdG0-htq`; smoke passed (`public_root=200`, `public_clinical=200`). Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. First open of a case waits for the full clip (progress on the pane), then the picture should follow the thumb.
+
+## 2026-08-31, Smooth cine scrub and workstation public zml
+
+- Scope: public cine progress bar; public login from this research workstation; Aliyun auth edge proxy headers.
+- Reason: Dragging the cine bar still sought the remote MP4 and redrew overlays on every move, so the thumb hitching. Opening the public site from this workstation used the public hostname, so it showed the password form instead of entering the default reader account.
+- Key changes: Pointer drag now updates only the bar and clock. Video seek and overlay redraw wait until release. The public auth edge forwards the browser client address to Next. Next auto-selects the default workstation identity on that address only, not on the campus network range. Logout still returns the identity picker. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_local_access.mjs`, `npx tsx scripts/test_local_default_account.mjs`, `npx tsx scripts/test_cine_time.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `dB2XYjddSMHwaojYnVCGK`; smoke passed (`public_root=200`, `public_clinical=200`). Workstation GET `/api/reader/account` returned `zml` with `workstation_client=true`. Auth edge backup `auth_server.mjs.bak_20260831_161901`. Desktop zip smoke timed out on download size.
+- Follow-up: Hard-refresh. If an old session is still open, switch to the default reader identity once or log out. Campus neighbors are not auto-admitted.
+
+## 2026-08-31, Default local zml and recent-wall queue
+
+- Scope: local loopback login default, public/LAN workbench queue tree, patient list.
+- Reason: This workstation should enter the public reader account unless the doctor switches. Reviewing recent gastric-wall operations needed a dedicated queue instead of hunting through the 150-case pack.
+- Key changes: Loopback auto-select now prefers `zml` when there is no session. An explicit local identity switch is remembered and honored; logout still returns the picker. A new `reader:recent_wall` queue lists cases with wall operations in the last 21 days, newest first, including last-edit time. It is visible to privileged public browsers and is not the 4-case wall lab. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_recent_wall_queue.mjs`, `npx tsx scripts/test_local_default_account.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `LqQnEv1pTCuvncCrZ-Wy6`; smoke passed (`public_root=200`, `public_clinical=200`). The large desktop package download checks timed out after their HTTP status had already returned 200; deployment script completed successfully.
+- Follow-up: Hard-refresh. If an old admin session is still open, switch to zml once or log out and pick zml. Then open 专项队列 / 最近胃壁操作. Right-side three-layer display on P040 remains a separate analysis fix.
+
+## 2026-08-31, Deepest-centered flank expansion
+
+- Scope: public cine wall-axis search after one deepest-region confirmation.
+- Reason: The previous gray search still pivoted on the lesion PCA deep-face axis. The doctor mark only opened the gate, so anchors did not start from the clinically chosen region.
+- Key changes: After the doctor confirms one deepest region, the workbench keeps that mark as the origin, estimates the local wall tangent on the nearby deep face, and walks left and right while excluding the lesion plus a safety gap. Reliable flanks are joined through the mark and sent to the existing ordered layer tracker. No mark means no axis. Doctor-painted or geometric short lines remain the draft fallback. No Assist weights or definite cT output changed.
+- Validation: `npx tsx scripts/test_wall_flank_axis_from_lesion.mjs`, `npx tsx scripts/test_wall_ordered_track.mjs`, `npx tsx scripts/test_wall_deepest_analysis.mjs`, `npx tsx scripts/test_wall_prompt.mjs`, and `npx tsc --noEmit`.
+- Deployment: public Next BUILD `Un14DOa8n06kY_Gl8mBSx`; smoke passed (`public_root=200`, `public_clinical=200`). The large desktop package download checks timed out after their HTTP status had already returned 200; deployment script completed successfully.
+- Follow-up: Hard-refresh. Confirm a deepest region that is not the geometric deep vertex, then check that both short anchors grow from that mark along the wall. Region-level `R_doctor`, cross-frame support, and refuse-to-stage remain later.
+
 ## 2026-08-31, Lesion-driven flank-axis search
 
 - Scope: public cine wall analysis after one deepest-region confirmation.
@@ -6295,3 +6637,16 @@ This file records material project changes, their validation, and deployment sta
 - Validation: Pending TypeScript/lint checks, production build, and public smoke verification.
 - Deployment: Public Next deployed successfully with BUILD `mQZyw9FR6uwvlK8rTibQK`; smoke checks returned `public_root=200` and `public_clinical=200`. The prior public bundle remains available for rollback.
 - Follow-up: Hard-refresh the public reader and confirm expected-line drawing plus nearby analysis lines on representative cases.
+
+## 2026-09-07, UltraTAR multi-task adaptation and full fine-tuning for gastric ultrasound
+
+- Scope: Data conversion, multi-task framework extension, and full-scale LoRA fine-tuning for UltraTAR on gastric cancer tasks.
+- Reason: Enable Universal Ultrasound Foundation model (UltraTAR, DINOv3 ViT-Large) to simultaneously handle gastric cancer 4-class T-staging, lesion segmentation, and lesion detection without patient-level data leakage.
+- Key changes:
+  - Created `scripts/convert_gastric_to_ultratar.py` to convert GastricTstaging Phase-0 datasets (train, val, prospective, external) into UltraTAR format with strict patient-level de-duplication (152 prospective patient overlaps dropped from train, 7 from val).
+  - Extended UltraTAR core modules (`dataset.py`, `model_factory.py`, `utils.py`) to support `gastric_tstage_4cls`, `gastric_lesion_seg`, and `gastric_lesion_det` tasks, binary mask handling, and clinical patient-level multi-metric evaluation (accuracy, balanced accuracy, macro AUC, QWK, early vs advanced AUC, Dice, IoU).
+  - Implemented `/data/projects/UltraTAR/train_gastric_ultratar.py` and executed 10-epoch full fine-tuning with CosineAnnealing LR schedule, AdamW optimizer, and dynamic task routing.
+- Validation: End-to-end training completed successfully (best epoch 7 composite score 0.5346). Final clinical evaluation completed across validation (patient acc 45.86%, early/adv AUC 0.7689, Dice 0.6632), prospective (patient acc 48.47%, early/adv AUC 0.7669, Dice 0.6343), and external cohorts (patient acc 42.47%, early/adv AUC 0.6518, Dice 0.6385). Checkpoint saved to `/data/projects/UltraTAR/experiments/gastric_vit_large_multitask_full/best_model.pth`.
+- Deployment: Research experiment pipeline; does not alter public reader UI or live Next server.
+- Follow-up: Compare against single-task DINOv3 baselines and explore task weight tuning.
+

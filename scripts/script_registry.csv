@@ -82,6 +82,8 @@ build_e2e_clinical_report.py,runtime,module,,scripts,scripts/runtime,import_only
 build_experiments_registry.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_experiments_tree_index.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 build_external_center_eval_table.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
+build_external_crop_from_original.py,runtime,module,,scripts,scripts/runtime,import_only,false,
+build_external_newcrop_dataset.py,legacy,unknown,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 build_full_prospective_tstaging_csv.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_full_queue_t2t3_report_20260809.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 build_gastric_agent_baseline_model_card.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -195,6 +197,7 @@ convert_clinical_data_2019_nac.py,unknown,data_governance,3,scripts,needs_review
 convert_clinical_data_2024.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 convert_clinical_data_2024_nac.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 convert_data.py,legacy,data_governance,3,scripts,scripts/legacy,no,false,hardcoded paths or README §7
+convert_gastric_to_ultratar.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 convert_videos.sh,legacy,shell,7,scripts,scripts/legacy,no,false,
 copy_tstaging_physical_train.py,current,data_governance,9,scripts,scripts/current,yes,true,
 crop_prospective_reader_videos.py,unknown,data_governance,3,scripts,needs_review,review,true,needs manual review
@@ -207,6 +210,7 @@ diagnose_gus_o3_decode_20260826.py,unknown,data_governance,3,scripts,needs_revie
 discover_reader_videos.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 discretize_viewing_traces.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 distribute_external_crop_videos.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+doctor_prompt_archive.py,legacy,unknown,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 download_dinov3_assets.py,legacy,legacy,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 draft_tscore_discrete_bins_v1.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 efficientsam3_runtime.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -259,7 +263,9 @@ export_nnunet_prediction_review.py,unknown,segmentation,2,scripts,needs_review,r
 export_patient_media_splits.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 export_project_logic_pdf.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 export_reader_round2_paired_tables.py,runtime,module,9,scripts,scripts/runtime,import_only,true,
+export_wall_bilateral_session_20260830.py,current,analysis,4,scripts,scripts/current,yes,true,
 export_wall_proxy_from_lumen.py,analysis,analysis,4,scripts,scripts/analysis,review_env,false,
+export_workbench_episode.py,current,analysis,4,scripts,scripts/current,yes,true,
 export_zml_reader_testset.py,legacy,unknown,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 extract_acc_boost2_image_features_20260816.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 extract_gc_us_clinical_cohort_features_v1.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
@@ -346,12 +352,14 @@ inspect_excel.py,legacy,legacy,7,scripts,scripts/legacy,no,false,hardcoded paths
 install_gastric_user_services.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 inventory_tnm_nm_labels_20260814.py,current,analysis,5,scripts,scripts/current,yes,true,
 join_reader_v150_to_task_datasets.py,current,data_governance,3,scripts,scripts/current,yes,true,
+launch_twp_runs.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 link_videos.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
 make_screening_funnel_figure.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 make_segmentation_example_panels.py,unknown,segmentation,2,scripts,needs_review,review,false,needs manual review
 mark_legacy_scripts.py,legacy,legacy,,scripts,scripts/legacy,no,true,hardcoded paths or README §7
 medical_agent_evolution_shadow.py,runtime,module,,scripts,scripts/runtime,import_only,false,
 merge_clinical_features.py,unknown,data_governance,3,scripts,needs_review,review,false,needs manual review
+merge_doctor_case_state_preserve.py,current,utility,7,scripts,scripts/current,review_paths,false,
 migrate_center_folder_names.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 migrate_data_zips.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 migrate_legacy_raw_dirs.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
@@ -419,7 +427,7 @@ rebuild_external_dataset.py,runtime,module,,scripts,scripts/runtime,import_only,
 rebuild_safe_crop_ui_review.py,unknown,data_governance,3,scripts,needs_review,review,true,needs manual review
 recompute_g17_morphology_features_v2.py,runtime,module,,scripts,scripts/runtime,import_only,false,
 reconcile_clinical_tables_20260813.py,current,data_governance,3,scripts,scripts/current,yes,true,
-reconcile_public_ops_pending.py,legacy,unknown,,scripts,scripts/legacy,no,false,hardcoded paths or README §7
+reconcile_public_ops_pending.py,current,utility,7,scripts,scripts/current,review_paths,false,
 record_next_workbench_flow.py,runtime,module,,scripts,scripts/runtime,import_only,false,
 record_reader_study_demo.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 refine_clean_agent_t2t3_boundary.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -428,7 +436,9 @@ reflect_video_evidence_memory.py,unknown,unknown,,scripts,needs_review,review,tr
 regenerate_overlays.py,analysis,analysis,4,scripts,scripts/analysis,review_env,false,
 regenerate_overlays_from_json.py,analysis,analysis,4,scripts,scripts/analysis,review_env,false,
 regenerate_similar_cases_contact_sheets.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+remux_reader_cine_scrub_gop.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
 render_dinov3_roi_crop_panel.py,unknown,unknown,,scripts,needs_review,review,true,needs manual review
+render_dinov3_roi_lora_feature_panels.py,unknown,segmentation,2,scripts,needs_review,review,true,needs manual review
 render_dinov3_roi_lora_pred_panel.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 render_lesion_aware_wall_cluster_panel.py,current,analysis,4,scripts,scripts/current,yes,true,
 render_prompt_mask_case_visualizations.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -503,6 +513,7 @@ run_image_dino_feature_fusion_eval.py,runtime,module,,scripts,scripts/runtime,im
 run_interactive_unet_finetune.py,utility,utility,6,scripts,scripts/analysis,review,true,
 run_internal_prospective_tabular_baseline.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 run_lan_merged_system.sh,utility,shell,7,scripts,scripts/analysis,review,false,
+run_layer_lora_matrix.sh,utility,shell,7,scripts,scripts/analysis,review,false,
 run_local_mllm_sft.py,runtime,module,8,scripts,scripts/runtime,import_only,true,
 run_maskroi_clin10_retrain_20260820.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 run_maskroi_clin11_tabpfn_freeze_20260820.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
@@ -596,8 +607,10 @@ sync_remote_reader_study.py,unknown,unknown,,scripts,needs_review,review,true,ne
 t_stage_evidence_gate.py,runtime,module,,scripts,scripts/runtime,import_only,false,
 temporary_public_next_proxy.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 test_lan_full_stack.sh,utility,shell,7,scripts,scripts/analysis,review,false,
+test_merge_doctor_case_state_preserve.py,current,utility,,scripts,scripts/current,review_paths,false,
 test_similar_case_cards.py,utility,utility,6,scripts,scripts/analysis,review,true,
-test_wall_directional_interfaces.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
+test_wall_bilateral_session_20260830.py,current,analysis,4,scripts,scripts/current,yes,true,
+test_wall_directional_interfaces.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 test_wall_directional_joint_bands.py,unknown,unknown,,scripts,needs_review,review,false,needs manual review
 test_wall_lesion_aware_cluster.py,current,analysis,4,scripts,scripts/current,yes,true,
 test_wall_ordered_curve_track.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
@@ -611,8 +624,13 @@ train_clean_agent_model_zoo.py,runtime,module,,scripts,scripts/runtime,import_on
 train_clean_boundary_expert.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_dino_region_attention_mil.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_dinov3_anatomic_adapter.py,current,analysis,,scripts,scripts/current,yes,true,
+train_dinov3_lora_joint_tstage.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+train_dinov3_lora_lastlayer_tstage.py,unknown,data_governance,3,scripts,needs_review,review,true,needs manual review
+train_dinov3_multitask_layer_lora.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_dinov3_roi_lora_mlp.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_dinov3_roi_lora_seg.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+train_dinov3_scheme_a_large_mlp.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+train_dinov3_scheme_b_class_head.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_domain_ratio_weighted_clean_agent.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_framelevel_clip_dino_topk_clean.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 train_gastric_agent_late_fusion.py,runtime,module,,scripts,scripts/runtime,import_only,true,
@@ -660,6 +678,7 @@ viz_cine_min_remain_6cases_20260814.py,runtime,module,,scripts,scripts/runtime,i
 viz_gc_us_boundary_spicule_assoc_20260815.py,analysis,analysis,4,scripts,scripts/analysis,review_env,true,
 viz_gc_us_margin_pixel_examples.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 viz_gc_us_wall_layer_examples.py,runtime,module,,scripts,scripts/runtime,import_only,true,
+viz_lastlayer_cases.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 viz_static_lesion_assist_6cases_20260814.py,runtime,module,,scripts,scripts/runtime,import_only,true,
 viz_static_wall_dash_6cases_20260814.py,current,visualization,5,scripts,scripts/current,yes,true,
 wait_and_run_tabfm_20260815.sh,utility,shell,7,scripts,scripts/analysis,review,false,
