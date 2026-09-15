@@ -40,6 +40,7 @@ MAE 权重是 timm 风格 ViT-B/16（学习式 pos_embed），与 DINOv3 hub（R
 改动（工作站仓 `scripts/`）：
 
 - `train_dinov3_roi_lora_mlp.py` / `train_dinov3_roi_lora_seg.py`：新增 `model.backbone_family: timm_mae` 分支——`timm.create_model(vit_base_patch16_224, dynamic_img_size=True)` + strict 加载 encoder；**跳过 seg-ckpt overlay**（否则同名 key 会把 MAE 权重静默覆盖成 DINOv3 seg ckpt，实验作废）；LoRA 注入 `attn.qkv/proj` 与特征提取（`forward_features` / `get_intermediate_layers`）timm 均原生支持。
+- `cache_dinov3_tstaging_region_features.py`：`build_model` 加 `timm_mae` 分支、数据集加输入模糊——§3 口径冻结 probe 复用于 DMAE（该 probe 直读 `checkpoint_path`、无 overlay，是**唯一干净的 backbone 级对比**；DINOv3 下游链路的 overlay 混淆见结果文档文首 ⚠）。
 - 新增 `--input-blur-sigma` / 配置 `model.input_blur_sigma`：复现论文迁移协议（灰度高斯模糊 σ=1.1，在 letterbox 前的原始分辨率上施加）。
 - 其余（数据划分、letterbox 512、LoRA rank8/α16/末 4 块（分类）/12 块（分割）、MLP 头、Dice+BCE、评估指标）与 DINOv3 系完全同口径。
 
@@ -50,15 +51,19 @@ MAE 权重是 timm 风格 ViT-B/16（学习式 pos_embed），与 DINOv3 hub（R
 
 ## 4. 运行编排
 
-`scripts/queue_dmae_after_v2.sh`（setsid+nohup）：等 `queue_us_ssl_v2_tonight` 打出 ALL DONE 且 GPU 空闲 → 模糊副本（若缺）→ 200 ep 预训练 → 导出 encoder → 分类 → 分割。日志 `logs/queue_dmae_us200.log`。
+- `scripts/queue_dmae_after_v2.sh`（setsid+nohup）：等 `queue_us_ssl_v2_tonight` 打出 ALL DONE 且 GPU 空闲 → 模糊副本（若缺）→ 200 ep 预训练 → 导出 encoder → 分类 → 分割。日志 `logs/queue_dmae_us200.log`。
+- `scripts/queue_dmae_probe.sh`（setsid+nohup，已挂）：等上述 ALL DONE → 过滤临床 CSV（剔除图像缺失行）→ DMAE（带模糊）与温和版（不带模糊）各缓存 train/val/前瞻 probe 特征 → 跑 `run_dinov3_trainset_feature_eval.py` 出两份报告。日志 `logs/queue_dmae_probe.log`。
 
 ## 5. 判读标准（与既有基线同口径）
 
 | 对比 | 指标 | 基线 |
 | --- | --- | --- |
-| 分类 val | patient AUC | 官方 DINOv3 0.727 / 激进版 0.724 |
-| 分类前瞻 | patient AUC | 官方 0.763 / 激进版 0.720 |
+| 分类 val | patient AUC | 官方 DINOv3 0.727 / 激进版 0.724 / 温和版 0.709 |
+| 分类前瞻 | patient AUC | 官方 0.763 / 激进版 0.720 / 温和版 0.731 |
 | 分割 val / holdout / 外部 / 前瞻 | Dice | 官方 0.881 / 0.880 / 0.866 / 0.897 |
+| **probe（§3 口径，overlay-free）** | val/前瞻 AUC（dino_scalar+clinical 等） | 官方 vs 激进版见结果文档 §3（中性） |
+
+注：DINOv3 侧分类/分割基线受 overlay 混淆（backbone 实为同一 seg ckpt），DMAE 的 timm 路径无 overlay、测的是 backbone 本身——因此 **probe 行是 DMAE 与官方权重的首要干净对比**，分类/分割行作为同链路参照解读。
 
 - deblur-MAE 明显超过官方 DINOv3 → MIM 路线成立，续训至论文等效预算（~740 ep）并补 vanilla MAE 对照
 - 打平或更差 → 与 DINOv3 域适应结论合并：自有数据 SSL 两条路线均封存，encoder 维持官方权重
@@ -68,5 +73,6 @@ MAE 权重是 timm 风格 ViT-B/16（学习式 pos_embed），与 DINOv3 hub（R
 - 预训练：`bash scripts/pretrain_dmae_us.sh 200 <out_dir>`（封装 `external/DeblurringMIM/main_pretrain.py`）
 - 模糊副本：`python3 scripts/make_us_ssl_blurred_copy.py`（CPU，约 15–30 min）
 - 导出：`python3 scripts/export_dmae_encoder.py --ckpt <checkpoint-N.pth> --output <encoder.pth>`
+- probe：`scripts/queue_dmae_probe.sh` → 特征缓存 `pipeline/data/dinov3_tstaging_region_features/{train,val,internal_prospective_full}_{dmae_us200,us_ssl_v2_gentle}/`，报告 `pipeline/experiments/reports/{dmae_us200,us_ssl_v2_gentle}_probe/`
 - vendored 代码补丁：`external/DeblurringMIM/util/pos_embed.py` 的 `np.float` → `float`（NumPy≥1.24 兼容，唯一一处）
 - 注意：官方 repo 的 `CorruptDataset` 要求 `<root>/<train|val>/<class_dir>/` 结构，故副本数据集按 `train/all/`、`val/all/` 组织
