@@ -100,3 +100,40 @@ RF clin11 ACC 0.668 / QWK 0.490 / AUC 0.812；ET 0.646；LGBM 0.644；TabPFN 0.5
 
 **结论**：肿瘤长径/厚径 = 术前充盈超声测量值，可合法用于术前 T 分期预测，clin11 结果成立。
 **残留注意**：分化程度 / Lauren 分型解析自「病理」列文本（术后病理）；临床上术前活检可获得同名变量，但严格溯源时建议以 clin9_safe（再去掉这两个字段需另设变体，当前 clin9_safe 仅去大小）或后续增设 clin7_strict 变体复核。
+
+## 6. 扩展模型池与冠军遴选（2026-09-15 晚，v2）
+
+加测 6 类（脚本 `scripts/bench_clinical_tabular_v2_20260915.py`，产物 `clinical_tabular_benchmark_v2_results.csv`）：
+
+- **CatBoost**、**Optuna 调参** RF/XGB/LGBM（30 trials，训练池 5 折患者级 CV，QWK 目标）
+- **序数模型**：ridge-round、累积二分类 logreg 分解（T 分期是有序变量，理论上 QWK 受益）
+- **软投票**：RF+XGB+LGBM+TabPFN 概率平均
+- **影像+临床融合**：官方影像模型病例级 4 类概率 + 临床特征 → logreg/RF/LGBM 融合头（val n=127 上训练）
+
+要点（clin11 口径）：
+
+| 模型 | external ACC | external QWK | zml strict ACC |
+|---|---:|---:|---:|
+| softvote | 0.609 | 0.689 | 0.692 |
+| **rf_tuned** | 0.593 | **0.707** | **0.744** |
+| catboost | 0.593 | 0.702 | 0.692 |
+| （v1 默认 RF，对照） | **0.617** | 0.683 | 0.667 |
+| ordinal_logreg | 0.512 | 0.589 | 0.641 |
+| fusion_rf（+影像 prob） | 0.599（n=172） | 0.660 | 0.590 |
+
+1. **调参 RF 在 strict 上明显最好（0.744）且 external QWK 最高（0.707）**；调参 XGB/LGBM 与默认档持平。
+2. **序数模型不占优**——类别间边界信号弱时，序数假设帮不上忙。
+3. **融合暂未增益**：影像 prob 太弱（单模态 0.43）且融合头只有 127 例训练样本，external 上 0.599 ≤ 纯临床 0.617。§3 第 5 条②已完成，结论为「暂不融合」。8 月 acc80 档的融合是在有泄漏的划分上取得的，不可比。
+4. 冠军遴选（预注册标准：external + zml strict 平均 QWK 优先、平均 ACC 决胜；脚本 `scripts/select_champion_clinical_20260915.py`，结果 `champion_selection_20260915.csv`）：clin11 口径 **rf_tuned** 胜（clean QWK 0.6814 / clean ACC 0.6684）。
+
+## 7. 公网工作台后端模型更新（2026-09-15 晚已上线）
+
+**部署口径 clin9_wb** = clin11 去掉 Lauren/分化程度。原因：工作台结构化临床记录永远没有这两个字段（只在病理文本里），**训练特征必须与推理时可用性一致**，否则分布偏移。
+
+- 冠军：**rf_tuned**（n_est=456 / depth=6 / min_leaf=4 / max_feat=0.533，clin9_wb 重调参）：external 0.567、zml strict 0.641、prospective 0.585、clean QWK 0.631。仍高于影像单模态（0.433/0.462）。
+- **编码规则精确反推并自检通过**（max diff 1e-15）：连续 = z-score（mean/std 与生产 `clinical_norm_stats.json` 完全一致）；类别 = raw/max_code；缺失 → norm 0 + flag 1。部位用注册表口径（0=贲门+胃底 / 1=胃体+胃角 / 2=胃窦+幽门 / 3=多部位）——注意 `clinical_vector.py` 的旧四分编码（cardia/fundus/body/antrum）与此不同，勿混用。
+- 产物：`pipeline/models/clinical_tstage_champion_20260915/`（model.joblib 4.2MB + transform.json + meta.json）。
+- 接入：新增 `pipeline/agent/tools/clinical_ml_tool.py`（工作台病例 → 18 维特征 → 4 类概率；<4 字段时静默不可用）；`analyze_case_lib.py::_build_rule_based_report` 融合点——ML 概率以**与影像分类器等权**进入 scores，T4+ 安全门（无浆膜证据不显示 T4+）保持不变。
+- 链路：公网 Next → SSH 隧道 → 工作站 `gastric-next-public`（:3300）→ 每请求 spawn 研究仓 `analyze_case.py` → **改动即时生效，无需重启服务**。阿里云侧副本经 `deploy_public.sh` 同步（休眠兜底），公网 `/workbench/api/version` = `local-20260915-1834`。
+- 验证：工具冒烟 3 例（大肿瘤+高标志物 → T4+ 0.65，合理；字段不足 → 静默跳过）；融合报告冒烟（ML 证据行出现，T4+ 门正常回落 T3）。
+- 后续：① 若在工作台侧解析病理文本补 Lauren/分化，可升级 clin11 口径（clean QWK 0.681）；② 补齐 zml100 剩余 24 例临床记录后复测；③ 融合等影像 backbone 变强（Deblur-MAE probe 见 `DMAE_US_SSL_20260915.md`）后再评估。

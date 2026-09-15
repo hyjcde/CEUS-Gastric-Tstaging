@@ -1583,6 +1583,26 @@ def _build_rule_based_report(
             scores["T2"] += 0.1
         supporting_evidence.append(f"Clinical risk score {clinical_risk:.2f}.")
 
+    # 2026-09-15: champion clinical tabular ML model (RF, clin9_wb feature set).
+    # On clean benchmark sets (external n=381 / zml100-strict n=39) it beats the
+    # imaging classifier, so its 4-class probabilities enter the fusion at the
+    # same weight as the classifier term. Never raises; skips silently when the
+    # bundle or clinical fields are unavailable.
+    try:
+        from agent.tools.clinical_ml_tool import predict_clinical_tstage
+
+        clinical_ml = predict_clinical_tstage(payload.get("clinical") if isinstance(payload, dict) else None)
+        if clinical_ml.get("available"):
+            for _stage in STAGES:
+                scores[_stage] += float(clinical_ml["probabilities"].get(_stage, 0.0))
+            supporting_evidence.append(
+                "Clinical ML model top-1 " + str(clinical_ml["top1_stage"]) + " "
+                + "({:.2f}, {}/9 fields).".format(
+                    float(clinical_ml["top1_prob"]), int(clinical_ml["n_fields_present"]))
+            )
+    except Exception:
+        pass
+
     report_cues = report_text.get("report_cues", []) if report_text.get("available") else []
     if report_cues:
         cue_names = {str(item.get("cue", "")) for item in report_cues}
