@@ -1,0 +1,39 @@
+# m025 ROI LoRA segmentation with Deblurring-MAE (arXiv:2306.08249) US-pretrained backbone.
+# timm backend; no init_seg_ckpt overlay (would silently overwrite MAE weights with dinov3 keys).
+# Input blurred with sigma=1.1 per the deblur-MAE transfer protocol.
+
+paths:
+  dataset_root: data/processed/sms/gt_lesion_crop_upper_bound_v2_m025
+  experiment_root: experiments/segmentation
+  checkpoint_path: artifacts/model_weights/dmae_vitb16_us200_encoder.pth
+
+experiment:
+  task_name: segmentation
+  model_alias: dmae_vitb16_roi_lora_mlp_512_m025_all12_us200
+  data_version: gt_lesion_crop_upper_bound_v2_m025
+  run_id: r001
+  baseline_to_beat: dinov3_vitb16_roi_lora_mlp_512_m025_20260828_full
+
+model:
+  backbone_family: timm_mae
+  timm_model: vit_base_patch16_224
+  architecture: dmae_vitb16_roi_lora_mlp_512
+  patch_size: 16
+  input_size: 512
+  input_blur_sigma: 1.1
+  embed_dim: 768
+  freeze_backbone: true
+  trainable_blocks: 0
+  lora:
+    enabled: true
+    target_blocks: 12
+    target_modules: [qkv, proj]
+    rank: 8
+    alpha: 16
+    dropout: 0.05
+  decoder:
+    type: segdino_mlp
+    channels: 256
+    dropout: 0.05
+    use_multiscale_tokens: true
+    layer_indices: [2, 5, 8, 11]

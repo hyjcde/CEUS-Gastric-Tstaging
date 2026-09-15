@@ -1,0 +1,31 @@
+# Deblurring-MAE ViT-B/16 (arXiv:2306.08249) pretrained 200 ep on gastric US frames.
+# timm backend (NOT dinov3 hub): learned pos_embed, no storage tokens / RoPE / LayerScale.
+# Transfer protocol follows the paper: input is Gaussian-blurred (sigma=1.1) before the encoder.
+# No seg-ckpt overlay: backbone weights come solely from the deblur-MAE pretraining.
+
+paths:
+  dataset_root: data/processed/sms/baseline_2d_unet_holdout_crop_ui
+  experiment_root: experiments/segmentation
+  checkpoint_path: artifacts/model_weights/dmae_vitb16_us200_encoder.pth
+
+experiment:
+  task_name: segmentation
+  model_alias: dmae_vitb16_us200
+  data_version: dataset_v20260409_holdout_cropui
+  run_id: r001
+
+model:
+  backbone_family: timm_mae
+  timm_model: vit_base_patch16_224
+  architecture: dmae_vitb16_us200
+  patch_size: 16
+  input_size: 512
+  input_blur_sigma: 1.1
+  freeze_backbone: true
+  trainable_blocks: 0
+  decoder:
+    type: segdino_mlp
+    channels: 256
+    dropout: 0.05
+    use_multiscale_tokens: true
+    layer_indices: [2, 5, 8, 11]
