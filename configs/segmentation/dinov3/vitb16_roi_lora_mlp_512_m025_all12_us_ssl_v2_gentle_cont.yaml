@@ -1,0 +1,40 @@
+# m025 ROI LoRA segmentation with US-SSL v1 domain-adapted backbone.
+# Same as vitb16_roi_lora_mlp_512_m025_all12.yaml; only checkpoint_path differs.
+
+paths:
+  dataset_root: data/processed/sms/gt_lesion_crop_upper_bound_v2_m025
+  experiment_root: experiments/segmentation
+  dinov3_repo: external/dinov3/dinov3
+  dinov3_asset_root: external/dinov3
+  checkpoint_path: artifacts/model_weights/dinov3_vitb16_us_ssl_v2_gentle_cont_student.pth
+  init_seg_ckpt: experiments/segmentation/segmentation_dinov3_vitb16_last2blocks_holdout_cropui_dataset_v20260409_20260511_r001/checkpoints/best.pt
+
+experiment:
+  task_name: segmentation
+  model_alias: dinov3_vitb16_roi_lora_mlp_512_m025_all12_us_ssl_v2_gentle_cont
+  data_version: gt_lesion_crop_upper_bound_v2_m025
+  run_id: r001
+  baseline_to_beat: dinov3_vitb16_roi_lora_mlp_512_m025_20260828_full
+
+model:
+  backbone_family: dinov3
+  hub_model: dinov3_vitb16
+  architecture: dinov3_vitb16_roi_lora_mlp_512
+  patch_size: 16
+  input_size: 512
+  embed_dim: 768
+  freeze_backbone: true
+  trainable_blocks: 0
+  lora:
+    enabled: true
+    target_blocks: 12
+    target_modules: [qkv, proj]
+    rank: 8
+    alpha: 16
+    dropout: 0.05
+  decoder:
+    type: segdino_mlp
+    channels: 256
+    dropout: 0.05
+    use_multiscale_tokens: true
+    layer_indices: [2, 5, 8, 11]

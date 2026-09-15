@@ -208,6 +208,16 @@ T3/T4 边界仍是最弱一环（与官方基线一致）。
 - 队列脚本：`scripts/queue_us_ssl_v2_tonight.sh`（setsid+nohup，自动接下游：导出 backbone → T 分期分类 → 病灶分割）
 - 状态：预训练 2026-09-15 14:55 完成（5h14m）；下游链 14:55 启动，分类已出（见 §6.3），分割在跑（见 §6.4）
 - 队列日志：`logs/queue_us_ssl_v2_tonight.log`
+
+### 6.5 温和版续训（2026-09-15 晚启动，30 epoch）
+
+用户指示（21:48）：10 epoch 曲线 **loss 无 spike、整体下降**（14.54→14.49 单调），**lr 不调**（peak 仍 1e-5），续训后次日 eval。
+
+- 续训配置：`configs/pretrain/dinov3_vitb16_us_ssl_v2_gentle_cont.yaml`（仅 `optim.epochs` 10→30，其余与温和版一致）
+- resume 机制：同一 `output_dir` 自动从 `ckpt/17999`（含优化器状态）续训；调度按 30 ep 重算，续训起点 lr ≈ 7.7e-6（cosine 回摆，peak 不变），随后 20 个 epoch 再衰减到 1e-7
+- 预计时长：+20 ep ≈ 10.5h（约 16 日早 8–9 点完成），随后自动接下游链（导出 `dinov3_vitb16_us_ssl_v2_gentle_cont_student.pth` → 分类 → 分割，配置 `vitb16_*_us_ssl_v2_gentle_cont.yaml`）
+- GPU 队列已重排：`queue_gentle_cont.sh`（等温和版分割让卡）→ `queue_dmae_after_cont.sh`（DMAE 200ep 改挂 cont 之后）→ `queue_dmae_probe.sh`（不变）
+- **待验证**（16 日早）：续训首轮 iter 应从 ~18000 开始、loss 接在 ~14.49 而非跳回 16；若 resume 失败（loss 跳变）需立即停掉检查
 - 后续：deblur-MAE 200 ep 试水已排队（`queue_dmae_after_v2.sh`），见 [DMAE_US_SSL_20260915.md](DMAE_US_SSL_20260915.md)
 
 ### 6.3 温和版下游分类（T 分期 4 类，ROI LoRA + MLP，同 §4 链路）
