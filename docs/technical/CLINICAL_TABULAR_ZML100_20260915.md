@@ -1,0 +1,83 @@
+# 纯临床表格 T 分期 benchmark：zml100 阅片测试集
+
+日期：2026-09-15
+关联：[DINOV3_US_SSL_RESULTS_20260914.md](DINOV3_US_SSL_RESULTS_20260914.md)（影像模型 §6.5 每类分析）；zml100 测试集 `pipeline/data/zml_reader_100_testset_20260915/`
+
+## 0. 一句话
+
+**纯临床表格（11 个常规临床变量）在干净评测集上反超影像模型**：外部集 RF ACC 0.617 vs 影像 0.433，zml100 严格子集 0.69 vs 0.46–0.49、医生 0.54。但**肿瘤长径/厚径两个字段贡献巨大且来源待核实**（若源自病理报告则属特征级泄漏）；剔除后临床模型仍不劣于影像模型。最佳模型类型是**树集成（RF/XGB/LGBM）**；TabPFN v2.5 不是第一（ACC 中游，但外部集 QWK 最高）。
+
+## 1. 设置
+
+- **特征**（患者级，沿用 clin11 约定 + 缺失指示位）：
+  - `clin11`（22 列）：age / sex / Lauren / 分化程度 / 肿瘤长径 / 厚径 / 部位 / CEA（值+二值）/ CA199（值+二值）的 `_norm` + `_missing`
+  - `clin9_safe`（18 列）：剔除肿瘤长径/厚径——该两字段若来自病理报告则与 pT 直接相关，属泄漏；来源核实前以本变体为保守口径
+- **训练池**：`region_contrastive_full` train+val，患者级去重后 **1,566 例**（T1 352 / T2 195 / T3 522 / T4+ 497）
+- **评测集与泄漏审计**：
+  | 集合 | n | 与训练池患者重叠 | 口径 |
+  |---|---:|---:|---|
+  | zml100_full | 76/100（有临床记录者） | 37 例 | 含记忆成分，仅作上界参考 |
+  | zml100_strict | 39 | 0 | **干净**但样本小 |
+  | prospective_full | 506 | **167 例**（训练池本身含 int/prospective 源） | 有污染，仅参考 |
+  | external | 381 | 0 | **干净大样本，主读数** |
+- 模型 11 个：prior 基线 / logreg / SVM-RBF / kNN15 / MLP-128×2 / RF / ExtraTrees / HistGB / XGBoost / LightGBM / **TabPFN v2.5**（本地缓存权重，`create_default_for_version`；v8 新权重需 license 未用）。类别不平衡用 class_weight/样本权重处理。
+- 脚本：`scripts/bench_clinical_tabular_zml100_20260915.py`；产物 `pipeline/experiments/reports/clinical_tabular_zml100_20260915/`
+
+## 2. 结果
+
+### 2.1 zml100（病例级 ACC / QWK / macro-AUC）
+
+**strict（n=39，无泄漏，主读数）**
+
+| 模型 | 特征 | ACC | QWK | AUC |
+|---|---|---:|---:|---:|
+| logreg | clin9_safe | **0.692** | 0.488 | **0.849** |
+| xgboost | clin11 | **0.692** | 0.387 | 0.798 |
+| tabpfn_v25 | clin11 | 0.667 | 0.528 | 0.788 |
+| svm_rbf | clin11 | 0.667 | 0.546 | 0.771 |
+| random_forest | clin11 | 0.667 | 0.522 | 0.824 |
+| lightgbm | clin11 | 0.667 | 0.523 | 0.756 |
+| mlp_128x2 | clin9_safe | 0.667 | 0.598 | 0.766 |
+| prior_majority | — | 0.308 | 0 | 0.5 |
+
+**full（n=76，含 37 例训练池重叠，上界参考）**：RF/XGB/LGBM clin11 均 **0.829**（QWK 0.73–0.81，AUC 0.90–0.94）；TabPFN clin11 0.711。
+
+### 2.2 external（n=381，干净大样本，主读数）
+
+| 模型 | 特征 | ACC | QWK | AUC |
+|---|---|---:|---:|---:|
+| random_forest | clin11 | **0.617** | 0.689 | 0.795 |
+| tabpfn_v25 | clin11 | 0.585 | **0.721** | **0.827** |
+| mlp_128x2 | clin11 | 0.583 | 0.651 | 0.802 |
+| extra_trees | clin11 | 0.580 | 0.665 | 0.773 |
+| xgboost | clin11 | 0.564 | 0.686 | 0.805 |
+| random_forest | clin9_safe | 0.480 | 0.369 | 0.653 |
+| prior_majority | — | 0.378 | 0 | 0.5 |
+
+### 2.3 prospective_full（n=506，167 例与训练池重叠，仅参考）
+
+RF clin11 ACC 0.668 / QWK 0.490 / AUC 0.812；ET 0.646；LGBM 0.644；TabPFN 0.542。
+
+### 2.4 同病例对照（医生 + 影像模型）
+
+| 对象 | zml100@covered76 | zml100@strict39 |
+|---|---:|---:|
+| 医生 zml | 0.474 | 0.538 |
+| 影像-官方 | 0.487 | 0.462 |
+| 影像-激进 | 0.434 | 0.487 |
+| 影像-温和 | 0.329 | 0.308 |
+| **临床-RF/XGB（clin11）** | **0.829** | **0.667–0.692** |
+
+## 3. 判读
+
+1. **临床表格单独就有真实信号，且在干净集上超过影像单模态**。external（n=381，零泄漏）RF clin11 ACC 0.617 vs 影像官方 0.433；zml100 strict 0.67–0.69 vs 影像 0.46–0.49、医生 0.54。
+2. **肿瘤长径/厚径是最大的单一信息源**：external 上剔除后 RF 从 0.617 → 0.480。**必须先核实这两个字段是术前（超声/内镜/CT 测量）还是术后病理**——若是病理，clin11 全部数字作废，以 clin9_safe 为准（external 0.480，仍略高于影像 0.433）。
+3. **最佳模型类型 = 树集成**（RF/XGB/LGBM 互有胜负，整体第一梯队）。符合预期：n≈1.5k、22 维、含缺失指示与非线性交互（大小×部位×标志物）的表格数据正是 GBM/RF 的优势区。**TabPFN 不是第一**：ACC 中游（strict 0.667 / external 0.585），但 external QWK 0.721 全场最高——它的概率排序质量好，适合做对序敏感的融合成员而非单模型答案。
+4. **T2 塌陷在临床模态下依旧**（external RF clin11 的 T2 recall 0.18；zml strict XGB 的 T2 recall 0）——T2 信号不在常规临床变量里，也不会从影像单帧里来，这是任务本身的天花板。唯一例外是 strict 子集上 logreg clin9_safe T2 recall 0.67，但 n=39（T2 仅数例），不足为据。
+5. **提升路径明确指向融合**：临床（尤其大小+标志物）与影像（壁层次/纹理）信息互补——8 月的 TabPFN 融合曾到 acc80 档（`run_tabpfn25_fusion_acc80_20260820.py`）。建议：① 核实 size 字段来源；② 在干净划分上重做「影像 prob + clin11」融合（严格患者级去重）；③ 补齐 zml100 剩余 24 例临床记录后复测。
+
+## 4. 产物
+
+- 结果表：`clinical_tabular_benchmark_results.csv`（11 模型 × 2 特征 × 4 集合）
+- 汇总：`clinical_tabular_benchmark_summary.json`
+- zml100 逐例预测：`zml100_preds_<features>_<model>_<set>.csv`

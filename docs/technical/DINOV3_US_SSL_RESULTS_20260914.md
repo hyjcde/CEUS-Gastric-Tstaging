@@ -267,6 +267,8 @@ zml100 = `pipeline/data/zml_reader_100_testset_20260915/`（100 例 / 436 关键
 
 **对 SSL 判读的意义**：zml100 上官方 0.400 > 激进 0.350 > 温和 0.290（n=100，CI 宽），方向与 val/前瞻一致——两轮域适应无收益；且三模型在 overlay 混淆下 backbone 相同，zml100 差异同样只能作链路级参照。
 
+**纯临床表格对照实验**（2026-09-15 晚，见 [CLINICAL_TABULAR_ZML100_20260915.md](CLINICAL_TABULAR_ZML100_20260915.md)）：clin11 训练于 train+val（1,566 例），干净集上反超影像单模态——external（n=381，零泄漏）RF ACC 0.617 vs 影像 0.433；zml100 strict（n=39）0.67–0.69 vs 医生 0.54。肿瘤长径/厚径贡献最大（剔除后 external 0.480），来源待核实。最佳模型类型为树集成；TabPFN v2.5 ACC 中游但 external QWK 最高（0.721）。提升路径指向影像+临床融合。
+
 **温和版判读标准**：分类 val/前瞻 AUC 若回到或超过官方基线（0.727 / 0.763），说明温和适应有效；若仍低于基线或仅打平，SSL 路线封存，encoder 用官方权重。
 
 ---
