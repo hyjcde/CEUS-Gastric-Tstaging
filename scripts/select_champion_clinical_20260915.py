@@ -67,7 +67,14 @@ def metrics(y, pred, proba):
 
 def main():
     train_df = pd.concat([load_split(RD / "train_clinical.csv"), load_split(RD / "val_clinical.csv")])
-    train_pat = patient_level(train_df)
+    train_pat_all = patient_level(train_df)
+    # 2026-09-15 晚（用户要求）：训练池只用内部回顾性病例——剔除 int/prospective
+    # 与 ext/* 来源。prospective_full 由此成为零重叠干净集。
+    KEEP_SOURCES = {"int/2018", "int/2019", "int/2020_2023", "int/2024"}
+    train_pat = train_pat_all[train_pat_all["source"].isin(KEEP_SOURCES)].reset_index(drop=True)
+    print(f"[pool] internal-retro only: {len(train_pat)} patients "
+          f"(dropped {len(train_pat_all) - len(train_pat)} prospective/external-source)",
+          flush=True)
     train_pids = set(train_pat["patient_id"])
     Xtr = train_pat[FEATS].to_numpy(dtype=np.float32)
     ytr = train_pat["class_label"].to_numpy(dtype=int)
@@ -156,8 +163,11 @@ def main():
             m = metrics(y, clf.predict(X), clf.predict_proba(X))
             for k, v in m.items():
                 row[f"{sname}_{k}"] = v
-        row["clean_qwk_mean"] = float(np.mean([row["external_qwk"], row["zml100_strict_qwk"]]))
-        row["clean_acc_mean"] = float(np.mean([row["external_acc"], row["zml100_strict_acc"]]))
+        # prospective_full 现在也是干净集（训练池已剔除前瞻来源）——三个干净集等权
+        row["clean_qwk_mean"] = float(np.mean([row["external_qwk"], row["zml100_strict_qwk"],
+                                               row["prospective_full_qwk"]]))
+        row["clean_acc_mean"] = float(np.mean([row["external_acc"], row["zml100_strict_acc"],
+                                               row["prospective_full_acc"]]))
         rows.append(row)
         print(f"[champion] {name}: clean_qwk={row['clean_qwk_mean']:.4f} "
               f"clean_acc={row['clean_acc_mean']:.4f} ext_acc={row['external_acc']:.3f} "
@@ -170,7 +180,9 @@ def main():
     print(f"[champion] WINNER = {champion_name}")
 
     # ---------- transform recovery (exact rule: norm = raw/scale if missing==0 else 0.0) ----------
-    tp = train_pat
+    # 编码是 CSV 的属性（与生产 clinical_norm_stats.json 一致），用全量训练侧行验证，
+    # 与训练子集选择无关。
+    tp = train_pat_all
     CAT_SCALE = {"sex": 1.0, "lauren_type": 3.0, "differentiation": 4.0, "tumor_location": 10.0}
     transform: dict = {"continuous": {}, "categorical_scale": CAT_SCALE, "binary": BINS,
                        "features": FEATS, "classes": CLASSES,
@@ -222,8 +234,10 @@ def main():
     meta = {
         "champion": champion_name,
         "feature_set": "clin9_wb (clin11 minus lauren/differentiation — not structured in workbench)",
-        "train_pool": "region_contrastive_full train+val (n=1566 patients)",
-        "selection": "mean QWK over external(381) + zml100_strict(39), tiebreak mean ACC",
+        "train_pool": ("region_contrastive_full train+val, INTERNAL RETROSPECTIVE ONLY "
+                       f"(int/2018+2019+2020_2023+2024, n={len(train_pat)} patients); "
+                       "prospective/external sources excluded per 2026-09-15 requirement"),
+        "selection": "mean QWK over external(381) + prospective_full(506, now clean) + zml100_strict, tiebreak mean ACC",
         "board": rows,
         "created": "2026-09-15",
     }

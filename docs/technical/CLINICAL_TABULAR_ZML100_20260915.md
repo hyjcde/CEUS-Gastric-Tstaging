@@ -130,10 +130,20 @@ RF clin11 ACC 0.668 / QWK 0.490 / AUC 0.812；ET 0.646；LGBM 0.644；TabPFN 0.5
 
 **部署口径 clin9_wb** = clin11 去掉 Lauren/分化程度。原因：工作台结构化临床记录永远没有这两个字段（只在病理文本里），**训练特征必须与推理时可用性一致**，否则分布偏移。
 
-- 冠军：**rf_tuned**（n_est=456 / depth=6 / min_leaf=4 / max_feat=0.533，clin9_wb 重调参）：external 0.567、zml strict 0.641、prospective 0.585、clean QWK 0.631。仍高于影像单模态（0.433/0.462）。
+**训练池约束（2026-09-15 晚，用户要求）**：只用**内部回顾性**病例（int/2018+2019+2020_2023+2024，**1,181 例**），剔除 int/prospective（167）与 ext/\*（218）。附带收益：prospective_full 506 例从此与训练池零重叠，成为第三个干净评测集。
+
+- 冠军：**rf_tuned**（clin9_wb 重调参：n_est=300 / depth=3 / min_leaf=2 / max_feat=0.313）：
+
+  | 集合 | 口径 | ACC | QWK |
+  |---|---|---:|---:|
+  | external（n=381） | 干净 | 0.530 | 0.655 |
+  | prospective_full（n=506） | **干净（新）** | 0.474 | 0.309 |
+  | zml100_strict（n≈39） | 干净 | 0.605 | 0.568 |
+
+  对比全量池（1,566 例）版本：external 0.593→0.530、strict 0.744→0.605——**剔除前瞻/外部来源后性能全面回落**，这是更诚实但更低的数字；prospective 的干净读数 0.474 也远低于此前含污染口径的 0.601。仍高于影像单模态（external 0.433）。
 - **编码规则精确反推并自检通过**（max diff 1e-15）：连续 = z-score（mean/std 与生产 `clinical_norm_stats.json` 完全一致）；类别 = raw/max_code；缺失 → norm 0 + flag 1。部位用注册表口径（0=贲门+胃底 / 1=胃体+胃角 / 2=胃窦+幽门 / 3=多部位）——注意 `clinical_vector.py` 的旧四分编码（cardia/fundus/body/antrum）与此不同，勿混用。
 - 产物：`pipeline/models/clinical_tstage_champion_20260915/`（model.joblib 4.2MB + transform.json + meta.json）。
 - 接入：新增 `pipeline/agent/tools/clinical_ml_tool.py`（工作台病例 → 18 维特征 → 4 类概率；<4 字段时静默不可用）；`analyze_case_lib.py::_build_rule_based_report` 融合点——ML 概率以**与影像分类器等权**进入 scores，T4+ 安全门（无浆膜证据不显示 T4+）保持不变。
-- 链路：公网 Next → SSH 隧道 → 工作站 `gastric-next-public`（:3300）→ 每请求 spawn 研究仓 `analyze_case.py` → **改动即时生效，无需重启服务**。阿里云侧副本经 `deploy_public.sh` 同步（休眠兜底），公网 `/workbench/api/version` = `local-20260915-1834`。
+- 链路：公网 Next → SSH 隧道 → 工作站 `gastric-next-public`（:3300）→ 每请求 spawn 研究仓 `analyze_case.py` → **改动即时生效，无需重启服务**。阿里云侧副本经 `deploy_public.sh` 同步（休眠兜底），公网 `/workbench/api/version` = `local-20260915-2108`（模型文件与工作站逐字节一致，549,833 B）。
 - 验证：工具冒烟 3 例（大肿瘤+高标志物 → T4+ 0.65，合理；字段不足 → 静默跳过）；融合报告冒烟（ML 证据行出现，T4+ 门正常回落 T3）。
 - 后续：① 若在工作台侧解析病理文本补 Lauren/分化，可升级 clin11 口径（clean QWK 0.681）；② 补齐 zml100 剩余 24 例临床记录后复测；③ 融合等影像 backbone 变强（Deblur-MAE probe 见 `DMAE_US_SSL_20260915.md`）后再评估。
