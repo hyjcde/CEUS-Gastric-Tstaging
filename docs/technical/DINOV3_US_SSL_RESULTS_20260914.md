@@ -218,6 +218,28 @@ T3/T4 边界仍是最弱一环（与官方基线一致）。
 - 预计时长：+20 ep ≈ 10.5h（约 16 日早 8–9 点完成），随后自动接下游链（导出 `dinov3_vitb16_us_ssl_v2_gentle_cont_student.pth` → 分类 → 分割，配置 `vitb16_*_us_ssl_v2_gentle_cont.yaml`）
 - GPU 队列已重排：`queue_gentle_cont.sh`（等温和版分割让卡）→ `queue_dmae_after_cont.sh`（DMAE 200ep 改挂 cont 之后）→ `queue_dmae_probe.sh`（不变）
 - **待验证**（16 日早）：续训首轮 iter 应从 ~18000 开始、loss 接在 ~14.49 而非跳回 16；若 resume 失败（loss 跳变）需立即停掉检查
+
+### 6.6 续训实测动态（截至 2026-09-20，iter 46,130 / 25.5 ep）
+
+resume 机制验证有效（从 `ckpt/17999` 接续，loss 平滑无跳变），逐 epoch 汇总（`training_metrics.json`）：
+
+| ep | total_loss | bb_grad | lr(max) |
+| ---: | ---: | ---: | ---: |
+| 0（原始） | 14.8496 | 45.22 | 1.21e-05 |
+| 9（原始结束） | 14.4929 | 2.68 | 9.61e-06 |
+| 10（续训起点） | 14.4937 | 3.37 | 9.59e-06 |
+| 15 | 14.4924 | 2.16 | 6.51e-06 |
+| 20 | 14.4918 | 1.82 | 3.35e-06 |
+| 25 | 14.4915 | 1.68 | 9.91e-07 |
+
+续训把 total_loss 从 14.4929 再压到 14.4915，**backbone_grad 从 2.68 单调降到 1.68**（对比：激进版结束时 1.36）。趋势健康、无 spike。
+
+> **⚠ 事故：9/16 07:30–21:04 停摆 4 天**（iter 45,999 → 46,420 后中断）。日志停在 9/16 16:53，死因 **SIGTERM（signal 15）**：16:44 的一次人工 relaunch 未用 `setsid` 完全脱离会话，赶上网络闪断、父会话结束时被带走。更隐蔽的后果是 `queue_gentle_cont.sh` 随之退出，**下游两个 DMAE 队列因等不到 "ALL DONE" 而静默空转 4 天**。9/20 21:04 已用 `setsid nohup` 重新拉起（9/15 首轮用同样方式稳定跑过 9 小时），并新增看门狗 `scripts/watch_gentle_cont.sh`（每 5 分钟检查，若预训练进程消失且 iter < 54,000 则自动续拉）。
+>
+> 教训：**GPU 队列脚本必须 `setsid`+`disown` 完全脱离，且要有停摆看门狗**——`set -e` 的队列脚本一旦被杀，下游等待型队列不会报错，只会无限等待。
+
+- 当前状态（9/20 21:05）：从 `ckpt/45999` 恢复，双卡 97–98% 满载，预计 **约 23:25 完成 30 ep**（54,000 iter），随后自动接下游链
+- 队列顺序（9/20 重启）：`watch_gentle_cont` + `queue_gentle_cont`（预训→下游）→ `queue_dmae_after_cont`（DMAE 200ep）→ `queue_dmae_probe`
 - 后续：deblur-MAE 200 ep 试水已排队（`queue_dmae_after_v2.sh`），见 [DMAE_US_SSL_20260915.md](DMAE_US_SSL_20260915.md)
 
 ### 6.3 温和版下游分类（T 分期 4 类，ROI LoRA + MLP，同 §4 链路）
