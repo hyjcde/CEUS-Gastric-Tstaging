@@ -6650,3 +6650,21 @@ This file records material project changes, their validation, and deployment sta
 - Deployment: Research experiment pipeline; does not alter public reader UI or live Next server.
 - Follow-up: Compare against single-task DINOv3 baselines and explore task weight tuning.
 
+## 2026-10-09, binary benign/malignant contract revision: yan benign to 协和 and 2026 协和 benign added
+
+- Scope: `binary_multicenter_joint_unseen_20261009` (new contract). Affects `scripts/build_binary_multicenter_joint_unseen.py`, `scripts/build_task_datasets.py`, `dataset/task_datasets/binary_benign_malignant/` (CSV + SPLIT_POLICY + README), `dataset/DATASET_GUIDE.md` contract line.
+- Reason: The 协和 centre had zero benign rows in the binary table. Two sources were missing or mis-assigned. (1) `yan*` benign stills (318 patients, 372 stills, `dataset/inflammation/{2018..2025}/`) were labelled 莆田学院附属医院 because the old rule mapped every `dataset/inflammation/` row to Putian. `ptyz*` marks Putian; `yan*` does not, and the clinical `data_source` is `inflammation` rather than `inflammation_putian`. The user confirmed yan is 协和 on 2026-10-09. (2) Xiehe 2026 benign (`dataset/inflammation/2026_xiehe/`) was not in any split.
+- Key changes:
+  - Centre override: benign rows with a `yan*` raw id map to `internal_xh`. `ptyz*` rows stay on `external_putian1`.
+  - New source `benign/inflammation/2026_xiehe`: clean manifest rows (`review=0`, not unmatched, matched to clinical exam), 393 stills, 65 patients. Patient key is 住院号, name when blank. Added to the temporal holdout (`test_prospective`), the same rule as 2026_putian.
+  - Xiehe 2026 malignant (SSL cohort 胃癌-内部直接手术2026, 913 videos, 290 patients) is **not** added. No pT label exists in any table.
+  - Build now aborts if a patient carries both labels.
+  - Old contract pack `pipeline/data/binary_multicenter_joint_unseen_20260820/` and its training config are unchanged. The old CSVs are backed up to `dataset/task_datasets/binary_benign_malignant/splits_superseded_20260820/` (md5 identical to the pre-change catalog).
+- Result (patients / images, all splits): 协和 benign 0 to 383 / 765 (yan 318 / 372 + 2026 65 / 393). 莆田学院附属 benign 756 to 438 / 2,994. Binary total 15,276 to 15,669 rows, 3,225 to 3,290 patients. Benign 4,438 to 4,831 rows. Malignant unchanged (10,838 rows, 2,073 patients).
+- Validation: `python3 scripts/build_binary_multicenter_joint_unseen.py` exit 0. `python3 scripts/build_task_datasets.py` exit 0. `python3 scripts/audit_task_datasets.py` pass true. Patient leak 0 across all splits. Cross-task overlap marked benign 0. Duplicate image paths 0.
+- Deployment: none. Offline dataset and script change. No change to `apps/gastric_scan_next/` or the public analyze path, so no `deploy_public_next.sh` run.
+- Follow-up:
+  - Decide the pT source for 2026 协和 malignant (290 patients, 913 videos). Without it they cannot enter T staging or binary.
+  - Xiehe 2026 clinical table has 99 exams, 98 names, 31 hospital IDs, and 69 blank hospital IDs. Reconcile patient count before reporting.
+  - Training under the new contract needs a new run script and config. The `20260820` run script and config still point to the old pack.
+  - Git: `dataset/task_datasets/` is untracked (data layer). Only the two scripts and this changelog are committed.
