@@ -40,6 +40,8 @@ python3 scripts/build_training_media_view.py --clean
 
 硬规则：split 必须按 **patient_id**；**不要用 loop_still**。
 
+建模 CSV 的干净入口在 [../task_datasets/README.md](../task_datasets/README.md)，不要从本目录猜 split 表。
+
 ## 库存摘要
 
 ```json

@@ -12,7 +12,7 @@
 | **6. 平台** | Next.js / Electron 应用 | `apps/` | 是（不含 node_modules） |
 | **7. 模型** | 权重与 checkpoint 索引 | `artifacts/model_weights/`、`pipeline/experiments/tree/` | 否（registry 进 Git） |
 
-根目录只保留：**START_HERE、README、REPO_LAYOUT、MAINTENANCE**，仓库级工具配置（`CLAUDE.md`、`opencode.json`、隐藏配置目录），正式工作目录（含 `dataset/`、`tstaging/`、`tstaging_lab/`、`benign_malignant/`、`runtime/`），**`paper/`** 和 **`_compat/`**（旧路径 symlink，非正式入口）。MedSigLIP 副本在 `external/medsiglip/`，根上 `medsiglip/` 只是兼容链接。
+根目录只保留：**START_HERE、README、REPO_LAYOUT、MAINTENANCE**，仓库级工具配置（`CLAUDE.md`、`opencode.json`、隐藏配置目录），正式工作目录（含 `dataset/`、`良恶性/`、`tstaging_lab/`、`benign_malignant/`、`runtime/`），**`paper/`** 和 **`_compat/`**（旧路径 symlink，非正式入口）。`tstaging/` 的重复副本在 `archive/dataset_copies/tstaging/`。MedSigLIP 副本在 `external/medsiglip/`，根上 `medsiglip/` 只是兼容链接。
 
 打开仓库请读 [START_HERE.md](START_HERE.md)。
 
@@ -43,16 +43,17 @@
 
 | 路径 | 内容 |
 |------|------|
-| [dataset/](dataset/) | `internal/`、`external/`、`tables/`、`manifest.csv` |
-| [dataset/task_datasets/](dataset/task_datasets/README.md) | **两类建模 CSV**：T 分期 / 良恶性 |
+| [dataset/](dataset/) | T 分期正式集：`train/`、`val/`、`test/prospective/`、`test/external/` |
+| [dataset/task_datasets/](dataset/task_datasets/README.md) | T 分期冻结 CSV。良恶性划分在 [良恶性/](良恶性/README.md) |
 | [dataset/DATASET_GUIDE.md](dataset/DATASET_GUIDE.md) | **数据 SSOT** |
 | [data/registry/](data/registry/) | 注册表模板与正式表 |
 | [data/splits/](data/splits/) | 冻结 split manifest |
 | [data/annotation/](data/annotation/) | 方向标注 batch 与输出 |
 | [pipeline/data/](pipeline/data/) | T 分期等 `*_clinical.csv`、特征缓存 |
-| [tstaging/](tstaging/README.md) | Physical pack: `train/` `val/` `prospective/` `external/` (images and masks; jpg/png not in Git) |
+| [archive/dataset_copies/tstaging/](archive/dataset_copies/tstaging/README.md) | 根目录 T 分期副本，正式集在 `dataset/train`、`val`、`test` |
 | [tstaging_lab/](tstaging_lab/README.md) | T-staging experiment lab: locked WADI data, experiment cards, ledger.csv |
-| [benign_malignant/](benign_malignant/README.md) | 良恶性重训工作区（划分 CSV / 配置 / 报告；影像仍在 `dataset/`） |
+| [良恶性/](良恶性/README.md) | 良恶性影像、临床表和划分 |
+| [benign_malignant/](benign_malignant/README.md) | 良恶性重训工作区（配置和报告；影像在 `良恶性/`） |
 
 ---
 

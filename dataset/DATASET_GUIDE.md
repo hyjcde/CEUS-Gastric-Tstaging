@@ -1,10 +1,12 @@
 # 胃癌 T 分期正式数据集说明
 
+2026-10-10 起，正式目录是 `train/`、`val/`、`test/prospective/`、`test/external/`。当前怎么读，以 [README.md](README.md) 为准。下面保留原来的计数和预处理说明。旧的 `internal/`、`external/` 路径还在，是指到新目录的软链。
+
 ## 文档定位
 
 2026-08-03 起，图片和掩膜的固定登记以
-[IMAGE_MASK_FREEZE_20260803.md](IMAGE_MASK_FREEZE_20260803.md) 和
-[image_mask_freeze_manifest_20260803.csv](image_mask_freeze_manifest_20260803.csv)
+[IMAGE_MASK_FREEZE_20260803.md](../docs/dataset/IMAGE_MASK_FREEZE_20260803.md) 和
+[image_mask_freeze_manifest_20260803.csv](../docs/dataset/image_mask_freeze_manifest_20260803.csv)
 为准。该快照按内部年份、T 分期外部中心和胃炎外部独立任务登记来源、样本数、视图、annotation、ROI mask 与 overlay；
 后续不直接修改快照，修订必须新建版本。
 

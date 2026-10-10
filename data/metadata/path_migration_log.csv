@@ -7765,3 +7765,99 @@ output,(removed),remove_symlink,2026-10-10,yes,stub link; target artifacts/outpu
 catboost_info,(removed),remove_symlink,2026-10-10,yes,stub link; target artifacts/tmp/catboost_info kept
 results/visualizations/error_cases (17 tracked PNG),artifacts/results/visualizations/error_cases,untrack_git,2026-10-10,yes,generated error-case figures; files kept locally; images not committed
 runtime/gastric_scan_next/backups/restore_*,(deleted),delete_snapshot,2026-10-10,yes,historical full json snapshots superseded by live runtime files; live files untouched
+dataset/internal/training_2018_2024,dataset/train|dataset/val|data/processed/tstaging_outside_freeze/training_2018_2024,mv+symlink,2026-10-10,yes,"retrospective files split by frozen train 1062 and val 128 stems; planned train 72648, val 8796, outside_freeze 17304"
+dataset/internal/prospective_2025,dataset/test/prospective,mv+symlink,2026-10-10,yes,prospective cohort directory
+dataset/videos/internal/prospective_2025,dataset/test/prospective/videos,mv+symlink,2026-10-10,yes,prospective video directory
+dataset/external/statistics,dataset/test/external/statistics,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/三明市第二医院,dataset/test/external/三明市第二医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/中核五〇四医院,dataset/test/external/中核五〇四医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/佛山市第一人民医院,dataset/test/external/佛山市第一人民医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/北京友谊医院,dataset/test/external/北京友谊医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/福建省德化县医院,dataset/test/external/福建省德化县医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/福建省立医院,dataset/test/external/福建省立医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/福建省肿瘤医院,dataset/test/external/福建省肿瘤医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/莆田学院附属医院,dataset/test/external/莆田学院附属医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/external/莆田市第一医院,dataset/test/external/莆田市第一医院,mv+symlink,2026-10-10,yes,external hospital directory
+dataset/videos/external/三明市第二医院,dataset/test/external/三明市第二医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/中核五〇四医院,dataset/test/external/中核五〇四医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/佛山市第一人民医院,dataset/test/external/佛山市第一人民医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/北京友谊医院,dataset/test/external/北京友谊医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/福建省德化县医院,dataset/test/external/福建省德化县医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/福建省立医院,dataset/test/external/福建省立医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/福建省肿瘤医院,dataset/test/external/福建省肿瘤医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/莆田学院附属医院,dataset/test/external/莆田学院附属医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/videos/external/莆田市第一医院,dataset/test/external/莆田市第一医院/videos,mv+symlink,2026-10-10,yes,external hospital videos
+dataset/tables/patient_clinical_master.csv,dataset/patient_clinical_master.csv,mv+symlink,2026-10-10,yes,shared clinical master
+dataset/tables/by_source/external_beijing_friendship_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_beijing_friendship_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_beijing_friendship_direct_surgery__sheet2.csv,dataset/test/external/tables/by_source/external_beijing_friendship_direct_surgery__sheet2.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_cnnc_504_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_cnnc_504_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_dehua_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_dehua_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_dehua_direct_surgery__sheet2.csv,dataset/test/external/tables/by_source/external_dehua_direct_surgery__sheet2.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_foshan_first_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_foshan_first_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_fujian_provincial_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_fujian_provincial_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_putian1_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_putian1_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_putian2_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_putian2_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_sanming_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_sanming_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_tumor_hospital_direct_surgery__sheet1.csv,dataset/test/external/tables/by_source/external_tumor_hospital_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/external_tumor_hospital_direct_surgery__sheet2.csv,dataset/test/external/tables/by_source/external_tumor_hospital_direct_surgery__sheet2.csv,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_source/internal_2018_direct_surgery__sheet1.csv,dataset/train/tables/by_source/internal_2018_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_source/internal_2019_direct_surgery__sheet1.csv,dataset/train/tables/by_source/internal_2019_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_source/internal_2020_2023_direct_surgery__sheet1.csv,dataset/train/tables/by_source/internal_2020_2023_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_source/internal_2024_direct_surgery__sheet1.csv,dataset/train/tables/by_source/internal_2024_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_source/internal_2025_direct_surgery__sheet1.csv,dataset/test/prospective/tables/by_source/internal_2025_direct_surgery__sheet1.csv,mv+symlink,2026-10-10,yes,prospective clinical table
+dataset/tables/by_queue/external_beijing_friendship.json,dataset/test/external/tables/by_queue/external_beijing_friendship.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_cnnc_504.json,dataset/test/external/tables/by_queue/external_cnnc_504.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_dehua.json,dataset/test/external/tables/by_queue/external_dehua.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_foshan_first.json,dataset/test/external/tables/by_queue/external_foshan_first.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_fujian_provincial.json,dataset/test/external/tables/by_queue/external_fujian_provincial.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_fujian_tumor.json,dataset/test/external/tables/by_queue/external_fujian_tumor.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_putian_college.json,dataset/test/external/tables/by_queue/external_putian_college.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_putian_first.json,dataset/test/external/tables/by_queue/external_putian_first.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/external_sanming_second.json,dataset/test/external/tables/by_queue/external_sanming_second.json,mv+symlink,2026-10-10,yes,external clinical table
+dataset/tables/by_queue/internal_2018.json,dataset/train/tables/by_queue/internal_2018.json,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_queue/internal_2019.json,dataset/train/tables/by_queue/internal_2019.json,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_queue/internal_2020_2023.json,dataset/train/tables/by_queue/internal_2020_2023.json,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_queue/internal_2024.json,dataset/train/tables/by_queue/internal_2024.json,mv+symlink,2026-10-10,yes,retrospective clinical table
+dataset/tables/by_queue/internal_2025.json,dataset/test/prospective/tables/by_queue/internal_2025.json,mv+symlink,2026-10-10,yes,prospective clinical table
+dataset/gastritis_external/raw_decoded,data/raw/gastritis_external_raw_decoded,mv,2026-10-10,yes,"gastritis external raw decoded, not part of the formal benign folder"
+dataset/inflammation,良恶性/inflammation,mv+symlink,2026-10-10,yes,benign inflammation
+dataset/gastritis_external,良恶性/gastritis_external,mv+symlink,2026-10-10,yes,benign external gastritis
+dataset/gastritis_internal_xiehe,良恶性/gastritis_internal_xiehe,mv,2026-10-10,yes,symlink into inflammation crop
+dataset/patients,良恶性/patients,mv+symlink,2026-10-10,yes,benign patients
+dataset/clinical_tables,良恶性/clinical_tables,mv+symlink,2026-10-10,yes,benign clinical tables
+dataset/metadata,良恶性/metadata,mv,2026-10-10,yes,benign metadata
+dataset/BENIGN_MALIGNANT_README.md,良恶性/README.md,mv,2026-10-10,yes,benign folder readme
+dataset/task_datasets/binary_benign_malignant,良恶性/binary_benign_malignant,mv,2026-10-10,yes,benign malignant task splits
+dataset/training_views/benign_malignant,良恶性/training_views/benign_malignant,mv,2026-10-10,yes,benign training view
+dataset/internal_2026,data/raw/internal_2026,mv,2026-10-10,yes,2026 crops stay with raw videos; not T-staging and not the benign tables
+dataset/videos_raw,data/raw/videos_raw,mv,2026-10-10,yes,raw videos leave dataset
+dataset/videos_raw_crop,data/processed/videos_raw_crop,mv,2026-10-10,yes,interim raw-video crop
+dataset/external_clean,data/processed/external_clean,mv,2026-10-10,yes,interim external recrop
+dataset/external_newcrop_20260902,data/processed/external_newcrop_20260902,mv,2026-10-10,yes,interim external recrop
+dataset/external_crop_from_original_20260902,data/processed/external_crop_from_original_20260902,mv,2026-10-10,yes,interim external recrop
+dataset/lumen_detection,data/detection_seg/lumen_detection,mv,2026-10-10,yes,lumen detection is not T staging
+dataset/training_views/sam31_gastric_coco_internal18_24_trainval_v2,data/detection_seg/sam31_gastric_coco_internal18_24_trainval_v2,mv,2026-10-10,yes,segmentation view is not T staging
+dataset/static_images,archive/dataset_copies/static_images,mv,2026-10-10,yes,"duplicate still-image pack, not deleted"
+tstaging,archive/dataset_copies/tstaging,mv,2026-10-10,yes,"duplicate root T-staging pack, not deleted"
+dataset/_quarantine,archive/dataset_quarantine,mv,2026-10-10,yes,quarantine leaves dataset
+dataset/external/_backup_crop_ui_20260904,archive/external_backup_crop_ui_20260904,mv,2026-10-10,yes,external crop backup leaves dataset
+dataset/figures,docs/dataset/figures,mv,2026-10-10,yes,generated dataset figures
+dataset/inventory,docs/dataset/inventory,mv,2026-10-10,yes,generated dataset inventory
+dataset/index.html,docs/dataset/index.html,mv,2026-10-10,yes,generated dataset page
+dataset/dataset_detail_20260803.html,docs/dataset/dataset_detail_20260803.html,mv,2026-10-10,yes,generated dataset page
+dataset/IMAGE_MASK_FREEZE_20260803.md,docs/dataset/IMAGE_MASK_FREEZE_20260803.md,mv,2026-10-10,yes,image mask freeze note
+dataset/image_mask_freeze_manifest_20260803.csv,docs/dataset/image_mask_freeze_manifest_20260803.csv,mv,2026-10-10,yes,image mask freeze manifest
+dataset/reader_study_crop_report.csv,docs/dataset/reader_study_crop_report.csv,mv,2026-10-10,yes,reader crop report
+dataset/video_crop_report_external.csv,docs/dataset/video_crop_report_external.csv,mv,2026-10-10,yes,video crop report
+dataset/video_crop_report_internal.csv,docs/dataset/video_crop_report_internal.csv,mv,2026-10-10,yes,video crop report
+dataset/video_crop_report_prospective.csv,docs/dataset/video_crop_report_prospective.csv,mv,2026-10-10,yes,video crop report
+dataset/VIDEO_DISTRIBUTION.md,docs/dataset/VIDEO_DISTRIBUTION.md,mv,2026-10-10,yes,video distribution note
+data/中核五〇四医院,data/raw/中核五〇四医院,mv,2026-10-10,yes,stray hospital directory into raw
+data/外省整理.zip,data/raw/外省整理.zip,mv,2026-10-10,yes,stray zip into raw
+data/德化直接手术.zip,data/raw/德化直接手术.zip,mv,2026-10-10,yes,stray zip into raw
+data/窦晓霞中核五〇四医院胃溃疡病例,data/raw/窦晓霞中核五〇四医院胃溃疡病例,mv,2026-10-10,yes,stray hospital directory into raw
+data/extracted_dehua_direct_surgery_review,data/staging_review/extracted_dehua_direct_surgery_review,mv,2026-10-10,yes,review extract into staging_review
+data/extracted_external_province_review,data/staging_review/extracted_external_province_review,mv,2026-10-10,yes,review extract into staging_review
+data/clinical_tables_check_20260814,data/staging_review/clinical_tables_check_20260814,mv,2026-10-10,yes,clinical table check into staging_review
+dataset/training_views,dataset/task_datasets/t_staging/training_views,mv+symlink,2026-10-10,yes,T-staging training views under the freeze task
+胃炎.xls,良恶性/clinical_tables/胃炎.xls,mv,2026-10-10,yes,stray root gastritis workbook into the benign folder

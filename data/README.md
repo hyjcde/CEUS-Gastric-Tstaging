@@ -4,7 +4,8 @@
 
 | 子目录 | 七类中的位置 | 说明 |
 |--------|--------------|------|
-| [raw/](raw/) | **原始数据** | 遗留中文目录实体（根 symlink 指向此） |
+| [raw/](raw/) | **原始数据** | 遗留中文目录、原始视频、2026 裁剪、散落的医院目录和 zip |
+| [detection_seg/](detection_seg/) | 其他任务 | 胃腔检测和分割视图，不是 T 分期 |
 | [registry/](registry/) | **数据集** | 样本/患者注册表模板 |
 | [splits/](splits/) | **数据集** | 冻结 split manifest |
 | [processed/](processed/) | **数据集** | 可再生产物（如临床报告特征） |

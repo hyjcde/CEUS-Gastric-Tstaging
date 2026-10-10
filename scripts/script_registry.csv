@@ -176,6 +176,8 @@ check_clinical_tables_20260814.py,current,data_governance,3,scripts,scripts/curr
 check_concept_quality.py,maintenance,governance,5,scripts,scripts/maintenance,yes,false,
 check_reader_export_schema.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
 check_repo_root.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,
+check_data_layers.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,dataset top-level allow list
+rehome_tstaging_dataset.py,maintenance,governance,,scripts,scripts/maintenance,no,true,one-shot T-staging cohort move
 check_sex_col.py,legacy,legacy,7,scripts,scripts/legacy,no,false,hardcoded paths or README §7
 choose_prompt_mask_training_route.py,utility,utility,6,scripts,scripts/analysis,review,true,
 classify_git_status.py,maintenance,governance,,scripts,scripts/maintenance,yes,true,

@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-10-10, Split data and dataset by raw versus T staging
+
+- Scope: `dataset/` layout, root folder `良恶性/`, `data/raw/`, `data/processed/`, `data/staging_review/`, `archive/dataset_copies/`. Public Next unchanged.
+- Reason: `dataset/` had mixed raw video, benign disease, detection, recrops, and duplicate packs beside the T-staging set. Train and val were also mixed inside the same year folders.
+- Key changes: T-staging images now live in `dataset/train/` (1,062 patients), `dataset/val/` (128), `dataset/test/prospective/` (425), and `dataset/test/external/` (485), using the frozen WADI lists. Old `dataset/internal/` and `dataset/external/` paths are symlinks, and the freeze CSV checksums are unchanged. Files from 2018-2024 that are not on those two lists are in `data/processed/tstaging_outside_freeze/`. Benign and gastritis data are in root `良恶性/`, with compatibility symlinks left at the four dataset paths scripts still cite. `dataset/internal_2026` moved beside the raw 2026 videos because its hospital ids match neither the T-staging master nor the four benign workbooks. Raw videos, recrop candidates, detection and segmentation views, quarantine, and duplicate packs left `dataset/`. Stray hospital directories and zips under `data/` went into `data/raw/`; review extracts went into `data/staging_review/`.
+- Validation: `scripts/check_data_layers.py`, `scripts/check_repo_root.py`, and `scripts/verify_repo_paths.py` passed. Freeze CSV sha256 values matched the pre-move hashes.
+- Deployment: skipped. No public site sync.
+- Follow-up: compatibility symlinks at `dataset/inflammation`, `dataset/gastritis_external`, `dataset/patients`, and `dataset/clinical_tables` stay until those path strings are rewritten. `data/raw/internal_2026` stays unlabeled until its master table is found.
+
 ## 2026-10-10, Root layout cleanup and ops snapshot stop
 
 - Scope: root directory layout, `scripts/reconcile_public_ops_pending.py`, `scripts/merge_doctor_case_state_preserve.py`, `scripts/check_repo_root.py`, MedSigLIP workspace under `external/medsiglip/`, `.gitignore`, root layout docs. Public Next unchanged.

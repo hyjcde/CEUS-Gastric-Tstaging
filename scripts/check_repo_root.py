@@ -43,6 +43,7 @@ ALLOWED_DIRS = {
     "scripts",
     "tstaging",
     "tstaging_lab",
+    "良恶性",
     ".claude",
     ".cursor",
     ".git",
