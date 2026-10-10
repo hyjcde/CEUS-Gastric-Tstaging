@@ -7861,3 +7861,6 @@ data/extracted_external_province_review,data/staging_review/extracted_external_p
 data/clinical_tables_check_20260814,data/staging_review/clinical_tables_check_20260814,mv,2026-10-10,yes,clinical table check into staging_review
 dataset/training_views,dataset/task_datasets/t_staging/training_views,mv+symlink,2026-10-10,yes,T-staging training views under the freeze task
 胃炎.xls,良恶性/clinical_tables/胃炎.xls,mv,2026-10-10,yes,stray root gastritis workbook into the benign folder
+data/raw/internal_2026,良恶性/internal_2026,mv+symlink,2026-10-10,yes,2026 crops join gastritis in the benign folder. Latest gastritis workbook is the 99 Xiehe 2026 exams already under inflammation/2026_xiehe. Hospital-id overlap with the 302 video ids is 0.
+benign_malignant,良恶性/experiments,mv+symlink,2026-10-10,yes,benign experiment configs and reports unified into the benign folder; root name stays as a symlink
+良恶性,/data/research/gastric/良恶性_副本_20261010,cp,2026-10-10,yes,standalone copy of the unified benign data and experiments

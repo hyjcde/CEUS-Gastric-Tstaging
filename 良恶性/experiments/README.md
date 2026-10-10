@@ -8,7 +8,7 @@
 1. [实验方案.md](实验方案.md)
 2. [CASES.md](CASES.md) — ZML 50 例对回原文件夹
 3. 数据包：`pipeline/data/binary_zmlholdout_clinmask_20260825/`
-3. 主线合同仍在 [良恶性/binary_benign_malignant/SPLIT_POLICY.md](../良恶性/binary_benign_malignant/SPLIT_POLICY.md)
+3. 主线合同仍在 [binary_benign_malignant/SPLIT_POLICY.md](../binary_benign_malignant/SPLIT_POLICY.md)
 
 ## 目录
 

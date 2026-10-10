@@ -34,7 +34,7 @@
 
 ## 不在本目录的数据
 
-- 原始视频和 2026 年裁剪：`data/raw/videos_raw/`、`data/raw/internal_2026/`。2026 裁剪对不上现有 T 分期表，也对不上四张良性表，先不进前瞻。
+- 原始视频：`data/raw/videos_raw/`。2026 年裁剪在 `良恶性/internal_2026/`，和胃炎放在一起，不进前瞻。`data/raw/internal_2026` 只是软链。
 - 重裁剪和半成品：`data/processed/`
 - 胃腔检测和分割视图：`data/detection_seg/`
 - 重复副本和隔离：`archive/dataset_copies/`、`archive/dataset_quarantine/`

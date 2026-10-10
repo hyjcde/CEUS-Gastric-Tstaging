@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-10-10, Benign data and experiments live in one folder
+
+- Scope: `良恶性/`, root `benign_malignant`, `data/raw/internal_2026`. Public Next unchanged.
+- Reason: T staging should only train and evaluate T staging. The 2026 crops and the benign retraining workspace were still outside the benign folder.
+- Key changes: `data/raw/internal_2026` moved to `良恶性/internal_2026`, next to the Xiehe gastritis stills. The latest gastritis workbook is the 99 Xiehe 2026 exams already stored under `inflammation/2026_xiehe`; it does not share hospital ids with the 302 video exams, and those crops were still placed with gastritis by request. `benign_malignant/` moved to `良恶性/experiments/`. The old root name is a symlink, so existing training scripts keep their paths. A full copy of `良恶性/` is at `/data/research/gastric/良恶性_副本_20261010`. `dataset/train`, `dataset/val`, and `dataset/test` were not touched.
+- Validation: `scripts/check_data_layers.py` and `scripts/check_repo_root.py`.
+- Deployment: skipped. No public site sync.
+- Follow-up: `dataset/inflammation`, `dataset/gastritis_external`, `dataset/patients`, and `dataset/clinical_tables` remain compatibility symlinks.
+
 ## 2026-10-10, Split data and dataset by raw versus T staging
 
 - Scope: `dataset/` layout, root folder `良恶性/`, `data/raw/`, `data/processed/`, `data/staging_review/`, `archive/dataset_copies/`. Public Next unchanged.

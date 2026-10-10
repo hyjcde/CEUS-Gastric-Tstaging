@@ -52,8 +52,8 @@
 | [pipeline/data/](pipeline/data/) | T 分期等 `*_clinical.csv`、特征缓存 |
 | [archive/dataset_copies/tstaging/](archive/dataset_copies/tstaging/README.md) | 根目录 T 分期副本，正式集在 `dataset/train`、`val`、`test` |
 | [tstaging_lab/](tstaging_lab/README.md) | T-staging experiment lab: locked WADI data, experiment cards, ledger.csv |
-| [良恶性/](良恶性/README.md) | 良恶性影像、临床表和划分 |
-| [benign_malignant/](benign_malignant/README.md) | 良恶性重训工作区（配置和报告；影像在 `良恶性/`） |
+| [良恶性/](良恶性/README.md) | 良恶性影像、临床表、划分和实验 |
+| [benign_malignant/](benign_malignant/README.md) | 软链，指到 `良恶性/experiments/` |
 
 ---
 
