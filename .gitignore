@@ -79,3 +79,34 @@ pipeline/experiments/tree/
 pipeline/experiments_legacy_backup_*/
 experiments/segmentation/**/weights/
 experiments/**/checkpoints/
+
+# MedSigLIP scratch workspace: local copies of images, weights, caches.
+# The workspace lives at external/medsiglip; the root name is a compat symlink.
+/medsiglip/artifacts/
+/medsiglip/google/medsiglip-448/
+/medsiglip/dataset/internal/
+/medsiglip/dataset/external/
+/medsiglip/pipeline/data/
+/medsiglip/pipeline/experiments/
+/external/medsiglip/artifacts/
+/external/medsiglip/google/medsiglip-448/
+/external/medsiglip/dataset/internal/
+/external/medsiglip/dataset/external/
+/external/medsiglip/dataset/
+/external/medsiglip/logs/
+/external/medsiglip/**/*.png
+/external/medsiglip/**/*.docx
+/external/medsiglip/pipeline/data/
+/external/medsiglip/pipeline/experiments/
+# Track the training package and three entry scripts. Plans, reports, and copies stay local.
+/external/medsiglip/*.md
+/external/medsiglip/**/*.md
+!/external/medsiglip/README.md
+/external/medsiglip/COPY_MANIFEST.json
+/external/medsiglip/docs/
+/external/medsiglip/google/
+/external/medsiglip/results/
+/external/medsiglip/scripts/*
+!/external/medsiglip/scripts/run_medsiglip_gastricus.py
+!/external/medsiglip/scripts/run_medsiglip_gastricus_longrun.py
+!/external/medsiglip/scripts/train_tstaging_lora.py

@@ -61,7 +61,7 @@ python scripts/build_log_index.py
 
 ## 根目录守门
 
-仅允许：4 个入口 md、`apps/`…`scripts/` 共 12 个工作目录、根目录 `paper/` 论文聚合工作区、`_compat/`、以及 `.env` / `.gitignore` / `.git` / `.vscode`。其它根目录项只报告不自动删除（`scripts/check_repo_root.py`）。
+仅允许：4 个入口 md、`CLAUDE.md` / `opencode.json` 仓库级工具配置、正式工作目录（含 `runtime/`）、根目录 `paper/` 论文聚合工作区、`_compat/`，以及 `.env` / `.env.example` / `.gitignore` / `.git` / `.github` / `.claude` / `.cursor` / `.vscode`。`medsiglip/` 的实体在 `external/medsiglip/`。根上指向仓库内部的兼容 symlink、点开头的工具目录，以及尚未迁走的 `tmp/`，只记在检查结果里，不判失败。其它根目录项只报告不自动删除（`scripts/check_repo_root.py`）。
 
 ## 新增资产检查清单
 

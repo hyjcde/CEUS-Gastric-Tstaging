@@ -2,6 +2,15 @@
 
 This file records material project changes, their validation, and deployment state. Do not add patient identifiers, credentials, tokens, private URLs, or sensitive clinical data.
 
+## 2026-10-10, Root layout cleanup and ops snapshot stop
+
+- Scope: root directory layout, `scripts/reconcile_public_ops_pending.py`, `scripts/merge_doctor_case_state_preserve.py`, `scripts/check_repo_root.py`, MedSigLIP workspace under `external/medsiglip/`, `.gitignore`, root layout docs. Public Next unchanged.
+- Reason: The repo root had stray dumps beside the official workspaces. The 10-minute public-ops reconcile was copying about 256 MB of json on every tick, and those copies had grown to about 1 TB under `runtime/gastric_scan_next/backups/restore_*`. After deletion, `runtime/` is about 12 GB.
+- Key changes: The root now holds only the official workspaces, the entry docs, and a few compat links (`logs`, `results`, `替换`, `人机对比结果`, `medsiglip`). `tmp/` stays until live jobs stop writing it. Human-AI reader outputs now live in `docs/clinical_validation/human_ai_comparison`. Three slide files moved to `data/raw/slide_replacements_20260923`. The video-evidence unit test moved to `scripts/tests/`. An API key file left the repo tree. `medsiglip/` moved to `external/medsiglip/` with a root symlink. Byte-identical root copies of two meeting transcripts and of `yolo11n.pt` were deleted; the originals remain in `docs/meetings/` and `artifacts/model_weights/yolo/`. `yolo12x.pt` moved to `artifacts/model_weights/yolo/`. The root workbook moved to `artifacts/raw_imports/incoming/`. Stub links `lib`, `tests`, `research`, `.backups`, `output`, and `catboost_info` were removed; their targets are unchanged. The 17 error-case PNGs under `results/visualizations/` are no longer tracked by Git; the files stay under `artifacts/results/`. Reconcile still pulls new doctor operation events and writes `doctor_case_state.json` only when the merge changes. It no longer copies unchanged json files into `restore_*`. All historical `restore_*` snapshot directories were deleted after that writer change.
+- Validation: `scripts/tests/test_video_evidence_agg.py` passed (7 tests). `scripts/check_repo_root.py` passed with no unexpected or discouraged root entries. `scripts/verify_repo_paths.py` passed. In `external/medsiglip/`, Git tracks the training package and three entry scripts (`run_medsiglip_gastricus.py`, `run_medsiglip_gastricus_longrun.py`, `train_tstaging_lora.py`). Patient-level CSVs, logs, images, plans, and report scripts stay on disk and are ignored.
+- Deployment: skipped. Workstation reconcile and local paths only. No public site sync.
+- Follow-up: `tmp/` (about 4.8 GB) stays until live jobs stop writing it. Other backup directories under `runtime/gastric_scan_next/backups/` (for example `zml_*`, `visual_similar_*`) are outside this cleanup.
+
 ## 2026-09-03, Sync live public Next source onto the workstation
 
 - Scope: workstation `apps/gastric_scan_next` source only. Public Aliyun already on this tag. Assist / Dual / UNet weights unchanged.

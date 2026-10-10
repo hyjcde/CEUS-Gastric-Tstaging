@@ -10,8 +10,12 @@
 | 查「文件该放哪」 | [REPO_LAYOUT.md](REPO_LAYOUT.md) |
 | 读临床主线 / 当前在做什么 | [docs/mainline/gastric_tstaging_project_framework_zh.md](docs/mainline/gastric_tstaging_project_framework_zh.md) → [tstaging_current_mainline.md](docs/mainline/tstaging_current_mainline.md) |
 | 查数据口径与 manifest | [dataset/DATASET_GUIDE.md](dataset/DATASET_GUIDE.md) |
+| 拿 T 分期 / 良恶性建模表 | [dataset/task_datasets/README.md](dataset/task_datasets/README.md) |
 | 跑检测 / 分割 / 预处理脚本 | [scripts/README.md](scripts/README.md) |
 | 训练 T 分期 / 跑实验 | [pipeline/README.md](pipeline/README.md) + [configs/](configs/) |
+| 干净对比 T 分期模型 | [tstaging_lab/README.md](tstaging_lab/README.md) |
+| 从头想 MedSigLIP 训练 | [external/medsiglip/README.md](external/medsiglip/README.md)（根上 `medsiglip/` 是兼容链接） |
+| 从头训良恶性 | [benign_malignant/README.md](benign_malignant/README.md) |
 | 查实验与 checkpoint | [experiments/registry.csv](experiments/registry.csv) + [models/README.md](models/README.md) |
 | 开 Web 工作台 / 标注工具 | [apps/README.md](apps/README.md) |
 | 整理论文、原稿和重点文献 | [paper/README.md](paper/README.md) |
@@ -29,11 +33,15 @@ data/          注册表、raw、metadata
 dataset/       正式数据集（训练以此为准）
 docs/          文档（规范 + 主线）
 experiments/   实验记录入口
-external/      第三方本地依赖
+external/      第三方本地依赖，以及 MedSigLIP 副本 external/medsiglip/
 models/        模型索引（实体在 artifacts / pipeline）
 paper/         论文原稿、笔记和重点文献聚合入口
 pipeline/      训练框架 + Agent
 scripts/       CLI 脚本
+tstaging/      physical T-staging pack (train / val / prospective / external)
+tstaging_lab/  T 分期实验台：锁定数据/评测，一实验一卡片，总账在 ledger.csv
+benign_malignant/ 良恶性重训工作区（划分 CSV / 配置 / 报告）
+runtime/       阅片运行态（医生操作与病例草稿；不要再堆整份快照）
 _compat/       旧路径兼容 symlink（勿当正式入口）
 ```
 

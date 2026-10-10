@@ -7712,3 +7712,56 @@ docs/paper/2503.18968v3.pdf,paper/manuscripts/medagent_pro_2503.18968v3.pdf,pape
 docs/paper_drafts/{current notes and manuscript sources},paper/notes and paper/manuscripts,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,curated symlink aggregation; source tree retained
 docs/mainline/{literature digests},paper/notes,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,curated digest links; source files retained
 docs/references/related_literature/articles/{selected NBE abstracts},paper/literature/nature_biomedical_engineering,paper_workspace_symlink,2026-08-03T16:35:00+08:00,yes,selected abstract links; source files retained
+pipeline/medsiglip_gastricus,medsiglip/pipeline/medsiglip_gastricus,copy,2026-08-25,yes,MedSigLIP scratch workspace; original retained
+scripts/run_medsiglip_gastricus.py,medsiglip/scripts/run_medsiglip_gastricus.py,copy,2026-08-25,yes,MedSigLIP scratch workspace; original retained
+dataset/task_datasets/t_staging/maincenter_retrospective_v20260821,medsiglip/dataset/task_datasets/t_staging/maincenter_retrospective_v20260821,copy,2026-08-25,yes,clean four-way CSVs copied
+pipeline/data/medsiglip448_tstaging_frame_features,medsiglip/pipeline/data/medsiglip448_tstaging_frame_features,copy,2026-08-25,yes,1152-d caches except full_roi_expand20_v1
+artifacts/model_weights/medsiglip-448,medsiglip/artifacts/model_weights/medsiglip-448,copy,2026-08-25,yes,frozen ViT weights copied
+dataset/internal and dataset/external crop_ui used files,medsiglip/dataset/.../crop_ui used files,copy,2026-08-25,yes,21788 crop_ui image+mask files from clean CSVs; unused original/crop_roi/videos not copied
+dataset/**/crop_ui/overlays,medsiglip/dataset/**/crop_ui/overlays,copy,2026-08-25,yes,13763 overlay JPGs; 9 external hospitals plus Xiehe 2018-2025; original retained
+dataset/**/crop_roi,medsiglip/dataset/**/crop_roi,copy,2026-08-25,yes,55052 crop_roi files (images, roi_masks, overlays, annotations); original retained
+artifacts/model_weights/medsiglip-448,medsiglip/google/medsiglip-448,hardlink,2026-08-25,yes,official google/medsiglip-448 name; same inode as artifacts copy
+20260612193806-转写_Yijun Huang的个人会议室-逐字稿文本-1.txt,docs/meetings/2026-06-12_个人会议室_转写.txt,mv,2026-08-27,yes,root meeting transcript moved to meeting archive
+# GastricUS实验方案.md,pipeline/medsiglip_gastricus/GastricUS实验方案.md,mv,2026-08-27,yes,plan source moved beside the implementation package
+GastricUS_训练过程与结果报告_20260824.docx,artifacts/tmp/root_cleanup_20260827/exact_duplicates/GastricUS_训练过程与结果报告_20260824.docx,archive_exact_duplicate,2026-08-27,yes,canonical report remains in the GastricUS ledger
+GastricUS_训练过程与结果报告_20260824.md,artifacts/tmp/root_cleanup_20260827/exact_duplicates/GastricUS_训练过程与结果报告_20260824.md,archive_exact_duplicate,2026-08-27,yes,canonical report remains in the GastricUS ledger
+reader_clip_to_patient_200.csv,data/staging_review/reader_v150_source_crosswalk/reader_clip_to_patient_200.csv,mv,2026-08-27,yes,restricted reader source crosswalk
+reader_clip_to_patient_200.md,data/staging_review/reader_v150_source_crosswalk/reader_clip_to_patient_200.md,mv,2026-08-27,yes,restricted reader source crosswalk notes
+screen200_not_in_reader150.csv,data/staging_review/reader_v150_source_crosswalk/screen200_not_in_reader150.csv,mv,2026-08-27,yes,restricted reader cohort audit
+yolo11n.pt,artifacts/tmp/root_cleanup_20260827/exact_duplicates/yolo11n.pt,archive_exact_duplicate,2026-08-27,yes,canonical weight remains under artifacts model_weights
+人机验证200例_筛选总表(1).xlsx,data/staging_review/clinical_prospective_20260609/review_copies/人机验证200例_筛选总表_root_download_20260827.xlsx,mv_for_review,2026-08-27,yes,near duplicate retained separately and must not replace the canonical table
+._待办清单_0817.md,artifacts/tmp/root_cleanup_20260827/appledouble/._待办清单_0817.md,quarantine_appledouble,2026-08-27,yes,macOS resource fork retained without treating it as a document
+待办清单_0817.md,docs/meetings/2026-08-17_待办清单.md,mv,2026-08-27,yes,meeting follow-up list moved beside its transcript
+._文字转写_Yijun Huang的个人会议室_0817.txt,artifacts/tmp/root_cleanup_20260827/appledouble/._文字转写_Yijun Huang的个人会议室_0817.txt,quarantine_appledouble,2026-08-27,yes,macOS resource fork retained without treating it as a transcript
+文字转写_Yijun Huang的个人会议室_0817.txt,artifacts/tmp/root_cleanup_20260827/exact_duplicates/文字转写_Yijun Huang的个人会议室_0817.txt,archive_exact_duplicate,2026-08-27,yes,canonical transcript remains in docs meetings
+文字转写_Yijun Huang的个人会议室_20260728.txt,artifacts/tmp/root_cleanup_20260827/exact_duplicates/文字转写_Yijun Huang的个人会议室_20260728.txt,archive_exact_duplicate,2026-08-27,yes,canonical transcript remains in docs archive_refs
+胃充盈超声报告模板.docx,docs/clinical_validation/report_templates/胃充盈超声报告模板.docx,mv,2026-08-27,yes,clinical report template moved to the validation template folder
+阅片150_原始对照总表.csv,data/staging_review/reader_v150_source_crosswalk/阅片150_原始对照总表.csv,mv,2026-08-27,yes,restricted reader source crosswalk
+阅片150_原始对照总表.md,data/staging_review/reader_v150_source_crosswalk/阅片150_原始对照总表.md,mv,2026-08-27,yes,restricted reader source crosswalk notes
+阅片150_原始对照总表.xlsx,data/staging_review/reader_v150_source_crosswalk/阅片150_原始对照总表.xlsx,mv,2026-08-27,yes,restricted reader source crosswalk workbook
+dataset/gastritis_internal_xiehe,dataset/inflammation/2026_xiehe/desktop_video_crop,mv+symlink,2026-10-09,yes,Xiehe 2026 desktop video UI crop. Old path is a relative symlink. Annotated stills stay in 2026_xiehe.
+logs,pipeline/logs/root_nohup,mv+symlink,2026-10-10,yes,root nohup logs
+output,artifacts/output,merge+symlink,2026-10-10,yes,root playwright output into artifacts/output
+results,artifacts/results,merge+symlink,2026-10-10,yes,root visualizations into artifacts/results
+catboost_info,artifacts/tmp/catboost_info,mv+symlink,2026-10-10,yes,CatBoost cwd dump
+lib,artifacts/tmp/root_lib_empty_stub,mv+symlink,2026-10-10,yes,empty root lib stub; real template stays in apps
+research,paper/notes/research_scratch,mv+symlink,2026-10-10,yes,idea notes and venue scratch
+.backups,archive/root_backups_20260805,mv+symlink,2026-10-10,yes,sam soft-box backup
+人机对比结果,docs/clinical_validation/human_ai_comparison,merge+symlink,2026-10-10,yes,human vs AI reader outputs; scripts keep the old path via symlink
+替换,data/raw/slide_replacements_20260923,mv+symlink,2026-10-10,yes,three svs slide replacements
+tests,scripts/tests,mv+symlink,2026-10-10,yes,video evidence agg unit test
+secrets/deepseek_api_key.txt,/home/hyj/.config/gastric/deepseek_api_key.txt,mv_outside,2026-10-10,yes,api key removed from repo tree
+medsiglip,external/medsiglip,mv+symlink,2026-10-10,yes,MedSigLIP scratch workspace; root name kept as symlink
+20260827201557-转写_Yijun Huang的个人会议室-逐字稿文本-1.txt,docs/meetings/2026-08-27_个人会议室_转写_上.txt,delete_exact_duplicate,2026-10-10,yes,root copy byte-identical by sha256; canonical copy kept
+20260827212213-转写_Yijun Huang的个人会议室-逐字稿文本-1.txt,docs/meetings/2026-08-27_个人会议室_转写_下.txt,delete_exact_duplicate,2026-10-10,yes,root copy byte-identical by sha256; canonical copy kept
+yolo11n.pt,artifacts/model_weights/yolo/yolo11n.pt,delete_exact_duplicate,2026-10-10,yes,root copy byte-identical by sha256; canonical weight kept
+yolo12x.pt,artifacts/model_weights/yolo/yolo12x.pt,mv,2026-10-10,yes,root weight moved; no tracked config references the root path
+汇总（18-23整理）25.4.14(1).xlsx,artifacts/raw_imports/incoming/汇总（18-23整理）25.4.14(1).xlsx,mv,2026-10-10,yes,root workbook; no tracked copy
+lib,(removed),remove_symlink,2026-10-10,yes,stub link; target artifacts/tmp/root_lib_empty_stub kept
+tests,(removed),remove_symlink,2026-10-10,yes,stub link; target scripts/tests kept
+research,(removed),remove_symlink,2026-10-10,yes,stub link; target paper/notes/research_scratch kept
+.backups,(removed),remove_symlink,2026-10-10,yes,stub link; target archive/root_backups_20260805 kept
+output,(removed),remove_symlink,2026-10-10,yes,stub link; target artifacts/output kept
+catboost_info,(removed),remove_symlink,2026-10-10,yes,stub link; target artifacts/tmp/catboost_info kept
+results/visualizations/error_cases (17 tracked PNG),artifacts/results/visualizations/error_cases,untrack_git,2026-10-10,yes,generated error-case figures; files kept locally; images not committed
+runtime/gastric_scan_next/backups/restore_*,(deleted),delete_snapshot,2026-10-10,yes,historical full json snapshots superseded by live runtime files; live files untouched

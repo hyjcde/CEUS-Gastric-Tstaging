@@ -16,6 +16,9 @@ ALLOWED_FILES = {
     "README.md",
     "REPO_LAYOUT.md",
     "MAINTENANCE.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "opencode.json",
     ".env",
     ".env.example",
     ".gitignore",
@@ -25,6 +28,7 @@ ALLOWED_DIRS = {
     "apps",
     "archive",
     "artifacts",
+    "benign_malignant",
     "_compat",
     "configs",
     "data",
@@ -35,20 +39,35 @@ ALLOWED_DIRS = {
     "models",
     "pipeline",
     "paper",
+    "runtime",
     "scripts",
+    "tstaging",
+    "tstaging_lab",
+    ".claude",
+    ".cursor",
     ".git",
+    ".github",
     ".vscode",
 }
 
 # Warn-only: symlinks at root are discouraged but may exist in _compat migration period
 DISCOURAGED_ROOT_PATTERNS = (".zip", ".pt", ".pth", ".ckpt")
+# Left in place on purpose. tmp is still referenced by live jobs.
+DEFERRED_DIRS = {"tmp"}
 
 
-def classify_entry(name: str) -> str:
+def classify_entry(entry: Path) -> str:
+    name = entry.name
     if name in ALLOWED_FILES:
         return "allowed_file"
     if name in ALLOWED_DIRS:
         return "allowed_dir"
+    if entry.is_symlink():
+        return "compat_symlink"
+    if name.startswith("."):
+        return "tool_local"
+    if name in DEFERRED_DIRS:
+        return "deferred"
     if name.endswith(DISCOURAGED_ROOT_PATTERNS):
         return "discouraged_asset_at_root"
     return "unexpected"
@@ -60,8 +79,8 @@ def main() -> int:
     allowed: list[str] = []
 
     for entry in sorted(PROJECT_ROOT.iterdir(), key=lambda p: p.name.lower()):
-        kind = classify_entry(entry.name)
-        if kind == "allowed_file" or kind == "allowed_dir":
+        kind = classify_entry(entry)
+        if kind in {"allowed_file", "allowed_dir", "compat_symlink", "tool_local", "deferred"}:
             allowed.append(entry.name)
             continue
         item = {
