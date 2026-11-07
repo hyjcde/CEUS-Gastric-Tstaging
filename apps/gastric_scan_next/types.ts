@@ -64,6 +64,11 @@ export interface BiomarkerSummary {
   ca199_positive: boolean;
 }
 
+export interface ClinicalHistoryField {
+  label: string;
+  value: string;
+}
+
 export interface ClinicalData {
   age: number | null;
   sex: string;
@@ -76,6 +81,14 @@ export interface ClinicalData {
   differentiation?: string;
   lauren?: string;
   concept_features?: ConceptFeatures;
+  pT?: string;
+  pN?: string;
+  pM?: string;
+  pStage?: string;
+  discharge_diagnosis?: string;
+  pathology_text?: string;
+  source_table?: string;
+  source_fields?: ClinicalHistoryField[];
 }
 
 export interface PatientReportData {
@@ -118,7 +131,7 @@ export interface VideoMaskFrameOverride {
   /** Optional lumen segmentation and its frame-level box. */
   lumen_polygon?: number[][];
   lumen_bbox?: { x1: number; y1: number; x2: number; y2: number };
-  source?: 'video_track' | 'video_propagate' | 'sam' | 'manual';
+  source?: 'video_track' | 'video_propagate' | 'neighbor_track' | 'sam' | 'manual';
   propagation_status?: 'seed' | 'accepted';
   quality_score?: number;
 }
@@ -239,6 +252,11 @@ export interface Patient {
   center_id?: string;
   center_label?: string;
   study_mode?: ReaderStudyMode;
+  gold_available?: boolean;
+  gold_five_class?: 'benign' | 'malignant' | 'T1' | 'T2' | 'T3' | 'T4' | null;
+  screened?: boolean;
+  /** Historical stills are curated case keyframes. Reader-v150 marks video keyframes. */
+  frame_role?: 'case_keyframe' | 'video_keyframe';
   frame_count: number;
   image_url: string;
   overlay_url: string;
@@ -250,6 +268,8 @@ export interface Patient {
   clinical?: ClinicalData;
   report?: PatientReportData;
   video_urls?: VideoInfo[];
+  wall_last_at?: string;
+  wall_event_count?: number;
 }
 
 export interface AgentToolResult {
@@ -385,6 +405,7 @@ export interface ContourDiagnosis {
   provisional_stage?: string | null;
   classifier_stage?: string | null;
   lesion_confirmed?: boolean;
+  lumen_optional?: boolean;
   lumen_mask_type?: string;
   wall_is_proxy?: boolean;
   layer_confirmed?: boolean;
@@ -400,13 +421,20 @@ export interface AgentWorkbenchReport {
   schema_version: string;
   status: string;
   recommended_t_stage: string;
-  /** ContourEvidenceGate display stage (may be cTx when T2/T3 indeterminate). */
+  /** ContourEvidenceGate display stage; always definite (cTx banned), provisional until confirmed. */
   assist_display_stage?: string;
   contour_diagnosis?: ContourDiagnosis;
   confidence: 'high' | 'medium' | 'low' | string;
   reasoning: string;
   /** Optional language-only refinement; never owns the stage or confidence. */
   llm_reasoning?: string;
+  self_check?: {
+    summary?: string;
+    mean_stage?: string | null;
+    deepest_stage?: string | null;
+    display_stage?: string | null;
+    tokenplan?: { called?: boolean; status?: string; note?: string; model?: string };
+  };
   dynamic_report_draft?: {
     title: string;
     generated_by: string;

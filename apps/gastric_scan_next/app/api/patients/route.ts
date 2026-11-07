@@ -39,6 +39,7 @@ import { buildPublicDemoStillPatients, shouldAttachPublicDemoStills } from '@/li
 import { goldFromClinicalRecord, goldFromReaderRefs } from '@/lib/reader/five-class';
 import { canRevealCaseGold } from '@/lib/reader/gold-reveal-access';
 import { lookupGoldFiveClass } from '@/lib/reader/five-class-server';
+import { countScreenedImages, isScreenedImage } from '@/lib/reader/screen-status';
 import { requireAppAuth } from '@/lib/reader/require-app-auth';
 import { isTrustedPublicUpstream } from '@/lib/reader/local-access';
 import { lookupClinicalHistory, mergeClinicalHistory } from '@/lib/clinical-history-server';
@@ -87,6 +88,7 @@ interface PatientPageOptions {
 
 interface PatientQueueSource {
   count: number;
+  screened: number;
   build: (offset: number, limit: number) => Patient[];
 }
 
@@ -513,7 +515,11 @@ function buildCurrentPatients(
           const goldLabel = goldFromClinicalRecord(rawClinical)
             || goldFromClinicalRecord({ pT: clinical?.pT })
             || lookup.label;
-          return { gold_five_class: goldLabel, gold_available: Boolean(goldLabel) };
+          return {
+            gold_five_class: goldLabel,
+            gold_available: Boolean(goldLabel),
+            screened: isScreenedImage(imageFilename),
+          };
         })(),
       });
     }
@@ -647,6 +653,7 @@ function buildCenterPatients(
             frame_role: 'case_keyframe' as const,
             gold_five_class: goldLabel,
             gold_available: Boolean(goldLabel),
+            screened: isScreenedImage(imageFilename),
           };
         })(),
       });
@@ -860,29 +867,32 @@ function createInternalQueueSource(
   includeClinicalHistory = false,
 ): PatientQueueSource {
   if (treatmentType === 'nac' && !getNacClinicalDataPath(year)) {
-    return { count: 0, build: () => [] };
+    return { count: 0, screened: 0, build: () => [] };
   }
-  const count = readInternalDisplayFiles(year, treatmentType, dataset).length;
+  const files = readInternalDisplayFiles(year, treatmentType, dataset);
   return {
-    count,
+    count: files.length,
+    screened: countScreenedImages(files),
     build: (offset, limit) => buildCurrentPatients(year, treatmentType, dataset, { offset, limit, includeClinicalHistory }),
   };
 }
 
 function createExternalQueueSource(centerId: string, dataset: DatasetType, includeClinicalHistory = false): PatientQueueSource {
   const paths = getExternalDatasetPaths(dataset, centerId);
-  const count = paths ? readImageFiles(paths.images).length : 0;
+  const files = paths ? readImageFiles(paths.images) : [];
   return {
-    count,
+    count: files.length,
+    screened: countScreenedImages(files),
     build: (offset, limit) => buildExternalPatients(centerId, dataset, { offset, limit, includeClinicalHistory }),
   };
 }
 
 function createBenignQueueSource(centerId: string, dataset: DatasetType, includeClinicalHistory = false): PatientQueueSource {
   const paths = getBenignDatasetPaths(dataset, centerId);
-  const count = paths ? readImageFiles(paths.images).length : 0;
+  const files = paths ? readImageFiles(paths.images) : [];
   return {
-    count,
+    count: files.length,
+    screened: countScreenedImages(files),
     build: (offset, limit) => buildBenignPatients(centerId, dataset, { offset, limit, includeClinicalHistory }),
   };
 }
@@ -942,21 +952,22 @@ function buildQueuePatientsPage(
   limit: number,
   readerId?: string,
   includeClinicalHistory = false,
-): { items: Patient[]; total: number; orderApplied: boolean } {
+): { items: Patient[]; total: number; orderApplied: boolean; screened: number } {
   if (queueId === 'reader:reader_v150') {
     if (treatmentType !== 'surgery') {
-      return { items: [], total: 0, orderApplied: false };
+      return { items: [], total: 0, orderApplied: false, screened: 0 };
     }
     const built = buildReaderStudyV150Patients(readerId);
     return {
       items: built.patients.slice(offset, offset + limit),
       total: built.patients.length,
       orderApplied: built.orderApplied,
+      screened: 0,
     };
   }
   if (isLocalWallLabQueue(queueId)) {
     if (treatmentType !== 'surgery') {
-      return { items: [], total: 0, orderApplied: false };
+      return { items: [], total: 0, orderApplied: false, screened: 0 };
     }
     const built = buildReaderStudyV150Patients();
     const byId = new Map(built.patients.map((row) => [row.id, row]));
@@ -968,11 +979,12 @@ function buildQueuePatientsPage(
       items: patients.slice(offset, offset + limit),
       total: patients.length,
       orderApplied: false,
+      screened: 0,
     };
   }
   if (isRecentWallQueue(queueId)) {
     if (treatmentType !== 'surgery') {
-      return { items: [], total: 0, orderApplied: false };
+      return { items: [], total: 0, orderApplied: false, screened: 0 };
     }
     const built = buildReaderStudyV150Patients();
     const byId = new Map(built.patients.map((row) => [row.id, row]));
@@ -992,15 +1004,17 @@ function buildQueuePatientsPage(
       items: patients.slice(offset, offset + limit),
       total: patients.length,
       orderApplied: false,
+      screened: 0,
     };
   }
   if (queueId === 'legacy:gist') {
     const all = treatmentType === 'surgery' ? buildLegacyGistPatients(dataset) : [];
-    return { items: all.slice(offset, offset + limit), total: all.length, orderApplied: false };
+    return { items: all.slice(offset, offset + limit), total: all.length, orderApplied: false, screened: 0 };
   }
 
   const sources = getQueueSources(queueId, treatmentType, dataset, includeClinicalHistory);
   const total = sources.reduce((sum, source) => sum + source.count, 0);
+  const screened = sources.reduce((sum, source) => sum + source.screened, 0);
   let skip = Math.max(0, offset);
   let remaining = Math.max(1, limit);
   const items: Patient[] = [];
@@ -1018,7 +1032,7 @@ function buildQueuePatientsPage(
     if (remaining <= 0) break;
   }
 
-  return { items: mergeUniquePatients(items), total, orderApplied: false };
+  return { items: mergeUniquePatients(items), total, orderApplied: false, screened };
 }
 
 export async function GET(request: NextRequest) {
@@ -1147,6 +1161,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         items,
         total: page.total,
+        screened_total: page.screened,
         offset,
         limit,
         has_more: offset + page.items.length < page.total,

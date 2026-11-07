@@ -10,6 +10,7 @@ import {
   isInternalQueue,
   isLocalWallLabQueue,
   isReaderPackageQueue,
+  isRecentWallQueue,
   parseWorkbenchQueueId,
 } from '@/lib/cohort';
 import { canBrowseWorkbenchQueues } from '@/lib/reader/queue-access';
@@ -69,6 +70,8 @@ type TreatmentKey = 'surgery' | 'nac';
 interface PatientPage {
   items: Patient[];
   total: number;
+  screenedTotal: number;
+  screened_total?: number;
   offset: number;
   limit: number;
   hasMore: boolean;
@@ -77,6 +80,14 @@ interface PatientPage {
 }
 
 const PATIENT_PAGE_SIZE = 80;
+
+function formatWallLastAt(iso: string | null | undefined): string {
+  const stamp = Date.parse(String(iso || ''));
+  if (!Number.isFinite(stamp)) return '';
+  const date = new Date(stamp);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 function getTreatmentType(patient: Patient): 'NAC' | 'Benign' | 'Surgery' {
   if (patient.group === 'Benign') return 'Benign';
@@ -93,6 +104,7 @@ function emptyPatientPage(offset = 0): PatientPage {
   return {
     items: [],
     total: 0,
+    screenedTotal: 0,
     offset,
     limit: PATIENT_PAGE_SIZE,
     hasMore: false,
@@ -118,6 +130,7 @@ async function fetchPatientPage(
   signal: AbortSignal,
   language: Language,
   authHeaders?: (extra?: HeadersInit) => HeadersInit,
+  accountReaderId?: string | null,
 ): Promise<PatientPage> {
   const params = new URLSearchParams({
     dataset,
@@ -133,7 +146,7 @@ async function fetchPatientPage(
     );
     params.set('environment', environment);
     if (environment !== 'research') {
-      const readerId = searchParams.get('reader_id');
+      const readerId = searchParams.get('reader_id') || accountReaderId || '';
       if (readerId) params.set('reader_id', readerId);
     }
   }
@@ -151,6 +164,7 @@ async function fetchPatientPage(
     return {
       items: data,
       total: data.length,
+      screenedTotal: data.filter((patient) => patient.screened).length,
       offset,
       limit: PATIENT_PAGE_SIZE,
       hasMore: false,
@@ -164,6 +178,7 @@ async function fetchPatientPage(
   return {
     items: data.items,
     total: typeof data.total === 'number' ? data.total : data.items.length,
+    screenedTotal: typeof data.screened_total === 'number' ? data.screened_total : 0,
     offset: typeof data.offset === 'number' ? data.offset : offset,
     limit: typeof data.limit === 'number' ? data.limit : PATIENT_PAGE_SIZE,
     hasMore: Boolean(data.has_more),
@@ -183,6 +198,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
   const [totalFrames, setTotalFrames] = useState(0);
+  const [screenedFrames, setScreenedFrames] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [progressByCase, setProgressByCase] = useState<Record<string, 'in_progress' | 'completed'>>({});
   const onSelectRef = useRef(onSelect);
@@ -250,12 +266,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       nextOffsetsRef.current = { surgery: 0, nac: 0 };
       hasMoreRef.current = { surgery: true, nac: shouldFetchNac };
       setTotalFrames(0);
+      setScreenedFrames(0);
       setHasMore(false);
 
       const [surgeryData, nacData] = await Promise.all([
-        fetchPatientPage(dataset, queueId, 'surgery', 0, controller.signal, language, authHeaders),
+        fetchPatientPage(dataset, queueId, 'surgery', 0, controller.signal, language, authHeaders, account?.account_id),
         shouldFetchNac
-          ? fetchPatientPage(dataset, queueId, 'nac', 0, controller.signal, language, authHeaders)
+          ? fetchPatientPage(dataset, queueId, 'nac', 0, controller.signal, language, authHeaders, account?.account_id)
           : Promise.resolve(emptyPatientPage(0)),
       ]);
 
@@ -274,11 +291,12 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
 
       setPatients(merged);
       setTotalFrames(surgeryData.total + nacData.total);
+      setScreenedFrames(surgeryData.screenedTotal + nacData.screenedTotal);
       setHasMore(surgeryData.hasMore || nacData.hasMore);
       setLoading(false);
       onPatientsLoadedRef.current?.(merged);
 
-      const visiblePatients = isLocalWallLabQueue(queueId)
+      const visiblePatients = (isLocalWallLabQueue(queueId) || isRecentWallQueue(queueId))
         ? merged.filter((patient) => !isPublicDemoStill(patient))
         : queueId === 'reader:reader_v150' && readerStudyMode
         ? merged.filter((patient) => !isPublicDemoStill(patient) && patient.study_mode === readerStudyMode)
@@ -305,7 +323,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
           const p = visiblePatients.find((x: Patient) => x.id === currentSelectedId);
           if (p) {
               const groupKey = getPatientGroupKey(p);
-              setExpandedGroups(new Set([groupKey]));
+              setExpandedGroups(prev => new Set([...prev, groupKey]));
           } else if (autoPick && !hasAutoSelectedRef.current) {
               hasAutoSelectedRef.current = true;
               onSelectRef.current(autoPick);
@@ -314,7 +332,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
           hasAutoSelectedRef.current = true;
           onSelectRef.current(autoPick);
           const groupKey = getPatientGroupKey(autoPick);
-          setExpandedGroups(new Set([groupKey]));
+          setExpandedGroups(prev => new Set([...prev, groupKey]));
       }
     };
 
@@ -330,7 +348,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       controller.abort();
       loadMoreControllerRef.current?.abort();
     };
-  }, [authHeaders, dataset, language, queueId, readerStudyMode]);
+  }, [account?.account_id, authHeaders, dataset, language, queueId, readerStudyMode]);
 
   useEffect(() => {
     hasAutoSelectedRef.current = false;
@@ -347,7 +365,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       try {
         const studyMode = readerStudyMode || 't_staging';
         const response = await fetch(
-          `/api/reader/case-state?study_mode=${encodeURIComponent(studyMode)}`,
+          `/api/reader/case-state?study_mode=${encodeURIComponent(studyMode)}&summary=1`,
           { cache: 'no-store', headers: authHeaders() },
         );
         if (!response.ok || cancelled) return;
@@ -380,13 +398,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       if (hasMoreRef.current.surgery) {
         pageRequests.push([
           'surgery',
-          fetchPatientPage(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language, authHeaders),
+          fetchPatientPage(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language, authHeaders, account?.account_id),
         ]);
       }
       if (shouldFetchNac && hasMoreRef.current.nac) {
         pageRequests.push([
           'nac',
-          fetchPatientPage(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language, authHeaders),
+          fetchPatientPage(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language, authHeaders, account?.account_id),
         ]);
       }
       const pages = await Promise.all(pageRequests.map(async ([treatment, request]) => (
@@ -413,7 +431,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       loadMoreControllerRef.current = null;
       setLoadingMore(false);
     }
-  }, [authHeaders, dataset, language, queueId]);
+  }, [account?.account_id, authHeaders, dataset, language, queueId]);
 
   useEffect(() => {
     loadMoreRef.current = loadMore;
@@ -425,10 +443,18 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
     if (remaining < 240) void loadMoreRef.current();
   }, []);
 
+  const taskCounts = useMemo(() => {
+    const live = patients.filter((patient) => !isPublicDemoStill(patient));
+    return {
+      bm: live.filter((patient) => patient.study_mode === 'benign_malignancy').length,
+      t: live.filter((patient) => patient.study_mode === 't_staging').length,
+    };
+  }, [patients]);
+
   // Grouping Logic - Group by patient_id and treatment type
   const groupedPatients = useMemo(() => {
     const groups: Record<string, PatientGroup> = {};
-    const visiblePatients = isLocalWallLabQueue(queueId)
+    const visiblePatients = (isLocalWallLabQueue(queueId) || isRecentWallQueue(queueId))
       ? patients.filter((patient) => !isPublicDemoStill(patient))
       : queueId === 'reader:reader_v150' && readerStudyMode
       ? patients.filter((patient) => !isPublicDemoStill(patient) && patient.study_mode === readerStudyMode)
@@ -445,6 +471,8 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                 groupType: treatmentType,
                 scopeLabel: isPublicDemoStill(p)
                   ? (language === 'en' ? 'Demo stills, not scored' : '演示静图, 不进评分')
+                  : isRecentWallQueue(queueId) && p.wall_last_at
+                    ? `${language === 'en' ? 'Last wall' : '最近胃壁'} ${formatWallLastAt(p.wall_last_at)}`
                   : (
                     localizeCenterLabel(p.center_label, language)
                     || (p.phase && p.phase !== 'external' ? p.phase : undefined)
@@ -544,12 +572,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
             <Database size={12} className="shrink-0 text-blue-500" />
             <span className="truncate">{t.cohort.title}</span>
           </span>
-          <span className="shrink-0 text-[9px] font-mono text-gray-500">
+          <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-white">
             {!canBrowseQueues || isReaderPackageQueue(queueId)
               ? (zh ? '当前队列' : 'Current queue')
               : (zh
-                ? `已加载 ${groupedPatients.length} 例 / 共 ${totalFrames} 帧`
-                : `Loaded ${groupedPatients.length} cases / ${totalFrames} frames`)}
+                ? `${groupedPatients.length} 例 ${totalFrames} 帧`
+                : `${groupedPatients.length} cases ${totalFrames} frames`)}
+            {screenedFrames > 0 ? (zh ? `已筛 ${screenedFrames}` : `Screened ${screenedFrames}`) : ''}
           </span>
         </div>
         {!canBrowseQueues ? (
@@ -566,6 +595,27 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
             {zh ? '本地壁层实验, 4例: P008 T1, P019 T2, P040 T3, P076 T4' : 'Local wall-lab, 4 cases: P008 T1, P019 T2, P040 T3, P076 T4'}
           </div>
         ) : null}
+        {isRecentWallQueue(queueId) ? (
+          <div className="mt-2 space-y-1.5 rounded-md border border-cyan-300/20 bg-cyan-300/10 px-2 py-1.5 text-[10px] leading-snug text-cyan-100">
+            <div>
+              {zh
+                ? '最近21天画过或分析过胃壁的病例，按最后一次操作排列。这不是完整 T 分期 100 例。不定 cT。'
+                : 'Cases with wall work in the last 21 days, newest first. This is not the full 100 T-staging cases. Not a cT.'}
+            </div>
+            {onReaderStudyModeChange ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onReaderStudyModeChange('t_staging');
+                  setQueueId('reader:reader_v150');
+                }}
+                className="w-full rounded border border-amber-300/30 bg-amber-300/15 px-2 py-1 text-[10px] font-semibold text-amber-100 hover:bg-amber-300/25 max-md:min-h-10"
+              >
+                {zh ? '回到第一轮 T 分期 100 例' : 'Back to Round 1 T staging, 100 cases'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {queueId === 'reader:reader_v150' && readerStudyMode && onReaderStudyModeChange ? (
           <div className="mt-2 grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/30 p-1">
             <button
@@ -573,14 +623,14 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
               onClick={() => onReaderStudyModeChange('benign_malignancy')}
               className={`rounded px-2 py-1 text-[10px] font-semibold transition max-md:min-h-10 ${readerStudyMode === 'benign_malignancy' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
             >
-              {zh ? '良恶性' : 'Benignity'}
+              {zh ? `良恶性 ${taskCounts.bm}` : `Benignity ${taskCounts.bm}`}
             </button>
             <button
               type="button"
               onClick={() => onReaderStudyModeChange('t_staging')}
               className={`rounded px-2 py-1 text-[10px] font-semibold transition max-md:min-h-10 ${readerStudyMode === 't_staging' ? 'bg-amber-300/15 text-amber-100' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
             >
-              {zh ? 'T 分期' : 'T staging'}
+              {zh ? `T 分期 ${taskCounts.t}` : `T staging ${taskCounts.t}`}
             </button>
           </div>
         ) : null}
@@ -661,6 +711,11 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                           {groupStageLabel(group)}
                         </span>
                       ) : null}
+                      {group.items.some((item) => item.screened) ? (
+                        <span className="text-xs font-semibold text-white">
+                          {zh ? '已筛' : 'Screened'}
+                        </span>
+                      ) : null}
                       {(() => {
                         const statuses = group.items
                           .map((item) => progressByCase[item.id])
@@ -718,6 +773,11 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                                         {showGold && p.gold_five_class ? (
                                           <span className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 font-mono text-[8px] font-bold text-amber-100">
                                             {formatFiveClass(p.gold_five_class, zh)}
+                                          </span>
+                                        ) : null}
+                                        {p.screened ? (
+                                          <span className="shrink-0 text-xs font-semibold text-white">
+                                            {zh ? '已筛' : 'Screened'}
                                           </span>
                                         ) : null}
                                         {(() => {
