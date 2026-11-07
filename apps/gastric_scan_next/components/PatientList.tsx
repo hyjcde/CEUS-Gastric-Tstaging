@@ -79,7 +79,7 @@ interface PatientPage {
   demo_stills?: Patient[];
 }
 
-const PATIENT_PAGE_SIZE = 80;
+const PATIENT_PAGE_SIZE = 200;
 
 function formatWallLastAt(iso: string | null | undefined): string {
   const stamp = Date.parse(String(iso || ''));
@@ -120,6 +120,29 @@ function mergePatients(current: Patient[], additions: Patient[]): Patient[] {
     next.push(patient);
   }
   return next;
+}
+
+async function fetchPatientPageRetry(
+  dataset: string,
+  queueId: string,
+  treatment: TreatmentKey,
+  offset: number,
+  signal: AbortSignal,
+  language: Language,
+  authHeaders?: (extra?: HeadersInit) => HeadersInit,
+  accountReaderId?: string | null,
+): Promise<PatientPage> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await fetchPatientPage(dataset, queueId, treatment, offset, signal, language, authHeaders, accountReaderId);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      lastError = error;
+      await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('queue page failed');
 }
 
 async function fetchPatientPage(
@@ -270,19 +293,19 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       setHasMore(false);
 
       const [surgeryData, nacData] = await Promise.all([
-        fetchPatientPage(dataset, queueId, 'surgery', 0, controller.signal, language, authHeaders, account?.account_id),
+        fetchPatientPageRetry(dataset, queueId, 'surgery', 0, controller.signal, language, authHeaders, account?.account_id),
         shouldFetchNac
-          ? fetchPatientPage(dataset, queueId, 'nac', 0, controller.signal, language, authHeaders, account?.account_id)
+          ? fetchPatientPageRetry(dataset, queueId, 'nac', 0, controller.signal, language, authHeaders, account?.account_id)
           : Promise.resolve(emptyPatientPage(0)),
       ]);
 
       if (!isMounted) return;
 
-      const merged = mergePatients([], [...surgeryData.items, ...nacData.items]);
+      let merged = mergePatients([], [...surgeryData.items, ...nacData.items]);
       patientsRef.current = merged;
       nextOffsetsRef.current = {
-        surgery: surgeryData.offset + surgeryData.limit,
-        nac: nacData.offset + nacData.limit,
+        surgery: surgeryData.offset + surgeryData.items.length,
+        nac: nacData.offset + nacData.items.length,
       };
       hasMoreRef.current = {
         surgery: surgeryData.hasMore,
@@ -295,7 +318,6 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       setHasMore(surgeryData.hasMore || nacData.hasMore);
       setLoading(false);
       onPatientsLoadedRef.current?.(merged);
-
       const visiblePatients = (isLocalWallLabQueue(queueId) || isRecentWallQueue(queueId))
         ? merged.filter((patient) => !isPublicDemoStill(patient))
         : queueId === 'reader:reader_v150' && readerStudyMode
@@ -312,13 +334,10 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
           ? visiblePatients.find((patient) => patient.id === requestedCase || patient.patient_id === requestedCase)
           : undefined;
       if (requested && pendingOpen) pendingOpenIdRef.current = '';
-      // Keep API presentation order (per-reader shuffle). Do not re-sort by CASE number.
       const orderedVisible = visiblePatients;
       const autoPick = requested
         || orderedVisible.find((patient) => !isPublicDemoStill(patient))
         || orderedVisible[0];
-
-      // Auto-expand the group of the selected patient if exists
       if (currentSelectedId) {
           const p = visiblePatients.find((x: Patient) => x.id === currentSelectedId);
           if (p) {
@@ -333,6 +352,49 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
           onSelectRef.current(autoPick);
           const groupKey = getPatientGroupKey(autoPick);
           setExpandedGroups(prev => new Set([...prev, groupKey]));
+      }
+      setLoadingMore(true);
+      loadingMoreRef.current = true;
+      try {
+        while (isMounted && (hasMoreRef.current.surgery || hasMoreRef.current.nac)) {
+          const pageRequests: Array<[TreatmentKey, Promise<PatientPage>]> = [];
+          if (hasMoreRef.current.surgery) {
+            pageRequests.push([
+              'surgery',
+              fetchPatientPageRetry(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language, authHeaders, account?.account_id),
+            ]);
+          }
+          if (shouldFetchNac && hasMoreRef.current.nac) {
+            pageRequests.push([
+              'nac',
+              fetchPatientPageRetry(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language, authHeaders, account?.account_id),
+            ]);
+          }
+          if (!pageRequests.length) break;
+          const pages = await Promise.all(pageRequests.map(async ([treatment, request]) => (
+            [treatment, await request] as const
+          )));
+          if (!isMounted) return;
+          const additions = pages.flatMap(([, page]) => page.items);
+          if (!additions.length) break;
+          for (const [treatment, page] of pages) {
+            nextOffsetsRef.current[treatment] = page.offset + page.items.length;
+            hasMoreRef.current[treatment] = page.hasMore;
+          }
+          merged = mergePatients(patientsRef.current, additions);
+          patientsRef.current = merged;
+          setPatients(merged);
+          setHasMore(hasMoreRef.current.surgery || hasMoreRef.current.nac);
+          onPatientsLoadedRef.current?.(merged);
+        }
+      } catch (error) {
+        if (!isMounted || (error instanceof DOMException && error.name === 'AbortError')) return;
+        setHasMore(hasMoreRef.current.surgery || hasMoreRef.current.nac);
+      } finally {
+        if (isMounted) {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        }
       }
     };
 
@@ -398,13 +460,13 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
       if (hasMoreRef.current.surgery) {
         pageRequests.push([
           'surgery',
-          fetchPatientPage(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language, authHeaders, account?.account_id),
+          fetchPatientPageRetry(dataset, queueId, 'surgery', nextOffsetsRef.current.surgery, controller.signal, language, authHeaders, account?.account_id),
         ]);
       }
       if (shouldFetchNac && hasMoreRef.current.nac) {
         pageRequests.push([
           'nac',
-          fetchPatientPage(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language, authHeaders, account?.account_id),
+          fetchPatientPageRetry(dataset, queueId, 'nac', nextOffsetsRef.current.nac, controller.signal, language, authHeaders, account?.account_id),
         ]);
       }
       const pages = await Promise.all(pageRequests.map(async ([treatment, request]) => (
@@ -413,7 +475,7 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
 
       const additions = pages.flatMap(([, page]) => page.items);
       for (const [treatment, page] of pages) {
-        nextOffsetsRef.current[treatment] = page.offset + page.limit;
+        nextOffsetsRef.current[treatment] = page.offset + page.items.length;
         hasMoreRef.current[treatment] = page.hasMore;
       }
       const merged = mergePatients(patientsRef.current, additions);
@@ -424,7 +486,6 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
         console.error('Failed to load more patients', error);
-        toast.error(error instanceof Error ? error.message : (language === 'en' ? 'Failed to load more cases' : '更多病例加载失败'));
       }
     } finally {
       loadingMoreRef.current = false;
@@ -817,8 +878,8 @@ export const PatientList: React.FC<PatientListProps> = ({ onSelect, selectedId, 
                   className="rounded border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
                 >
                   {loadingMore
-                    ? (zh ? '正在加载下一页...' : 'Loading next page...')
-                    : (zh ? `继续加载 ${PATIENT_PAGE_SIZE} 帧` : `Load next ${PATIENT_PAGE_SIZE} frames`)}
+                    ? (zh ? `正在加载全部图像 ${patients.length} / ${totalFrames}` : `Loading all images ${patients.length} / ${totalFrames}`)
+                    : (zh ? '继续加载剩余图像' : 'Load the remaining images')}
                 </button>
                 <span className="text-[9px] font-mono text-gray-600">
                   {zh
