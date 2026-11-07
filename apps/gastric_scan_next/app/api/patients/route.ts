@@ -19,11 +19,14 @@ import {
   GASTRIC_COHORT_YEARS,
   getExternalCenterById,
   isLocalWallLabQueue,
+  isRecentWallQueue,
   LOCAL_WALL_LAB_CASE_IDS,
   LOCAL_WALL_LAB_QUEUE,
   parseWorkbenchQueueId,
+  RECENT_WALL_QUEUE,
   WorkbenchQueueId,
 } from '@/lib/cohort';
+import { listRecentWallCases } from '@/lib/reader/recent-wall-queue';
 import { getVideosForPatient } from '@/lib/video-index';
 import { loadReaderCasesBundle } from '@/lib/reader/cases-server';
 import { readerMediaUrl } from '@/lib/reader/media-url';
@@ -501,7 +504,15 @@ function buildCurrentPatients(
         report,
         frame_role: 'case_keyframe',
         ...(() => {
-          const goldLabel = goldFromClinicalRecord(rawClinical) || goldFromClinicalRecord({ pT: clinical?.pT });
+          const lookup = lookupGoldFiveClass({
+            patient_id: normalizePatientId(patientId),
+            phase: cohortYear,
+            group: treatmentType === 'nac' ? 'NAC' : 'Surgery',
+            queue_id: `internal:${cohortYear}`,
+          });
+          const goldLabel = goldFromClinicalRecord(rawClinical)
+            || goldFromClinicalRecord({ pT: clinical?.pT })
+            || lookup.label;
           return { gold_five_class: goldLabel, gold_available: Boolean(goldLabel) };
         })(),
       });
@@ -570,7 +581,7 @@ function buildCenterPatients(
       const hasOverlay = fs.existsSync(path.join(paths.overlays, overlayFilename));
       const hasRoi = fs.existsSync(path.join(paths.roi, imageFilename));
       const encodedFilename = encodeURIComponent(imageFilename);
-      const queueQuery = `queue=${encodeURIComponent(queueId)}&treatment=surgery`;
+      const queueQuery = `queue=${encodeURIComponent(queueId)}&treatment=surgery&cropv=20260907`;
       const info: PatientInfo = {
         patient_id: patientId,
         dataset: sourceLabel,
@@ -959,6 +970,30 @@ function buildQueuePatientsPage(
       orderApplied: false,
     };
   }
+  if (isRecentWallQueue(queueId)) {
+    if (treatmentType !== 'surgery') {
+      return { items: [], total: 0, orderApplied: false };
+    }
+    const built = buildReaderStudyV150Patients();
+    const byId = new Map(built.patients.map((row) => [row.id, row]));
+    const recent = listRecentWallCases();
+    const patients: Patient[] = [];
+    for (const row of recent) {
+      const found = byId.get(row.caseId);
+      if (!found) continue;
+      patients.push({
+        ...found,
+        queue_id: RECENT_WALL_QUEUE,
+        wall_last_at: row.lastAt,
+        wall_event_count: row.eventCount,
+      });
+    }
+    return {
+      items: patients.slice(offset, offset + limit),
+      total: patients.length,
+      orderApplied: false,
+    };
+  }
   if (queueId === 'legacy:gist') {
     const all = treatmentType === 'surgery' ? buildLegacyGistPatients(dataset) : [];
     return { items: all.slice(offset, offset + limit), total: all.length, orderApplied: false };
@@ -1000,8 +1035,15 @@ export async function GET(request: NextRequest) {
     if (queueDenied) return queueDenied;
     const localLabDenied = denyLocalWallLabOnPublic(request, requestedQueue);
     if (localLabDenied) return localLabDenied;
-    if (environment !== 'research' && requestedQueue && requestedQueue !== 'reader:reader_v150' && !isLocalWallLabQueue(requestedQueue)) {
-      const forwarded = await proxyAgentRequest(request);
+    if (environment !== 'research' && requestedQueue && requestedQueue !== 'reader:reader_v150' && !isLocalWallLabQueue(requestedQueue) && !isRecentWallQueue(requestedQueue)) {
+      const admitted = requireAppAuth(request);
+      const forwarded = await proxyAgentRequest(
+        request,
+        request.nextUrl.pathname,
+        admitted.ok && canRevealCaseGold(admitted.accountId)
+          ? { 'x-authenticated-reader-id': admitted.accountId }
+          : undefined,
+      );
       if (forwarded) return forwarded;
     }
     const includeClinicalHistory = environment !== 'research'
@@ -1016,6 +1058,10 @@ export async function GET(request: NextRequest) {
       if (!access.ok && !isTrustedPublicUpstream(request.headers)) return access.response;
       // Prefer logged-in account for Round2 / stable shuffle order (URL reader_id is optional).
       readerId = (access.ok ? access.accountId : '') || requestedReaderId || undefined;
+      if (!readerId && isTrustedPublicUpstream(request.headers)) {
+        const admittedReader = request.headers.get('x-authenticated-reader-id') || '';
+        if (canRevealCaseGold(admittedReader)) readerId = admittedReader;
+      }
     }
 
     if (environment === 'research') {

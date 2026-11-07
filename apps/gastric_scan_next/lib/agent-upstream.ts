@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function proxyAgentRequest(
   request: NextRequest,
   upstreamPath = request.nextUrl.pathname,
+  extraHeaders?: Record<string, string>,
 ): Promise<NextResponse | null> {
   const base = String(process.env.NEXT_AGENT_UPSTREAM || '').replace(/\/+$/, '');
   if (!base || shouldHandleLocally(upstreamPath)) return null;
@@ -23,6 +24,33 @@ export async function proxyAgentRequest(
   // The public SSH reverse tunnel can surface a locked response body when
   // keep-alive is reused for large JSON segmentation requests.
   headers.set('connection', 'close');
+  for (const name of [
+    'cookie',
+    'authorization',
+    'range',
+    'if-range',
+    'if-none-match',
+    'x-doctor-session-token',
+    'x-ops-ingest',
+    'x-ops-account-id',
+    'x-ops-access-channel',
+    'x-authenticated-reader-id',
+    'x-authenticated-reader-signature',
+  ]) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  // Public Next already admitted this request. Workstation :3300 still
+  // requires a session header; do not drop the doctor and bounce analyze.
+  if (extraHeaders) {
+    for (const [name, value] of Object.entries(extraHeaders)) {
+      if (value) headers.set(name, value);
+    }
+  }
+  headers.set('x-agent-upstream-admit', '1');
+  if (!headers.get('x-doctor-session-token') && !headers.get('authorization')) {
+    headers.set('x-doctor-session-token', 'public-upstream');
+  }
 
   const body = request.method === 'GET' || request.method === 'HEAD'
     ? undefined
@@ -93,8 +121,9 @@ export async function proxyAgentRequest(
 
 function expectsJsonAgentResponse(pathname: string): boolean {
   // Artifact bytes are binary images/files — never force JSON parsing.
-  if (/^\/api\/agent\/artifacts(?:\/|$)/i.test(pathname)) return false;
-  return /^\/api\/(?:agent\/(?:sam-interactive|lesion-segmentation|video\/propagate|video\/keyframes|lumen-detection|nninteractive|dino\/features)|explainable\/analyze)(?:\/|$)/i.test(
+  if (/^\/api\/(?:agent\/artifacts|images|patients\/videos|patients\/keyframes)(?:\/|$)/i.test(pathname)) return false;
+  if (/^\/api\/reader\/similar-cases\/image(?:\/|$)/i.test(pathname)) return false;
+  return /^\/api\/(?:reader\/(?:agent\/analyze|assist-judgment|evidence-fusion|experience|similar-cases\/(?:search|profile))|agent\/(?:sam-interactive|lesion-segmentation|lesion-detection|video\/propagate|video\/keyframes|lumen-detection|nninteractive|dino\/features)|explainable\/analyze)(?:\/|$)/i.test(
     pathname,
   );
 }

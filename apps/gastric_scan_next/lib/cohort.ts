@@ -1,4 +1,4 @@
-export type GastricCohortYear = '2018' | '2019' | '2020_2023' | '2024' | '2025';
+export type GastricCohortYear = '2018' | '2019' | '2020_2023' | '2024' | '2025' | '2026';
 export type ReaderStudyQueue = 'reader_v150';
 export type CohortYear = GastricCohortYear | ReaderStudyQueue | 'gist';
 
@@ -40,7 +40,8 @@ export type BenignCenterId =
   | 'ningde'
   | 'dehua'
   | 'fujian_tumor'
-  | 'putian_college';
+  | 'putian_college'
+  | 'xiehe';
 
 export interface BenignCenterOption {
   id: BenignCenterId;
@@ -55,6 +56,7 @@ export const BENIGN_CENTER_OPTIONS: BenignCenterOption[] = [
   { id: 'dehua', label: '福建省德化县医院', folderName: '福建省德化县医院' },
   { id: 'fujian_tumor', label: '福建省肿瘤医院', folderName: '福建省肿瘤医院' },
   { id: 'putian_college', label: '莆田学院附属医院', folderName: '莆田学院附属医院' },
+  { id: 'xiehe', label: '福建医科大学附属协和医院', folderName: '福建医科大学附属协和医院' },
 ];
 
 export type WorkbenchQueueId =
@@ -67,19 +69,25 @@ export type WorkbenchQueueId =
   | `benign:${BenignCenterId}`
   | 'reader:reader_v150'
   | 'reader:local_wall4'
+  | 'reader:recent_wall'
   | 'legacy:gist';
 
 /** Local wall-layer lab: P008 / P019 / P040 / P076. Not the public 150. */
 export const LOCAL_WALL_LAB_QUEUE: WorkbenchQueueId = 'reader:local_wall4';
 export const LOCAL_WALL_LAB_CASE_IDS = ['CASE-008', 'CASE-019', 'CASE-040', 'CASE-076'] as const;
+export const RECENT_WALL_QUEUE: WorkbenchQueueId = 'reader:recent_wall';
 
 export function isLocalWallLabQueue(queueId: string | null | undefined): boolean {
   return String(queueId || '').trim() === LOCAL_WALL_LAB_QUEUE;
 }
 
+export function isRecentWallQueue(queueId: string | null | undefined): boolean {
+  return String(queueId || '').trim() === RECENT_WALL_QUEUE;
+}
+
 export function isReaderPackageQueue(queueId: string | null | undefined): boolean {
   const raw = String(queueId || '').trim();
-  return raw === 'reader:reader_v150' || raw === LOCAL_WALL_LAB_QUEUE;
+  return raw === 'reader:reader_v150' || raw === LOCAL_WALL_LAB_QUEUE || raw === RECENT_WALL_QUEUE;
 }
 
 export interface WorkbenchQueueGroup {
@@ -99,6 +107,7 @@ export const WORKBENCH_QUEUE_GROUPS: WorkbenchQueueGroup[] = [
       { id: 'internal:2020_2023', label: '2020-2023' },
       { id: 'internal:2024', label: '2024' },
       { id: 'internal:2025', label: '2025' },
+      { id: 'internal:2026', label: '2026' },
     ],
   },
   {
@@ -128,6 +137,7 @@ export const WORKBENCH_QUEUE_GROUPS: WorkbenchQueueGroup[] = [
     label: '专项队列',
     children: [
       { id: 'reader:reader_v150', label: '阅片任务, 第一轮150例' },
+      { id: 'reader:recent_wall', label: '最近胃壁操作' },
       { id: 'reader:local_wall4', label: '本地壁层实验, 4例' },
     ],
   },
@@ -149,6 +159,14 @@ export function visibleWorkbenchQueueGroups(includeLocalLabs: boolean): Workbenc
 export const DEFAULT_DATASET: DatasetType = 'cropped';
 export const DEFAULT_WORKBENCH_QUEUE: WorkbenchQueueId = 'reader:reader_v150';
 
+/** Public refresh stays on the 150-case pack, not a wall-review subset. */
+export function restorePublicStoredQueue(stored: WorkbenchQueueId): WorkbenchQueueId {
+  if (isRecentWallQueue(stored) || isLocalWallLabQueue(stored)) {
+    return DEFAULT_WORKBENCH_QUEUE;
+  }
+  return stored;
+}
+
 import type { Language } from '@/lib/i18n';
 
 type QueueLanguage = Language;
@@ -164,6 +182,7 @@ const ENGLISH_CENTER_LABELS: Record<string, string> = {
   cnnc_504: 'CNNC 504 Hospital',
   fujian_provincial: 'Fujian Provincial Hospital',
   ningde: 'Ningde Hospital',
+  xiehe: 'Fujian Medical University Union Hospital',
 };
 
 export function parseDatasetType(value: string | null | undefined): DatasetType {
@@ -173,14 +192,14 @@ export function parseDatasetType(value: string | null | undefined): DatasetType 
   return DEFAULT_DATASET;
 }
 
-export const GASTRIC_COHORT_YEARS: GastricCohortYear[] = ['2018', '2019', '2020_2023', '2024', '2025'];
+export const GASTRIC_COHORT_YEARS: GastricCohortYear[] = ['2018', '2019', '2020_2023', '2024', '2025', '2026'];
 export const READER_STUDY_QUEUES: ReaderStudyQueue[] = ['reader_v150'];
 export const ALL_COHORT_YEARS: CohortYear[] = [...GASTRIC_COHORT_YEARS, ...READER_STUDY_QUEUES, 'gist'];
 
 export function parseWorkbenchQueueId(value: string | null | undefined): WorkbenchQueueId {
   const raw = (value ?? DEFAULT_WORKBENCH_QUEUE).trim();
   if (raw === 'legacy:gist' || raw === 'gist') return DEFAULT_WORKBENCH_QUEUE;
-  if (raw === 'all' || raw === 'internal:all' || raw === 'external:all' || raw === 'benign:all' || raw === 'reader:reader_v150' || raw === LOCAL_WALL_LAB_QUEUE) {
+  if (raw === 'all' || raw === 'internal:all' || raw === 'external:all' || raw === 'benign:all' || raw === 'reader:reader_v150' || raw === LOCAL_WALL_LAB_QUEUE || raw === RECENT_WALL_QUEUE) {
     return raw;
   }
   if (raw.startsWith('internal:') && GASTRIC_COHORT_YEARS.includes(raw.slice('internal:'.length) as GastricCohortYear)) {
@@ -222,6 +241,7 @@ export function getQueueDisplayLabel(queueId: WorkbenchQueueId, language: QueueL
     }
     if (queueId === 'legacy:gist') return 'GIST historical cohort';
     if (isLocalWallLabQueue(queueId)) return 'Local wall-lab, 4 cases';
+    if (isRecentWallQueue(queueId)) return 'Recent wall cases';
     return 'Reader task, Round 1, 150 cases';
   }
 
@@ -240,6 +260,7 @@ export function getQueueDisplayLabel(queueId: WorkbenchQueueId, language: QueueL
   }
   if (queueId === 'legacy:gist') return 'GIST历史队列';
   if (isLocalWallLabQueue(queueId)) return '本地壁层实验, 4例';
+  if (isRecentWallQueue(queueId)) return '最近胃壁操作';
   return '阅片任务, 第一轮150例';
 }
 
@@ -274,6 +295,7 @@ export function getQueueOptionDisplayLabel(
     }
     if (queueId === 'legacy:gist') return 'GIST历史队列';
     if (isLocalWallLabQueue(queueId)) return '本地壁层实验, 4例';
+    if (isRecentWallQueue(queueId)) return '最近胃壁操作';
     return '阅片任务, 第一轮150例';
   }
 
@@ -290,6 +312,7 @@ export function getQueueOptionDisplayLabel(
   }
   if (queueId === 'legacy:gist') return 'GIST historical cohort';
   if (isLocalWallLabQueue(queueId)) return 'Local wall-lab, 4 cases';
+  if (isRecentWallQueue(queueId)) return 'Recent wall cases';
   return 'Reader task, Round 1, 150 cases';
 }
 
@@ -329,6 +352,7 @@ export function parseCohortYear(value: string | null | undefined): CohortYear {
     return '2020_2023';
   }
   if (raw === '2024') return '2024';
+  if (raw === '2026') return '2026';
   return '2025';
 }
 

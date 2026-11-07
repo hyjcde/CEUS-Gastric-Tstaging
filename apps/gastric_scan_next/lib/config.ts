@@ -65,6 +65,7 @@ export const CURRENT_DATASET_ROOT = resolveExistingPath(process.env.GASTRIC_DATA
 export const CURRENT_INTERNAL_ROOT = path.join(CURRENT_DATASET_ROOT, 'internal');
 export const TRAINING_2018_2024_ROOT = path.join(CURRENT_INTERNAL_ROOT, 'training_2018_2024');
 export const CURRENT_2025_ROOT = path.join(CURRENT_INTERNAL_ROOT, 'prospective_2025', '2025');
+export const CURRENT_2026_ROOT = path.join(CURRENT_INTERNAL_ROOT, 'prospective_2026');
 export const CURRENT_2024_ROOT = path.join(TRAINING_2018_2024_ROOT, '2024');
 export const CURRENT_2020_2023_ROOT = path.join(TRAINING_2018_2024_ROOT, '2020_2023');
 export const CURRENT_2019_ROOT = path.join(TRAINING_2018_2024_ROOT, '2019');
@@ -107,6 +108,8 @@ function getCurrentCohortRoot(cohortYear: GastricCohortYear): string {
       return CURRENT_2020_2023_ROOT;
     case '2024':
       return CURRENT_2024_ROOT;
+    case '2026':
+      return CURRENT_2026_ROOT;
     default:
       return CURRENT_2025_ROOT;
   }
@@ -183,23 +186,33 @@ export function getBenignDatasetPaths(dataset: DatasetType, centerId: string) {
   };
 }
 
+export function getNacClinicalDataPath(cohortYear: CohortYear): string | null {
+  if (cohortYear === 'reader_v150' || cohortYear === 'gist') return null;
+  const yearToken = cohortYear === '2020_2023' ? '2020_2023' : cohortYear;
+  const candidate = path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_nac.json`);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
 export function getClinicalDataPath(cohortYear: CohortYear = '2025', treatmentType: TreatmentType = 'surgery'): string {
   if (cohortYear === 'reader_v150') return getClinicalDataPath('2025', treatmentType);
   if (cohortYear === 'gist') {
     return path.join(APP_ROOT, 'data', 'clinical_data_gist.json');
   }
 
-  const suffix = treatmentType === 'nac' ? '_nac' : '';
   const yearToken = cohortYear === '2020_2023' ? '2020_2023' : cohortYear;
+
+  if (treatmentType === 'nac') {
+    return getNacClinicalDataPath(cohortYear)
+      || path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_nac.json`);
+  }
 
   const candidates = [
     path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_ultimate.json`),
     path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_super.json`),
     path.join(APP_ROOT, 'data', `clinical_data_${yearToken}_enhanced.json`),
-    path.join(APP_ROOT, 'data', `clinical_data_${yearToken}${suffix}.json`),
+    path.join(APP_ROOT, 'data', `clinical_data_${yearToken}.json`),
     cohortYear === '2025' ? path.join(APP_ROOT, 'data', 'clinical_data_ultimate.json') : null,
     cohortYear === '2025' ? path.join(APP_ROOT, 'data', 'clinical_data.json') : null,
-    path.join(APP_ROOT, 'data', `clinical_data${suffix}.json`),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   return resolveExistingPath(...candidates) || candidates[candidates.length - 1];
